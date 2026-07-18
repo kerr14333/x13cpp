@@ -1,0 +1,444 @@
+#!/usr/bin/env python
+"""genextra.py -- extra X-13ARIMA-SEATS spec generator for the parity corpus.
+
+Covers the spec blocks the systematic ``generated/`` corpus does NOT exercise,
+needed by milestones M4-M10:
+
+  spectrum, history, slidingspans, x11regression, force, metadata, pickmdl,
+  seats variants (tabtables/out/hpcycle/qmax/rmod), outlier(types=all,lsrun),
+  check(savelog=all), identify(diff/sdiff grids).
+
+Deterministic and idempotent: running it wipes and regenerates every ``*.spc``
+file (plus ``MANIFEST``) in this directory. It never touches sibling corpus
+directories (``../data/``, ``../generated/``, ``../census-examples/``,
+``../edge/``). The ``pickmdl.mdl`` model file and ``data/`` provenance README
+are committed by hand alongside this generator, not regenerated here.
+
+Run:  python genextra.py
+
+Save-table lists are the explicit valid tokens for each spec, taken from the
+X-13 table dictionaries in ../../../oracle/fortran/stable.prm (TB1DIC..TB4DIC)
+and validated against the per-spec getsav ranges by running every spec through
+the oracle until run_ok=True. See the module-level SAVE dict for provenance of
+each token. Every spec also carries ``print = all``; blocks whose savelog range
+includes the 'all' entry carry ``savelog = all``.
+"""
+
+from __future__ import annotations
+
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA = "../data"  # shared corpus data lives in the sibling data/ directory
+
+# ---------------------------------------------------------------------------
+# Save-table tokens per spec block (3-char abbreviations from TB1DIC..TB4DIC).
+#
+# spectrum : sp0 specorig, sp1 specsa, sp2 specirr, spr specresiduals,
+#            st0 spectukeyorig, st1 spectukeysa, st2 spectukeyirr,
+#            s1s specseatssa, s2s specseatsirr (seats runs only).
+# seats    : the SEATS component tables (tb4DIC); reused from genspecs.py's
+#            validated list, trimmed to the single-series (non-composite) set.
+# identify : acf sample-ACF, pacf sample-PACF, iac inverse-ACF, ipc
+#            inverse-PACF (the identify getsav range accepts these four; the
+#            display token for PACF is 'pacf', not 'pcf').
+# check    : acf, pcf, ac2 (acf-squared).
+# outlier  : oit outlieriterations, fts finaltests.
+# history  : sar saRevisions, sae saEstimates, trr trendRevisions,
+#            tre trendEstimates, sfr sfRevisions, sfe sfEstimates (tb2DIC).
+# sspans   : sfs sfSpans, ads saSpans, chs chngSpans (tb3DIC).
+# x11reg   : xrm xregressionMatrix, b16/c16 x11reg trading-day factors (tb2DIC).
+# force    : saa seasadjTotal, ffc forceFactor, rnd saRound (tb2DIC).
+# ---------------------------------------------------------------------------
+SAVE = {
+    "spectrum_x11": ["sp0", "sp1", "sp2", "spr", "st0", "st1", "st2"],
+    "spectrum_seats": ["sp0", "sp1", "sp2", "spr", "s1s", "s2s",
+                        "st0", "st1", "st2"],
+    "seats": ["s12", "s10", "s13", "s11", "s14", "s16", "sec", "tfd", "sfd",
+              "ofd", "afd", "yfd", "s18", "sta", "wkf", "dor", "dsa", "dtr",
+              "cyc", "ltt"],
+    "identify": ["acf", "pacf", "iac", "ipc"],
+    "check": ["acf", "pcf", "ac2"],
+    "outlier": ["oit", "fts"],
+    "history": ["sar", "sae", "trr", "tre", "sfr", "sfe"],
+    "sspans": ["sfs", "ads", "chs"],
+    "x11reg": ["xrm", "b16", "c16"],
+    "force": ["saa", "ffc", "rnd"],
+}
+
+# Specs whose savelog range includes the 'all' shortcut (svltbl.prm).
+SAVELOG_ALL = {"estimate", "check", "x11", "seats", "history", "spectrum",
+               "automdl"}
+
+
+# ---------------------------------------------------------------------------
+# Rendering helpers (mirrors generated/genspecs.py wrapping to stay < 132-char
+# input-record limit; wrap conservatively at 100).
+# ---------------------------------------------------------------------------
+def _tbl(names, indent="    ", first_prefix_len=9):
+    limit = 100
+    out_lines, cur = [], []
+    cur_len = first_prefix_len + 1
+    for n in names:
+        if cur and cur_len + len(n) + 1 > limit:
+            out_lines.append(" ".join(cur))
+            cur, cur_len = [], len(indent)
+        cur.append(n)
+        cur_len += len(n) + 1
+    if cur:
+        out_lines.append(" ".join(cur))
+    joiner = "\n" + indent
+    return "(" + joiner.join(out_lines) + ")"
+
+
+def block(name, arglines, *, save_key=None, print_all=True, savelog=False):
+    lines = list(arglines)
+    if print_all:
+        lines.append("print = all")
+    if save_key is not None:
+        lines.append("save = " + _tbl(SAVE[save_key]))
+    if savelog and name in SAVELOG_ALL:
+        lines.append("savelog = all")
+    body = "\n".join("  " + ln for ln in lines)
+    return name + "{\n" + body + "\n}"
+
+
+def series_airline():
+    return block("series", [
+        'title = "International Airline Passengers"',
+        'file = "%s/airline.dat"' % DATA,
+        "start = 1949.01",
+        "period = 12",
+    ], save_key=None, print_all=False)
+
+
+def series_payems(span=None):
+    lines = [
+        'title = "US Total Nonfarm Employment (PAYEMS)"',
+        'file = "%s/payems.dat"' % DATA,
+        "start = 2000.01",
+        "period = 12",
+    ]
+    if span:
+        lines.append("span = %s" % span)
+    return block("series", lines, print_all=False)
+
+
+def transform_log():
+    return block("transform", ["function = log"], print_all=False)
+
+
+def arima_airline():
+    return "arima{\n  model = (0 1 1)(0 1 1)\n}"
+
+
+def estimate_block():
+    return block("estimate", [], print_all=True, savelog=True)
+
+
+def x11_block(mode=None):
+    args = [] if mode is None else ["mode = %s" % mode]
+    return block("x11", args, print_all=True, savelog=True)
+
+
+def forecast_block(maxlead=12):
+    return block("forecast", ["maxlead = %d" % maxlead], print_all=True)
+
+
+HEADER = (
+    "# Generated by genextra.py -- DO NOT EDIT BY HAND.\n"
+    "# coverage: {cover}\n"
+    "# Regenerate with: python genextra.py\n"
+)
+
+
+def assemble(cover, blocks):
+    return HEADER.format(cover=cover) + "\n".join(blocks) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Spec builders. Each returns (filename, text).
+# ---------------------------------------------------------------------------
+def spec_spectrum():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        block("regression", ["variables = (td)"], print_all=True),
+        arima_airline(),
+        estimate_block(),
+        forecast_block(),
+        x11_block(),
+        block("spectrum", ["type = periodogram"],
+              save_key="spectrum_x11", print_all=True, savelog=True),
+    ]
+    return "airline_spectrum.spc", assemble(
+        "spectrum{} periodogram+AR spectra, sp0/sp1/sp2/spr + Tukey st0/st1/st2,"
+        " savelog peaks/qs", blocks)
+
+
+def spec_spectrum_arspec():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        block("spectrum", ["type = arspec", "maxar = 30", "qcheck = yes"],
+              save_key="spectrum_x11", print_all=True, savelog=True),
+    ]
+    return "airline_spectrum-arspec.spc", assemble(
+        "spectrum{} AR(30) spectrum + QS check variant", blocks)
+
+
+def spec_history():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        block("history",
+              ["estimates = (sadj trend)", "start = 1955.jan"],
+              save_key="history", print_all=True, savelog=True),
+    ]
+    return "airline_history.spc", assemble(
+        "history{} sadj+trend revisions, modest span from 1955", blocks)
+
+
+def spec_slidingspans():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        block("slidingspans", [], save_key="sspans", print_all=True),
+    ]
+    return "airline_slidingspans.spc", assemble(
+        "slidingspans{} default seasonal-stability spans", blocks)
+
+
+def spec_slidingspans_cutseas():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        block("slidingspans", ["cutseas = 5.0", "cutchng = 5.0"],
+              save_key="sspans", print_all=True),
+    ]
+    return "airline_slidingspans-cutseas.spc", assemble(
+        "slidingspans{} cutseas/cutchng threshold variant", blocks)
+
+
+def spec_x11regression():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        block("x11regression", ["variables = (td)"],
+              save_key="x11reg", print_all=True),
+    ]
+    return "airline_x11regression-td.spc", assemble(
+        "x11regression{} irregular-component trading-day regression", blocks)
+
+
+def spec_x11regression_aictest():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        # aictest on TD alone would drop the sole regressor on the airline
+        # irregular (no TD signal) and abort with exit=2; keep a fixed td
+        # regressor and AIC-test the Easter holiday so the estimation still
+        # runs while exercising the x11regression aictest code path.
+        block("x11regression", ["variables = (td)", "aictest = (easter)"],
+              save_key="x11reg", print_all=True),
+    ]
+    return "airline_x11regression-aictest.spc", assemble(
+        "x11regression{} fixed TD + AIC-tested Easter on the irregular", blocks)
+
+
+def spec_force_denton():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        block("force", ["type = denton", "target = original"],
+              save_key="force", print_all=True),
+    ]
+    return "airline_force-denton.spc", assemble(
+        "force{} Denton benchmarking of the SA total to original", blocks)
+
+
+def spec_force_regress():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        block("force", ["type = regress", "target = original", "rho = 0.9"],
+              save_key="force", print_all=True),
+    ]
+    return "airline_force-regress.spc", assemble(
+        "force{} regression (Cholette-Dagum) benchmarking to original", blocks)
+
+
+def spec_metadata():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        x11_block(),
+        block("metadata",
+              ['keys = (source frequency units)',
+               'values = ("test-corpus" "monthly" "passengers")'],
+              print_all=False),
+    ]
+    return "airline_metadata.spc", assemble(
+        "metadata{} keys/values roundtrip into .udg", blocks)
+
+
+def spec_pickmdl():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        block("regression", ["variables = (td)"], print_all=True),
+        block("pickmdl",
+              ["mode = fcst", 'file = "pickmdl.mdl"', "method = best",
+               "identify = all"],
+              print_all=True),
+        estimate_block(),
+        forecast_block(),
+        x11_block(),
+    ]
+    return "airline_pickmdl.spc", assemble(
+        "pickmdl{} classic X-11-ARIMA 5-model selection (pickmdl.mdl)", blocks)
+
+
+def spec_seats_tabtables():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        forecast_block(),
+        block("seats",
+              ['tabtables = "xo,n,s,p"', "out = 2", "hpcycle = yes"],
+              save_key="seats", print_all=True, savelog=True),
+    ]
+    return "airline_seats-tabtables.spc", assemble(
+        "seats{} tabtables/.tbs + out=2 + HP cycle", blocks)
+
+
+def spec_seats_qmax_rmod():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        forecast_block(),
+        block("seats", ["qmax = 30", "rmod = 0.7", "noadmiss = yes"],
+              save_key="seats", print_all=True, savelog=True),
+    ]
+    return "airline_seats-qmax-rmod.spc", assemble(
+        "seats{} qmax/rmod/noadmiss decomposition variant", blocks)
+
+
+def spec_outlier_lsrun():
+    # PAYEMS 2000.01-2025.08 contains the 2020 COVID level shifts; types=all +
+    # lsrun surfaces them. No x11 needed -- outlier ID is a regARIMA step.
+    blocks = [
+        series_payems(),
+        transform_log(),
+        arima_airline(),
+        block("outlier",
+              ["types = all", "lsrun = 3", "critical = 3.5"],
+              save_key="outlier", print_all=True),
+        estimate_block(),
+    ]
+    return "payems_outlier-lsrun.spc", assemble(
+        "outlier{types=all,lsrun} COVID-2020 level shifts on PAYEMS", blocks)
+
+
+def spec_check():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        block("check", ["maxlag = 24"],
+              save_key="check", print_all=True, savelog=True),
+    ]
+    return "airline_check.spc", assemble(
+        "check{} residual diagnostics with savelog=all", blocks)
+
+
+def spec_identify():
+    blocks = [
+        series_airline(),
+        transform_log(),
+        block("identify",
+              ["diff = (0 1)", "sdiff = (0 1)", "maxlag = 36"],
+              save_key="identify", print_all=True),
+    ]
+    return "airline_identify.spc", assemble(
+        "identify{} ACF/PACF over diff x sdiff grid", blocks)
+
+
+BUILDERS = [
+    spec_spectrum,
+    spec_spectrum_arspec,
+    spec_history,
+    spec_slidingspans,
+    spec_slidingspans_cutseas,
+    spec_x11regression,
+    spec_x11regression_aictest,
+    spec_force_denton,
+    spec_force_regress,
+    spec_metadata,
+    spec_pickmdl,
+    spec_seats_tabtables,
+    spec_seats_qmax_rmod,
+    spec_outlier_lsrun,
+    spec_check,
+    spec_identify,
+]
+
+
+def main():
+    for fn in os.listdir(HERE):
+        if fn.endswith(".spc"):
+            os.remove(os.path.join(HERE, fn))
+
+    written = []
+    for builder in BUILDERS:
+        fname, text = builder()
+        with open(os.path.join(HERE, fname), "w", newline="\n") as fh:
+            fh.write(text)
+        written.append(fname)
+
+    written.sort()
+    with open(os.path.join(HERE, "MANIFEST"), "w", newline="\n") as fh:
+        fh.write("# Extra spec inventory -- produced by genextra.py\n")
+        fh.write("# %d specs covering blocks absent from generated/\n"
+                 % len(written))
+        for fname in written:
+            fh.write(fname + "\n")
+
+    print("genextra.py: wrote %d specs to %s" % (len(written), HERE))
+    for fname in written:
+        print("  " + fname)
+
+
+if __name__ == "__main__":
+    main()

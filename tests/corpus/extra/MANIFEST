@@ -1,0 +1,18 @@
+# Extra spec inventory -- produced by genextra.py
+# 16 specs covering blocks absent from generated/
+airline_check.spc
+airline_force-denton.spc
+airline_force-regress.spc
+airline_history.spc
+airline_identify.spc
+airline_metadata.spc
+airline_pickmdl.spc
+airline_seats-qmax-rmod.spc
+airline_seats-tabtables.spc
+airline_slidingspans-cutseas.spc
+airline_slidingspans.spc
+airline_spectrum-arspec.spc
+airline_spectrum.spc
+airline_x11regression-aictest.spc
+airline_x11regression-td.spc
+payems_outlier-lsrun.spc
