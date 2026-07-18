@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "payems_seats",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\payems_seats",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "payems.dat",
+      "role": "input",
+      "sha256": "53c58652cedb9da46e5e870049efbd3c14d3aa10a8d157c8d73327240538d7cc",
+      "size": 2156
+    },
+    {
+      "name": "payems_seats.err",
+      "role": "output",
+      "sha256": "0dd16f7b311741389e8de38391b126c40bcbdff521cf9c17573816838895d417",
+      "size": 105
+    },
+    {
+      "name": "payems_seats.log",
+      "role": "output",
+      "sha256": "1c15604e90c83d1ad6a77a1ef53410457583720e7b1f106a580011adea89e202",
+      "size": 275
+    },
+    {
+      "name": "payems_seats.out",
+      "role": "output",
+      "sha256": "7fc83e5f2237cafd1ff5d9df96f5359c3593c99ac07d6abc7530782de810f831",
+      "size": 81
+    },
+    {
+      "name": "payems_seats.spc",
+      "role": "input",
+      "sha256": "8f656ab41886b928536bbb635c3c9accd3886ea0d5b65bddc01df582634b4db5",
+      "size": 654
+    },
+    {
+      "name": "payems_seats.stdout.txt",
+      "role": "output",
+      "sha256": "fe2c8a1863b8b7505e616c67013a8a4073e72d77393a7c675f58a3036e5ea4b9",
+      "size": 433
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "payems_seats.spc",
+  "spec_base": "payems_seats",
+  "timestamp_utc": "2026-07-18T19:00:11Z"
+}

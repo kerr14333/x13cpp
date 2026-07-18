@@ -1,0 +1,12 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.11 
+
+  Reading input spec file from unrate_automdl-x11.spc
+  Storing any program output into unrate_automdl-x11.out
+  Storing any program error messages into unrate_automdl-x11.err
+  ERROR: Input record longer than limit :         133
+  Program error(s) halt execution for unrate_automdl-x11.spc
+
+ Check error file unrate_automdl-x11.err

@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "expgs_automdl-aictest-x11",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\expgs_automdl-aictest-x11",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "expgs.dat",
+      "role": "input",
+      "sha256": "257ff519f5bc475072b50a357307aa87f324570f069cdd3505640bd5e196ba84",
+      "size": 2533
+    },
+    {
+      "name": "expgs_automdl-aictest-x11.err",
+      "role": "output",
+      "sha256": "934aa57e251e91c1e3e67251ae676df65a765b28c3ff3a43205c9d1960c8d2cf",
+      "size": 118
+    },
+    {
+      "name": "expgs_automdl-aictest-x11.log",
+      "role": "output",
+      "sha256": "f22c7a9e729c6992c2175fa39dd13db5ff199d669b9c076d2045f0dce2e7413f",
+      "size": 275
+    },
+    {
+      "name": "expgs_automdl-aictest-x11.out",
+      "role": "output",
+      "sha256": "cbd1609d90a2b6180c9cfdceb0c6723d6f236bf2cc6ee68d9a7fe6aec4d16855",
+      "size": 93
+    },
+    {
+      "name": "expgs_automdl-aictest-x11.spc",
+      "role": "input",
+      "sha256": "54ee377108754bca381694672e14ee815ff7c0a8b01c088ce6c31b3a106ab5d2",
+      "size": 831
+    },
+    {
+      "name": "expgs_automdl-aictest-x11.stdout.txt",
+      "role": "output",
+      "sha256": "477c0af3871a199e91f31493c94772622b64a4053367cb412275999b90dbfd5a",
+      "size": 498
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "expgs_automdl-aictest-x11.spc",
+  "spec_base": "expgs_automdl-aictest-x11",
+  "timestamp_utc": "2026-07-18T19:00:10Z"
+}

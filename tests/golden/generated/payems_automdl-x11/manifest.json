@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "payems_automdl-x11",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\payems_automdl-x11",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "payems.dat",
+      "role": "input",
+      "sha256": "53c58652cedb9da46e5e870049efbd3c14d3aa10a8d157c8d73327240538d7cc",
+      "size": 2156
+    },
+    {
+      "name": "payems_automdl-x11.err",
+      "role": "output",
+      "sha256": "082b8578740d4cd8edc9ed67b29144c6354b70dcbbcaed0947f654a4c6444f3e",
+      "size": 111
+    },
+    {
+      "name": "payems_automdl-x11.log",
+      "role": "output",
+      "sha256": "f22c7a9e729c6992c2175fa39dd13db5ff199d669b9c076d2045f0dce2e7413f",
+      "size": 275
+    },
+    {
+      "name": "payems_automdl-x11.out",
+      "role": "output",
+      "sha256": "039233d48cd8730404b15ca77cbbf1908a8329a51c091f64173a340396cffc28",
+      "size": 87
+    },
+    {
+      "name": "payems_automdl-x11.spc",
+      "role": "input",
+      "sha256": "4dcd4b6a58cd46efdd2f0dc511b9bb54043f65dcb82575d07271c6ca17d93bab",
+      "size": 800
+    },
+    {
+      "name": "payems_automdl-x11.stdout.txt",
+      "role": "output",
+      "sha256": "0cc09177d7b9928a3d0f99d1c0093fce4f1b2e2c6c6828b3354cf809b4a3aca2",
+      "size": 463
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "payems_automdl-x11.spc",
+  "spec_base": "payems_automdl-x11",
+  "timestamp_utc": "2026-07-18T19:00:10Z"
+}

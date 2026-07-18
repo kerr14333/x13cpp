@@ -1,0 +1,21 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.08 
+
+  Reading input spec file from malformed-unknown-arg.spc
+  Storing any program output into malformed-unknown-arg.out
+  Storing any program error messages into malformed-unknown-arg.err
+
+ Line   11:    frobnicate  = 3
+               ^
+ ERROR:  Argument name "frobnicate" not found
+  **Correct input and rerun malformed-unknown-arg.spc**
+
+ Check error file malformed-unknown-arg.err
+
+ NOTE:  Correct input errors in the order they are detected
+        since the first one or two may be responsible for
+        the others (especially if there are errors in the
+        SERIES or COMPOSITE spec).
+

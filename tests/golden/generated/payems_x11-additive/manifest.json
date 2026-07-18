@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "payems_x11-additive",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\payems_x11-additive",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "payems.dat",
+      "role": "input",
+      "sha256": "53c58652cedb9da46e5e870049efbd3c14d3aa10a8d157c8d73327240538d7cc",
+      "size": 2156
+    },
+    {
+      "name": "payems_x11-additive.err",
+      "role": "output",
+      "sha256": "e6ab56312309e13a73f6b9c65dc2c1ece64ce8cfa7453f42cc96d671947a57dc",
+      "size": 112
+    },
+    {
+      "name": "payems_x11-additive.log",
+      "role": "output",
+      "sha256": "1c15604e90c83d1ad6a77a1ef53410457583720e7b1f106a580011adea89e202",
+      "size": 275
+    },
+    {
+      "name": "payems_x11-additive.out",
+      "role": "output",
+      "sha256": "3bac3c493d7e775a71262d808857781a1f7244b1bf6cd70622c9a09f91427486",
+      "size": 88
+    },
+    {
+      "name": "payems_x11-additive.spc",
+      "role": "input",
+      "sha256": "4ff922ae83ec696f7b54e6871b536d4107d52943371db993ec76814d58055f37",
+      "size": 611
+    },
+    {
+      "name": "payems_x11-additive.stdout.txt",
+      "role": "output",
+      "sha256": "095c85982717c0b3748de0e29aea9092656baa159b34d6fa4ad5079d3b19cd69",
+      "size": 468
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "payems_x11-additive.spc",
+  "spec_base": "payems_x11-additive",
+  "timestamp_utc": "2026-07-18T19:00:11Z"
+}

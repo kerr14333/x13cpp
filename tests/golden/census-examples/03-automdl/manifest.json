@@ -1,0 +1,63 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "Release Version 1.1 Build 61",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "03-automdl",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\census-examples\\03-automdl",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "03-automdl.err",
+      "role": "output",
+      "sha256": "f19c465dd8ae06846de5a708c2df14ab502091a5e27af9ac3ab590278ba704b7",
+      "size": 381
+    },
+    {
+      "name": "03-automdl.log",
+      "role": "output",
+      "sha256": "505eac3353f2cf6a88b9a4d70b332b8c02a3a5c71314b518bec924b8f61f9c3f",
+      "size": 365
+    },
+    {
+      "name": "03-automdl.out",
+      "role": "output",
+      "sha256": "0ff95c052252831ab924a642fa27a82e02dca3ab3a912c665b50ac01347363cc",
+      "size": 88863
+    },
+    {
+      "name": "03-automdl.spc",
+      "role": "input",
+      "sha256": "02693dcfa044b0f46e570538c750d468890ca69cd562c9363ee1bcc3dccf784e",
+      "size": 447
+    },
+    {
+      "name": "03-automdl.stdout.txt",
+      "role": "output",
+      "sha256": "38fc59545440ed2f54a219eca7c2b5e2d70350c1e8402c2175bd5fe55d834381",
+      "size": 682
+    },
+    {
+      "name": "03-automdl.udg",
+      "role": "output",
+      "sha256": "0a195b9cd8eeaae6b65a47164d531983803b4cea8640257d7abdce54dfe2f536",
+      "size": 14780
+    },
+    {
+      "name": "airline.dat",
+      "role": "input",
+      "sha256": "8c999fa9d67e1dff475b9d0d82996f06cc5b7a2598ab359814fbb1c2f4644afd",
+      "size": 576
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "03-automdl.spc",
+  "spec_base": "03-automdl",
+  "timestamp_utc": "2026-07-18T19:00:06Z"
+}

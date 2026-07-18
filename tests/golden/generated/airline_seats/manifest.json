@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "airline_seats",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\airline_seats",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "airline.dat",
+      "role": "input",
+      "sha256": "8c999fa9d67e1dff475b9d0d82996f06cc5b7a2598ab359814fbb1c2f4644afd",
+      "size": 576
+    },
+    {
+      "name": "airline_seats.err",
+      "role": "output",
+      "sha256": "0cd8a0bf49370ba4e335a73b71b7b9a879d31f25730f7e660a2951672879d9ff",
+      "size": 106
+    },
+    {
+      "name": "airline_seats.log",
+      "role": "output",
+      "sha256": "b1a55bf18131d5980b8c53282b3735846a0a1fc6cddf8506233e465255e44f94",
+      "size": 275
+    },
+    {
+      "name": "airline_seats.out",
+      "role": "output",
+      "sha256": "016f417928bff87b1fd912d87783b22ffc335be23adeca5577de3a3b7279025d",
+      "size": 83
+    },
+    {
+      "name": "airline_seats.spc",
+      "role": "input",
+      "sha256": "b53d325ffc811e2bbabd8ae33af770fba34cbd3a47b817901bcea61f35e2ec61",
+      "size": 652
+    },
+    {
+      "name": "airline_seats.stdout.txt",
+      "role": "output",
+      "sha256": "6d2d3090bd0121d10e350cd86d0711761bc571ec997fcefc76d4ac7402503e2a",
+      "size": 438
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "airline_seats.spc",
+  "spec_base": "airline_seats",
+  "timestamp_utc": "2026-07-18T19:00:09Z"
+}

@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "airline_x11-default",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\airline_x11-default",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "airline.dat",
+      "role": "input",
+      "sha256": "8c999fa9d67e1dff475b9d0d82996f06cc5b7a2598ab359814fbb1c2f4644afd",
+      "size": 576
+    },
+    {
+      "name": "airline_x11-default.err",
+      "role": "output",
+      "sha256": "23879cef70dd48d29c034e238cbf3c74a3cb570c907983facee45d7c1db442d9",
+      "size": 112
+    },
+    {
+      "name": "airline_x11-default.log",
+      "role": "output",
+      "sha256": "b1a55bf18131d5980b8c53282b3735846a0a1fc6cddf8506233e465255e44f94",
+      "size": 275
+    },
+    {
+      "name": "airline_x11-default.out",
+      "role": "output",
+      "sha256": "a107b9eec87529ef278f5948fdfb12dff99964ab3db729e2d08aa06bf82d4080",
+      "size": 89
+    },
+    {
+      "name": "airline_x11-default.spc",
+      "role": "input",
+      "sha256": "8aca847ce15c88038231d8105a52686ed16d5ad36df1a25401181c59eaf25e4d",
+      "size": 609
+    },
+    {
+      "name": "airline_x11-default.stdout.txt",
+      "role": "output",
+      "sha256": "9847c7f8d45a8b15b2113e55774aa4adda9a373727c0f97cdf772927e7b79237",
+      "size": 468
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "airline_x11-default.spc",
+  "spec_base": "airline_x11-default",
+  "timestamp_utc": "2026-07-18T19:00:09Z"
+}

@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "unrate_x11-logadd",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\unrate_x11-logadd",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "unrate.dat",
+      "role": "input",
+      "sha256": "60853972ecc4a3856e137b3fcd996513670e746df9c557f9c9cfd0fb37ef7ce6",
+      "size": 3743
+    },
+    {
+      "name": "unrate_x11-logadd.err",
+      "role": "output",
+      "sha256": "08f99d4d34dc1f06ff7aa2446972334775fc10720f29593f0be454f6e1a3545a",
+      "size": 110
+    },
+    {
+      "name": "unrate_x11-logadd.log",
+      "role": "output",
+      "sha256": "0cbeb98334504fb8de9ebe9a1ae08fdbb894fd491a13c6e279a054845d85ae12",
+      "size": 275
+    },
+    {
+      "name": "unrate_x11-logadd.out",
+      "role": "output",
+      "sha256": "605b2af3c9bc71d01494b4b65f61c11ad170b12a4b1467ec1e8f31a5cb768eb8",
+      "size": 86
+    },
+    {
+      "name": "unrate_x11-logadd.spc",
+      "role": "input",
+      "sha256": "7f0539dfe9216a52445cbd37314532f7afd40315eb7f413207e51969643b206a",
+      "size": 626
+    },
+    {
+      "name": "unrate_x11-logadd.stdout.txt",
+      "role": "output",
+      "sha256": "cb6a7f57031d7216ed17e87289817c7fbd17d278c7c71b96981168b09b4483ae",
+      "size": 458
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "unrate_x11-logadd.spc",
+  "spec_base": "unrate_x11-logadd",
+  "timestamp_utc": "2026-07-18T19:00:12Z"
+}

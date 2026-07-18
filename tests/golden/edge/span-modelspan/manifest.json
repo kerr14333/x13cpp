@@ -1,0 +1,63 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "Release Version 1.1 Build 61",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "span-modelspan",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\edge\\span-modelspan",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "payems.dat",
+      "role": "input",
+      "sha256": "53c58652cedb9da46e5e870049efbd3c14d3aa10a8d157c8d73327240538d7cc",
+      "size": 2156
+    },
+    {
+      "name": "span-modelspan.err",
+      "role": "output",
+      "sha256": "4e06e1b0ea26bdfe9bc741a350d8699081377deeebe57037b46300424597a61f",
+      "size": 107
+    },
+    {
+      "name": "span-modelspan.log",
+      "role": "output",
+      "sha256": "ee5e947d1e59aa39d843505ee44a958120a279d28e57cebdb4601d54dbc4af2d",
+      "size": 365
+    },
+    {
+      "name": "span-modelspan.out",
+      "role": "output",
+      "sha256": "65859e909749528dc2b3566d3cad04b0b675181e025b2ad37c32287b3f941c8f",
+      "size": 97002
+    },
+    {
+      "name": "span-modelspan.spc",
+      "role": "input",
+      "sha256": "154b2df6e38dd7e83eb9576aa2a2795c9345229c6187bf9c21e379c23b615c92",
+      "size": 653
+    },
+    {
+      "name": "span-modelspan.stdout.txt",
+      "role": "output",
+      "sha256": "613625355cdf42101bf312fb283449e6b669bb359871e7857e22843f3dd3492a",
+      "size": 623
+    },
+    {
+      "name": "span-modelspan.udg",
+      "role": "output",
+      "sha256": "5f9d533927621d1d2cfe525ee2724eb9e421f26f9ae491eb7ebb5043fe2ed5b2",
+      "size": 13401
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "span-modelspan.spc",
+  "spec_base": "span-modelspan",
+  "timestamp_utc": "2026-07-18T19:00:09Z"
+}

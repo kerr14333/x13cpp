@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "malformed-unknown-arg",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\edge\\malformed-unknown-arg",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "airline.dat",
+      "role": "input",
+      "sha256": "8c999fa9d67e1dff475b9d0d82996f06cc5b7a2598ab359814fbb1c2f4644afd",
+      "size": 576
+    },
+    {
+      "name": "malformed-unknown-arg.err",
+      "role": "output",
+      "sha256": "d96daedca1e30a240cd3688b45af9027c50b30bb39e1470868d26fde3c5992c7",
+      "size": 213
+    },
+    {
+      "name": "malformed-unknown-arg.log",
+      "role": "output",
+      "sha256": "63773d1cb6cd4edb10e7eda4595e81f173c977cf8af65ff290521e76f2fe2087",
+      "size": 275
+    },
+    {
+      "name": "malformed-unknown-arg.out",
+      "role": "output",
+      "sha256": "b7e3c3922c115deedcfe8a9062c4a78fd7640bb55ebe779e47daecd1fee49290",
+      "size": 91
+    },
+    {
+      "name": "malformed-unknown-arg.spc",
+      "role": "input",
+      "sha256": "7d547129a535e0523b077674850c07941914c17cb1a3c2e24128f70c9c2cf455",
+      "size": 518
+    },
+    {
+      "name": "malformed-unknown-arg.stdout.txt",
+      "role": "output",
+      "sha256": "d0644e4d2d720c90a9cfcc661959ce2560aada50c75792ccaeab8762f2cc0478",
+      "size": 733
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "malformed-unknown-arg.spc",
+  "spec_base": "malformed-unknown-arg",
+  "timestamp_utc": "2026-07-18T19:00:08Z"
+}

@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "unrate_fixed-airline-seats",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\unrate_fixed-airline-seats",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "unrate.dat",
+      "role": "input",
+      "sha256": "60853972ecc4a3856e137b3fcd996513670e746df9c557f9c9cfd0fb37ef7ce6",
+      "size": 3743
+    },
+    {
+      "name": "unrate_fixed-airline-seats.err",
+      "role": "output",
+      "sha256": "a9e20d2b3d7bba0a90fdf8390bf67e446df43cd9ce955da0aebc5bba5e36b37e",
+      "size": 119
+    },
+    {
+      "name": "unrate_fixed-airline-seats.log",
+      "role": "output",
+      "sha256": "1c15604e90c83d1ad6a77a1ef53410457583720e7b1f106a580011adea89e202",
+      "size": 275
+    },
+    {
+      "name": "unrate_fixed-airline-seats.out",
+      "role": "output",
+      "sha256": "117b85da135cbc08b7bd3de97c51da622b17d2e4931ad0b42f918e517e013303",
+      "size": 95
+    },
+    {
+      "name": "unrate_fixed-airline-seats.spc",
+      "role": "input",
+      "sha256": "7e243c1896a05031c0b7b817a6ffb3f66b8de1632f209f89f5e2d1408d87d184",
+      "size": 751
+    },
+    {
+      "name": "unrate_fixed-airline-seats.stdout.txt",
+      "role": "output",
+      "sha256": "c67d1dc5476317f4e8289f8e4962c01d6a7e729255341d2597fc7716b1e461a7",
+      "size": 503
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "unrate_fixed-airline-seats.spc",
+  "spec_base": "unrate_fixed-airline-seats",
+  "timestamp_utc": "2026-07-18T19:00:11Z"
+}

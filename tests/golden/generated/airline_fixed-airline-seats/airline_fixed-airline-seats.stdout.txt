@@ -1,0 +1,12 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.09 
+
+  Reading input spec file from airline_fixed-airline-seats.spc
+  Storing any program output into airline_fixed-airline-seats.out
+  Storing any program error messages into airline_fixed-airline-seats.err
+  ERROR: Input record longer than limit :         133
+  Program error(s) halt execution for airline_fixed-airline-seats.spc
+
+ Check error file airline_fixed-airline-seats.err

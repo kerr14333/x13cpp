@@ -1,0 +1,8 @@
+     Error messages generated from processing the X-13ARIMA-SEATS spec file
+     malformed-unknown-arg.spc:
+
+
+
+ Line   11:    frobnicate  = 3
+               ^
+ ERROR:  Argument name "frobnicate" not found

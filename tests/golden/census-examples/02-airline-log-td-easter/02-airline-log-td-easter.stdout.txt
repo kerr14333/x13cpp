@@ -1,0 +1,18 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.06 
+
+  Reading input spec file from 02-airline-log-td-easter.spc
+  Storing any program output into 02-airline-log-td-easter.out
+  Storing any program error messages into 02-airline-log-td-easter.err
+  Storing any diagnostics output into 02-airline-log-td-easter.udg
+
+  
+ WARNING: At least one visually significant seasonal peak has been found
+          in the estimated spectrum of the regARIMA residuals.
+  
+ WARNING: Visually significant seasonal and trading day peaks have 
+          been found in one or more of the estimated spectra.
+
+ Execution complete for 02-airline-log-td-easter.spc at  Jul 18, 2026  15.00.06 

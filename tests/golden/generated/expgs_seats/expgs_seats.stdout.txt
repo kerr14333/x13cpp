@@ -1,0 +1,12 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.10 
+
+  Reading input spec file from expgs_seats.spc
+  Storing any program output into expgs_seats.out
+  Storing any program error messages into expgs_seats.err
+  ERROR: Input record longer than limit :         133
+  Program error(s) halt execution for expgs_seats.spc
+
+ Check error file expgs_seats.err

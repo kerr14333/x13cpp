@@ -1,0 +1,63 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "Release Version 1.1 Build 61",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "long780",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\edge\\long780",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "long780.dat",
+      "role": "input",
+      "sha256": "073bc742ff6fb78e71cc67205bc91e21884189a2cd9dd767f70b30e873f0bc97",
+      "size": 3571
+    },
+    {
+      "name": "long780.err",
+      "role": "output",
+      "sha256": "213214679dd609c97c957f1cf43c711ccbf5909de4d68ec83b55915f0c56dbe0",
+      "size": 100
+    },
+    {
+      "name": "long780.log",
+      "role": "output",
+      "sha256": "4bf78e8f914ae006331c6800fdcbd25301cdf74d9ed9072eeb46fded937aff4e",
+      "size": 416
+    },
+    {
+      "name": "long780.out",
+      "role": "output",
+      "sha256": "68be872947716a030957f51051657156af18652153744fb3e7e704ce236f82d8",
+      "size": 202858
+    },
+    {
+      "name": "long780.spc",
+      "role": "input",
+      "sha256": "c45c5dba3fc30385a02494d49b2928ec1f945324e0d6821e5dc647846ed32bc2",
+      "size": 454
+    },
+    {
+      "name": "long780.stdout.txt",
+      "role": "output",
+      "sha256": "69a2d6f01772d0431287ee7fbcff3e97af880329a90d23a3334445c358c96f5e",
+      "size": 389
+    },
+    {
+      "name": "long780.udg",
+      "role": "output",
+      "sha256": "80ef75570f77354ca408c1e708d0a612b52b5326c1f3e743c90dfd3478b1cd38",
+      "size": 18704
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "long780.spc",
+  "spec_base": "long780",
+  "timestamp_utc": "2026-07-18T19:00:07Z"
+}

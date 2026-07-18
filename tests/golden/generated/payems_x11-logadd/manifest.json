@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "payems_x11-logadd",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\payems_x11-logadd",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "payems.dat",
+      "role": "input",
+      "sha256": "53c58652cedb9da46e5e870049efbd3c14d3aa10a8d157c8d73327240538d7cc",
+      "size": 2156
+    },
+    {
+      "name": "payems_x11-logadd.err",
+      "role": "output",
+      "sha256": "00f3704cf321aeb5a8392defaeae86b3010202c2bc15995fa3cd98c623c15709",
+      "size": 110
+    },
+    {
+      "name": "payems_x11-logadd.log",
+      "role": "output",
+      "sha256": "1c15604e90c83d1ad6a77a1ef53410457583720e7b1f106a580011adea89e202",
+      "size": 275
+    },
+    {
+      "name": "payems_x11-logadd.out",
+      "role": "output",
+      "sha256": "b3ce8342ae72b1a4d9641da9fe530c99e802a92e54d3d066503f878f38986f2b",
+      "size": 86
+    },
+    {
+      "name": "payems_x11-logadd.spc",
+      "role": "input",
+      "sha256": "5292ae0d9c92711ee9cc85989f55a1a8f2759e58d136d869a257fe85265548b0",
+      "size": 612
+    },
+    {
+      "name": "payems_x11-logadd.stdout.txt",
+      "role": "output",
+      "sha256": "98a8e67dda976ab6e9c50d0248275e674a95cbf2e7ab488c2d14823717b621e4",
+      "size": 458
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "payems_x11-logadd.spc",
+  "spec_base": "payems_x11-logadd",
+  "timestamp_utc": "2026-07-18T19:00:11Z"
+}

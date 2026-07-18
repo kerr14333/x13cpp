@@ -1,0 +1,17 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.09 
+
+  Reading input spec file from span-modelspan.spc
+  Storing any program output into span-modelspan.out
+  Storing any program error messages into span-modelspan.err
+  Storing any diagnostics output into span-modelspan.udg
+
+
+
+ WARNING: Series should not be a candidate for seasonal adjustment
+          because the spectrum of the original series (Table A1 or B1)
+          has no visually significant seasonal peaks.
+
+ Execution complete for span-modelspan.spc at  Jul 18, 2026  15.00.09 

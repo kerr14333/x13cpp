@@ -1,0 +1,12 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.09 
+
+  Reading input spec file from airline_x11-logadd.spc
+  Storing any program output into airline_x11-logadd.out
+  Storing any program error messages into airline_x11-logadd.err
+  ERROR: Input record longer than limit :         133
+  Program error(s) halt execution for airline_x11-logadd.spc
+
+ Check error file airline_x11-logadd.err

@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "total",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\census-examples\\composite\\total",
+  "exit_code": 3,
+  "files": [
+    {
+      "name": "total.err",
+      "role": "output",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "name": "total.log",
+      "role": "output",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "name": "total.out",
+      "role": "output",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size": 0
+    },
+    {
+      "name": "total.spc",
+      "role": "input",
+      "sha256": "9bec8fae936557e8bd4dbcb28b4b272c30edfa7b458d0bf1f29ef1448fed201e",
+      "size": 416
+    },
+    {
+      "name": "total.stderr.txt",
+      "role": "output",
+      "sha256": "850264cd6ce2f166f09dc4d71dcc9e97895f0d2be1941f89b7d2c5cb21f94ea1",
+      "size": 419
+    },
+    {
+      "name": "total.stdout.txt",
+      "role": "output",
+      "sha256": "b1a3e6abbb834330a32fd34cdf1448b28a0ac8e032ffae318b2fb2415661f483",
+      "size": 414
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "total.spc",
+  "spec_base": "total",
+  "timestamp_utc": "2026-07-18T19:00:07Z"
+}

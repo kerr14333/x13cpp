@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "expgs_x11-default",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\expgs_x11-default",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "expgs.dat",
+      "role": "input",
+      "sha256": "257ff519f5bc475072b50a357307aa87f324570f069cdd3505640bd5e196ba84",
+      "size": 2533
+    },
+    {
+      "name": "expgs_x11-default.err",
+      "role": "output",
+      "sha256": "4ac6d272231465db90465b21955bcd3933cebf5d4e4e1e8ab91bc3cc7afbf8d9",
+      "size": 110
+    },
+    {
+      "name": "expgs_x11-default.log",
+      "role": "output",
+      "sha256": "f22c7a9e729c6992c2175fa39dd13db5ff199d669b9c076d2045f0dce2e7413f",
+      "size": 275
+    },
+    {
+      "name": "expgs_x11-default.out",
+      "role": "output",
+      "sha256": "bcc76d9ae175f19a4c6055e2b24d8e9ca14014927852a651f5b346cb5be00b0f",
+      "size": 85
+    },
+    {
+      "name": "expgs_x11-default.spc",
+      "role": "input",
+      "sha256": "c59d1c8f705970cb2e9ad33b3d3401dd0545af0359f321a767f4b567d7b518df",
+      "size": 611
+    },
+    {
+      "name": "expgs_x11-default.stdout.txt",
+      "role": "output",
+      "sha256": "1071554a251cda0245d56b02a56a2b3a6137310094484b52829220232cbb2ad6",
+      "size": 458
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "expgs_x11-default.spc",
+  "spec_base": "expgs_x11-default",
+  "timestamp_utc": "2026-07-18T19:00:10Z"
+}

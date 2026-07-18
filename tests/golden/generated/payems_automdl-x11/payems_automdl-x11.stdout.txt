@@ -1,0 +1,12 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.10 
+
+  Reading input spec file from payems_automdl-x11.spc
+  Storing any program output into payems_automdl-x11.out
+  Storing any program error messages into payems_automdl-x11.err
+  ERROR: Input record longer than limit :         133
+  Program error(s) halt execution for payems_automdl-x11.spc
+
+ Check error file payems_automdl-x11.err

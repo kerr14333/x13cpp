@@ -1,0 +1,81 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "Release Version 1.1 Build 61",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "04-seats",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\census-examples\\04-seats",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "04-seats.err",
+      "role": "output",
+      "sha256": "c9c74972648769c7ad11b1bfc1d4ab7d599c781601f29d960f60aaecde36777b",
+      "size": 424
+    },
+    {
+      "name": "04-seats.log",
+      "role": "output",
+      "sha256": "0a63e004a669cc2aded0037f59c8db5b22f35cb9f0f509f1de2ebc3dbf4d5810",
+      "size": 365
+    },
+    {
+      "name": "04-seats.out",
+      "role": "output",
+      "sha256": "30f64980c3aaabb151fe77b554ff37f48fcd5cb0324ddfbaa01b7c1329e85d0a",
+      "size": 201371
+    },
+    {
+      "name": "04-seats.rog",
+      "role": "output",
+      "sha256": "2d89c6d30b5bcf787717eeb3ba7535d3e515e3f70220c1eb8b262b3742bcc548",
+      "size": 908
+    },
+    {
+      "name": "04-seats.spc",
+      "role": "input",
+      "sha256": "f990970d2ecacb2d729763e44bbd4b07cbc5c25f52b2c8a3668e8fd581b86de6",
+      "size": 508
+    },
+    {
+      "name": "04-seats.stdout.txt",
+      "role": "output",
+      "sha256": "bab5cc642be4388d23f07ad427c2bd54ae2a039d725b4fbd0c3ac9e1dbcd96ab",
+      "size": 536
+    },
+    {
+      "name": "04-seats.sum",
+      "role": "output",
+      "sha256": "46b14f4ebcadb74a63f8435bcdee8a4a3b92126f6240d8a5f606f4a7d4d86f25",
+      "size": 3174
+    },
+    {
+      "name": "04-seats.tbs",
+      "role": "output",
+      "sha256": "c08ac42ed7deb64b8f4359d6b2648f3fb8b8e663f33269bacbd0439acf1ee83f",
+      "size": 56091
+    },
+    {
+      "name": "04-seats.udg",
+      "role": "output",
+      "sha256": "28392d4919a4e4beafab56006310f8d8bed9e2fc491b63e03702b3ddf0513534",
+      "size": 10407
+    },
+    {
+      "name": "airline.dat",
+      "role": "input",
+      "sha256": "8c999fa9d67e1dff475b9d0d82996f06cc5b7a2598ab359814fbb1c2f4644afd",
+      "size": 576
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "04-seats.spc",
+  "spec_base": "04-seats",
+  "timestamp_utc": "2026-07-18T19:00:06Z"
+}

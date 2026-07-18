@@ -1,0 +1,15 @@
+
+ X-13ARIMA-SEATS Seasonal Adjustment Program
+ Version Number 1.1 Build 61
+ Execution began  Jul 18, 2026  15.00.06 
+
+  Reading input spec file from 04-seats.spc
+  Storing any program output into 04-seats.out
+  Storing any program error messages into 04-seats.err
+  Storing any diagnostics output into 04-seats.udg
+
+  
+ WARNING: At least one visually significant seasonal peak has been found
+          in the estimated spectrum of the regARIMA residuals.
+
+ Execution complete for 04-seats.spc at  Jul 18, 2026  15.00.06 

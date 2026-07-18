@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "expgs_x11-logadd",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\expgs_x11-logadd",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "expgs.dat",
+      "role": "input",
+      "sha256": "257ff519f5bc475072b50a357307aa87f324570f069cdd3505640bd5e196ba84",
+      "size": 2533
+    },
+    {
+      "name": "expgs_x11-logadd.err",
+      "role": "output",
+      "sha256": "acc55c6ffa20e92ddc9cc5003bd4e32f05b2783e9e63aad90e065be7e7f86ac0",
+      "size": 109
+    },
+    {
+      "name": "expgs_x11-logadd.log",
+      "role": "output",
+      "sha256": "f22c7a9e729c6992c2175fa39dd13db5ff199d669b9c076d2045f0dce2e7413f",
+      "size": 275
+    },
+    {
+      "name": "expgs_x11-logadd.out",
+      "role": "output",
+      "sha256": "14c3183f8b838e9645da28384843cc9ea6327315df60baa14d0a1577365c48b7",
+      "size": 84
+    },
+    {
+      "name": "expgs_x11-logadd.spc",
+      "role": "input",
+      "sha256": "968cd28ce451f58a412db1815006fee10c24e0f31577510511dccbf65bd76e93",
+      "size": 612
+    },
+    {
+      "name": "expgs_x11-logadd.stdout.txt",
+      "role": "output",
+      "sha256": "b8517373abc40933ecd3c5473341c9fc9f7d2e100508405dfca24224f0157185",
+      "size": 453
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "expgs_x11-logadd.spc",
+  "spec_base": "expgs_x11-logadd",
+  "timestamp_utc": "2026-07-18T19:00:10Z"
+}

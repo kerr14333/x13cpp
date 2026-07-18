@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "unrate_automdl-x11",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\unrate_automdl-x11",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "unrate.dat",
+      "role": "input",
+      "sha256": "60853972ecc4a3856e137b3fcd996513670e746df9c557f9c9cfd0fb37ef7ce6",
+      "size": 3743
+    },
+    {
+      "name": "unrate_automdl-x11.err",
+      "role": "output",
+      "sha256": "ddcf53a22d3cdeceb05cedfe1085e93bf8df34e8166d62e1a1898a223b6669a1",
+      "size": 111
+    },
+    {
+      "name": "unrate_automdl-x11.log",
+      "role": "output",
+      "sha256": "1c15604e90c83d1ad6a77a1ef53410457583720e7b1f106a580011adea89e202",
+      "size": 275
+    },
+    {
+      "name": "unrate_automdl-x11.out",
+      "role": "output",
+      "sha256": "d55af63db20cd6f64a74e153e6f18ae8064b3cc1e7e2c8f130c197aa99fb27e5",
+      "size": 87
+    },
+    {
+      "name": "unrate_automdl-x11.spc",
+      "role": "input",
+      "sha256": "81beab54f6fa1cfef008e7688211188527a66b3d8bcaeeb19ff9826acad50966",
+      "size": 737
+    },
+    {
+      "name": "unrate_automdl-x11.stdout.txt",
+      "role": "output",
+      "sha256": "96e87f17628805df75b1ff2c9f728844d67a0945c3ea9dc04389ac28e9ea1a35",
+      "size": 463
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "unrate_automdl-x11.spc",
+  "spec_base": "unrate_automdl-x11",
+  "timestamp_utc": "2026-07-18T19:00:11Z"
+}

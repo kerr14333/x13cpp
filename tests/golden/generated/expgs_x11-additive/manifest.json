@@ -1,0 +1,57 @@
+{
+  "binary": "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+  "binary_missing": false,
+  "binary_sha256": "68136a123c68a03bb8af0371e4788d258781cfa868d8914491f3f2513819cffc",
+  "binary_version": "unknown",
+  "command": [
+    "D:\\code_projects\\x13new\\oracle\\fortran\\x13as_ascii_O0.exe",
+    "expgs_x11-additive",
+    "-s"
+  ],
+  "cwd": "D:\\code_projects\\x13new\\tests\\golden\\generated\\expgs_x11-additive",
+  "exit_code": 0,
+  "files": [
+    {
+      "name": "expgs.dat",
+      "role": "input",
+      "sha256": "257ff519f5bc475072b50a357307aa87f324570f069cdd3505640bd5e196ba84",
+      "size": 2533
+    },
+    {
+      "name": "expgs_x11-additive.err",
+      "role": "output",
+      "sha256": "6287eea9a24cccdb1dbca616eeb8fe52b1f39fb3411f1c693cfcba84ddb7a66c",
+      "size": 111
+    },
+    {
+      "name": "expgs_x11-additive.log",
+      "role": "output",
+      "sha256": "f22c7a9e729c6992c2175fa39dd13db5ff199d669b9c076d2045f0dce2e7413f",
+      "size": 275
+    },
+    {
+      "name": "expgs_x11-additive.out",
+      "role": "output",
+      "sha256": "95c8bda72c85a39efd8f575105864c8360355329320726c1cb7bf90d05ff927c",
+      "size": 86
+    },
+    {
+      "name": "expgs_x11-additive.spc",
+      "role": "input",
+      "sha256": "e1c86e071a8d8c1c46d48f3dd01b3f31b5463f7aef64c0129da7d0a856fa2f3b",
+      "size": 611
+    },
+    {
+      "name": "expgs_x11-additive.stdout.txt",
+      "role": "output",
+      "sha256": "d671c83421747192498f967f0ef0f0012db2826257dc464f1d47946497d2794f",
+      "size": 463
+    }
+  ],
+  "flags": [
+    "-s"
+  ],
+  "spec": "expgs_x11-additive.spc",
+  "spec_base": "expgs_x11-additive",
+  "timestamp_utc": "2026-07-18T19:00:10Z"
+}
