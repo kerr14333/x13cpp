@@ -1,0 +1,35 @@
+# Per-table tolerance classification for x13compare.
+#
+# Comparison uses:  abs(a - b) <= atol + rtol * abs(b)
+#
+# `default` applies to any table/period/udg key not otherwise classified.
+# Each entry under `classes` names a tolerance band and the table ids it
+# covers. Table ids are matched case-insensitively against:
+#   * the normalised .out table id (e.g. "d11", "f2.1"),
+#   * the save-file extension / short name (e.g. "est", "lks", "fct"),
+#   * udg keys are always compared at the default tolerance.
+#
+# NOTE: ids here are the 3-char save short-names / normalised .out ids. Adjust
+# the membership lists once real oracle output confirms the exact ids emitted.
+
+default:
+  rtol: 1.0e-8
+  atol: 1.0e-12
+
+classes:
+  # Tables whose values depend on the nonlinear optimiser's exact iterate
+  # (regARIMA estimation, likelihood, roots, forecasts). Bit-for-bit parity
+  # with a different BLAS / compiler is unrealistic here, so relax to 1e-6.
+  optimizer_dependent:
+    rtol: 1.0e-6
+    atol: 1.0e-9
+    tables:
+      - est   # regARIMA parameter estimates
+      - lks   # likelihood statistics (AIC/BIC/loglik)
+      - rts   # AR/MA roots
+      - rsd   # regARIMA residuals
+      - mdl   # estimated model
+      - fct   # point forecasts
+      - bct   # backcasts
+      - fvr   # forecast error variances
+      - a13   # regARIMA-derived series
