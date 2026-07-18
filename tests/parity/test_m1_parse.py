@@ -43,6 +43,42 @@ def _find_binary() -> str:
 BIN = _find_binary()
 
 
+# Spec blocks the M1 C++ parser does not yet dispatch. A corpus spec using any
+# of these is expected to fatal at parse time until its milestone lands, so we
+# xfail it (strict) keyed to the milestone. When a block is ported, remove it
+# here: the strict xfail then turns the now-passing spec into a loud failure,
+# forcing this list to stay honest (no silent scope drift).
+_UNPARSED_BLOCKS = {
+    "spectrum": "M6-M7",
+    "history": "M9-M10",
+    "slidingspans": "M9-M10",
+    "x11regression": "M6-M7",
+    "force": "M9-M10",
+    "metadata": "M9-M10",
+    "pickmdl": "M4-M5",
+}
+
+# NOTE: assumes the block name and its `{` share a line (the whole corpus
+# convention). X-13's tokenizer also accepts `name\n{`, `} name{` mid-line, and
+# `name #cmt\n{`; those forms would be missed, but the failure mode is loud (a
+# plain FAILED, never a silent pass) since strict xfail can't be reached.
+_BLOCK_RE = re.compile(r"^\s*([a-z0-9]+)\s*\{", re.M | re.I)
+
+
+def _spec_blocks(spc: str):
+    with open(spc, encoding="utf-8", errors="replace") as fh:
+        return {m.group(1).lower() for m in _BLOCK_RE.finditer(fh.read())}
+
+
+def _unparsed_reason(spc: str):
+    """If the spec uses a not-yet-ported block, return an xfail reason, else None."""
+    hits = _spec_blocks(spc) & _UNPARSED_BLOCKS.keys()
+    if not hits:
+        return None
+    return "unported spec block(s): " + ", ".join(
+        f"{b} ({_UNPARSED_BLOCKS[b]})" for b in sorted(hits))
+
+
 def _corpus_specs():
     out = []
     for root, _dirs, files in os.walk(_CORPUS):
@@ -50,6 +86,16 @@ def _corpus_specs():
             if f.endswith(".spc"):
                 out.append(os.path.join(root, f))
     return sorted(out)
+
+
+def _corpus_params():
+    params = []
+    for spc in _corpus_specs():
+        rid = os.path.relpath(spc, _CORPUS)
+        reason = _unparsed_reason(spc)
+        marks = [pytest.mark.xfail(reason=reason, strict=True)] if reason else []
+        params.append(pytest.param(spc, id=rid, marks=marks))
+    return params
 
 
 def _golden_dir(spc: str) -> str:
@@ -90,7 +136,7 @@ def _run(spc: str):
     return outcome, err, out
 
 
-@pytest.mark.parametrize("spc", _corpus_specs(), ids=lambda p: os.path.relpath(p, _CORPUS))
+@pytest.mark.parametrize("spc", _corpus_params())
 def test_outcome_matches_oracle(spc):
     oracle_ok, golden_err = _oracle_ok(spc)
     outcome, cpp_err, _ = _run(spc)
