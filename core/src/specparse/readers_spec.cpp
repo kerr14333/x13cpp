@@ -8,6 +8,7 @@
 // lists) are captured for the M1 gate. Deep option/state processing beyond
 // argument parsing is deferred to later milestones.
 #include "specparse/specparse.hpp"
+#include "notset.hpp"
 
 #include <string>
 #include <vector>
@@ -69,10 +70,32 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // Capture the value tokens for the args whose state we set here:
+        //   8 = power, 9 = function, 11 = save.
         std::vector<std::string> cap;
-        consume_value(ctx, argidx == 9 ? &cap : nullptr);   // 9 = function
+        bool want = (argidx == 8 || argidx == 9 || argidx == 11);
+        consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
-        if (argidx == 9 && !cap.empty()) ctx.captured.transform_function = cap[0];
+        if (argidx == 9 && !cap.empty()) {
+            // getadj.f function= mapping (FCNDIC='logsqrtlogisticnoneinverseauto').
+            const std::string& f = cap[0];
+            ctx.captured.transform_function = f;
+            if (f == "log")           { ctx.arima.fcntyp = 1; ctx.arima.lam = 0.0; }
+            else if (f == "sqrt")     { ctx.arima.fcntyp = 6; ctx.arima.lam = 0.5; }
+            else if (f == "none")     { ctx.arima.fcntyp = 4; ctx.arima.lam = 1.0; }
+            else if (f == "inverse")  { ctx.arima.fcntyp = 6; ctx.arima.lam = -1.0; }
+            else if (f == "logistic") { ctx.arima.fcntyp = 3; ctx.arima.lam = prm::DNOTST; }
+            else if (f == "auto")     { ctx.arima.fcntyp = 0; ctx.arima.lam = prm::DNOTST; }
+        } else if (argidx == 8 && !cap.empty()) {
+            // getadj.f power= : Box-Cox parameter, Fcntyp=5, Lam=value.
+            try {
+                ctx.captured.transform_power = std::stod(cap[0]);
+                ctx.arima.lam = ctx.captured.transform_power;
+                ctx.arima.fcntyp = 5;
+            } catch (...) { /* malformed handled by the Fortran error path */ }
+        } else if (argidx == 11) {
+            for (const auto& t : cap) ctx.captured.save_tables.push_back(t);
+        }
     }
 }
 

@@ -659,7 +659,7 @@ totals: pending
 transc: pending
 trbias: pending
 trnaic: pending
-trnfcn: pending
+trnfcn: gated
 tstdrv: pending
 tstmd1: pending
 tstmd2: pending

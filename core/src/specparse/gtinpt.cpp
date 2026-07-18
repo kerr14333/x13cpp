@@ -74,11 +74,9 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 ctx.captured.spec_order.push_back("series");
                 break;
             case 2:  // transform
-                gt_transform(ctx, inptok);
+                gt_transform(ctx, inptok);   // sets ctx.arima.fcntyp / lam (getadj.f)
                 if (ctx.error.lfatal) return;
                 ctx.captured.spec_order.push_back("transform");
-                if (ctx.captured.transform_function == "auto") ctx.arima.fcntyp = 0;
-                else if (!ctx.captured.transform_function.empty()) ctx.arima.fcntyp = 4;
                 break;
             case 3:  // identify
                 gt_identify(ctx, inptok);

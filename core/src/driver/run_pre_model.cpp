@@ -8,13 +8,22 @@
 // Table pointer LSRSSP=2 (mdltbl.i) carries the 'a1' save extension.
 #include "specparse/specparse.hpp"
 #include "tables/tables.hpp"
+#include "transform/transform.hpp"
 
+#include <algorithm>
 #include <string>
+#include <vector>
 
 namespace x13 {
 
 namespace {
-constexpr int LSRSSP = 2;   // mdltbl.i: original series for span; ext 'a1'
+constexpr int LSRSSP = 2;    // mdltbl.i: original series for span; ext 'a1'
+constexpr int LTRNDT = 20;   // mdltbl.i: prior-adjusted+transformed data; ext 'trn'
+
+bool wants_save(const X13Context& ctx, const std::string& ext) {
+    const auto& v = ctx.captured.save_tables;
+    return std::find(v.begin(), v.end(), ext) != v.end();
+}
 }  // namespace
 
 bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base) {
@@ -44,6 +53,21 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
     int nser = static_cast<int>(base.size());
     if (nser > 16) nser = 16;
     savtbl(ctx, LSRSSP, begspn, 1, nspobs, sp, aptr, base, base, nser);
+    if (ctx.error.lfatal) return false;
+
+    // Table trn (LTRNDT): the transformed (prior-adjusted) series that feeds
+    // regARIMA modeling. arima.f copies the prior-adjusted series (Sto) over the
+    // span into trnsrs, applies the Box-Cox/logit transform (trnfcn), and saves
+    // it. With no prior-adjustment factors the pre-model series is the original
+    // series over the span (== a1), so trnsrs = trnfcn(a1). Prior factors are
+    // applied by the prior-adjustment phase (handled where present).
+    if (wants_save(ctx, "trn")) {
+        std::vector<double> trn(static_cast<std::size_t>(nspobs));
+        trnfcn(ctx, aptr, nspobs, ctx.arima.fcntyp, ctx.arima.lam, trn.data());
+        if (ctx.error.lfatal) return false;
+        savtbl(ctx, LTRNDT, begspn, 1, nspobs, sp, trn.data(), base, base, nser);
+        if (ctx.error.lfatal) return false;
+    }
 
     return !ctx.error.lfatal;
 }

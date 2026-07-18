@@ -85,11 +85,57 @@ def _specs_with_a1():
     return sorted(out)
 
 
+def _specs_with_ext(ext: str):
+    """All corpus specs whose golden bundle contains a <base>.<ext> save file."""
+    out = []
+    for root, _dirs, files in os.walk(_CORPUS):
+        for f in files:
+            if not f.endswith(".spc"):
+                continue
+            spc = os.path.join(root, f)
+            base = f[:-4]
+            if os.path.exists(os.path.join(_golden_dir(spc), base + "." + ext)):
+                out.append(spc)
+    return sorted(out)
+
+
 _A1_SPECS = _specs_with_a1()
 
 
-@pytest.mark.parametrize("spc", _A1_SPECS, ids=lambda p: os.path.relpath(p, _CORPUS))
-def test_a1_save_matches_oracle(spc, workdir):
+def _trn_reproducible(spc: str) -> bool:
+    """True when table trn is reproducible from the pre-model phase alone.
+
+    trn is the prior-adjusted, Box-Cox/logit-transformed modeling series. With an
+    explicit transform and no prior/calendar adjustment it is exactly
+    trnfcn(original series). It is NOT pre-model reproducible when:
+      * the transform is auto-selected (needs the AIC transform test), or
+      * trading-day / length-of-period regressors induce the implicit leap-year
+        prior adjustment (needs the prior-adjustment + regression-matrix chain), or
+      * the ARIMA model / span is auto-identified (automdl/pickmdl), which can
+        shrink the trn span to a model span.
+    Those are estimation-dependent and out of the M2 pre-model scope.
+    """
+    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
+    txt = txt.replace(" ", "")
+    if "function=auto" in txt or "automdl" in txt or "pickmdl" in txt:
+        return False
+    if "aictest" in txt:
+        return False
+    if "adjust=" in txt:
+        return False
+    # trading-day / length-of-period regressors (variables list) induce priors.
+    for tok in ("(td", "td)", "td1coef", "tdstock", "lom", "loq", "lpyear", "lqyear"):
+        if tok in txt:
+            return False
+    return True
+
+
+_TRN_SPECS = [s for s in _specs_with_ext("trn") if _trn_reproducible(s)]
+
+
+def _check_save_table(spc, workdir, ext):
+    """Run x13run_m2 on spc and assert its <base>.<ext> matches the golden:
+    byte-identical (LF-normalized) AND numeric parity at rtol 1e-8."""
     rel = os.path.relpath(spc, _CORPUS)
     base = os.path.basename(spc)[:-4]
     work_spc = os.path.join(workdir, rel)
@@ -97,13 +143,13 @@ def test_a1_save_matches_oracle(spc, workdir):
     proc = subprocess.run([BIN, work_spc], capture_output=True, text=True)
     assert "OUTCOME: OK" in proc.stdout, f"{rel}: run failed\n{proc.stdout}\n{proc.stderr}"
 
-    mine = os.path.join(os.path.dirname(work_spc), base + ".a1")
-    gold = os.path.join(_golden_dir(spc), base + ".a1")
-    assert os.path.exists(mine), f"{rel}: no .a1 produced"
+    mine = os.path.join(os.path.dirname(work_spc), base + "." + ext)
+    gold = os.path.join(_golden_dir(spc), base + "." + ext)
+    assert os.path.exists(mine), f"{rel}: no .{ext} produced"
 
     a = open(mine, "rb").read().replace(b"\r\n", b"\n")
     b = open(gold, "rb").read().replace(b"\r\n", b"\n")
-    assert a == b, f"{rel}: .a1 not byte-identical (LF-normalized)"
+    assert a == b, f"{rel}: .{ext} not byte-identical (LF-normalized)"
 
     # Numeric parity, period-key exact, rtol 1e-8.
     ma = parse_save.parse_save(a.decode("utf-8", "replace")).values
@@ -114,9 +160,25 @@ def test_a1_save_matches_oracle(spc, workdir):
             f"{rel}: value mismatch at {k}: {ma[k]!r} vs {mb[k]!r}")
 
 
+@pytest.mark.parametrize("spc", _A1_SPECS, ids=lambda p: os.path.relpath(p, _CORPUS))
+def test_a1_save_matches_oracle(spc, workdir):
+    _check_save_table(spc, workdir, "a1")
+
+
+@pytest.mark.parametrize("spc", _TRN_SPECS, ids=lambda p: os.path.relpath(p, _CORPUS))
+def test_trn_save_matches_oracle(spc, workdir):
+    """Transformed (prior-adjusted) series -- transform subsystem (trnfcn.f)."""
+    _check_save_table(spc, workdir, "trn")
+
+
 def test_a1_corpus_coverage():
     """Guard: the gate actually exercises a broad set of specs."""
     assert len(_A1_SPECS) >= 30, f"expected >=30 a1 specs, found {len(_A1_SPECS)}"
+
+
+def test_trn_corpus_coverage():
+    """Guard: the transform gate exercises the transform variants (log/sqrt/none/power)."""
+    assert len(_TRN_SPECS) >= 5, f"expected >=5 trn specs, found {len(_TRN_SPECS)}"
 
 
 if __name__ == "__main__":
