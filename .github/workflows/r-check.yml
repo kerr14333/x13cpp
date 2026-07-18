@@ -1,0 +1,31 @@
+name: r-check
+
+# STUB (M11). Placeholder for R CMD check of the Rcpp package (r-pkg/) across
+# platforms. Intentionally workflow_dispatch-only for now so it never runs on
+# push/PR until M11 fills it in. Uncomment and flesh out when the Rcpp package
+# has sources.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  r-cmd-check:
+    name: R CMD check (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Placeholder
+        run: |
+          echo "r-check.yml is a stub to be implemented at milestone M11."
+          echo "Planned: R CMD check --as-cran on r-pkg/ across Linux/macOS/Windows"
+          echo "         with the Rcpp-wrapped x13cpp core."
+
+      # --- Planned steps (M11) -------------------------------------------
+      # - uses: r-lib/actions/setup-r@v2
+      # - uses: r-lib/actions/setup-r-dependencies@v2
+      #   with:
+      #     working-directory: r-pkg
+      # - uses: r-lib/actions/check-r-package@v2
+      #   with:
+      #     working-directory: r-pkg

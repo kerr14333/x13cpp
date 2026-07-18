@@ -1,0 +1,37 @@
+name: wheels
+
+# STUB (M11). Placeholder for building the Python (pybind11) binary wheels for
+# the x13cpp package across platforms with cibuildwheel. Intentionally
+# workflow_dispatch-only for now so it never runs on push/PR until M11 fills it
+# in. Uncomment and flesh out the steps when the pybind11 extension exists.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-wheels:
+    name: build wheels (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Placeholder
+        run: |
+          echo "wheels.yml is a stub to be implemented at milestone M11."
+          echo "Planned: build manylinux (RHEL8 ABI) + macOS + Windows wheels"
+          echo "         via pybind11 + cibuildwheel from py-pkg/, then upload."
+
+      # --- Planned steps (M11) -------------------------------------------
+      # - uses: actions/setup-python@v5
+      #   with:
+      #     python-version: '3.x'
+      # - name: Build wheels
+      #   uses: pypa/cibuildwheel@v2
+      #   with:
+      #     package-dir: py-pkg
+      #   env:
+      #     CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28   # RHEL8 ABI
+      # - uses: actions/upload-artifact@v4
+      #   with:
+      #     name: wheels-${{ matrix.os }}
+      #     path: wheelhouse/*.whl

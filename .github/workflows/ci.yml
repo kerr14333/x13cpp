@@ -1,0 +1,128 @@
+name: CI
+
+# Green-by-construction: this project is at milestone M0 and core/ has no
+# sources yet. Every build/test step is guarded with `if: hashFiles(...)` so
+# that missing pieces are SKIPPED rather than failing. As real sources land the
+# same steps light up automatically — no workflow edits required.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    # Rocky variants run inside a container on an ubuntu host; native runners use
+    # an empty container (== run directly on the host).
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: rocky8
+            os: ubuntu-latest
+            container: rockylinux:8
+          - name: rocky9
+            os: ubuntu-latest
+            container: rockylinux:9
+          - name: windows
+            os: windows-latest
+            container: ''
+          - name: macos
+            os: macos-latest
+            container: ''
+          - name: macos13
+            os: macos-13
+            container: ''
+
+    steps:
+      # ---- Toolchain -------------------------------------------------------
+      - name: Install toolchain (Rocky container)
+        if: ${{ matrix.container != '' }}
+        run: |
+          dnf -y update
+          dnf -y install gcc-c++ gcc-gfortran make cmake python3 python3-pip \
+                         git diffutils which tar
+          dnf clean all
+          # checkout runs git inside the container; mark the workspace safe.
+          git config --global --add safe.directory '*'
+
+      - uses: actions/checkout@v4
+
+      - name: Set up Python (native runners)
+        if: ${{ matrix.container == '' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Tool versions
+        shell: bash
+        run: |
+          echo "== job: ${{ matrix.name }} =="
+          cmake --version || true
+          (g++ --version || c++ --version || clang++ --version) 2>/dev/null || true
+          gfortran --version 2>/dev/null || true
+          (python --version || python3 --version) 2>/dev/null || true
+
+      # ---- Build core ------------------------------------------------------
+      - name: Configure & build core
+        if: ${{ hashFiles('core/CMakeLists.txt', 'CMakeLists.txt') != '' }}
+        shell: bash
+        run: |
+          set -eux
+          if [ -f CMakePresets.json ]; then
+            cmake --preset ci || cmake -S core -B build
+          elif [ -f CMakeLists.txt ]; then
+            cmake -S . -B build
+          else
+            cmake -S core -B build
+          fi
+          cmake --build build --config Release
+
+      # ---- C++ unit tests --------------------------------------------------
+      - name: C++ unit tests (tests/unit)
+        if: ${{ hashFiles('tests/unit/**/CMakeLists.txt', 'tests/unit/**/*.cpp') != '' }}
+        shell: bash
+        run: |
+          set -eux
+          if [ -d build ]; then
+            ctest --test-dir build --output-on-failure
+          else
+            echo "no build directory; skipping ctest"
+          fi
+
+      # ---- Python comparison tests ----------------------------------------
+      - name: Python tests (tests/compare)
+        if: ${{ hashFiles('tests/compare/**/*.py') != '' }}
+        shell: bash
+        run: |
+          set -eux
+          PY=python; command -v python >/dev/null 2>&1 || PY=python3
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install pytest
+          if [ -f tests/compare/requirements.txt ]; then
+            "$PY" -m pip install -r tests/compare/requirements.txt
+          fi
+          "$PY" -m pytest tests/compare -q
+
+      # ---- Corpus sanity (always meaningful) ------------------------------
+      # This runs today: it proves genspecs.py is deterministic and that its
+      # committed output is up to date. Keeps CI honest before core/ exists.
+      - name: Corpus sanity (genspecs deterministic)
+        if: ${{ hashFiles('tests/corpus/generated/genspecs.py') != '' }}
+        shell: bash
+        run: |
+          set -eux
+          PY=python; command -v python >/dev/null 2>&1 || PY=python3
+          "$PY" tests/corpus/generated/genspecs.py
+          git config --global --add safe.directory '*' || true
+          git diff --exit-code tests/corpus/generated \
+            || (echo "genspecs.py output is stale or nondeterministic; re-run it and commit" && exit 1)
