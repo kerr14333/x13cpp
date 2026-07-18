@@ -121,16 +121,30 @@ def _trn_reproducible(spc: str) -> bool:
         return False
     if "aictest" in txt:
         return False
-    if "adjust=" in txt:
+    # The predefined adjust=lom/loq/lpyear priors ARE reproduced (priadj.cpp);
+    # only reject user-data priors (transform{data=...}) which need file input.
+    if "data=" in txt and "transform{" in txt:
         return False
-    # trading-day / length-of-period regressors (variables list) induce priors.
-    for tok in ("(td", "td)", "td1coef", "tdstock", "lom", "loq", "lpyear", "lqyear"):
+    # trading-day regressors (variables list) induce the implicit leap-year
+    # prior, handled by the regression-matrix chunk -- not yet reproduced here.
+    for tok in ("(td", "td)", "td1coef", "tdstock"):
         if tok in txt:
             return False
     return True
 
 
+def _has_predefined_adjust(spc: str) -> bool:
+    """True when transform{ adjust = lom|loq|lpyear } is requested -- the
+    predefined length-of-period / leap-year prior reproduced by priadj.cpp.
+    (Other paths that emit a2/a3, e.g. the SEATS a3, are out of the pre-model
+    scope.)"""
+    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower().replace(" ", "")
+    return "adjust=lom" in txt or "adjust=loq" in txt or "adjust=lpyear" in txt
+
+
 _TRN_SPECS = [s for s in _specs_with_ext("trn") if _trn_reproducible(s)]
+_A2_SPECS = [s for s in _specs_with_ext("a2") if _has_predefined_adjust(s)]
+_A3_SPECS = [s for s in _specs_with_ext("a3") if _has_predefined_adjust(s)]
 
 
 def _check_save_table(spc, workdir, ext):
@@ -169,6 +183,18 @@ def test_a1_save_matches_oracle(spc, workdir):
 def test_trn_save_matches_oracle(spc, workdir):
     """Transformed (prior-adjusted) series -- transform subsystem (trnfcn.f)."""
     _check_save_table(spc, workdir, "trn")
+
+
+@pytest.mark.parametrize("spc", _A2_SPECS, ids=lambda p: os.path.relpath(p, _CORPUS))
+def test_a2_save_matches_oracle(spc, workdir):
+    """Prior-adjustment factors -- prior-adjustment subsystem (td7var.f/adjsrs.f)."""
+    _check_save_table(spc, workdir, "a2")
+
+
+@pytest.mark.parametrize("spc", _A3_SPECS, ids=lambda p: os.path.relpath(p, _CORPUS))
+def test_a3_save_matches_oracle(spc, workdir):
+    """Prior-adjusted data (original / prior factors)."""
+    _check_save_table(spc, workdir, "a3")
 
 
 def test_a1_corpus_coverage():

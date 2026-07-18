@@ -71,11 +71,26 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
         // Capture the value tokens for the args whose state we set here:
-        //   8 = power, 9 = function, 11 = save.
+        //   6 = adjust, 8 = power, 9 = function, 11 = save.
         std::vector<std::string> cap;
-        bool want = (argidx == 8 || argidx == 9 || argidx == 11);
+        bool want = (argidx == 6 || argidx == 8 || argidx == 9 || argidx == 11);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
+        if (argidx == 6 && !cap.empty()) {
+            // getadj.f adjust= mapping (ADJDIC='nonelomloqlpyear'): 1 none, 2 lom,
+            // 3 loq, 4 lpyear; then normalize lom/loq to the seasonal period.
+            const std::string& a = cap[0];
+            int priadj = 0;
+            if (a == "none")        priadj = 1;
+            else if (a == "lom")    priadj = 2;
+            else if (a == "loq")    priadj = 3;
+            else if (a == "lpyear") priadj = 4;
+            if (priadj > 0) {
+                if (priadj == 2 && ctx.model.sp == 4) priadj = 3;
+                if (priadj == 3 && ctx.model.sp == 12) priadj = 2;
+                ctx.prior.priadj = priadj;
+            }
+        }
         if (argidx == 9 && !cap.empty()) {
             // getadj.f function= mapping (FCNDIC='logsqrtlogisticnoneinverseauto').
             const std::string& f = cap[0];

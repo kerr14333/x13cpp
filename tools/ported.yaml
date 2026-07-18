@@ -645,7 +645,7 @@ table: pending
 taper: pending
 tblhdr: pending
 td6var: pending
-td7var: pending
+td7var: partial   # lom/loq/lpyear multiplicative factor (lpfac) -> a2/a3/trn
 tdaic: pending
 tdftest: pending
 tdlom: pending

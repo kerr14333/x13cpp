@@ -9,6 +9,7 @@
 #include "specparse/specparse.hpp"
 #include "tables/tables.hpp"
 #include "transform/transform.hpp"
+#include "regarima/priadj.hpp"
 
 #include <algorithm>
 #include <string>
@@ -18,6 +19,8 @@ namespace x13 {
 
 namespace {
 constexpr int LSRSSP = 2;    // mdltbl.i: original series for span; ext 'a1'
+constexpr int LTRNPA = 13;   // mdltbl.i: prior-adjustment factors; ext 'a2'
+constexpr int LTRNA3 = 16;   // mdltbl.i: prior-adjusted data; ext 'a3'
 constexpr int LTRNDT = 20;   // mdltbl.i: prior-adjusted+transformed data; ext 'trn'
 
 bool wants_save(const X13Context& ctx, const std::string& ext) {
@@ -55,15 +58,50 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
     savtbl(ctx, LSRSSP, begspn, 1, nspobs, sp, aptr, base, base, nser);
     if (ctx.error.lfatal) return false;
 
-    // Table trn (LTRNDT): the transformed (prior-adjusted) series that feeds
-    // regARIMA modeling. arima.f copies the prior-adjusted series (Sto) over the
-    // span into trnsrs, applies the Box-Cox/logit transform (trnfcn), and saves
-    // it. With no prior-adjustment factors the pre-model series is the original
-    // series over the span (== a1), so trnsrs = trnfcn(a1). Prior factors are
-    // applied by the prior-adjustment phase (handled where present).
+    // Prior adjustment (adjsrs.f / prtadj.f, predefined lom/loq/lpyear priors).
+    // adjsrs builds the multiplicative prior-factor series Adj via td7var; the
+    // prior-adjusted series is the original series divided by those factors
+    // (divsub). The factors depend only on the calendar date, so a2 (factors),
+    // a3 (prior-adjusted data), and the prior-adjusted trn are pre-model
+    // reproducible. User prior-factor files and calendar (holiday/TD) priors are
+    // out of this pre-model slice.
+    int priadj = ctx.prior.priadj;
+    bool has_prior = (priadj > 1);   // 2 lom / 3 loq / 4 lpyear
+    bool lom = (priadj == 2 || priadj == 3);   // adjsrs.f: lom for lom/loq
+
+    // The prior-adjusted series over the span (== a1 with no prior).
+    std::vector<double> padj(static_cast<std::size_t>(nspobs));
+    std::vector<double> fac(static_cast<std::size_t>(nspobs), 1.0);
+    for (int tpnt = 1; tpnt <= nspobs; ++tpnt) {
+        double a1 = aptr[tpnt - 1];
+        if (has_prior) {
+            int idate[2];
+            addate(begspn, sp, tpnt - 1, idate);
+            double f = lpfac(idate[0], idate[1], sp, lom);   // td7var factor
+            fac[static_cast<std::size_t>(tpnt - 1)] = f;
+            padj[static_cast<std::size_t>(tpnt - 1)] = a1 / f;   // divsub (mult mode)
+        } else {
+            padj[static_cast<std::size_t>(tpnt - 1)] = a1;
+        }
+    }
+
+    // Table a2 (LTRNPA): the combined prior-adjustment factors (Sprior).
+    if (has_prior && wants_save(ctx, "a2")) {
+        savtbl(ctx, LTRNPA, begspn, 1, nspobs, sp, fac.data(), base, base, nser);
+        if (ctx.error.lfatal) return false;
+    }
+    // Table a3 (LTRNA3): the prior-adjusted data (Sto after divsub).
+    if (has_prior && wants_save(ctx, "a3")) {
+        savtbl(ctx, LTRNA3, begspn, 1, nspobs, sp, padj.data(), base, base, nser);
+        if (ctx.error.lfatal) return false;
+    }
+
+    // Table trn (LTRNDT): the transformed prior-adjusted series that feeds
+    // regARIMA modeling. arima.f applies the Box-Cox/logit transform (trnfcn) to
+    // the prior-adjusted series (== a3, or a1 when there is no prior).
     if (wants_save(ctx, "trn")) {
         std::vector<double> trn(static_cast<std::size_t>(nspobs));
-        trnfcn(ctx, aptr, nspobs, ctx.arima.fcntyp, ctx.arima.lam, trn.data());
+        trnfcn(ctx, padj.data(), nspobs, ctx.arima.fcntyp, ctx.arima.lam, trn.data());
         if (ctx.error.lfatal) return false;
         savtbl(ctx, LTRNDT, begspn, 1, nspobs, sp, trn.data(), base, base, nser);
         if (ctx.error.lfatal) return false;

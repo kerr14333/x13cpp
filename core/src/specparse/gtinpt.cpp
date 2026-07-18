@@ -50,6 +50,9 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.arima.fcntyp = prm::NOTSET;
     ctx.arima.lam = 1.0;
     ctx.picktd.picktd = false;
+    ctx.prior.priadj = 0;    // gtinpt.f: Priadj=0 (no predefined prior adjustment)
+    ctx.prior.kfmt = 0;      // gtinpt.f: Kfmt=0
+    ctx.arima.reglom = 0;    // gtinpt.f: Reglom=0
 
     // Control flags.
     bool havsrs = false, havesp = false, havotl = false, havreg = false;
