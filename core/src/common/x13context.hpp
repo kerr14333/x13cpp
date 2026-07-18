@@ -90,6 +90,10 @@
 #include "common/gen/xrgum_cmn.hpp"
 #include "common/gen/xtdtyp_cmn.hpp"
 #include "common/gen/xtrm_cmn.hpp"
+// Hand-maintained: lexer/parser state from the .i-based COMMONs (lex.i /clex/,
+// cchars.i /cchars/) plus rngbuf SAVE state. The generator only covered .cmn
+// files, so this member is added by hand (M1 spec-parser milestone).
+#include "specparse/lexstate.hpp"
 
 namespace x13 {
 
@@ -97,6 +101,7 @@ namespace x13 {
 struct X13Context {
     ErrorState error_state;    // program-wide fatal flag (see error_cmn too)
     ChannelRegistry channels_; // Fortran unit-number output buffers
+    LexState lex;              // spec-file lexer/parser state (lex.i /clex/, cchars.i)
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;
