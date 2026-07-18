@@ -1,12 +1,3 @@
-
- X-13ARIMA-SEATS Seasonal Adjustment Program
- Version Number 1.1 Build 61
- Execution began  Jul 18, 2026  15.00.09 
-
-  Reading input spec file from airline_automdl-aictest-x11.spc
-  Storing any program output into airline_automdl-aictest-x11.out
-  Storing any program error messages into airline_automdl-aictest-x11.err
-  ERROR: Input record longer than limit :         133
-  Program error(s) halt execution for airline_automdl-aictest-x11.spc
-
- Check error file airline_automdl-aictest-x11.err
+version https://git-lfs.github.com/spec/v1
+oid sha256:ead011a7fd26e4e94505c1e9a078107d25152878aa849edfb5984d476927ed8b
+size 767

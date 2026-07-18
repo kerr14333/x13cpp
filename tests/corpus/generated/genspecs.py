@@ -88,8 +88,23 @@ SERIES = {
 # ---------------------------------------------------------------------------
 # Block rendering helpers.
 # ---------------------------------------------------------------------------
-def _tbl(names):
-    return "(" + " ".join(names) + ")"
+def _tbl(names, indent="    ", first_prefix_len=9):
+    """Render a (name name ...) list wrapped to stay under X-13's 132-char
+    input-record limit (longer lines abort the run with an error that goes
+    only to stdout: "ERROR: Input record longer than limit :  133")."""
+    limit = 100  # conservative: leaves room for the two-space block indent
+    out_lines, cur = [], []
+    cur_len = first_prefix_len + 1
+    for n in names:
+        if cur and cur_len + len(n) + 1 > limit:
+            out_lines.append(" ".join(cur))
+            cur, cur_len = [], len(indent)
+        cur.append(n)
+        cur_len += len(n) + 1
+    if cur:
+        out_lines.append(" ".join(cur))
+    joiner = "\n" + indent
+    return "(" + joiner.join(out_lines) + ")"
 
 
 def spec(name, arglines, *, save_key=None, savelog=False):

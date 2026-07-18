@@ -16,6 +16,8 @@ automdl{
 }
 seats{
   print = all
-  save = (s12 stc s10 pss s13 psi s11 sec s14 psc s16 psa tfd sfd ofd afd yfd s18 sta wkf mdc pic pis pit pia gaf gac gtf gtc tac ttc faf fac ftf ftc dor dsa dtr ssm cyc ltt sse ase tse cse se2 se3 stl)
+  save = (s12 stc s10 pss s13 psi s11 sec s14 psc s16 psa tfd sfd ofd afd yfd s18 sta wkf mdc pic
+    pis pit pia gaf gac gtf gtc tac ttc faf fac ftf ftc dor dsa dtr ssm cyc ltt sse ase tse cse se2
+    se3 stl)
   savelog = all
 }

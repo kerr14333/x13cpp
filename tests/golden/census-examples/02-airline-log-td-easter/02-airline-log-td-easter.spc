@@ -1,23 +1,3 @@
-# Census X-13ARIMA-SEATS manual — canonical airline example.
-# Log transform, trading-day + Easter regression, (0 1 1)(0 1 1) airline
-# ARIMA model, then X-11 seasonal adjustment using the regARIMA extension.
-series{
-  title  = "International Airline Passengers"
-  file   = "airline.dat"
-  start  = 1949.01
-  period = 12
-}
-transform{
-  function = log
-}
-regression{
-  variables = (td easter[8])
-}
-arima{
-  model = (0 1 1)(0 1 1)
-}
-estimate{ }
-forecast{
-  maxlead = 12
-}
-x11{ }
+version https://git-lfs.github.com/spec/v1
+oid sha256:e33666322c896ccdc01d5201ade6e3eccec5fdb7d56418417f3d2c63c25ed9e3
+size 478

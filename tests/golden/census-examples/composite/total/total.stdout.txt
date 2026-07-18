@@ -1,12 +1,3 @@
-
- X-13ARIMA-SEATS Seasonal Adjustment Program
- Version Number 1.1 Build 61
- Execution began  Jul 18, 2026  15.00.07 
-
-  Reading input spec file from total.spc
-  Storing any program output into total.out
-  Storing any program error messages into total.err
-
- Line    7:    title  = "Total Sales (North + South)"
-                    ^
- ERROR:  No component series were specified for composite adjustment.
+version https://git-lfs.github.com/spec/v1
+oid sha256:24fc7468644287b78748a86048b7e9b87f7371671d98289176ada014c9bb452b
+size 414

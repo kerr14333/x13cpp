@@ -1,15 +1,3 @@
-# EDGE CASE: series at exactly the program's maximum monthly length.
-# POBS = PYR1 * PSP = 65 * 12 = 780 (oracle/fortran/srslen.prm). This series
-# has exactly 780 monthly observations (1950.01 - 2014.12), sitting right at the
-# limit. Parity must hold at the boundary.
-series{
-  title  = "Synthetic monthly series at the 780-observation limit"
-  file   = "long780.dat"
-  start  = 1950.01
-  period = 12
-}
-transform{
-  function = auto
-}
-automdl{ }
-x11{ }
+version https://git-lfs.github.com/spec/v1
+oid sha256:c45c5dba3fc30385a02494d49b2928ec1f945324e0d6821e5dc647846ed32bc2
+size 454

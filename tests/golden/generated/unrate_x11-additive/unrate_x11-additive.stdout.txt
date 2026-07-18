@@ -1,12 +1,3 @@
-
- X-13ARIMA-SEATS Seasonal Adjustment Program
- Version Number 1.1 Build 61
- Execution began  Jul 18, 2026  15.00.12 
-
-  Reading input spec file from unrate_x11-additive.spc
-  Storing any program output into unrate_x11-additive.out
-  Storing any program error messages into unrate_x11-additive.err
-  ERROR: Input record longer than limit :         133
-  Program error(s) halt execution for unrate_x11-additive.spc
-
- Check error file unrate_x11-additive.err
+version https://git-lfs.github.com/spec/v1
+oid sha256:ea9b7e513d061252ba1541e9ea32ea316ef010219ca3dd054c171b94f7677d84
+size 648

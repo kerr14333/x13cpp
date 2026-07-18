@@ -1,15 +1,3 @@
-
- X-13ARIMA-SEATS Seasonal Adjustment Program
- Version Number 1.1 Build 61
- Execution began  Jul 18, 2026  15.00.05 
-
-  Reading input spec file from 01-basic-x11.spc
-  Storing any program output into 01-basic-x11.out
-  Storing any program error messages into 01-basic-x11.err
-  Storing any diagnostics output into 01-basic-x11.udg
-
-  
- WARNING: At least one visually significant trading day peak has been
-          found in one or more of the estimated spectra.
-
- Execution complete for 01-basic-x11.spc at  Jul 18, 2026  15.00.06 
+version https://git-lfs.github.com/spec/v1
+oid sha256:fc03930d35d3b2ff1757a196a2223dc1cb3625d57aa04ef0ddfa40368c1fa141
+size 547

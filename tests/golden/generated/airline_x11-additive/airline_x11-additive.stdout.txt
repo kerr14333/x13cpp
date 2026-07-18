@@ -1,12 +1,3 @@
-
- X-13ARIMA-SEATS Seasonal Adjustment Program
- Version Number 1.1 Build 61
- Execution began  Jul 18, 2026  15.00.09 
-
-  Reading input spec file from airline_x11-additive.spc
-  Storing any program output into airline_x11-additive.out
-  Storing any program error messages into airline_x11-additive.err
-  ERROR: Input record longer than limit :         133
-  Program error(s) halt execution for airline_x11-additive.spc
-
- Check error file airline_x11-additive.err
+version https://git-lfs.github.com/spec/v1
+oid sha256:33b90ae323cf3da10b11905acccba62ad51b38a47d7e6071a5ba3f72f33c0bdb
+size 590

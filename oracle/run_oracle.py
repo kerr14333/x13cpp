@@ -74,6 +74,7 @@ class RunResult:
     manifest_path: str = ""
     stdout: str = ""
     stderr: str = ""
+    run_ok: bool = True
 
     @property
     def out_file(self) -> Optional[str]:
@@ -282,7 +283,19 @@ def run_oracle(
     binary_sha = sha256_of(binary) if not binary_missing else ""
     version = _detect_version(outdir, spec_base + ".out", stdout)
 
+    # The binary exits 0 even on fatal errors, and some fatal errors (e.g.
+    # "Input record longer than limit") are reported ONLY on stdout with an
+    # empty .err. A run is OK only if nothing error-shaped appears on stdout
+    # or in the .err file.
+    err_path = os.path.join(outdir, spec_base + ".err")
+    err_text = ""
+    if os.path.isfile(err_path):
+        err_text = open(err_path, encoding="utf-8", errors="replace").read()
+    run_ok = (not binary_missing and exit_code == 0
+              and "ERROR" not in stdout and "ERROR" not in err_text)
+
     manifest = {
+        "run_ok": run_ok,
         "spec": os.path.basename(spec),
         "spec_base": spec_base,
         "command": command,
@@ -315,6 +328,7 @@ def run_oracle(
         manifest_path=manifest_path,
         stdout=stdout,
         stderr=stderr,
+        run_ok=run_ok,
     )
 
 

@@ -1,8 +1,3 @@
-     Error messages generated from processing the X-13ARIMA-SEATS spec file
-     malformed-unknown-arg.spc:
-
-
-
- Line   11:    frobnicate  = 3
-               ^
- ERROR:  Argument name "frobnicate" not found
+version https://git-lfs.github.com/spec/v1
+oid sha256:d96daedca1e30a240cd3688b45af9027c50b30bb39e1470868d26fde3c5992c7
+size 213

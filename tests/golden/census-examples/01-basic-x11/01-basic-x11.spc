@@ -1,12 +1,3 @@
-# Census X-13ARIMA-SEATS manual — "Getting Started" example.
-# Basic X-11 seasonal adjustment of the airline series, all defaults.
-#
-# Run from this directory so the relative data path resolves:
-#   x13as -i 01-basic-x11 -o 01-basic-x11.out
-series{
-  title  = "International Airline Passengers"
-  file   = "airline.dat"
-  start  = 1949.01
-  period = 12
-}
-x11{ }
+version https://git-lfs.github.com/spec/v1
+oid sha256:14ab8cde004995aa03d8ce19546bc4d443446c23b62790ddebd5a186a39c1584
+size 364

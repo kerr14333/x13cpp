@@ -1,24 +1,3 @@
-# Census X-13ARIMA-SEATS manual — SEATS (ARIMA model-based) example.
-# Log transform, airline model, then SEATS seasonal adjustment.
-# NOTE: seats{} and x11{} are mutually exclusive — a spec may contain one
-# or the other, never both.
-series{
-  title  = "International Airline Passengers"
-  file   = "airline.dat"
-  start  = 1949.01
-  period = 12
-}
-transform{
-  function = log
-}
-regression{
-  variables = (td easter[8])
-}
-arima{
-  model = (0 1 1)(0 1 1)
-}
-estimate{ }
-forecast{
-  maxlead = 12
-}
-seats{ }
+version https://git-lfs.github.com/spec/v1
+oid sha256:f990970d2ecacb2d729763e44bbd4b07cbc5c25f52b2c8a3668e8fd581b86de6
+size 508

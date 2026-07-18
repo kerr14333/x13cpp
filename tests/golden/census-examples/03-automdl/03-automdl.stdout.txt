@@ -1,18 +1,3 @@
-
- X-13ARIMA-SEATS Seasonal Adjustment Program
- Version Number 1.1 Build 61
- Execution began  Jul 18, 2026  15.00.06 
-
-  Reading input spec file from 03-automdl.spc
-  Storing any program output into 03-automdl.out
-  Storing any program error messages into 03-automdl.err
-  Storing any diagnostics output into 03-automdl.udg
-
-  
- WARNING: At least one visually significant seasonal peak has been found
-          in the estimated spectrum of the regARIMA residuals.
-  
- WARNING: Visually significant seasonal and trading day peaks have 
-          been found in one or more of the estimated spectra.
-
- Execution complete for 03-automdl.spc at  Jul 18, 2026  15.00.06 
+version https://git-lfs.github.com/spec/v1
+oid sha256:83cf22ad7da940125840bb49b2da40787cb14662572bc6e04f549b9f9eed6202
+size 682

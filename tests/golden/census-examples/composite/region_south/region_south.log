@@ -1,11 +1,3 @@
-1
-    Log for X-13ARIMA-SEATS program (Version 1.1 Build 61)  Jul 18, 2026  15.00.06 
-    *-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*
-
-
-
- Type of  Series      Additional                   Series title
- Adjust.  Ident.      Identifiers
-
-
-  M-MLT    region -------- -------- Sales - South region                              
+version https://git-lfs.github.com/spec/v1
+oid sha256:9e1a1f8a2e56e3afed25dfffc7550410fe0f29879931eb8f91a4847a8cf07ccc
+size 365

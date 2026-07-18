@@ -1,10 +1,3 @@
-     Error messages generated from processing the X-13ARIMA-SEATS spec file
-     03-automdl.spc:
-
-
-  
- WARNING: At least one visually significant seasonal peak has been found
-          in the estimated spectrum of the regARIMA residuals.
-  
- WARNING: Visually significant seasonal and trading day peaks have 
-          been found in one or more of the estimated spectra.
+version https://git-lfs.github.com/spec/v1
+oid sha256:f19c465dd8ae06846de5a708c2df14ab502091a5e27af9ac3ab590278ba704b7
+size 381

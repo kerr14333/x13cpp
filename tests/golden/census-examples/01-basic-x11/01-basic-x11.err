@@ -1,7 +1,3 @@
-     Error messages generated from processing the X-13ARIMA-SEATS spec file
-     01-basic-x11.spc:
-
-
-  
- WARNING: At least one visually significant trading day peak has been
-          found in one or more of the estimated spectra.
+version https://git-lfs.github.com/spec/v1
+oid sha256:53cfb67461ec0320f71cc88a26fd79b945fac07771f3f9f24f258f914af9a88f
+size 238

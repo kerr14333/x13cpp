@@ -1,15 +1,3 @@
-
- X-13ARIMA-SEATS Seasonal Adjustment Program
- Version Number 1.1 Build 61
- Execution began  Jul 18, 2026  15.00.06 
-
-  Reading input spec file from region_north.spc
-  Storing any program output into region_north.out
-  Storing any program error messages into region_north.err
-  Storing any diagnostics output into region_north.udg
-
-  
- WARNING: At least one visually significant seasonal peak has been found
-          in the estimated spectrum of the regARIMA residuals.
-
- Execution complete for region_north.spc at  Jul 18, 2026  15.00.06 
+version https://git-lfs.github.com/spec/v1
+oid sha256:e562d7d602bb0db4a304f95edb435ca5e54fbf874357f3e9c64677c49c3e36d9
+size 556

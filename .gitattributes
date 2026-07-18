@@ -2,15 +2,13 @@
 # build: Linux containers, Windows, macOS). gfortran/g++/python/R all accept
 # LF on Windows.
 * text=auto eol=lf
-
 # Windows scripts that require CRLF
 *.ps1 text eol=crlf
 *.bat text eol=crlf
-
 # Vendored Fortran oracle source: keep byte-exact as imported
 oracle/fortran/** -text
-
 # Binary
 *.exe binary
 *.png binary
 *.gz binary
+tests/golden/** filter=lfs diff=lfs merge=lfs -text
