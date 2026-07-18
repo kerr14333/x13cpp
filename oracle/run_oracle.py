@@ -173,16 +173,30 @@ def run_oracle(
         shutil.rmtree(outdir)
     os.makedirs(outdir, exist_ok=True)
 
-    # Copy inputs into the (clean) run/bundle dir.
+    # Copy inputs into the (clean) run/bundle dir. Data files land at the
+    # bundle root, so ``file=`` references in the copied spec are rewritten to
+    # their basenames — the binary runs with cwd=bundle and would otherwise
+    # fail on paths like ``../data/airline.dat`` that were relative to the
+    # spec's original location.
     copied_inputs: List[str] = []
     dst_spec = os.path.join(outdir, os.path.basename(spec))
-    shutil.copy2(spec, dst_spec)
-    copied_inputs.append(os.path.basename(spec))
+    spec_text = open(spec, encoding="utf-8", errors="replace").read()
     for data_path in _referenced_data_files(spec):
         dst = os.path.join(outdir, os.path.basename(data_path))
         if os.path.abspath(dst) != os.path.abspath(data_path):
             shutil.copy2(data_path, dst)
         copied_inputs.append(os.path.basename(data_path))
+
+    def _rewrite_ref(m: "re.Match[str]") -> str:
+        ref = m.group(1)
+        base = os.path.basename(ref.replace("\\", "/"))
+        return m.group(0).replace(ref, base)
+
+    spec_text = _FILE_REF_RE.sub(_rewrite_ref, spec_text)
+    with open(dst_spec, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(spec_text)
+    shutil.copystat(spec, dst_spec)
+    copied_inputs.append(os.path.basename(spec))
     for extra in extra_inputs or []:
         if os.path.isfile(extra):
             shutil.copy2(extra, os.path.join(outdir, os.path.basename(extra)))

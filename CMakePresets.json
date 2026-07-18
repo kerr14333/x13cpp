@@ -1,0 +1,80 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 16, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "17",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "X13_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "rocky8-gcc8",
+      "displayName": "Rocky/RHEL 8 (gcc 8.5, C++17 baseline)",
+      "inherits": "base",
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "rocky9",
+      "displayName": "Rocky/RHEL 9 (gcc 11+)",
+      "inherits": "base",
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows (MSVC, /fp:precise)",
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64"
+    },
+    {
+      "name": "windows-rtools",
+      "displayName": "Windows (rtools44 mingw g++ 13)",
+      "inherits": "base",
+      "generator": "MinGW Makefiles",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "C:/rtools44/x86_64-w64-mingw32.static.posix/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "C:/rtools44/x86_64-w64-mingw32.static.posix/bin/g++.exe",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS (AppleClang / clang)",
+      "inherits": "base",
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "rocky8-gcc8", "configurePreset": "rocky8-gcc8" },
+    { "name": "rocky9", "configurePreset": "rocky9" },
+    { "name": "windows-msvc", "configurePreset": "windows-msvc" },
+    { "name": "windows-rtools", "configurePreset": "windows-rtools" },
+    { "name": "macos", "configurePreset": "macos" }
+  ],
+  "testPresets": [
+    { "name": "rocky8-gcc8", "configurePreset": "rocky8-gcc8", "output": { "outputOnFailure": true } },
+    { "name": "rocky9", "configurePreset": "rocky9", "output": { "outputOnFailure": true } },
+    { "name": "windows-msvc", "configurePreset": "windows-msvc", "output": { "outputOnFailure": true } },
+    { "name": "windows-rtools", "configurePreset": "windows-rtools", "output": { "outputOnFailure": true } },
+    { "name": "macos", "configurePreset": "macos", "output": { "outputOnFailure": true } }
+  ]
+}
