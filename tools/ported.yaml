@@ -166,7 +166,7 @@ dppsl: pending
 dsarma: pending
 dscal: pending
 dsolve: pending
-dtoc: pending
+dtoc: gated
 easaic: pending
 easter: pending
 editor: pending
@@ -472,7 +472,7 @@ prttd: pending
 prttrn: pending
 prtukp: pending
 prtxrg: pending
-punch: pending
+punch: gated
 putbak: ported
 putrev: pending
 putstr: ported
@@ -545,7 +545,7 @@ savotl: pending
 savpk: pending
 savspp: pending
 savstp: pending
-savtbl: pending
+savtbl: gated
 savtpk: pending
 savwkf: pending
 sceast: pending

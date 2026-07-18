@@ -3,6 +3,7 @@
 #define X13_CONTEXT_HPP
 #include "x13/x13error.hpp"
 #include "x13/channels.hpp"
+#include "x13/savestate.hpp"
 #include "common/gen/adj_cmn.hpp"
 #include "common/gen/adxser_cmn.hpp"
 #include "common/gen/agr_cmn.hpp"
@@ -103,6 +104,7 @@ struct X13Context {
     ChannelRegistry channels_; // Fortran unit-number output buffers
     LexState lex;              // spec-file lexer/parser state (lex.i /clex/, cchars.i)
     ParseSettings captured;    // M1 instrumentation: key parsed settings for the gate
+    SaveState saves;           // M2: captured save tables (numeric surface + text)
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

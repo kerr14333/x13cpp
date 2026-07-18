@@ -66,6 +66,12 @@ add_executable(x13parse tools/x13parse.cpp)
 target_link_libraries(x13parse PRIVATE x13core)
 
 # ---------------------------------------------------------------------------
+# x13run_m2 -- M2 CLI harness: run the pre-model phase and write save tables.
+# ---------------------------------------------------------------------------
+add_executable(x13run_m2 tools/x13run_m2.cpp)
+target_link_libraries(x13run_m2 PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
 # Unit tests (self-contained microtest framework; no external dependencies).
 # ---------------------------------------------------------------------------
 option(X13_BUILD_TESTS "Build unit tests" ON)

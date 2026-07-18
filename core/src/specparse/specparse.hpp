@@ -196,6 +196,11 @@ inline std::string cur_tok(const X13Context& ctx) {
 bool parse_spec(X13Context& ctx, const std::string& spec_text,
                 const std::string& infile_name);
 
+// M2 pre-model phase (core/src/driver/run_pre_model.cpp): parse, then run the
+// reachable pre-model table/save output (currently table a1 -- the original
+// series over the analyzed span). `base` is the spec base name (Serno/Cursrs).
+bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base);
+
 } // namespace x13
 
 #endif // X13_SPECPARSE_SPECPARSE_HPP

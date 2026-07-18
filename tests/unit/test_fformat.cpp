@@ -181,6 +181,14 @@ const std::vector<Case>& cases() {
         {"(E12.3E3)",{1.5e-120}},    // 3-digit exponent
         {"(1PE12.4)",{12345.678}},   // scale factor
         {"(1PE12.4)",{-0.00012345}},
+        // Sign control (S / SP / SS)
+        {"(SP,E22.15)", {112.0}},     // forced plus (save-file format)
+        {"(SP,E22.15)", {-112.0}},    // negative unaffected
+        {"(SP,I6)",     {42}},        // forced plus on integer
+        {"(SP,I6)",     {-42}},
+        {"(SP,F8.2)",   {3.14}},      // forced plus on fixed
+        {"(SP,SS,F8.2)",{3.14}},      // SS cancels SP
+        {"(SP,I6,SS,I6)",{7, 7}},     // switches mid-record
         // General
         {"(G12.4)", {12345.678}},    // -> E branch
         {"(G12.4)", {1.2345}},       // -> F branch

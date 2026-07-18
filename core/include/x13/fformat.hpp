@@ -76,7 +76,7 @@ namespace detail {
 struct Desc {
     enum Type { Int, Real_F, Real_E, Real_G, Char, Logical, Space, Literal,
                 Slash, TabAbs, TabRight, TabLeft, Scale, GroupOpen, GroupClose,
-                Colon } type;
+                Colon, Sign } type;
     int repeat = 1;   // repeat count
     int w = 0;        // field width
     int d = 0;        // digits after decimal
@@ -191,6 +191,14 @@ private:
             case 'A': d.type = Desc::Char;   read_optional_w(d); break;
             case 'L': d.type = Desc::Logical; read_optional_w(d); break;
             case 'X': d.type = Desc::Space;  d.w = repeat; break;   // nX -> repeat spaces
+            case 'S':
+                // Sign control: S / SS -> suppress optional plus (d.m=0);
+                // SP -> print optional plus (d.m=1). No field width.
+                d.type = Desc::Sign;
+                if (p_ < s_.size() && (s_[p_] == 'P' || s_[p_] == 'p')) { ++p_; d.m = 1; }
+                else if (p_ < s_.size() && (s_[p_] == 'S' || s_[p_] == 's')) { ++p_; d.m = 0; }
+                else { d.m = 0; }
+                break;
             case 'T':
                 if (p_ < s_.size() && (s_[p_]=='R'||s_[p_]=='r')) { ++p_; d.type=Desc::TabRight; bool g; d.w=read_int(g); }
                 else if (p_ < s_.size() && (s_[p_]=='L'||s_[p_]=='l')) { ++p_; d.type=Desc::TabLeft; bool g; d.w=read_int(g); }
@@ -241,20 +249,20 @@ inline std::string right_justify(const std::string& s, int w) {
 }
 
 // Iw / Iw.m
-inline std::string fmt_int(long long v, int w, int m, bool has_m) {
+inline std::string fmt_int(long long v, int w, int m, bool has_m, bool plus = false) {
     bool neg = v < 0;
     unsigned long long uv = neg ? (unsigned long long)(-(v+1)) + 1ULL : (unsigned long long)v;
     std::string digits = std::to_string(uv);
     if (has_m && (int)digits.size() < m) digits = std::string(m - digits.size(), '0') + digits;
     // Iw.m with m==0 and value 0 => blanks
     if (has_m && m == 0 && v == 0) digits = "";
-    std::string body = (neg ? "-" : "") + digits;
+    std::string body = (neg ? "-" : (plus ? "+" : "")) + digits;
     if ((int)body.size() > w) return fill_stars(w);
     return right_justify(body, w);
 }
 
 // Fw.d  (scale = current P scale factor)
-inline std::string fmt_f(double v, int w, int d, int scale) {
+inline std::string fmt_f(double v, int w, int d, int scale, bool plus = false) {
     if (std::isnan(v)) { std::string s = "NaN"; return (int)s.size() > w ? fill_stars(w) : right_justify(s, w); }
     if (std::isinf(v)) { std::string s = v < 0 ? "-Inf" : "Inf"; return (int)s.size() > w ? fill_stars(w) : right_justify(s, w); }
     double scaled = v;
@@ -267,6 +275,7 @@ inline std::string fmt_f(double v, int w, int d, int scale) {
     if (d == 0) body += '.';
     // Note: Fortran KEEPS the minus sign for a negative value that rounds to zero
     // (e.g. F10.4 of -1e-5 -> "-0.0000"), matching snprintf. Do not strip it.
+    if (plus && !body.empty() && body[0] != '-') body = "+" + body;
     if ((int)body.size() > w) return fill_stars(w);
     return right_justify(body, w);
 }
@@ -295,7 +304,8 @@ inline std::string exp_field(int exp, int e, char letter) {
 // Default (scale k==0): mantissa normalized to [0.1,1), form "0.d1..dd" so there
 // are d fractional digits. Scale k>0 (e.g. 1P): k integer digits, (d-k+1)
 // fractional digits, mantissa in [10^(k-1),10^k). Exponent field via exp_field.
-inline std::string fmt_e(double v, int w, int d, int e, int scale, char letter) {
+inline std::string fmt_e(double v, int w, int d, int e, int scale, char letter,
+                         bool plus = false) {
     if (std::isnan(v) || std::isinf(v)) return fmt_f(v, w, d, 0);
     bool neg = std::signbit(v);
     double av = std::fabs(v);
@@ -332,7 +342,7 @@ inline std::string fmt_e(double v, int w, int d, int e, int scale, char letter) 
             digits = "0." + sd;
         }
     }
-    std::string body = (neg ? "-" : "") + digits + exp_field(exp, e, letter);
+    std::string body = (neg ? "-" : (plus ? "+" : "")) + digits + exp_field(exp, e, letter);
     if ((int)body.size() > w) return fill_stars(w);
     return right_justify(body, w);
 }
@@ -383,6 +393,7 @@ public:
         line_.clear();
         col_ = 0;
         scale_ = 0;
+        sign_ = 0;
         ai_ = 0;
         args_ = &args;
         run(descs_, 0, descs_.size(), /*top=*/true);
@@ -396,6 +407,7 @@ private:
     std::string line_;
     int col_ = 0;
     int scale_ = 0;
+    int sign_ = 0;   // 0 = suppress optional plus (SS/S), 1 = print plus (SP)
     std::size_t ai_ = 0;
     const std::vector<FmtArg>* args_ = nullptr;
 
@@ -451,6 +463,7 @@ private:
                     // written at a higher column (handled by emit()).
                     case detail::Desc::Space: col_ += std::max(1, d.w); break;
                     case detail::Desc::Scale: scale_ = d.m; break;
+                    case detail::Desc::Sign: sign_ = d.m; break;
                     case detail::Desc::TabAbs: col_ = d.w > 0 ? d.w - 1 : 0; break;
                     case detail::Desc::TabRight: col_ += d.w; break;
                     case detail::Desc::TabLeft: col_ = std::max(0, col_ - d.w); break;
@@ -514,11 +527,11 @@ private:
         const FmtArg& a = next_arg();
         switch (d.type) {
             case detail::Desc::Int:
-                emit(detail::fmt_int(a.as_int(), d.w, d.m, d.m > 0 || (d.has_d))); break;
+                emit(detail::fmt_int(a.as_int(), d.w, d.m, d.m > 0 || (d.has_d), sign_ == 1)); break;
             case detail::Desc::Real_F:
-                emit(detail::fmt_f(a.as_real(), d.w, d.d, scale_)); break;
+                emit(detail::fmt_f(a.as_real(), d.w, d.d, scale_, sign_ == 1)); break;
             case detail::Desc::Real_E:
-                emit(detail::fmt_e(a.as_real(), d.w, d.d, d.e, scale_, 'E')); break;
+                emit(detail::fmt_e(a.as_real(), d.w, d.d, d.e, scale_, 'E', sign_ == 1)); break;
             case detail::Desc::Real_G:
                 emit(detail::fmt_g(a.as_real(), d.w, d.d, d.e, scale_)); break;
             case detail::Desc::Char: {

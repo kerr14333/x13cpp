@@ -1,0 +1,123 @@
+"""M2 gate: the C++ pre-model table/save phase (x13run_m2) vs the oracle goldens.
+
+This milestone slice ports the table-output save path (savtbl.f / punch.f /
+dtoc.f) and produces table **a1** -- the original series over the analyzed span
+-- both as the library's numeric data surface and as the byte-identical /rdb
+save file. For every corpus spec whose golden bundle contains a ``<base>.a1``
+save file, this test runs ``x13run_m2`` and checks that the produced ``.a1``:
+
+  * is byte-identical to the golden (line endings normalized: the only allowed
+    difference is CRLF vs LF, an OS text-mode artifact), and
+  * matches numerically at rtol 1e-8, period-key exact (via x13compare).
+
+a1 is a pre-model table (raw original series over the span), so it is reachable
+without ARMA estimation and is produced for essentially every corpus spec.
+
+Run:  pytest tests/parity/test_m2_tables.py -v
+"""
+from __future__ import annotations
+
+import math
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+import pytest
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
+_CORPUS = os.path.join(_REPO, "tests", "corpus")
+_GOLDEN = os.path.join(_REPO, "tests", "golden")
+_COMPARE = os.path.join(_REPO, "tests", "compare")
+
+if _COMPARE not in sys.path:
+    sys.path.insert(0, _COMPARE)
+from x13compare import parse_save  # noqa: E402
+
+RTOL = 1e-8
+
+
+def _find_binary() -> str:
+    cands = [
+        os.path.join(_REPO, "build", "x13run_m2.exe"),
+        os.path.join(_REPO, "build", "x13run_m2"),
+        os.path.join(_REPO, "build", "Release", "x13run_m2.exe"),
+    ]
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    env = os.environ.get("X13RUN_M2")
+    if env and os.path.exists(env):
+        return env
+    raise FileNotFoundError(
+        "x13run_m2 binary not found; build it first (cmake --build build).")
+
+
+BIN = _find_binary()
+
+
+@pytest.fixture(scope="session")
+def workdir():
+    """An isolated copy of the corpus tree the tool can write save files into."""
+    d = tempfile.mkdtemp(prefix="x13m2_")
+    shutil.copytree(_CORPUS, os.path.join(d, "corpus"))
+    yield os.path.join(d, "corpus")
+    shutil.rmtree(d, ignore_errors=True)
+
+
+def _golden_dir(spc: str) -> str:
+    rel = os.path.relpath(spc, _CORPUS)
+    return os.path.join(_GOLDEN, rel[:-4])
+
+
+def _specs_with_a1():
+    out = []
+    for root, _dirs, files in os.walk(_CORPUS):
+        for f in files:
+            if not f.endswith(".spc"):
+                continue
+            spc = os.path.join(root, f)
+            base = f[:-4]
+            if os.path.exists(os.path.join(_golden_dir(spc), base + ".a1")):
+                out.append(spc)
+    return sorted(out)
+
+
+_A1_SPECS = _specs_with_a1()
+
+
+@pytest.mark.parametrize("spc", _A1_SPECS, ids=lambda p: os.path.relpath(p, _CORPUS))
+def test_a1_save_matches_oracle(spc, workdir):
+    rel = os.path.relpath(spc, _CORPUS)
+    base = os.path.basename(spc)[:-4]
+    work_spc = os.path.join(workdir, rel)
+
+    proc = subprocess.run([BIN, work_spc], capture_output=True, text=True)
+    assert "OUTCOME: OK" in proc.stdout, f"{rel}: run failed\n{proc.stdout}\n{proc.stderr}"
+
+    mine = os.path.join(os.path.dirname(work_spc), base + ".a1")
+    gold = os.path.join(_golden_dir(spc), base + ".a1")
+    assert os.path.exists(mine), f"{rel}: no .a1 produced"
+
+    a = open(mine, "rb").read().replace(b"\r\n", b"\n")
+    b = open(gold, "rb").read().replace(b"\r\n", b"\n")
+    assert a == b, f"{rel}: .a1 not byte-identical (LF-normalized)"
+
+    # Numeric parity, period-key exact, rtol 1e-8.
+    ma = parse_save.parse_save(a.decode("utf-8", "replace")).values
+    mb = parse_save.parse_save(b.decode("utf-8", "replace")).values
+    assert set(ma) == set(mb), f"{rel}: period keys differ"
+    for k in mb:
+        assert math.isclose(ma[k], mb[k], rel_tol=RTOL, abs_tol=0.0), (
+            f"{rel}: value mismatch at {k}: {ma[k]!r} vs {mb[k]!r}")
+
+
+def test_a1_corpus_coverage():
+    """Guard: the gate actually exercises a broad set of specs."""
+    assert len(_A1_SPECS) >= 30, f"expected >=30 a1 specs, found {len(_A1_SPECS)}"
+
+
+if __name__ == "__main__":
+    sys.exit(pytest.main([__file__, "-v"]))
