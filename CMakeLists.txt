@@ -59,6 +59,13 @@ target_include_directories(x13core PUBLIC
 target_link_libraries(x13core PUBLIC x13_fp_flags x13_warnings)
 
 # ---------------------------------------------------------------------------
+# x13parse -- M1 CLI harness: parse a spec file and print the .err channel,
+# fatal/ok outcome, and captured key settings (used by the M1 parity gate).
+# ---------------------------------------------------------------------------
+add_executable(x13parse tools/x13parse.cpp)
+target_link_libraries(x13parse PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
 # Unit tests (self-contained microtest framework; no external dependencies).
 # ---------------------------------------------------------------------------
 option(X13_BUILD_TESTS "Build unit tests" ON)

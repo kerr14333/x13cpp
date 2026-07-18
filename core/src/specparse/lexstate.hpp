@@ -101,6 +101,29 @@ struct LexState {
     void load(const std::string& text);
 };
 
+// Instrumentation (not a Fortran COMMON): key parsed settings captured during
+// M1 spec parsing so x13parse can echo them and the parity harness can check
+// them. Populated by the spec readers as they consume arguments.
+struct ParseSettings {
+    int period = 0;                     // Sp
+    int nobs = 0;                       // Nobs
+    std::array<int, 2> series_start{{0, 0}};  // Begsrs (year, period)
+    std::array<int, 2> span_start{{0, 0}};    // Begspn
+    std::array<int, 2> span_end{{0, 0}};      // Endspn
+    bool has_series = false;
+    std::string data_file;
+    std::string title;
+    std::string transform_function;     // transform{ function = ... }
+    std::string model_desc;             // arima{ model = ... } text
+    int forecast_maxlead = -1;          // forecast{ maxlead = ... }
+    std::string x11_mode;               // x11{ mode = ... }
+    bool has_x11 = false;
+    bool has_seats = false;
+    std::vector<std::string> regression_vars;   // regression{ variables = ... }
+    std::vector<std::string> aictest_vars;      // regression{ aictest = ... }
+    std::vector<std::string> spec_order;        // spec names in order encountered
+};
+
 } // namespace x13
 
 #endif // X13_SPECPARSE_LEXSTATE_HPP

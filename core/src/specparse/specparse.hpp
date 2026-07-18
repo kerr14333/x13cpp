@@ -163,9 +163,38 @@ void getsvl(X13Context& ctx, int lsvsrs, int nsvsrs, bool& locok);
 // --------------------------------------------------------------------------
 // Convenience accessors for the current token text.
 // --------------------------------------------------------------------------
+// --------------------------------------------------------------------------
+// Spec readers (gtinpt dispatch targets). All are M1 spec-parser ports; deep
+// estimation/X11/SEATS processing beyond argument parsing is deferred.
+// --------------------------------------------------------------------------
+void getsrs(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr, bool ldata,
+            std::string& dtafil, bool& inptok);
+void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inptok);
+
+// Simple spec readers: each consumes its arguments token-faithfully and
+// captures key settings. Signature reduced to (ctx, inptok).
+void gt_transform(X13Context& ctx, bool& inptok);   // transform{} (getadj)
+void gt_regression(X13Context& ctx, bool& inptok);  // regression{} (getreg)
+void gt_arima(X13Context& ctx, bool& inptok);        // arima{} (gtarma+getmdl)
+void gt_automdl(X13Context& ctx, bool& inptok);      // automdl{} (gtauto)
+void gt_estimate(X13Context& ctx, bool& inptok);     // estimate{} (gtestm)
+void gt_outlier(X13Context& ctx, bool& inptok);      // outlier{} (gtotlr)
+void gt_forecast(X13Context& ctx, bool& inptok);     // forecast{} (gtfcst)
+void gt_x11(X13Context& ctx, bool& inptok);          // x11{} (getx11)
+void gt_seats(X13Context& ctx, bool& inptok);        // seats{} (gtseat)
+void gt_check(X13Context& ctx, bool& inptok);        // check{} (getchk)
+void gt_identify(X13Context& ctx, bool& inptok);     // identify{} (getid)
+void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok); // composite{}
+void gt_generic(X13Context& ctx, std::string_view argdic, const int* argptr,
+                int narg, bool& inptok);             // shared arg-consumer
+
 inline std::string cur_tok(const X13Context& ctx) {
     return ctx.lex.nxttok.substr(0, static_cast<std::size_t>(ctx.lex.nxtkln));
 }
+
+// M1 library entry point (core/src/driver/parse_spec.cpp).
+bool parse_spec(X13Context& ctx, const std::string& spec_text,
+                const std::string& infile_name);
 
 } // namespace x13
 

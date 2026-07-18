@@ -102,6 +102,7 @@ struct X13Context {
     ErrorState error_state;    // program-wide fatal flag (see error_cmn too)
     ChannelRegistry channels_; // Fortran unit-number output buffers
     LexState lex;              // spec-file lexer/parser state (lex.i /clex/, cchars.i)
+    ParseSettings captured;    // M1 instrumentation: key parsed settings for the gate
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;
