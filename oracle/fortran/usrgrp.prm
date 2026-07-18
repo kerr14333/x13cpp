@@ -1,0 +1,10 @@
+      CHARACTER UTYDIC*320
+      INTEGER utyptr,PUTY
+      PARAMETER(PUTY=15)
+      DIMENSION utyptr(0:PUTY)
+      PARAMETER(UTYDIC='User-defined SeasonalUser-defined HolidayUser-de
+     &fined Holiday Group 2User-defined Holiday Group 3User-defined Holi
+     &day Group 4User-defined Holiday Group 5User-defined ConstantUser-d
+     &efined Trading DayUser-defined LOMUser-defined LOQUser-defined Lea
+     &p YearUser-defined AOUser-defined LSUser-defined SOUser-defined Tr
+     &ansitory')

@@ -1,0 +1,15 @@
+c-----------------------------------------------------------------------
+c     pointer for tables, access codes
+c-----------------------------------------------------------------------
+c     BRKDSP, BRKDS2 =
+c              table number where break in the table dictionary occurs
+c              this is done to keep the length of the table dictionaries
+c              under 2000 characters, a requirement for the VAX/VMS
+c              FORTRAN
+c-----------------------------------------------------------------------
+      INTEGER BRKDSP
+      PARAMETER (BRKDSP=86)
+c-----------------------------------------------------------------------
+      INTEGER BRKDS2
+      PARAMETER (BRKDS2=232)
+c-----------------------------------------------------------------------

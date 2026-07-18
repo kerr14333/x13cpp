@@ -1,0 +1,14 @@
+C     Last change:  BCM  5 Apr 2005 1:45 pm
+c-----------------------------------------------------------------------
+c     Dgf - vector of degrees of freedom
+c     Qs - vector of either Ljung-Box or Box-Pierce Q statistics
+c          (controlled by Iqtype in arima.cmn)
+c     Qpv - p-value for Q statistics - will be > 0 for all lags with
+c           degrees of freedom > 0
+c-----------------------------------------------------------------------
+      INTEGER Dgf
+      DOUBLE PRECISION C0,Qs,Qpv
+      DIMENSION Dgf(PR),Qs(PR),Qpv(PR)
+c-----------------------------------------------------------------------
+      COMMON /autoq / C0,Qs,Qpv,Dgf
+c-----------------------------------------------------------------------

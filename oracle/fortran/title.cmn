@@ -1,0 +1,26 @@
+C-----------------------------------------------------------------------
+c     Newpag - character that sets new page
+c     Title  - Title printed on each page of output
+c     Serno  - Name of series 
+c     Ttlfmt - format for title
+C-----------------------------------------------------------------------
+      CHARACTER Newpg*1,Title*(80),Serno*(64),Ttlfmt*(37)
+C-----------------------------------------------------------------------
+c     Kpage  - page number
+c     Ntitle - length of title vector
+c     Nser   - length of series name
+C-----------------------------------------------------------------------
+      INTEGER Kpage,Ntitle,Nser
+C-----------------------------------------------------------------------
+c     Lpage -  logical variable which indicates if a title will be
+c              printed on each page
+c     Lwdprt - logical variable which indicates if a wide printout
+c              (132 characters) will be done
+C-----------------------------------------------------------------------
+      LOGICAL Lpage,Lwdprt,Prt1ps,Lcmpaq
+C-----------------------------------------------------------------------
+      COMMON /rote  / Kpage,Ntitle,Nser,Lpage,Lwdprt,Prt1ps,Lcmpaq,
+     &                Newpg
+      COMMON /crote / Title,Serno,Ttlfmt
+C-----------------------------------------------------------------------
+

@@ -1,0 +1,39 @@
+# Build outputs
+build/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+
+# Oracle build artifacts (source stays tracked)
+oracle/fortran/*.o
+oracle/build-*/
+
+# Golden outputs are LFS-tracked; scratch runs are not
+tests/parity/_runs/
+tests/compare/_reports/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+wheelhouse/
+.pytest_cache/
+
+# R
+r-pkg/*.Rcheck/
+r-pkg/*.tar.gz
+*.Rproj.user/
+.RData
+.Rhistory
+
+# Editors/OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

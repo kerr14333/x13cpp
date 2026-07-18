@@ -1,0 +1,6 @@
+      CHARACTER URGDIC*89
+      INTEGER urgptr,PURG
+      PARAMETER(PURG=16)
+      DIMENSION urgptr(0:PURG)
+      PARAMETER(URGDIC='constantseasonaltdlomloqlpyearholidayholiday2hol
+     &iday3holiday4holiday5aolssotransitoryuser')

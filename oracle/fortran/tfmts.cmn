@@ -1,0 +1,9 @@
+c-----------------------------------------------------------------------
+      CHARACTER Ifmt1*110,Ifmt2*110,Ifmt3*132,Fmtcol*110,Colhdr*22
+      INTEGER Iptr,Tblcol,Tblwid,Nfmt1,Nfmt2,Disp1,Disp2,Disp3
+      DIMENSION Colhdr(PSP+2)
+c-----------------------------------------------------------------------
+      COMMON /tfmt  / Iptr,Tblcol,Tblwid,Nfmt1,Nfmt2,Ifmt1,Ifmt2,Ifmt3
+      COMMON /tfmtd / Disp1,Disp2,Disp3
+      COMMON /colhdr/ Fmtcol,Colhdr
+c-----------------------------------------------------------------------
