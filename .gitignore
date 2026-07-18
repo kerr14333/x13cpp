@@ -37,3 +37,6 @@ r-pkg/*.tar.gz
 .idea/
 Thumbs.db
 .DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
