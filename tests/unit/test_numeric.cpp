@@ -1596,4 +1596,48 @@ TEST("mdlfin: ARMA model-dimension finalize for estimation") {
     CHECK_EQ(m.nintvl, 0); CHECK_EQ(m.nextvl, 0);
 }
 
+// ---- estimate{} spec reader end-to-end (gt_estimate + mdlfin, via parse_spec).
+// Parses a real spec (inline data + arima(0 1 1) + estimate{}) through the whole
+// M1/M2 front end and asserts the estimation-control state rgarma consumes.
+// Verifies the spec->estimate wiring: knob application, tol reconciliation, and
+// the mdlfin finalize -- the pieces that let run_m2 feed a real model to rgarma.
+TEST("estimate{}: spec reader applies knobs + mdlfin finalize") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    const char* spec =
+        "series{\n"
+        "  start = 1990.1\n"
+        "  period = 12\n"
+        "  data = (\n"
+        "   112 118 132 129 121 135 148 148 136 119 104 118\n"
+        "   115 126 141 135 125 149 170 170 158 133 114 140\n"
+        "   145 150 178 163 172 178 199 199 184 162 146 166 )\n"
+        "}\n"
+        "arima{ model = (0 1 1) }\n"
+        "estimate{ maxiter=77 maxnliter=33 tol=1e-4 nltol=1e-6 exact=ma "
+        "step=0.001 }\n";
+    bool ok = parse_spec(ctx, spec, "estimate-test.spc");
+    CHECK(ok);
+    auto& m = ctx.model;
+
+    // Applied estimate{} knobs.
+    CHECK_EQ(ctx.arima.mxiter, 77);
+    CHECK_EQ(ctx.arima.mxnlit, 33);
+    CHECK(rclose(m.tol, 1e-4, 1e-15));
+    CHECK(rclose(m.stepln, 1e-3, 1e-15));
+    CHECK(ctx.arima.lestim);          // default (no parms arg)
+    // exact = ma  ->  Lextar off, Lextma on.
+    CHECK(!m.lextar);
+    CHECK(m.lextma);
+    // nltol supplied -> hvnltl: Nltol0 = Nltol (gtestm.f tail).
+    CHECK(rclose(m.nltol, 1e-6, 1e-15));
+    CHECK(rclose(m.nltol0, 1e-6, 1e-15));
+
+    // mdlfin on (0 1 1): Mxarlg=0, Mxdflg=1, Mxmalg=1; exact=ma (Lextar=F).
+    CHECK(!m.lar);
+    CHECK(m.lma);
+    CHECK_EQ(m.nintvl, 1);   // Mxdflg + Mxarlg
+    CHECK_EQ(m.nextvl, 1);   // Lextma ? Mxmalg : 0
+}
+
 int main() { return mt::run_all(); }

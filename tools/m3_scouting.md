@@ -283,24 +283,31 @@ builds the ARMA operators (getmdl → insopr/mkoprt/maxlag sets Mdl/Opr/Arimal/
 Arimaf/Oprfac/Nopr + Mxarlg/Mxdflg/Mxmalg), and builds `[X:y]` into
 `ctx.mdldat.xy` with `Ncxy` (regvar). What rgarma additionally needs:
 
-- **Estimate-spec defaults** (gtinpt.f:271–279, a flat block): `Mxiter=1500`,
-  `Mxnlit=40`, `Stepln=0`, `Tol=DFTOL(1e-5)`, `Nltol0=100·DFTOL`, `Nltol=DFTOL`,
-  `Lextar=T`, `Lextma=T`, `Lestim=T`. Then the `estimate{}` spec reader (getest/
-  gtestm) overrides these — **not yet ported**.
-- **Model-finalize block** (gtinpt.f:220, ~8 lines, self-contained, pure int/bool):
-  `Lar=Lextar∧Mxarlg>0`, `Lma=Lextma∧Mxmalg>0`; if `Lextar`: `Nintvl=Mxdflg`,
-  `Nextvl=Mxarlg+Mxmalg`; else `Nintvl=Mxdflg+Mxarlg`, `Nextvl= Lextma?Mxmalg:0`.
-  Same logic in mdlset.f:190–196. **Not yet ported** — the cheapest gap-closer.
-- **`Nb`** (regression β count): confirm provenance — `Ncxy-1`, or set by regvar/
-  loadxr. rgarma reads `Nb` for the olsreg-vs-yprmy branch and `resid` column span.
+- **Estimate-spec defaults** (gtinpt.f:271–279) — **DONE** (gtinpt.cpp init):
+  `Mxiter=1500`, `Mxnlit=40`, `Stepln=0`, `Tol=DFTOL(1e-5)`, `Nltol0=100·DFTOL`,
+  `Nltol=DFTOL`, `Lextar=T`, `Lextma=T`, `Lestim=T`.
+- **Model-finalize block** (gtinpt.f:220) — **DONE** (`mdlfin`, gtinpt.cpp; test
+  `mdlfin:`): `Lar=Lextar∧Mxarlg>0`, `Lma=Lextma∧Mxmalg>0`; `Lextar`:
+  `Nintvl=Mxdflg`,`Nextvl=Mxarlg+Mxmalg`; else `Nintvl=Mxdflg+Mxarlg`,
+  `Nextvl=Lextma?Mxmalg:0`. Called at end of gtinpt.
+- **`estimate{}` reader** (gtestm.f) — **DONE** (`gt_estimate`, readers_spec.cpp;
+  test `estimate{}:` drives it through `parse_spec`). Applies maxiter/maxnliter/
+  tol/nltol/parms/exact/step + the tol-reconciliation tail; output/AIC/model-file
+  args (print/save/savelog/file/fix/k/removeconstant/outofsample) are token-
+  consumed with state application deferred to their milestones.
+- **`Nb`** (regression β count): confirm provenance — gtinpt init sets
+  `Nb=Ncoltl`, regvar sets `Ncxy`. Verify `Nb`/`Ncxy` post-regvar equal what
+  rgarma's olsreg-vs-yprmy branch + `resid` column span expect.
 - **Already handled inside rgarma:** `Tsrs` (written by resid from Xy), `Dnefob`,
   `Lndtcv`, `Nefobs=Nspobs-Nintvl`. **Default-OK from zero-init:** `Issap/Irev`
   (→ gudrun=T), `Lprier/Lprtit/Lhiddn` (deferred prints).
 
-**Suggested first integration step:** port the two flat blocks above (defaults +
-finalize) into the gtinpt slice, add the minimal `estimate{}` reader for the
-common knobs (`tol`, `maxiter`, `exact`), then an integration test: `run_m2` on
-`02-airline-log-td-easter.spc` → set Lestim → `rgarma` → compare estimated ARMA
-coefficients / Var / Lnlkhd against the oracle `.udg` (`arima.ar`/`arima.ma`/
-`likelihood.*`) via the x13compare harness. That is the first **real-data**
-end-to-end estimation parity — the M3 headline.
+**Remaining integration step (the M3 headline):** an end-to-end test — `run_m2`
+on an airline spec (e.g. `02-airline-log-td-easter.spc`, or a self-contained
+inline-data spec) → `rgarma` → compare the estimated ARMA coefficients / `Var` /
+`Lnlkhd` against the oracle `.udg` (`arima.ar`/`arima.ma`/`likelihood.*`) via the
+x13compare harness. Open questions to resolve there: (a) is `Tsrs` seeded from
+the transformed series before rgarma, or does run_m2 need to copy `trnsrs`→`Tsrs`?
+(b) does Xy need differencing applied first, or does armafl's internal filtering
+suffice given `Nintvl`? (c) `Nb`/`Ncxy` consistency post-regvar. That is the
+first **real-data** end-to-end estimation parity.

@@ -8,6 +8,7 @@
 // lists) are captured for the M1 gate. Deep option/state processing beyond
 // argument parsing is deferred to later milestones.
 #include "specparse/specparse.hpp"
+#include "numeric/numeric.hpp"   // dpmpar (machine precision for tol checks)
 #include "notset.hpp"
 #include "srslen.hpp"
 
@@ -253,6 +254,11 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
 }
 
 // ---- estimate{} (gtestm.f) -------------------------------------------------
+// gtestm.f: applies the estimation-numeric knobs (maxiter/maxnliter/tol/nltol/
+// parms/exact/step) to the model+arima commons; the output/AIC/model-file args
+// (outofsample/print/save/savelog/file/fix/k/removeconstant) are token-consumed
+// with their state application deferred to their own milestones. The tolerance-
+// reconciliation tail (gtestm.f 285-292) is reproduced.
 void gt_estimate(X13Context& ctx, bool& inptok) {
     constexpr int PARG = 15;
     static const char ARGDIC[] =
@@ -260,7 +266,120 @@ void gt_estimate(X13Context& ctx, bool& inptok) {
         "fixstepkremoveconstant";
     static const int argptr[PARG + 1] = {1, 8, 17, 20, 25, 30, 35, 46, 51, 55, 62,
         66, 69, 73, 74, 88};
-    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+    static const char ESTDIC[] = "fixedestimated";   // parms choices
+    static const int estptr[3] = {1, 6, 15};
+    static const char EXTDIC[] = "armamanone";        // exact choices
+    static const int extptr[4] = {1, 5, 7, 11};
+
+    auto& m = ctx.model;
+    const double mprec = dpmpar(1);
+    int arglog[2 * PARG];
+    for (auto& v : arglog) v = -32767;   // NOTSET
+    bool hvtol = false, hvnltl = false;
+    int argidx;
+    while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
+        if (ctx.error.lfatal) return;
+        const int* ep = ctx.lex.errpos.data() + 1;
+        int ivec[1]; double dvec[1]; int nelt = 0; bool argok = true;
+        switch (argidx) {
+        case 1:   // maxiter -- maximum overall iterations
+            getivc(ctx, LPAREN, true, 1, ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            ctx.arima.mxiter = ivec[0];
+            break;
+        case 2:   // maxnliter -- maximum nonlinear iterations
+            getivc(ctx, LPAREN, true, 1, ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            ctx.arima.mxnlit = ivec[0];
+            break;
+        case 3:   // tol -- overall convergence tolerance
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            m.tol = dvec[0];
+            if (nelt > 0) {
+                if (1.0 / ctx.mdldat.nspobs * m.tol < mprec) {
+                    inpter(ctx, PERROR, ep,
+                           "Overall tolerance is smaller than machine precision");
+                    hvtol = false;
+                    inptok = false;
+                } else {
+                    hvtol = true;
+                }
+            }
+            break;
+        case 4:   // nltol -- nonlinear convergence tolerance
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt > 0) {
+                m.nltol = dvec[0];
+                if (m.nltol < 100.0 * mprec) {
+                    inpter(ctx, PERROR, ep,
+                           "Nonlinear tolerance is smaller than machine precision");
+                    inptok = false;
+                    hvnltl = false;
+                } else {
+                    hvnltl = true;
+                }
+            }
+            break;
+        case 5:   // parms -- fixed | estimated
+            gtdcvc(ctx, LPAREN, true, 1, ESTDIC, estptr, 2,
+                   "Choices are fixed or estimated", ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt > 0) {
+                if (ivec[0] != 1) {
+                    ctx.arima.lestim = true;
+                } else if (m.imdlfx >= 1) {
+                    ctx.arima.lestim = false;
+                } else {
+                    inpter(ctx, PERROR, ep,
+                           "Must specify all ARMA parameters to evaluate");
+                    inptok = false;
+                }
+            }
+            break;
+        case 6:   // exact -- arma | ma | none (conditional)
+            gtdcvc(ctx, LPAREN, true, 1, EXTDIC, extptr, 3,
+                   "Choices are ARMA, MA, or NONE (conditional)", ivec, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt > 0) {
+                if (ivec[0] == 1) { m.lextar = true; m.lextma = true; }
+                else if (ivec[0] == 2) { m.lextar = false; m.lextma = true; }
+                else if (ivec[0] == 3) { m.lextar = false; m.lextma = false; }
+            }
+            break;
+        case 13:  // step -- numerical-derivative step size
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt > 0) {
+                m.stepln = dvec[0];
+                if (m.stepln < 0.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Step size of numerical derivatives cannot be less "
+                           "than zero.");
+                    inptok = false;
+                }
+            }
+            break;
+        default:  // 7 outofsample, 8 print, 9 save, 10 savelog, 11 file, 12 fix,
+                  // 14 k (EIC penalty), 15 removeconstant -- state application
+                  // (output tables / model file / AIC) deferred to their
+                  // milestones; consume the value grammar to stay token-faithful.
+            consume_value(ctx, nullptr);
+            break;
+        }
+        if (ctx.error.lfatal) return;
+    }
+    if (ctx.error.lfatal) return;
+    // gtestm.f 285-292: set the ARMA + initial-ARMA tolerances from whichever
+    // of tol / nltol was actually supplied.
+    if (hvtol && !hvnltl) {
+        m.nltol = m.tol;
+        m.nltol0 = 100.0 * m.tol;
+    } else if (hvnltl) {
+        m.nltol0 = m.nltol;
+    }
 }
 
 // ---- outlier{} (gtotlr.f) --------------------------------------------------
