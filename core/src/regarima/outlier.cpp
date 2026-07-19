@@ -149,4 +149,25 @@ void ttest(const double* xy, int nspobs, int ncxy, const double* chlxpx,
     }
 }
 
+// coladd.f -- make room for naddc columns at begcol by shifting the trailing
+// columns right, walking rows from the last backward so the in-place moves do
+// not clobber unread data. Row-major xy with leading dimension ncxy; 1-based
+// Fortran index arithmetic preserved (-1 on the C++ accesses).
+void coladd(int begcol, int endcol, int nrxy, int /*peltxy*/, double* xy,
+            int& ncxy) {
+    int naddc = endcol - begcol + 1;
+    int nnewc = ncxy + naddc;
+    int offset = nrxy * naddc;
+    int iend = nrxy * ncxy;
+    int ibeg = iend - ncxy + begcol;
+    for (int j = iend; j >= ibeg; --j) xy[j + offset - 1] = xy[j - 1];
+    for (int i = nrxy - 1; i >= 1; --i) {
+        offset = i * naddc;
+        iend = ibeg - 1;
+        ibeg = iend - ncxy + 1;
+        for (int j = iend; j >= ibeg; --j) xy[j + offset - 1] = xy[j - 1];
+    }
+    ncxy = nnewc;
+}
+
 }  // namespace x13

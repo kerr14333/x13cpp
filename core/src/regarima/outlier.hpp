@@ -33,6 +33,13 @@ void ttest(const double* xy, int nspobs, int ncxy, const double* chlxpx,
            const double* otlvar, const int* ltstpt, int* mxcol, double* propt,
            bool* snglr);
 
+// coladd.f: open naddc = endcol-begcol+1 empty columns at begcol in the
+// row-major nrxy x ncxy matrix xy (leading dim ncxy), shifting existing columns
+// right. ncxy is updated to ncxy+naddc. The opened slots keep whatever was there
+// (addotl fills them). peltxy is the Fortran storage bound (unused here). The
+// caller must have sized xy for the new column count.
+void coladd(int begcol, int endcol, int nrxy, int peltxy, double* xy, int& ncxy);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_OUTLIER_HPP

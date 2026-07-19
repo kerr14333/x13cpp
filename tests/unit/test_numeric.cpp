@@ -2248,4 +2248,24 @@ TEST("ttest: proportional outlier t-statistics (augmented Cholesky)") {
     CHECK(mxcol[0] == prm::TC && mxcol[1] == prm::AO && mxcol[2] == prm::LS);
 }
 
+TEST("coladd: open regression columns, shifting existing data right") {
+    // 2 rows x 2 cols row-major: row1=[1,2], row2=[3,4]. Insert 1 col at col 2.
+    double xy[6] = {1, 2, 3, 4, 0, 0};
+    int ncxy = 2;
+    coladd(2, 2, 2, 6, xy, ncxy);
+    CHECK(ncxy == 3);
+    // Existing columns: col1 stays, col2 shifts to col3. New col2 is a gap.
+    CHECK(xy[0] == 1);   // row1 col1
+    CHECK(xy[2] == 2);   // row1 col3 (was col2)
+    CHECK(xy[3] == 3);   // row2 col1
+    CHECK(xy[5] == 4);   // row2 col3 (was col2)
+
+    // Insert 2 cols at the front of a 3x1 matrix: col1 -> col3.
+    double xy2[9] = {7, 8, 9, 0, 0, 0, 0, 0, 0};
+    int ncxy2 = 1;
+    coladd(1, 2, 3, 9, xy2, ncxy2);
+    CHECK(ncxy2 == 3);
+    CHECK(xy2[2] == 7 && xy2[5] == 8 && xy2[8] == 9);  // each row's datum at col3
+}
+
 int main() { return mt::run_all(); }
