@@ -252,4 +252,29 @@ void lmpar(int n, double* r, int ldr, const int* ipvt, const double* diag,
     if (iter == 0) par = ZERO;
 }
 
+// fdjac2.f -- forward-difference Jacobian. m is shared with the fcn call (the
+// Fortran M is aliased through fcn, which may reset it) and re-read as the inner
+// loop bound, matching the oracle.
+void fdjac2(const MinpackFcn& fcn, int m, int n, double* x, const double* fvec,
+            double* fjac, int ldfjac, int& iflag, double epsfcn, double* wa,
+            bool lauto, bool gudrun, bool lckinv) {
+    constexpr double ZERO = 0.0;
+    double epsmch = dpmpar(1);
+    double eps = std::sqrt(std::max(epsfcn, epsmch));
+    auto FJ = [&](int i, int j) -> double& {
+        return fjac[(j - 1) * ldfjac + (i - 1)];
+    };
+    int mm = m;  // aliased through fcn (may be reset), re-read as loop bound
+    for (int j = 1; j <= n; ++j) {
+        double temp = x[j - 1];
+        double h = eps * std::fabs(temp);
+        if (dpeq(h, ZERO)) h = eps;
+        x[j - 1] = temp + h;
+        fcn(mm, n, x, wa, lauto, gudrun, iflag, lckinv);
+        if (iflag < 0) return;
+        x[j - 1] = temp;
+        for (int i = 1; i <= mm; ++i) FJ(i, j) = (wa[i - 1] - fvec[i - 1]) / h;
+    }
+}
+
 }  // namespace x13

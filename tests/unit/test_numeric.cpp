@@ -1063,4 +1063,26 @@ TEST("lmpar: LM parameter secant search") {
     CHECK(rclose(x[2], 2.6931053329193400e-01, 1e-12)); // lp_x3
 }
 
+TEST("fdjac2: forward-difference Jacobian") {
+    // Same analytic test fcn as ref_fdjac2.f: w1=x1+x2, w2=x1*x2, w3=x1^2+x2.
+    MinpackFcn fcn = [](int&, int, const double* x, double* w, bool, bool, int&,
+                        bool) {
+        w[0] = x[0] + x[1];
+        w[1] = x[0] * x[1];
+        w[2] = x[0] * x[0] + x[1];
+    };
+    double x[2] = {1.5, -0.5};
+    double fvec[3] = {0}, fjac[6] = {0}, wa[3] = {0};
+    int iflag = 1;
+    fcn(iflag, 2, x, fvec, false, false, iflag, false);  // fvec = fcn(x0)
+    fdjac2(fcn, 3, 2, x, fvec, fjac, 3, iflag, 0.0, wa, false, false, false);
+    // fjac column-major (ldfjac=3): [f11 f21 f31 f12 f22 f32].
+    CHECK(rclose(fjac[0],  1.0000000011560772e+00, 1e-12));  // fj11
+    CHECK(rclose(fjac[1], -5.0000000057803862e-01, 1e-12));  // fj21
+    CHECK(rclose(fjac[2],  3.0000000332705543e+00, 1e-12));  // fj31
+    CHECK(rclose(fjac[3],  1.0000000110901848e+00, 1e-12));  // fj12
+    CHECK(rclose(fjac[4],  1.5000000017341157e+00, 1e-12));  // fj22
+    CHECK(rclose(fjac[5],  1.0000000110901848e+00, 1e-12));  // fj32
+}
+
 int main() { return mt::run_all(); }

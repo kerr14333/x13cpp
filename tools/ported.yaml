@@ -190,7 +190,7 @@ fclose: pending
 fcnar: partial   # numeric path exact + oracle-verified; info!=0 diagnostic warning prints deferred to .out milestone
 fcstxy: pending
 fdate: n-a
-fdjac2: pending
+fdjac2: ported
 fgen: pending
 fis: pending
 fopen: pending

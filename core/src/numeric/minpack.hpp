@@ -10,7 +10,17 @@
 #ifndef X13_NUMERIC_MINPACK_HPP
 #define X13_NUMERIC_MINPACK_HPP
 
+#include <functional>
+
 namespace x13 {
+
+// The objective callback, matching the vendored fcn signature
+// fcn(M,N,X,Fvec,Lauto,Gudrun,Iflag,Lckinv): m (residual count, in/out -- the
+// objective may reset it), n params, x params (in), fvec residuals (out), the
+// two run-mode flags, iflag (in/out, <0 aborts), lckinv (root-check gate).
+using MinpackFcn = std::function<void(int& m, int n, const double* x,
+                                      double* fvec, bool lauto, bool gudrun,
+                                      int& iflag, bool lckinv)>;
 
 // qrfac.f: Householder QR with optional column pivoting. a is m-by-n column-
 // major (leading dim lda); on output its upper trapezoid holds R and the lower
@@ -35,6 +45,14 @@ void qrsolv(int n, double* r, int ldr, const int* ipvt, const double* diag,
 void lmpar(int n, double* r, int ldr, const int* ipvt, const double* diag,
            const double* qtb, double delta, double& par, double* x,
            double* sdiag, double* wa1, double* wa2);
+
+// fdjac2.f: forward-difference approximation to the m-by-n Jacobian fjac
+// (column-major, leading dim ldfjac) of fcn at x, given the residuals fvec=fcn(x)
+// and a relative step epsfcn. wa is work (m). Aborts (returns early) if fcn sets
+// iflag<0. x is restored after each perturbation.
+void fdjac2(const MinpackFcn& fcn, int m, int n, double* x, const double* fvec,
+            double* fjac, int ldfjac, int& iflag, double epsfcn, double* wa,
+            bool lauto, bool gudrun, bool lckinv);
 
 }  // namespace x13
 
