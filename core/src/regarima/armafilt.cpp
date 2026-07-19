@@ -57,4 +57,56 @@ void mltpos(int nelta, const double* arimap, const int* arimal, const int* opr,
     }
 }
 
+// chkrts.f -- per-operator invertibility test via downward reflection recursion.
+// coef is 1-based (coef[0] unused); it is populated fresh per operator and never
+// escapes. The two Fortran GO TOs collapse to breaks: cfncsq<=0 leaves allinv
+// false (non-invertible), ic==1 sets allinv true (fully invertible).
+bool chkrts(const double* arimap, const int* arimal, const bool* arimaf,
+            const int* opr, const int* oprfac, int begopr, int endopr,
+            int& prbfac) {
+    constexpr double ONE = 1.0;
+    bool result = false;
+    if (endopr <= 0) return result;
+    for (int iopr = begopr; iopr <= endopr; ++iopr) {
+        int beglag = opr[iopr - 1];
+        int endlag = opr[iopr] - 1;
+        int factor = oprfac[iopr - 1];
+        int lagone = arimal[beglag - 1];
+        int degree = lagone / factor;
+        for (int ilag = beglag; ilag <= endlag; ++ilag) {
+            if (lagone < arimal[ilag - 1]) {
+                degree = arimal[ilag - 1] / factor;
+                lagone = arimal[ilag - 1];
+            }
+        }
+        std::vector<double> coef(degree + 1, 0.0);  // setdp(0D0,degree,coef)
+        bool allfix = true;
+        for (int ilag = beglag; ilag <= endlag; ++ilag) {
+            if (!arimaf[ilag - 1]) allfix = false;
+            coef[arimal[ilag - 1] / factor] = arimap[ilag - 1];
+        }
+        if (allfix) continue;
+        bool allinv = false;
+        for (int ic = degree; ic >= 1; --ic) {
+            double coefnc = coef[ic];
+            double cfncsq = ONE - coefnc * coefnc;
+            if (cfncsq <= 0) break;         // GO TO 20 (allinv stays false)
+            if (ic == 1) { allinv = true; break; }  // GO TO 10
+            int ihlf = ic / 2;
+            for (int i = 1; i <= ihlf; ++i) {
+                double coefi = coef[i];
+                int icc = ic - i;
+                double coefc = coef[icc];
+                coef[i] = (coefi + coefnc * coefc) / cfncsq;
+                if (icc != ihlf) coef[icc] = (coefc + coefnc * coefi) / cfncsq;
+            }
+        }
+        if (!allinv) {
+            result = true;
+            prbfac = iopr;
+        }
+    }
+    return result;
+}
+
 }  // namespace x13

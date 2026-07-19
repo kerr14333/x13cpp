@@ -40,3 +40,6 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Stray root CTest artifacts (ctest run from repo root)
+/Testing/

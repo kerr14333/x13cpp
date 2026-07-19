@@ -280,4 +280,56 @@ TEST("mltpos: operator multiply with secpas zero-padding") {
     }
 }
 
+TEST("chkrts: operator invertibility detector") {
+    // Case A: AR lag1 phi=0.5, degree 1 -> invertible.
+    {
+        double arimap[1] = {0.5};
+        int arimal[1] = {1};
+        bool arimaf[1] = {false};
+        int opr[2] = {1, 2};
+        int oprfac[1] = {1};
+        int prbfac = -99;
+        CHECK_EQ(chkrts(arimap, arimal, arimaf, opr, oprfac, 1, 1, prbfac),
+                 false);       // oracle chkA
+        CHECK_EQ(prbfac, -99);  // untouched
+    }
+    // Case B: phi=1.5, root inside unit circle -> non-invertible, prbfac=1.
+    {
+        double arimap[1] = {1.5};
+        int arimal[1] = {1};
+        bool arimaf[1] = {false};
+        int opr[2] = {1, 2};
+        int oprfac[1] = {1};
+        int prbfac = -99;
+        CHECK_EQ(chkrts(arimap, arimal, arimaf, opr, oprfac, 1, 1, prbfac),
+                 true);        // oracle chkB
+        CHECK_EQ(prbfac, 1);
+    }
+    // Case C: degree-2 op phi=(0.3,0.4), exercises reflection update -> invertible.
+    {
+        double arimap[2] = {0.3, 0.4};
+        int arimal[2] = {1, 2};
+        bool arimaf[2] = {false, false};
+        int opr[2] = {1, 3};
+        int oprfac[1] = {1};
+        int prbfac = -99;
+        CHECK_EQ(chkrts(arimap, arimal, arimaf, opr, oprfac, 1, 1, prbfac),
+                 false);       // oracle chkC
+        CHECK_EQ(prbfac, -99);
+    }
+    // Case D: single lag FIXED (arimaf true) -> operator skipped even though
+    // phi=1.5 would be non-invertible.
+    {
+        double arimap[1] = {1.5};
+        int arimal[1] = {1};
+        bool arimaf[1] = {true};
+        int opr[2] = {1, 2};
+        int oprfac[1] = {1};
+        int prbfac = -99;
+        CHECK_EQ(chkrts(arimap, arimal, arimaf, opr, oprfac, 1, 1, prbfac),
+                 false);       // oracle chkD
+        CHECK_EQ(prbfac, -99);
+    }
+}
+
 int main() { return mt::run_all(); }

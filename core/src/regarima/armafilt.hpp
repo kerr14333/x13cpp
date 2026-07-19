@@ -27,6 +27,18 @@ void arflt(int nelta, const double* arimap, const int* arimal, const int* opr,
 void mltpos(int nelta, const double* arimap, const int* arimal, const int* opr,
             int begopr, int endopr, int neltc, double* c);
 
+// chkrts.f: LOGICAL detector -- checks whether the roots of each operator's
+// theta(B)=0 lie outside the unit circle (invertible). Despite the "makes them
+// invertible" comment it does NOT write back to arimap: the reflection
+// (Levinson-Durbin) recursion runs on a LOCAL coef buffer purely as an
+// invertibility test. Returns true if ANY operator in [begopr..endopr] is
+// non-invertible, and sets prbfac to the (last) offending operator index; an
+// operator whose every lag is fixed (arimaf all true) is skipped. oprfac holds
+// each operator's seasonal factor (lag/factor gives the polynomial degree).
+bool chkrts(const double* arimap, const int* arimal, const bool* arimaf,
+            const int* opr, const int* oprfac, int begopr, int endopr,
+            int& prbfac);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ARMAFILT_HPP
