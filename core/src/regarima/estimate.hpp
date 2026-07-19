@@ -25,6 +25,12 @@ void olsreg(X13Context& ctx, const double* xy, int nrxy, int ncxy, int pcxy,
 void resid(X13Context& ctx, const double* xy, int nr, int nc, int pc, int begcol,
            int endcol, double fac, const double* b, double* rsd);
 
+// upespm.f: scatter the nonlinear optimizer's parameter vector estprm back into
+// the ARIMA filter structures. Walking operators DIFF..MA in lag order, each
+// non-fixed lag (arimaf false) consumes the next estprm element into arimap;
+// fixed lags are skipped (their arimap value is left untouched).
+void upespm(X13Context& ctx, const double* estprm);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ESTIMATE_HPP

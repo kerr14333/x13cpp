@@ -507,4 +507,31 @@ TEST("olsreg/resid: OLS normal-equations solve + residuals") {
     CHECK(rclose(rsd[3], -1.1000000000000121e-01, 1e-12));  // rsd4
 }
 
+// ---- upespm (scatter estprm -> arimap, skip fixed lags; against ref_upespm.f).
+TEST("upespm: parameter-vector scatter with fixed-lag skip") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.nestpm = 2;
+    m.mdl(0) = 1;
+    m.mdl(1) = 1;
+    m.mdl(2) = 2;
+    m.mdl(3) = 3;
+    m.opr(0) = 1;
+    m.opr(1) = 3;
+    m.opr(2) = 4;
+    m.arimaf(1) = false;
+    m.arimaf(2) = false;
+    m.arimaf(3) = true;  // MA lag fixed
+    d.arimap(1) = -99.0;
+    d.arimap(2) = -99.0;
+    d.arimap(3) = 0.99;
+    double estprm[2] = {0.4, -0.2};
+    upespm(ctx, estprm);
+    CHECK(rclose(d.arimap(1), 0.4, 1e-15));   // up1
+    CHECK(rclose(d.arimap(2), -0.2, 1e-15));  // up2
+    CHECK_EQ(d.arimap(3), 0.99);              // up3 (fixed, untouched)
+}
+
 int main() { return mt::run_all(); }

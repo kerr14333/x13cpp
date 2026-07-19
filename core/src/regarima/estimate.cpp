@@ -6,6 +6,7 @@
 
 #include "numeric/numeric.hpp"      // xprmx, dppfa, dcopy, daxpy
 #include "specparse/specparse.hpp"  // copy, abend, errhdr, writln, stdio::STDERR
+#include "gen/model.hpp"            // prm::DIFF, prm::MA
 
 namespace x13 {
 
@@ -57,6 +58,28 @@ void resid(X13Context& ctx, const double* xy, int nr, int nc, int pc, int begcol
         dcopy(nr, xy + (pc - 1), pc, rsd, 1);
         for (int icol = begcol; icol <= endcol; ++icol)
             daxpy(nr, addsub * b[icol - 1], xy + (icol - 1), pc, rsd, 1);
+    }
+}
+
+// upespm.f -- scatter estprm into arimap, skipping fixed lags. estptr advances
+// only for non-fixed lags, so estprm is a dense vector of just the free params.
+void upespm(X13Context& ctx, const double* estprm) {
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    int estptr = 0;
+    for (int iflt = prm::DIFF; iflt <= prm::MA; ++iflt) {
+        int begopr = m.mdl(iflt - 1);
+        int endopr = m.mdl(iflt) - 1;
+        for (int iopr = begopr; iopr <= endopr; ++iopr) {
+            int beglag = m.opr(iopr - 1);
+            int endlag = m.opr(iopr) - 1;
+            for (int ilag = beglag; ilag <= endlag; ++ilag) {
+                if (!m.arimaf(ilag)) {
+                    estptr = estptr + 1;
+                    d.arimap(ilag) = estprm[estptr - 1];
+                }
+            }
+        }
     }
 }
 

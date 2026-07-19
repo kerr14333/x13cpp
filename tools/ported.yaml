@@ -666,7 +666,7 @@ tstmd2: pending
 ttest: pending
 uconv: ported
 upbuf.g77: n-a
-upespm: pending
+upespm: ported
 upmeta.g77: n-a
 usraic: pending
 value: pending
