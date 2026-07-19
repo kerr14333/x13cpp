@@ -16,16 +16,24 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 08:47 EDT
+## Snapshot — 2026-07-19 09:17 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 08:47 EDT |
-| commits | 45 |
-| span, first→latest | 18h 41m |
-| active (gaps ≤45m) | ~4h 45m (6 breaks excluded) |
+| latest commit | 2026-07-19 09:17 EDT |
+| commits | 47 |
+| span, first→latest | 19h 11m |
+| active (gaps ≤45m) | ~5h 15m (6 breaks excluded) |
 | calendar days | 2 |
+
+**Toolchain note:** adding the first NEW source file (rpoly.cpp) tripped CMake's
+CONFIGURE_DEPENDS glob reconfigure, which the machine's cmake 3.14.3 rejects
+(CMakeLists requires 3.16). Installed cmake 4.4.0 user-locally via `py -m pip
+install cmake` (at `%APPDATA%\Python\Python314\site-packages\cmake\data\bin`) and
+re-configured `build/` with it. `tools/build.ps1` still points at the 3.14.3
+cmake for the no-reconfigure incremental path; drive fresh configures with the
+pip cmake when adding files.
 
 ## What was reached in that window
 
@@ -89,7 +97,19 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
     output; literal `|R(k,k)|<=tolr` singularity test, NOTSET=-32767 sentinel.
     Oracle-verified (`tools/ref_covar.f`, permuted ipvt, both tolerance paths).
   - `test_numeric` = 49 tests / all MINPACK optimizer leaves landed.
-- **Next** — `rgarma` (rgarma.f) glues the IGLS loop: strtvl/setmdl start values,
+- **rgarma sub-leaves (in progress)** — porting the Tier-2 helpers rgarma needs:
+  - **`rpoly`** (`numeric/rpoly`) — the Jenkins-Traub root-finder suite (9
+    routines sharing global.cmn -> module-private RpolyState). Reproduces a
+    documented Census bug (max|coeff|>=10 -> the hardcoded-constant scaling
+    branch zeroes the polynomial -> fail); never fires for real AR/MA polys.
+  - **`strtvl`** (`regarima/estimate`) — ARMA starting values.
+  - **`stpitr`** (`regarima/estimate`) — IGLS step/convergence test; SAVEd
+    oldobj -> `ctx.saved.stpitr_oldobj`.
+  - `test_numeric` = 55 tests. All oracle-verified (rpoly bit-for-bit incl.
+    failures; strtvl/stpitr rtol 1e-12 / exact int+bool).
+- **Next** — `roots` (revrse+rpoly wrapper, modulus/frequency + invertibility
+  flag) -> `setmdl` (pack estprm, start-value root check, fold differencing into
+  Xy) -> then `rgarma` (rgarma.f) glues the IGLS loop: strtvl/setmdl start values,
   olsreg (GLS betas), the `lmdif(fcnar)` nonlinear ARMA step, stpitr convergence
   test, then fdjac2/qrfac/covar for the post-convergence ARMA covariance. First
   full end-to-end estimation parity target (coeff estimates, Var, Lnlkhd, Nliter,
