@@ -10,6 +10,7 @@
 #include "tables/tables.hpp"
 #include "transform/transform.hpp"
 #include "regarima/priadj.hpp"
+#include "regarima/regvar.hpp"
 
 #include <algorithm>
 #include <string>
@@ -22,6 +23,7 @@ constexpr int LSRSSP = 2;    // mdltbl.i: original series for span; ext 'a1'
 constexpr int LTRNPA = 13;   // mdltbl.i: prior-adjustment factors; ext 'a2'
 constexpr int LTRNA3 = 16;   // mdltbl.i: prior-adjusted data; ext 'a3'
 constexpr int LTRNDT = 20;   // mdltbl.i: prior-adjusted+transformed data; ext 'trn'
+constexpr int LREGDT = 22;   // mdltbl.i: regression matrix; ext 'rmx'
 
 bool wants_save(const X13Context& ctx, const std::string& ext) {
     const auto& v = ctx.captured.save_tables;
@@ -69,10 +71,27 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
     bool has_prior = (priadj > 1);   // 2 lom / 3 loq / 4 lpyear
     bool lom = (priadj == 2 || priadj == 3);   // adjsrs.f: lom for lom/loq
 
-    // The prior-adjusted series over the span (== a1 with no prior).
-    std::vector<double> padj(static_cast<std::size_t>(nspobs));
-    std::vector<double> fac(static_cast<std::size_t>(nspobs), 1.0);
-    for (int tpnt = 1; tpnt <= nspobs; ++tpnt) {
+    // Forecast-extension bookkeeping (editor.f 224-230). regvar builds
+    // regressor rows for the forecast period from the calendar alone, so the
+    // pre-model design matrix covers Nspobs + Nfdrp rows.
+    int frstsy = offset + 1;                     // dfdate(Begspn,Begsrs)+1
+    ctx.arima.frstsy = frstsy;
+    ctx.arima.nomnfy = ctx.arima.nobs - frstsy + 1;
+    int nfcst = ctx.extend.nfcst;
+    if (nfcst < 0) nfcst = 0;                    // defensive (NOTSET)
+    int fctdrp = ctx.arima.fctdrp;
+    bool lsadj = ctx.captured.has_x11 || ctx.captured.has_seats;
+    int nfdrp = nfcst;
+    if (!lsadj && fctdrp > 0) nfdrp = std::max(0, nfcst - fctdrp);
+    ctx.extend.nfdrp = nfdrp;
+    int nobspf = std::min(nspobs + nfdrp, ctx.arima.nomnfy);
+    ctx.extend.nobspf = nobspf;
+
+    // The prior-adjusted series over the span + forecast-period data
+    // (== a1 with no prior). a2/a3 save the span rows only.
+    std::vector<double> padj(static_cast<std::size_t>(nobspf));
+    std::vector<double> fac(static_cast<std::size_t>(nobspf), 1.0);
+    for (int tpnt = 1; tpnt <= nobspf; ++tpnt) {
         double a1 = aptr[tpnt - 1];
         if (has_prior) {
             int idate[2];
@@ -98,13 +117,42 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
 
     // Table trn (LTRNDT): the transformed prior-adjusted series that feeds
     // regARIMA modeling. arima.f applies the Box-Cox/logit transform (trnfcn) to
-    // the prior-adjusted series (== a3, or a1 when there is no prior).
+    // the prior-adjusted series (== a3, or a1 when there is no prior), over
+    // Nobspf points (span + retained forecast-period data); the trn table
+    // itself covers the span.
+    std::vector<double> trnsrs(static_cast<std::size_t>(nobspf));
+    bool have_trn = false;
+    if (wants_save(ctx, "trn") || ctx.captured.has_model) {
+        trnfcn(ctx, padj.data(), nobspf, ctx.arima.fcntyp, ctx.arima.lam,
+               trnsrs.data());
+        if (ctx.error.lfatal) return false;
+        have_trn = true;
+    }
     if (wants_save(ctx, "trn")) {
-        std::vector<double> trn(static_cast<std::size_t>(nspobs));
-        trnfcn(ctx, padj.data(), nspobs, ctx.arima.fcntyp, ctx.arima.lam, trn.data());
+        savtbl(ctx, LTRNDT, begspn, 1, nspobs, sp, trnsrs.data(), base, base, nser);
         if (ctx.error.lfatal) return false;
-        savtbl(ctx, LTRNDT, begspn, 1, nspobs, sp, trn.data(), base, base, nser);
+    }
+
+    // The regression design matrix (arima.f:280): regvar builds [X:y] from the
+    // parsed regression groups and the transformed series. Pre-model this is
+    // fully calendar-determined (constant/seasonal/td/holiday columns), so the
+    // rmx save table (savmtx.f, arima.f:1013) is reproducible here.
+    if (ctx.captured.has_model && have_trn) {
+        int nrxy, frstry;
+        regvar(ctx, trnsrs.data(), nobspf, fctdrp, nfcst, 0,
+               ctx.arima.userx.data(), ctx.arima.bgusrx.data(), ctx.arima.nrusrx,
+               ctx.prior.priadj, ctx.arima.reglom, nrxy,
+               ctx.arima.begxy.data(), frstry, true, ctx.arima.elong);
         if (ctx.error.lfatal) return false;
+        ctx.arima.nrxy = nrxy;
+        // (arima.f:282 Iregfx>=2 rmfix/regvar re-run: fixed regressors are not
+        // reachable in this pre-model slice.)
+        if (wants_save(ctx, "rmx")) {
+            savmtx(ctx, LREGDT, ctx.arima.begxy.data(), sp, ctx.mdldat.xy.data(),
+                   nrxy, ctx.model.ncxy, ctx.model.colttl.data(),
+                   ctx.model.colptr.data(), ctx.model.ncoltl, base);
+            if (ctx.error.lfatal) return false;
+        }
     }
 
     return !ctx.error.lfatal;

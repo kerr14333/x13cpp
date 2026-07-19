@@ -117,6 +117,7 @@ struct ParseSettings {
     double transform_power = -999.0;     // transform{ power = ... } (DNOTST sentinel)
     std::vector<std::string> save_tables;   // all requested save=(...) extensions
     std::string model_desc;             // arima{ model = ... } text
+    bool has_model = false;             // Lmodel (a model spec was present)
     int forecast_maxlead = -1;          // forecast{ maxlead = ... }
     std::string x11_mode;               // x11{ mode = ... }
     bool has_x11 = false;

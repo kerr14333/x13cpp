@@ -22,8 +22,8 @@ void intlst(int pelt, int* ptrvec, int& nstr) {
 }
 
 // insptr.f  (ptrvec is 0-based DIMENSION(0:Pelt))
-static void insptr(X13Context& ctx, bool addcat, int niunit, int ielt, int pelt,
-                   int nunit, int* ptrvec, int& nelt) {
+void insptr(X13Context& ctx, bool addcat, int niunit, int ielt, int pelt,
+            int nunit, int* ptrvec, int& nelt) {
     ptrvec[0] = 1;
     int disp = addcat ? 1 : 0;
     if (nelt + disp > pelt) { abend(ctx); return; }
@@ -36,8 +36,8 @@ static void insptr(X13Context& ctx, bool addcat, int niunit, int ielt, int pelt,
 }
 
 // putstr.f
-static void putstr(X13Context& ctx, std::string_view str, int pstr, std::string& chrvec,
-                   int* ptrvec, int& nstr) {
+void putstr(X13Context& ctx, std::string_view str, int pstr, std::string& chrvec,
+            int* ptrvec, int& nstr) {
     insptr(ctx, true, static_cast<int>(str.size()), nstr + 1, pstr,
            static_cast<int>(chrvec.size()), ptrvec, nstr);
     if (!ctx.error.lfatal) {
@@ -229,7 +229,7 @@ void gtdpvc(X13Context& ctx, int grpchr, bool flgnul, int pelt, double* avec,
 }
 
 // ctodat.f  (idate[0]=year, idate[1]=period)
-static void ctodat(std::string_view str, int sp, int& ipos, int* idate, bool& locok) {
+void ctodat(std::string_view str, int sp, int& ipos, int* idate, bool& locok) {
     static const char* MODIC = "JanFebMarAprMayJunJulAugSepOctNovDec";
     static const int moptr[13] = {1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37};
     locok = true;

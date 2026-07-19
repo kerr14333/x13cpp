@@ -39,6 +39,7 @@ bool parse_spec(X13Context& ctx, const std::string& spec_text,
 
     bool lx11 = false, lseats = false, lmodel = false, inptok = true;
     gtinpt(ctx, lx11, lseats, lmodel, inptok);
+    ctx.captured.has_model = lmodel;
     return inptok && !ctx.error.lfatal;
 }
 

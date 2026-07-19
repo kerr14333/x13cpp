@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -125,12 +126,25 @@ def _trn_reproducible(spc: str) -> bool:
     # only reject user-data priors (transform{data=...}) which need file input.
     if "data=" in txt and "transform{" in txt:
         return False
-    # trading-day regressors (variables list) induce the implicit leap-year
-    # prior, handled by the regression-matrix chunk -- not yet reproduced here.
-    for tok in ("(td", "td)", "td1coef", "tdstock"):
-        if tok in txt:
-            return False
+    # Trading-day regressors with a log transform induce the implicit leap-year
+    # prior (gtinpt.f/rmlnvr.f) -- reproduced by the regression-matrix chunk,
+    # so td specs are no longer excluded. Stock td remains unported.
+    if "tdstock" in txt:
+        return False
     return True
+
+
+def _implicit_lpyear(spc: str) -> bool:
+    """True when a td/td1coef regressor plus a log transform induces the
+    implicit leap-year prior adjustment (gtinpt.f Picktd -> rmlnvr.f), which the
+    pre-model phase reproduces (a2/a3 = lpyear factors / adjusted data)."""
+    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower().replace(" ", "")
+    if "function=log" not in txt:
+        return False
+    if "tdstock" in txt or "automdl" in txt or "pickmdl" in txt or "aictest" in txt:
+        return False
+    return ("(td)" in txt or "(td," in txt or ",td)" in txt or ",td," in txt or
+            "(td" in txt)
 
 
 def _has_predefined_adjust(spc: str) -> bool:
@@ -143,8 +157,44 @@ def _has_predefined_adjust(spc: str) -> bool:
 
 
 _TRN_SPECS = [s for s in _specs_with_ext("trn") if _trn_reproducible(s)]
-_A2_SPECS = [s for s in _specs_with_ext("a2") if _has_predefined_adjust(s)]
-_A3_SPECS = [s for s in _specs_with_ext("a3") if _has_predefined_adjust(s)]
+_A2_SPECS = [s for s in _specs_with_ext("a2")
+             if _has_predefined_adjust(s) or _implicit_lpyear(s)]
+_A3_SPECS = [s for s in _specs_with_ext("a3")
+             if _has_predefined_adjust(s) or _implicit_lpyear(s)]
+
+
+def _rmx_reproducible(spc: str) -> bool:
+    """True when the rmx regression matrix is pre-model reproducible: every
+    column is a deterministic calendar/differencing function. NOT reproducible
+    when automatic outlier identification (outlier spec) or automatic model /
+    regressor selection can add or drop columns before arima.f's savmtx call,
+    or when the spec uses regressor families the M2 slice has not ported."""
+    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
+    txt = txt.replace(" ", "")
+    if "outlier{" in txt or "automdl" in txt or "pickmdl" in txt:
+        return False
+    if "aictest" in txt or "function=auto" in txt:
+        return False
+    if "x11regression" in txt:
+        return False
+    # Unported regressor families (loud-abend paths in the C++): keep only
+    # specs whose variables list is drawn from the ported set.
+    raw = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
+    m = re.search(r"variables\s*=\s*\(([^)]*)\)", raw)
+    if m:
+        ported = {"const", "seasonal", "td", "tdnolpyear", "td1coef",
+                  "td1nolpyear", "lom", "loq", "lpyear"}
+        for tok in re.split(r"[\s,]+", m.group(1).strip()):
+            if not tok:
+                continue
+            base = tok.split("[")[0]
+            if base in ported or base in ("easter", "sceaster"):
+                continue
+            return False
+    return True
+
+
+_RMX_SPECS = [s for s in _specs_with_ext("rmx") if _rmx_reproducible(s)]
 
 
 def _check_save_table(spc, workdir, ext):
@@ -197,6 +247,42 @@ def test_a3_save_matches_oracle(spc, workdir):
     _check_save_table(spc, workdir, "a3")
 
 
+def _check_matrix_table(spc, workdir, ext):
+    """Like _check_save_table but for matrix tables (rmx): byte-identical AND
+    every column of every row matches at rtol 1e-8, period-key exact."""
+    rel = os.path.relpath(spc, _CORPUS)
+    base = os.path.basename(spc)[:-4]
+    work_spc = os.path.join(workdir, rel)
+
+    proc = subprocess.run([BIN, work_spc], capture_output=True, text=True)
+    assert "OUTCOME: OK" in proc.stdout, f"{rel}: run failed\n{proc.stdout}\n{proc.stderr}"
+
+    mine = os.path.join(os.path.dirname(work_spc), base + "." + ext)
+    gold = os.path.join(_golden_dir(spc), base + "." + ext)
+    assert os.path.exists(mine), f"{rel}: no .{ext} produced"
+
+    a = open(mine, "rb").read().replace(b"\r\n", b"\n")
+    b = open(gold, "rb").read().replace(b"\r\n", b"\n")
+    assert a == b, f"{rel}: .{ext} not byte-identical (LF-normalized)"
+
+    pa = parse_save.parse_save(a.decode("utf-8", "replace"))
+    pb = parse_save.parse_save(b.decode("utf-8", "replace"))
+    assert set(pa.rows) == set(pb.rows), f"{rel}: period keys differ"
+    for k in pb.rows:
+        ra, rb = pa.rows[k], pb.rows[k]
+        assert len(ra) == len(rb), f"{rel}: column count differs at {k}"
+        for j, (va, vb) in enumerate(zip(ra, rb)):
+            assert math.isclose(va, vb, rel_tol=RTOL, abs_tol=0.0), (
+                f"{rel}: value mismatch at {k} col {j + 1}: {va!r} vs {vb!r}")
+
+
+@pytest.mark.parametrize("spc", _RMX_SPECS, ids=lambda p: os.path.relpath(p, _CORPUS))
+def test_rmx_save_matches_oracle(spc, workdir):
+    """Regression design matrix -- regvar.f subtree (td6var/td7var/addsef/
+    adestr/estrmu/ratpos) + savmtx.f. All-or-nothing: every column at once."""
+    _check_matrix_table(spc, workdir, "rmx")
+
+
 def test_a1_corpus_coverage():
     """Guard: the gate actually exercises a broad set of specs."""
     assert len(_A1_SPECS) >= 30, f"expected >=30 a1 specs, found {len(_A1_SPECS)}"
@@ -205,6 +291,12 @@ def test_a1_corpus_coverage():
 def test_trn_corpus_coverage():
     """Guard: the transform gate exercises the transform variants (log/sqrt/none/power)."""
     assert len(_TRN_SPECS) >= 5, f"expected >=5 trn specs, found {len(_TRN_SPECS)}"
+
+
+def test_rmx_corpus_coverage():
+    """Guard: the rmx gate exercises the ported regressor families (constant,
+    td, easter, seasonal, quarterly, forecast extension)."""
+    assert len(_RMX_SPECS) >= 7, f"expected >=7 rmx specs, found {len(_RMX_SPECS)}"
 
 
 if __name__ == "__main__":

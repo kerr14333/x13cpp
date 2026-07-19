@@ -92,6 +92,48 @@ inline void cpyint(const int* invec, int n, int inc, int* outvec) {
 void itoc(X13Context& ctx, int inum, std::string& str, int& ipos);
 
 // --------------------------------------------------------------------------
+// Packed string-vector / pointer-vector machinery (M2 regression chunk).
+// A "string vector" is a CHARACTER buffer Chrvec plus Ptrvec(0:N) of 1-based
+// begin positions; element i occupies Chrvec(Ptrvec(i-1):Ptrvec(i)-1).
+// Numeric companions (B, Rgvrtp, ...) use the same Ptrvec via ins*/eltlen.
+// ptrvec pointers use ptrvec[k] == Ptrvec(k) (pass farray1lb<..,0,..>::data()).
+// --------------------------------------------------------------------------
+
+// insptr.f: open up (or widen) element Ielt of Ptrvec by Niunit units.
+void insptr(X13Context& ctx, bool addcat, int niunit, int ielt, int pelt,
+            int nunit, int* ptrvec, int& nelt);
+
+// putstr.f: append Str as element Nstr+1 (std::string and CHARACTER buffers).
+void putstr(X13Context& ctx, std::string_view str, int pstr, std::string& chrvec,
+            int* ptrvec, int& nstr);
+void putstr(X13Context& ctx, std::string_view str, int pstr, char* chrvec,
+            int chrvec_len, int* ptrvec, int& nstr);
+
+// getstr.f: fetch element Istr into Str (exact length, no padding).
+void getstr(X13Context& ctx, const char* chrvec, const int* ptrvec, int nstr,
+            int istr, std::string& str, int& nchr);
+
+// insstr.f / delstr.f: insert / delete element Istr of a CHARACTER buffer.
+void insstr(X13Context& ctx, std::string_view str, int istr, int pstr,
+            char* chrvec, int chrvec_len, int* ptrvec, int& nstr);
+void delstr(X13Context& ctx, int istr, char* chrvec, int* ptrvec, int& nstr,
+            int nlim);
+
+// copy.f / copylg.f: same-index vector copies with Inc controlling direction
+// (overlap-safe shifts). Pointers are to the Fortran 1-position (vec[0]==V(1)).
+void copy(const double* invec, int n, int inc, double* outvec);
+void copylg(const bool* invec, int n, int inc, bool* outvec);
+
+// insdbl.f / insint.f / inslg.f: insert Subvec as (pre-widened) element Ielt of
+// the Ptrvec-partitioned vector Vec.
+void insdbl(X13Context& ctx, const double* subvec, int ielt, const int* ptrvec,
+            int nelt, double* vec);
+void insint(X13Context& ctx, const int* subvec, int ielt, const int* ptrvec,
+            int nelt, int* vec);
+void inslg(X13Context& ctx, const bool* subvec, int ielt, const int* ptrvec,
+           int nelt, bool* vec);
+
+// --------------------------------------------------------------------------
 // Error / output.
 // --------------------------------------------------------------------------
 void abend(X13Context& ctx);
@@ -174,8 +216,48 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
 // Simple spec readers: each consumes its arguments token-faithfully and
 // captures key settings. Signature reduced to (ctx, inptok).
 void gt_transform(X13Context& ctx, bool& inptok);   // transform{} (getadj)
-void gt_regression(X13Context& ctx, bool& inptok);  // regression{} (getreg)
+void gt_regression(X13Context& ctx, bool havsrs, bool havesp,
+                   bool& havtd, bool& inptok);      // regression{} (getreg)
 void gt_arima(X13Context& ctx, bool& inptok);        // arima{} (gtarma+getmdl)
+
+// --------------------------------------------------------------------------
+// arima{ model = ... } structure builders (M2 regression-matrix chunk).
+// --------------------------------------------------------------------------
+void polyml(const double* polya, const int* alag, int na, const double* polyb,
+            const int* blag, int nb, int pc, double* polyc, int* clag, int& nc);
+void insort(double tcoef, int lagt, int& ncoef, double* coef, int* lag);
+void inbtwn(double tcoef, int lagt, int in, int& ncoef, double* coef, int* lag);
+void intsrt(int nr, int* vecx);
+void iscrfn(int oprn, int scr, const int* avec, int nelt, int pc, int* cvec);
+void mkoprt(X13Context& ctx, int optype, int period, int sp, std::string& oprnam,
+            int& noprcr);
+void maxlag(const int* arimal, const int* opr, int begopr, int endopr, int& mxlag);
+void getopr(X13Context& ctx, int optype, double* coef, int* lag, bool* fix,
+            int& ncoef, int& nd, int& naimcf, bool& locok, bool& inptok);
+void insopr(X13Context& ctx, int optype, const double* coef, const int* lag,
+            const bool* fix, int ncoef, int facsp, std::string_view ioprtl,
+            bool& locok, bool& inptok);
+void getmdl(X13Context& ctx, bool& locok, bool& inptok, bool lauto);
+void mdlfix(X13Context& ctx);
+
+// --------------------------------------------------------------------------
+// regression{ variables = ... } structure builders (getreg.f subtree).
+// --------------------------------------------------------------------------
+void adrgef(X13Context& ctx, double initvl, std::string_view effttl,
+            std::string_view igrptl, int vartyp, bool varfix, bool userin);
+void rdregm(X13Context& ctx, std::string_view rgmttl, const int* begspn, int sp,
+            int& zeroz, int& rgmidx, bool& locok);
+void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
+            bool havsrs, bool havesp, std::string rgname, int nrgchr,
+            bool x11reg, bool& havtd, bool& havhol, bool& havln, bool& havlp,
+            bool& locok, bool& inptok);
+void gtpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
+            bool havsrs, bool havesp, bool x11reg, bool& havtd, bool& havhol,
+            bool& havln, bool& havlp, bool& locok, bool& inptok);
+void rmlnvr(X13Context& ctx, int& priadj, int kfulsm, int nspobs);
+void dlrgef(X13Context& ctx, int begcol, int nrxy, int ndelc);
+// ctodat.f (shared with the date readers; exported for rdregm).
+void ctodat(std::string_view str, int sp, int& ipos, int* idate, bool& locok);
 void gt_automdl(X13Context& ctx, bool& inptok);      // automdl{} (gtauto)
 void gt_estimate(X13Context& ctx, bool& inptok);     // estimate{} (gtestm)
 void gt_outlier(X13Context& ctx, bool& inptok);      // outlier{} (gtotlr)

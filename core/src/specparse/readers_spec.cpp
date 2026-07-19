@@ -9,6 +9,7 @@
 // argument parsing is deferred to later milestones.
 #include "specparse/specparse.hpp"
 #include "notset.hpp"
+#include "srslen.hpp"
 
 #include <string>
 #include <vector>
@@ -114,59 +115,7 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     }
 }
 
-// ---- arima{} model consumer (gtarma.f + getmdl.f, token-faithful) ---------
-static void read_order(X13Context& ctx, std::string& out, bool& locok) {
-    LexState& L = ctx.lex;
-    int tmp;
-    if (getint(ctx, tmp)) {
-        out = std::to_string(tmp);
-    } else if (L.nxtktp == LBRAKT) {
-        int clsgtp = clsgrp(LBRAKT);
-        lex(ctx);
-        out = "[";
-        while (L.nxtktp != clsgtp && L.nxtktp != EOFTOK) { out += cur_tok(ctx) + " "; lex(ctx); }
-        lex(ctx);
-        out += "]";
-    } else {
-        inpter(ctx, PERROR, L.lstpos.data() + 1,
-               "Expected an INTEGER or \"[\" not \"" + cur_tok(ctx) + "\"");
-        locok = false;
-    }
-}
-
-static void getmdl_consume(X13Context& ctx, bool& locok) {
-    LexState& L = ctx.lex;
-    std::string desc;
-    while (L.nxtktp == LPAREN) {
-        lex(ctx);
-        desc += "(";
-        std::string s;
-        read_order(ctx, s, locok); desc += s;
-        if (ctx.error.lfatal) return;
-        if (L.nxtktp == COMMA) lex(ctx);
-        desc += " ";
-        read_order(ctx, s, locok); desc += s;
-        if (ctx.error.lfatal) return;
-        if (L.nxtktp == COMMA) lex(ctx);
-        desc += " ";
-        read_order(ctx, s, locok); desc += s;
-        if (ctx.error.lfatal) return;
-        if (L.nxtktp != RPAREN) {
-            inpter(ctx, PERROR, L.lstpos.data() + 1, "Expected \")\" after (AR DIFF MA");
-            locok = false;
-            break;
-        }
-        desc += ")";
-        lex(ctx);
-        if (L.nxtktp == INTGR) {
-            int facsp;
-            getint(ctx, facsp);
-            desc += std::to_string(facsp);
-        }
-    }
-    ctx.captured.model_desc = desc;
-}
-
+// ---- arima{} (gtarma.f; model= parsed for real via getmdl.f) --------------
 void gt_arima(X13Context& ctx, bool& inptok) {
     LexState& L = ctx.lex;
     constexpr int PARG = 5;
@@ -178,12 +127,11 @@ void gt_arima(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
-        if (argidx == 2) {          // model
-            bool locok = true;
-            getmdl_consume(ctx, locok);
-            inptok = inptok && locok;
+        if (argidx == 2) {          // model -> getmdl.f (builds Mdl/Opr/Arima*)
+            bool argok = true;
+            getmdl(ctx, argok, inptok, false);
             havmdl = true;
-        } else {                     // title / diff / ar / ma
+        } else {                     // title / diff / ar / ma (gtinvl gated)
             consume_value(ctx, nullptr);
         }
         if (ctx.error.lfatal) return;
@@ -195,6 +143,8 @@ void gt_arima(X13Context& ctx, bool& inptok) {
                "of (0 0 0) was intended,please specify it using the model argument.");
         inptok = false;
     }
+    // gtarma.f: check if the regression and arima models are fixed.
+    mdlfix(ctx);
 }
 
 // ---- forecast{} (gtfcst.f) : capture maxlead ------------------------------
@@ -208,10 +158,24 @@ void gt_forecast(X13Context& ctx, bool& inptok) {
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
         std::vector<std::string> cap;
-        consume_value(ctx, argidx == 2 ? &cap : nullptr);   // 2 = maxlead
+        bool want = (argidx == 1 || argidx == 2 || argidx == 6);
+        consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
-        if (argidx == 2 && !cap.empty()) {
-            try { ctx.captured.forecast_maxlead = std::stoi(cap[0]); } catch (...) {}
+        // gtfcst.f: 1 exclude -> Fctdrp, 2 maxlead -> Nfcst, 6 maxback -> Nbcst.
+        if (!cap.empty()) {
+            int v = 0;
+            bool ok = true;
+            try { v = std::stoi(cap[0]); } catch (...) { ok = false; }
+            if (ok) {
+                if (argidx == 1) {
+                    ctx.arima.fctdrp = v;
+                } else if (argidx == 2) {
+                    ctx.captured.forecast_maxlead = v;
+                    if (v <= prm::PFCST) ctx.extend.nfcst = v;
+                } else if (argidx == 6) {
+                    if (v <= prm::PFCST) ctx.extend.nbcst = v;
+                }
+            }
         }
     }
 }
@@ -238,8 +202,10 @@ void gt_x11(X13Context& ctx, bool& inptok) {
     ctx.captured.has_x11 = true;
 }
 
-// ---- regression{} (getreg.f) : capture variables + aictest ----------------
-void gt_regression(X13Context& ctx, bool& inptok) {
+// ---- regression{} (getreg.f) : variables parsed for real via gtpdrg.f -----
+void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
+                   bool& inptok) {
+    LexState& L = ctx.lex;
     constexpr int PARG = 23;
     static const char ARGDIC[] =
         "variablesuserdatastartfileformatbprintsaveaictesteastermeansnoapply"
@@ -249,16 +215,28 @@ void gt_regression(X13Context& ctx, bool& inptok) {
         61, 68, 76, 82, 89, 96, 106, 114, 124, 130, 139, 152, 159};
     int arglog[2 * PARG];
     for (auto& v : arglog) v = -32767;
+    bool havhol = false, havln = false, havlp = false;
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
-        std::vector<std::string>* cap = nullptr;
-        std::vector<std::string> tmp;
-        if (argidx == 1 || argidx == 10) cap = &tmp;   // 1=variables, 10=aictest
-        consume_value(ctx, cap);
-        if (ctx.error.lfatal) return;
-        if (argidx == 1) ctx.captured.regression_vars = tmp;
-        if (argidx == 10) ctx.captured.aictest_vars = tmp;
+        if (argidx == 1) {           // variables -> gtpdrg (build the groups)
+            // getreg.f: the '=' was consumed by gtarg; gtpdrg reads the list.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool locok = true;
+            gtpdrg(ctx, ctx.arima.begsrs.data(), ctx.arima.endmdl.data(),
+                   ctx.arima.nobs, havsrs, havesp, false, havtd, havhol, havln,
+                   havlp, locok, inptok);
+            if (ctx.error.lfatal) return;
+        } else {
+            std::vector<std::string>* cap = nullptr;
+            std::vector<std::string> tmp;
+            if (argidx == 9 || argidx == 10) cap = &tmp;   // 9=save, 10=aictest
+            consume_value(ctx, cap);
+            if (ctx.error.lfatal) return;
+            if (argidx == 9)
+                for (const auto& t : tmp) ctx.captured.save_tables.push_back(t);
+            if (argidx == 10) ctx.captured.aictest_vars = tmp;
+        }
     }
 }
 

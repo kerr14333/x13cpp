@@ -31,6 +31,13 @@ void punch(X13Context& ctx, const double* x, int mfda, int mlda, int itbl,
            const int* begdat, int sp, const std::string& base,
            const std::string& label, int nser, bool lpct);
 
+// savmtx.f: capture a matrix table (Date + one column per title) as a save
+// file. xy is the flat row-major [X:y] matrix (element (row,col) at
+// ncxy*(row-1)+col); columns 1..nttl are written (the y column is excluded).
+void savmtx(X13Context& ctx, int itbl, const int* begxy, int sp, const double* xy,
+            int nrxy, int ncxy, const char* ttlstr, const int* ttlptr, int nttl,
+            const std::string& base);
+
 }  // namespace x13
 
 #endif  // X13_TABLES_TABLES_HPP

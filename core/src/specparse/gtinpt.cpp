@@ -8,6 +8,9 @@
 // subset the parser reads back is initialized.
 #include "specparse/specparse.hpp"
 #include "notset.hpp"
+#include "gen/model.hpp"
+
+#include <algorithm>
 
 namespace x13 {
 
@@ -54,8 +57,29 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.prior.kfmt = 0;      // gtinpt.f: Kfmt=0
     ctx.arima.reglom = 0;    // gtinpt.f: Reglom=0
 
+    // gtinpt.f 188-207 (+ mdlint.f): regression-group / ARIMA-operator state.
+    intlst(prm::PB, ctx.model.colptr.data(), ctx.model.ncoltl);
+    ctx.model.nb = ctx.model.ncoltl;
+    ctx.model.ncxy = 1;
+    intlst(prm::PGRP, ctx.model.grpptr.data(), ctx.model.ngrptl);
+    intlst(prm::PGRP, ctx.model.grp.data(), ctx.model.ngrp);
+    intlst(prm::POPR, ctx.model.opr.data(), ctx.model.nopr);
+    intlst(prm::PMDL, ctx.model.mdl.data(), ctx.model.nmdl);
+    intlst(prm::POPR, ctx.model.oprptr.data(), ctx.model.noprtl);   // mdlint.f
+    ctx.model.mdl(2) = 1;    // Mdl(AR)=1
+    ctx.model.mdl(3) = 1;    // Mdl(MA)=1
+    ctx.arima.elong = true;  // gtinpt.f: Elong=T
+    ctx.model.easidx = 0;    // gtinpt.f: Easidx=0
+    ctx.extend.nfcst = prm::NOTSET;   // gtinpt.f: Nfcst=NOTSET
+    ctx.extend.nbcst = prm::NOTSET;   // gtinpt.f: Nbcst=NOTSET
+    ctx.arima.fctdrp = 0;             // gtinpt.f: Fctdrp=0
+    ctx.picktd.tdzero = 0;
+    ctx.picktd.lnzero = 0;
+    setint(prm::NOTSET, 2, ctx.picktd.tddate.data());
+    setint(prm::NOTSET, 2, ctx.picktd.lndate.data());
+
     // Control flags.
-    bool havsrs = false, havesp = false, havotl = false, havreg = false;
+    bool havsrs = false, havesp = false, havotl = false, havreg = false, havtd = false;
     bool larma = false, hvfcst = false, hvspec = false, havmdl = false, havreq = false;
     bool lautom = false, lautox = false, hvmfil = false, lagr = false, l1stcomp = false;
     bool ldestm = false, x11reg = false;
@@ -89,7 +113,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             case 4:  // regression
                 if (hvmfil) { inpter(ctx, PERROR, L.pos.data() + 1,
                         "Cannot specify regression variables when a model file is given."); inptok = false; }
-                gt_regression(ctx, inptok);
+                gt_regression(ctx, havsrs, havesp, havtd, inptok);
                 if (ctx.error.lfatal) return;
                 if (!lmodel) lmodel = true;
                 if (!havreg) havreg = true;
@@ -252,6 +276,88 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             }
         }
         ctx.arima.fcntyp = fcntyp;
+
+        // --- gtinpt.f ~989-1067: td/lom prior-adjustment setup (Picktd) ---
+        // With a log transform, the td (or td1coef) regressor's leap-year
+        // component becomes a prior adjustment of the series: rmlnvr sets
+        // Priadj (lpyear, or lom/loq for x11 type=trend) and removes any
+        // Length-of-* / Leap Year regressor column.
+        if (ctx.picktd.picktd) {
+            if (dpeq(lam, 0.0)) {
+                if (ctx.prior.priadj > 1) {
+                    writln(ctx, "ERROR: A length of month, length of quarter, or "
+                           "leap year prior adjustment", stdio::STDERR,
+                           ctx.units.mt2, true);
+                    writln(ctx, "       cannot be specified with the td or td1coef "
+                           "regressor.", stdio::STDERR, ctx.units.mt2, false);
+                    inptok = false;
+                } else {
+                    rmlnvr(ctx, ctx.prior.priadj, ctx.x11opt.kfulsm,
+                           ctx.mdldat.nspobs);
+                    if (ctx.error.lfatal) return;
+                }
+            } else {
+                if (ctx.prior.priadj > 1) {
+                    writln(ctx, "ERROR: A length of month, length of quarter, or "
+                           "leap year prior adjustment", stdio::STDERR,
+                           ctx.units.mt2, true);
+                    writln(ctx, "       cannot be specified with the td or td1coef "
+                           "regressor.", stdio::STDERR, ctx.units.mt2, false);
+                    inptok = false;
+                } else if (ctx.x11opt.kfulsm == 2) {
+                    // gtinpt.f: CALL replyf() -- x11 type=trend path, not yet
+                    // ported.
+                    writln(ctx, "ERROR: x11 type=trend with td regressors "
+                           "(replyf.f) not yet ported.", stdio::STDERR,
+                           ctx.units.mt2, true);
+                    abend(ctx);
+                    return;
+                }
+            }
+        }
+        // gtinpt.f 1072-1084: check for lom in the regression and in the prior
+        // adjustment.
+        if (ctx.prior.priadj > 1 && ctx.model.nb > 0) {
+            for (int icol = 1; icol <= ctx.model.nb; ++icol) {
+                int t = ctx.model.rgvrtp(icol);
+                if (t == 5 || t == 6 || t == 7 || t == 9 ||    // PRGTLM/LQ/LY/SL
+                    t == 58 || t == 59 || t == 60) {           // PRGULM/ULQ/ULY
+                    writln(ctx, "ERROR: Cannot have a length-of-period or leap "
+                           "year regressor with a", stdio::STDERR, ctx.units.mt2,
+                           true);
+                    writln(ctx, "       length-of-period or leap year prior "
+                           "adjustment.", stdio::STDERR, ctx.units.mt2, false);
+                    inptok = false;
+                    break;
+                }
+            }
+        }
+
+        // gtinpt.f 1110-1117: no forecasts excluded when seasonal adjustment done.
+        if (lx11 && ctx.arima.fctdrp > 0) {
+            writln(ctx, "WARNING: No observations should be excluded from "
+                   "forecasting when a", ctx.units.mt2, stdio::STDERR, true);
+            writln(ctx, "         seasonal adjustment is done.", ctx.units.mt2,
+                   stdio::STDERR, false);
+            ctx.arima.fctdrp = 0;
+        }
+
+        // gtinpt.f 1142-1167: default Nbcst / Nfcst.
+        if (ctx.extend.nbcst == prm::NOTSET) ctx.extend.nbcst = 0;
+        if (ctx.extend.nfcst == prm::NOTSET) {
+            if (lmodel) {
+                if (lx11 || lseats) {
+                    if (lseats) ctx.extend.nfcst = std::max(12, 3 * ctx.model.sp);
+                    else ctx.extend.nfcst = ctx.model.sp;
+                } else if (hvfcst) {
+                    ctx.extend.nfcst = ctx.model.sp;
+                } else {
+                    ctx.extend.nfcst = 0;
+                }
+            } else {
+                ctx.extend.nfcst = 0;
+            }
+        }
         return;
     }
 }
