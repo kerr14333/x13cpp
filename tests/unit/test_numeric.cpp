@@ -8,8 +8,10 @@
 #include "microtest.hpp"
 #include "numeric/numeric.hpp"
 #include "regarima/armafilt.hpp"
+#include "regarima/armafl.hpp"
 
 #include <cmath>
+#include <memory>
 
 namespace x13 {
 // ratneg lives in core/src/regarima (declared in regvar.hpp, which pulls in the
@@ -330,6 +332,57 @@ TEST("chkrts: operator invertibility detector") {
                  false);       // oracle chkD
         CHECK_EQ(prbfac, -99);
     }
+}
+
+// ---- intgpg + exctma (stateful; against ref_armafl.f). A minimal pure-MA(2)
+// model theta = 0.3 B - 0.2 B^2 is built in the ex-COMMON structs, then intgpg
+// factors G'G and exctma exact-MA-filters a length-5 series. rtol 1e-12. ------
+TEST("intgpg/exctma: exact MA filter helpers, MA(2) model") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lma = true;
+    m.lar = false;
+    m.mdl(0) = 1;
+    m.mdl(1) = 1;
+    m.mdl(2) = 1;
+    m.mdl(3) = 2;
+    m.opr(0) = 1;
+    m.opr(1) = 3;
+    m.arimal(1) = 1;
+    m.arimal(2) = 2;
+    d.arimap(1) = 0.3;
+    d.arimap(2) = -0.2;
+    m.oprfac(1) = 1;
+    m.mxmalg = 2;
+    d.lndtcv = -99.0;
+
+    int info = -99;
+    intgpg(ctx, 6, info);
+    CHECK_EQ(info, 0);                                    // ref gpg_info
+    CHECK(rclose(d.chlgpg(1), 1.0540716573838800e+00, 1e-12));   // gpg_c1
+    CHECK(rclose(d.chlgpg(2), 2.6343503409358116e-01, 1e-12));   // gpg_c2
+    CHECK(rclose(d.chlgpg(3), 1.0204831173577118e+00, 1e-12));   // gpg_c3
+    CHECK(rclose(d.lndtcv, 1.4587318714264297e-01, 1e-12));      // gpg_ldt
+
+    double a[200] = {0.0};
+    a[0] = 1.0;
+    a[1] = 2.0;
+    a[2] = -1.0;
+    a[3] = 0.5;
+    a[4] = 3.0;
+    int nelta = 5;
+    exctma(ctx, 1, a, nelta, 200);
+    CHECK_EQ(nelta, 7);         // ref exc_nelta
+    CHECK_EQ(m.nopr, 1);        // ref exc_nopr (side-effect write)
+    CHECK(rclose(a[0],  3.2675291615513941e-01, 1e-12));   // exc_a1
+    CHECK(rclose(a[1], -1.1575593899396436e-01, 1e-12));   // exc_a2
+    CHECK(rclose(a[2],  8.9992263507078274e-01, 1e-12));   // exc_a3
+    CHECK(rclose(a[3],  2.2931279783200278e+00, 1e-12));   // exc_a4
+    CHECK(rclose(a[4], -4.9204613351814830e-01, 1e-12));   // exc_a5
+    CHECK(rclose(a[5], -1.0623943571945005e-01, 1e-12));   // exc_a6
+    CHECK(rclose(a[6],  3.0665373959877948e+00, 1e-12));   // exc_a7
 }
 
 int main() { return mt::run_all(); }

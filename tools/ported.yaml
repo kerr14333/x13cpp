@@ -181,7 +181,7 @@ eprint: n-a
 errhdr: ported
 estrmu: ported
 euclid: ported
-exctma: pending
+exctma: ported
 extend: pending
 extsgnl: pending
 f3cal: pending
@@ -316,7 +316,7 @@ insort: ported
 insptr: ported
 insstr: ported
 intfmt: pending
-intgpg: pending
+intgpg: ported
 intinp: ported
 intlst: ported
 intrpp: pending
