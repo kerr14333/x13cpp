@@ -484,8 +484,8 @@ qmap: pending
 qmap2: pending
 qname: ported
 qquote: ported
-qrfac: pending
-qrsolv: pending
+qrfac: ported
+qrsolv: ported
 qsdiff: pending
 qtoken: ported
 quad: pending

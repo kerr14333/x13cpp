@@ -10,6 +10,7 @@
 #include "regarima/armafilt.hpp"
 #include "regarima/armafl.hpp"
 #include "regarima/estimate.hpp"
+#include "numeric/minpack.hpp"
 
 #include <cmath>
 #include <memory>
@@ -1011,6 +1012,41 @@ TEST("chkrts: sparse and decreasing lag lists (A11)") {
         CHECK_EQ(chkrts(ap, al, af, op, oprf, 1, 1, pf), false);  // sab
         CHECK_EQ(pf, -99);
     }
+}
+
+// ---- qrfac + qrsolv (Census MINPACK; against ref_minpack.f). ----------------
+TEST("qrfac: Householder QR with column pivoting") {
+    // 4x3 matrix, column-major (lda=4).
+    double a[12] = {1, 2, 3, 4, 1, 0, 1, 0, 2, 1, 0, 1};
+    int ipvt[3] = {0, 0, 0};
+    double rdiag[3] = {0}, acnorm[3] = {0}, wa[3] = {0};
+    qrfac(4, 3, a, 4, true, ipvt, 3, rdiag, acnorm, wa);
+    CHECK_EQ(ipvt[0], 1); CHECK_EQ(ipvt[1], 3); CHECK_EQ(ipvt[2], 2);  // qf_ipvt
+    CHECK(rclose(rdiag[0], -5.4772255750516612e+00, 1e-12));  // qf_rd1
+    CHECK(rclose(rdiag[1],  1.9663841605003496e+00, 1e-12));  // qf_rd2
+    CHECK(rclose(rdiag[2], -1.1141720290623114e+00, 1e-12));  // qf_rd3
+    CHECK(rclose(acnorm[0], 5.4772255750516612e+00, 1e-12));  // qf_ac1
+    CHECK(rclose(acnorm[1], 1.4142135623730951e+00, 1e-12));  // qf_ac2
+    CHECK(rclose(acnorm[2], 2.4494897427831779e+00, 1e-12));  // qf_ac3
+    CHECK(rclose(a[0], 1.1825741858350554e+00, 1e-12));  // qf_a1
+    CHECK(rclose(a[1], 3.6514837167011072e-01, 1e-12));  // qf_a2
+    CHECK(rclose(a[5], 1.0348568246221159e+00, 1e-12));  // qf_a6
+}
+
+TEST("qrsolv: Givens elimination + back-substitution") {
+    // 3x3 upper-tri R, column-major (ldr=3).
+    double r[9] = {2, 0, 0, 1, 3, 0, 1, 1, 4};
+    int ipvt[3] = {1, 2, 3};
+    double diag[3] = {0.5, 0.5, 0.5};
+    double qtb[3] = {1, 2, 3};
+    double x[3] = {0}, sdiag[3] = {0}, wa[3] = {0};
+    qrsolv(3, r, 3, ipvt, diag, qtb, x, sdiag, wa);
+    CHECK(rclose(x[0], -6.9571958043652002e-02, 1e-12));  // qs_x1
+    CHECK(rclose(x[1],  4.0764516363460185e-01, 1e-12));  // qs_x2
+    CHECK(rclose(x[2],  7.4019524720815877e-01, 1e-12));  // qs_x3
+    CHECK(rclose(sdiag[0], 2.0615528128088303e+00, 1e-12));  // qs_sd1
+    CHECK(rclose(sdiag[1], 3.0510364680566773e+00, 1e-12));  // qs_sd2
+    CHECK(rclose(sdiag[2], 4.0377855911690963e+00, 1e-12));  // qs_sd3
 }
 
 int main() { return mt::run_all(); }
