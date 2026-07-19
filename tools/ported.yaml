@@ -161,11 +161,11 @@ dot: pending
 dpeq: ported
 dpmpar: ported
 dppdi: pending
-dppfa: pending
+dppfa: ported
 dppsl: pending
 dsarma: pending
 dscal: pending
-dsolve: pending
+dsolve: ported
 dtoc: gated
 easaic: pending
 easter: pending
@@ -703,7 +703,7 @@ x12hdr: pending
 x12run: pending
 xchng: pending
 xpand: ported
-xprmx: pending
+xprmx: ported
 xrgdiv: pending
 xrgdrv: pending
 xrghol: pending

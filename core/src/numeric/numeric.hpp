@@ -69,6 +69,30 @@ void uconv(const double* fulma, int mxmalg, double* c);
 // numerator is snapshotted before the recursion begins.
 void xpand(const double* b, int mxarlg, int na, int nc, double* c, int pc);
 
+// xprmx.f: packed upper triangle of [X:y]'[X:y] via the underflow-skipping
+// ddot. xy is row-major (nspobs rows x pcxy leading columns); column c is the
+// strided vector xy[c-1], xy[c-1+pcxy], ... When pcxy>ncxy the data vector y is
+// in column pcxy: the routine appends X'y (ncxy elements) then y'y. Output
+// xypxy is packed by (i=1..ncxy, j=1..i). Because it uses the vendored ddot,
+// X'X low-order bits differ from a plain BLAS -- load-bearing for parity.
+void xprmx(const double* xy, int nspobs, int ncxy, int pcxy, double* xypxy);
+
+// dppfa.f: packed Cholesky, Census-modified LINPACK. Factors a packed SPD
+// matrix ap (upper triangle, column by column) in place into R with A=R'R.
+// info=0 on success, else info=j at the first non-PD leading minor. NOT stock
+// dppfa: the tolerated-zero branch (s in [-dpmpar(1), 0]) sets that diagonal to
+// 0.0 and STILL exits with info=j (not a success path); the inner products use
+// the underflow-skipping ddot, so factors differ from textbook Cholesky in low
+// bits.
+void dppfa(double* ap, int n, int& info);
+
+// dsolve.f: multi-RHS triangular solve against a packed Cholesky factor a
+// (from dppfa), variation of LINPACK dposl. b is COLUMN-MAJOR nc x nr:
+// element (col j, row i) at b[(j-1)+(i-1)*nc]. Solves R'w=b always; if lainvb
+// then also R x=w (full A x=b). The ddot/daxpy calls use mixed strides 1/nc,
+// exercising the BLAS unequal-increment paths.
+void dsolve(const double* a, int nr, int nc, bool lainvb, double* b);
+
 // euclid.f: solves Fular(z)F(1/z)+F(z)Fular(1/z)=G(z) by the Euclid algorithm
 // (AR-covariance step of armafl). fular/g are 0-based (fular[0..mxarlg],
 // g[0..maxpq]); b and a are 1-based workspace of length mxarlg (b[i-1],a[i-1]),

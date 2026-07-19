@@ -249,6 +249,88 @@ void xpand(const double* b, int mxarlg, int na, int nc, double* c, int pc) {
     }
 }
 
+// xprmx.f -- packed [X:y]'[X:y] via strided (underflow-skipping) ddot; column c
+// is the base pointer xy+(c-1) with stride pcxy.
+void xprmx(const double* xy, int nspobs, int ncxy, int pcxy, double* xypxy) {
+    int ielt = 0;
+    for (int i = 1; i <= ncxy; ++i) {
+        for (int j = 1; j <= i; ++j) {
+            ielt = ielt + 1;
+            xypxy[ielt - 1] = ddot(nspobs, xy + (i - 1), pcxy, xy + (j - 1), pcxy);
+        }
+    }
+    if (pcxy > ncxy) {
+        for (int j = 1; j <= ncxy; ++j) {
+            ielt = ielt + 1;
+            xypxy[ielt - 1] =
+                ddot(nspobs, xy + (j - 1), pcxy, xy + (pcxy - 1), pcxy);
+        }
+        xypxy[ielt] =
+            ddot(nspobs, xy + (pcxy - 1), pcxy, xy + (pcxy - 1), pcxy);
+    }
+}
+
+// dppfa.f -- Census-modified packed Cholesky. kj/kk/jj walk the packed columns;
+// the tolerated-zero branch exits via `return` with info still = j.
+void dppfa(double* ap, int n, int& info) {
+    double mprec = dpmpar(1);
+    int jj = 0;
+    for (int j = 1; j <= n; ++j) {
+        info = j;
+        double s = 0.0;
+        int jm1 = j - 1;
+        int kj = jj;
+        int kk = 0;
+        if (jm1 >= 1) {
+            for (int k = 1; k <= jm1; ++k) {
+                kj = kj + 1;
+                double t = ap[kj - 1] - ddot(k - 1, ap + kk, 1, ap + jj, 1);
+                kk = kk + k;
+                t = t / ap[kk - 1];
+                ap[kj - 1] = t;
+                s = s + t * t;
+            }
+        }
+        jj = jj + j;
+        s = ap[jj - 1] - s;
+        if (s > 0.0) {
+            ap[jj - 1] = std::sqrt(s);
+        } else {
+            if (s >= -mprec) ap[jj - 1] = 0.0;
+            return;  // GO TO 10: exit with info = j (non-PD, incl. tolerated 0).
+        }
+    }
+    info = 0;
+}
+
+// dsolve.f -- b is column-major nc x nr: b[(j-1)+(i-1)*nc]. Mixed-stride
+// ddot/daxpy (1 and nc) exercise the BLAS unequal-increment paths.
+void dsolve(const double* a, int nr, int nc, bool lainvb, double* b) {
+    int ielt = 0;
+    // Solve R'w = b.
+    for (int i = 1; i <= nr; ++i) {
+        double diag = a[ielt + i - 1];
+        for (int j = 1; j <= nc; ++j) {
+            double sum = ddot(i - 1, a + ielt, 1, b + (j - 1), nc);
+            b[(j - 1) + (i - 1) * nc] = (b[(j - 1) + (i - 1) * nc] - sum) / diag;
+        }
+        ielt = ielt + i;
+    }
+    // Solve R x = w.
+    if (lainvb) {
+        for (int ib = 1; ib <= nr; ++ib) {
+            int i = nr + 1 - ib;
+            double diag = a[ielt - 1];
+            ielt = ielt - i;
+            for (int j = 1; j <= nc; ++j) {
+                b[(j - 1) + (i - 1) * nc] = b[(j - 1) + (i - 1) * nc] / diag;
+                daxpy(i - 1, -b[(j - 1) + (i - 1) * nc], a + ielt, 1,
+                      b + (j - 1), nc);
+            }
+        }
+    }
+}
+
 // euclid.f -- fular/g 0-based; b/a 1-based workspace (b[i-1],a[i-1]).
 void euclid(const double* fular, double* b, double* a, int maxpq, int mxarlg,
             int mxmalg, double* g, int& err) {

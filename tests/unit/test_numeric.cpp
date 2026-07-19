@@ -217,4 +217,39 @@ TEST("euclid: AR-covariance solve + non-stationary early-out") {
     CHECK_EQ(err, 1);  // oracle euclid_err2
 }
 
+// ---- Packed-Cholesky trio. Goldens from tools/ref_tier2.f (oracle
+// xprmx/dppfa/dsolve, gfortran -O2, exact match). ----
+
+TEST("xprmx: packed [X:y]'[X:y] via strided ddot") {
+    // 3 obs, 2 X cols + y in col 3. row-major [x1 x2 y] per row.
+    double xy[9] = {1, 1, 2, 1, 2, 3, 1, 3, 5};
+    double xpx[6] = {0, 0, 0, 0, 0, 0};
+    xprmx(xy, 3, 2, 3, xpx);
+    CHECK_EQ(xpx[0], 3.0);   // X'X (1,1)
+    CHECK_EQ(xpx[1], 6.0);   // (2,1)
+    CHECK_EQ(xpx[2], 14.0);  // (2,2)
+    CHECK_EQ(xpx[3], 10.0);  // X'y (1)
+    CHECK_EQ(xpx[4], 23.0);  // X'y (2)
+    CHECK_EQ(xpx[5], 38.0);  // y'y
+}
+
+TEST("dppfa: Census packed Cholesky") {
+    double ap[3] = {4.0, 2.0, 10.0};  // packed [[4,2],[2,10]]
+    int info = -1;
+    dppfa(ap, 2, info);
+    CHECK_EQ(info, 0);    // oracle dppfa_info
+    CHECK_EQ(ap[0], 2.0); // R packed [2,1,3]
+    CHECK_EQ(ap[1], 1.0);
+    CHECK_EQ(ap[2], 3.0);
+}
+
+TEST("dsolve: multi-RHS solve against packed factor") {
+    // A x = b with the factor of [[4,2],[2,10]], b=[6,28], nr=2 nc=1.
+    double a[3] = {2.0, 1.0, 3.0};  // R from dppfa above
+    double b[2] = {6.0, 28.0};
+    dsolve(a, 2, 1, true, b);
+    CHECK(rclose(b[0], 1.1111111111111094e-01, 1e-14));  // oracle dsolve1
+    CHECK(rclose(b[1], 2.7777777777777781e+00, 1e-14));  // dsolve2
+}
+
 int main() { return mt::run_all(); }
