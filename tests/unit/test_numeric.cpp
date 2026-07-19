@@ -1639,6 +1639,63 @@ TEST("fcstxy: ARMA(1,1) + intercept forecasts (Nb>0, dppsl design term)") {
     }
 }
 
+// ---- fcstxy on a DIFFERENCED model (mxdfar>0; against ref_fcstxy3.f). ----------
+// (0 1 1): nonseasonal diff (1-B, coef 1 fixed) + MA(1), so Mxdflg=1, Mxarlg=0,
+// mxdfar=1 -- the tfcst-seeding-from-the-last-row + ndltar-offset recursion the
+// no-diff cases never touch (test-coverage C4). I(1) cumulative-sum series so the
+// differenced fit is well-behaved; the I(1) forecast is flat (last level) and the
+// SEs grow with horizon, both as expected. Oracle at rtol 1e-11.
+TEST("fcstxy: differenced (0 1 1) forecasts, mxdfar>0 seeding") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    const double ser[24] = {0.5, -0.3, 0.8, -0.6, 0.2,  0.9, -0.7, 0.4,
+                            0.1, -0.5, 0.6, -0.2, 0.7,  -0.8, 0.3, 0.5,
+                            -0.4, 0.9, -0.1, 0.6, -0.7, 0.2, 0.4, -0.5};
+    d.nspobs = 24;
+    m.ncxy = 1;
+    double acc = 10.0;
+    for (int i = 1; i <= 24; ++i) { acc += ser[i - 1]; d.xy(i) = acc; }  // I(1)
+
+    m.lar = false; m.lma = true; m.lextma = true; m.lextar = true;
+    m.lprier = false; ctx.hiddn.lhiddn = false;
+    m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 2; m.mdl(2) = 2; m.mdl(3) = 3;  // DIFF op, no AR, MA op
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    m.arimaf(1) = true; m.arimaf(2) = false;   // diff coef fixed, MA free
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 0; m.mxmalg = 1; m.mxdflg = 1;
+    d.arimap(1) = 1.0; d.arimap(2) = 0.3;      // diff coef 1, MA start 0.3
+    m.nb = 0; m.nintvl = 1; m.nextvl = 1; m.iregfx = 0;
+    m.tol = 1e-5; m.nltol0 = 1e-5; m.nltol = 1e-5; m.stepln = 0.0;
+    ctx.hiddn.issap = 0; ctx.hiddn.irev = 0;
+    ctx.error.lfatal = false;
+    ctx.units.mt1 = 6; ctx.units.mt2 = 6;
+
+    auto a = std::make_unique<double[]>(1092);
+    int na = 0, nefobs = 0;
+    bool lauto = false;
+    rgarma(ctx, true, 200, 60, false, a.get(), na, nefobs, lauto);
+    CHECK(d.convrg);
+    CHECK(rclose(d.arimap(2), 5.1399452122580702e-01, 1e-11));  // MA coef
+
+    double fcst[6] = {0}, se[6] = {0}, rgvar[6] = {0};
+    fcstxy(ctx, /*fctori=*/24, /*nfcst=*/6, fcst, se, rgvar);
+
+    const double ose[6] = {
+        4.5218674809544068e-01, 5.0276198598175748e-01, 5.4869515574999583e-01,
+        5.9106948266570447e-01, 6.3060280108313416e-01, 6.6779985933592878e-01};
+    for (int i = 0; i < 6; ++i) {
+        // I(1) MMSE forecast is flat at the last estimated level.
+        CHECK(rclose(fcst[i], 1.2445409112913696e+01, 1e-11));
+        CHECK(rclose(se[i], ose[i], 1e-11));
+        CHECK_EQ(rgvar[i], 0.0);
+    }
+}
+
 // ---- rgarma WITH regression (Nb>0; against ref_rgarma2.f). ---------------------
 // Same 24-point series shifted to mean 2.0 with an intercept column, so Xy is
 // 24x2 = [1, y] (Ncxy=2, Nb=1). Drives the branches the Nb=0 case skips: the
