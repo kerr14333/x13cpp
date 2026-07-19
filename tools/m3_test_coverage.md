@@ -85,6 +85,46 @@ avoid bls.gov 403s). First two to add:
 - [ ] B9. HOUSTNSA (volatile weather seasonality, AR-heavy automdl); BOPGSTB
   (uniformly negative → transform must reject log).
 
+## C. Estimation/forecast parity INFRASTRUCTURE (beyond hand-built ref drivers)
+
+Tier A/B verify individual routines/models via `ref_*.f` drivers or new specs.
+These items are about *systematic* end-to-end coverage — the analog of the M2
+save-file parity gate, plus branch gaps in the routines already landed.
+
+- [ ] **C1. Estimation corpus parity gate (highest value).** A new `x13run_m3`
+  CLI binary (run_m2 with `estimate=true`, plus fcstxy when `forecast{}` present)
+  + a pytest that sweeps EVERY corpus spec with an arima model and compares
+  `arima.ar`/`arima.ma`/`variance`/`loglikelihood`/`aic..hq`/`nfev`/`niter`
+  against the `.udg` goldens (via x13compare). Today estimation is checked on
+  exactly 2 hand specs. This subsumes B1/B2 breadth automatically (quarterly, AR,
+  mixed models already in the corpus get checked for free) and catches
+  regressions corpus-wide. Depends on: the "no auto file output" rule (results
+  read off the object/captured state, opt-in write).
+- [ ] **C2. Fixed-coefficient spec — pins live bug CB-6.** `armats` misindexes
+  t-stats when an ARMA lag is held fixed (`itv` counts every lag, Armacm packed by
+  free params). Ported verbatim but NEVER exercised on a real fixed-coef spec. A
+  `model=(0 1 1)` with a held MA coef (`ma=(0.4f)` / `exact=none`) pins the
+  faithful-but-buggy behavior end-to-end. Overlaps B3; C2 is specifically the
+  armats-index assertion.
+- [ ] **C3. `prlkhd` branch coverage.** Only log+airline (jacadj=-Σlog y) tested.
+  Untested: `Var<=0` (returns, no likelihood); non-exact-ML `lclaic=F` (Olkhd set
+  but Aic/Aicc/etc NOT computed); logit `jacadj` (Fcntyp=3); prior-adjustment
+  `jacadj` with `Adjmod>=2` (the second jacadj loop); `Eick>0` → Eic computed.
+- [ ] **C4. `fcstxy` differencing branch.** Current fcstxy tests are both no-diff
+  (mxdfar=0). The `tfcst` seeding from the last mxdfar rows of Xy + the
+  ndltar-offset recursion are unexercised. Covered by C1 once fcstxy is wired into
+  run_m2 (real airline (0 1 1)(0 1 1) forecast, mxdfar=13), or a differenced
+  `ref_fcstxy3.f`.
+- [ ] **C5. Determinism re-gate with estimation.** The M0 O0-vs-O2 determinism
+  sweep predates all M3. The `nfev`/`nliter` trajectory canary is FP-sensitive
+  (lmdif secant path) — re-run the determinism gate with estimation+forecast in
+  the pipeline to confirm optimizer trajectories stay bit-identical across opt
+  levels (and, later, compilers). Guards against silent FP-contraction regressions
+  that the rtol-1e-12 unit tests would still pass.
+- [ ] **C6. `xrlkhd` on a real spec.** The AIC-test-path AICC (jacadj-free) is
+  unit-tested on the hand ARMA(1,1) only; not exercised through a spec that would
+  drive automatic model/transform AIC decisions (needs automdl/trnaic, later).
+
 ## Cross-cutting parity invariants (assert in every relevant ref driver)
 
 - **Operator order load-bearing**: regular factor before seasonal within each
