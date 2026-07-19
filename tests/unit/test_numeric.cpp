@@ -1049,4 +1049,18 @@ TEST("qrsolv: Givens elimination + back-substitution") {
     CHECK(rclose(sdiag[2], 4.0377855911690963e+00, 1e-12));  // qs_sd3
 }
 
+TEST("lmpar: LM parameter secant search") {
+    double r[9] = {2, 0, 0, 1, 3, 0, 1, 1, 4};
+    int ipvt[3] = {1, 2, 3};
+    double diag[3] = {1, 1, 1};
+    double qtb[3] = {1, 2, 3};
+    double x[3] = {0}, sdiag[3] = {0}, wa1[3] = {0}, wa2[3] = {0};
+    double par = 0.0;
+    lmpar(3, r, 3, ipvt, diag, qtb, 0.3, par, x, sdiag, wa1, wa2);
+    CHECK(rclose(par, 3.5560792823453269e+01, 1e-12));  // lp_par
+    CHECK(rclose(x[0], 3.0435623515339374e-02, 1e-12)); // lp_x1
+    CHECK(rclose(x[1], 1.2866076853658420e-01, 1e-12)); // lp_x2
+    CHECK(rclose(x[2], 2.6931053329193400e-01, 1e-12)); // lp_x3
+}
+
 int main() { return mt::run_all(); }

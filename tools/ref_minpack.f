@@ -60,4 +60,27 @@ C     ---- qrsolv: 3x3 upper-tri R (col-major), diag, qtb ----
       DO i=1,3
        WRITE(*,'(A,I1,A,ES24.16)') 'qs_sd',i,' ',sdiag(i)
       END DO
+
+C     ---- lmpar: same R, small delta=0.3 to force the secant loop ----
+      r(1)=2D0
+      r(2)=0D0
+      r(3)=0D0
+      r(4)=1D0
+      r(5)=3D0
+      r(6)=0D0
+      r(7)=1D0
+      r(8)=1D0
+      r(9)=4D0
+      diag(1)=1D0
+      diag(2)=1D0
+      diag(3)=1D0
+      qtb(1)=1D0
+      qtb(2)=2D0
+      qtb(3)=3D0
+      wa(1)=0D0
+      CALL lmpar(3,r,3,ipvt,diag,qtb,0.3D0,wa(1),x,sdiag,acnorm,wa2)
+      WRITE(*,'(A,ES24.16)') 'lp_par ',wa(1)
+      DO i=1,3
+       WRITE(*,'(A,I1,A,ES24.16)') 'lp_x',i,' ',x(i)
+      END DO
       END

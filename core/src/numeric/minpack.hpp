@@ -26,6 +26,16 @@ void qrfac(int m, int n, double* a, int lda, bool pivot, int* ipvt, int lipvt,
 void qrsolv(int n, double* r, int ldr, const int* ipvt, const double* diag,
             const double* qtb, double* x, double* sdiag, double* wa);
 
+// lmpar.f: determine the Levenberg-Marquardt parameter par such that the scaled
+// step x solving (R'R + par*D*D) x = R'*qtb has ||D*x|| ~ delta (the trust-
+// region radius). Iterates the secant search (>=10 steps max) calling qrsolv per
+// step. par is in/out (starting guess -> chosen value). x, sdiag are outputs;
+// wa1, wa2 are work (n). r is the n-by-n QR factor (column-major, leading dim
+// ldr); its lower triangle is scratch (restored by qrsolv).
+void lmpar(int n, double* r, int ldr, const int* ipvt, const double* diag,
+           const double* qtb, double delta, double& par, double* x,
+           double* sdiag, double* wa1, double* wa2);
+
 }  // namespace x13
 
 #endif  // X13_NUMERIC_MINPACK_HPP
