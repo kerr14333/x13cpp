@@ -8,10 +8,77 @@
 #include "regarima/armafl.hpp"      // armafl
 #include "numeric/numeric.hpp"      // xprmx, dppfa, dcopy, daxpy, scrmlt
 #include "specparse/specparse.hpp"  // copy, setdp, abend, errhdr, writln
-#include "gen/model.hpp"            // prm::DIFF, prm::MA, prm::PORDER
+#include "gen/model.hpp"            // prm::DIFF, prm::MA, prm::PORDER, error codes
 #include "gen/srslen.hpp"           // prm::PLEN (PA sizing)
+#include "gen/notset.hpp"           // prm::DNOTST (not-set sentinel)
 
 namespace x13 {
+
+// strtvl.f -- seed free, not-yet-set ARMA lags to 0.1. Walks operators DIFF..MA
+// in lag order exactly like upespm; the seed fires only where the parameter is
+// still DNOTST and the lag is not fixed.
+void strtvl(X13Context& ctx) {
+    constexpr double PNT1 = 0.1;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    for (int iflt = prm::DIFF; iflt <= prm::MA; ++iflt) {
+        int begopr = m.mdl(iflt - 1);
+        int endopr = m.mdl(iflt) - 1;
+        for (int iopr = begopr; iopr <= endopr; ++iopr) {
+            int beglag = m.opr(iopr - 1);
+            int endlag = m.opr(iopr) - 1;
+            for (int lag = beglag; lag <= endlag; ++lag) {
+                if (dpeq(d.arimap(lag), prm::DNOTST) && !m.arimaf(lag))
+                    d.arimap(lag) = PNT1;
+            }
+        }
+    }
+}
+
+// stpitr.f -- IGLS convergence test (LOGICAL FUNCTION). Returns keep-iterating.
+// oldobj is the vendored SAVEd local, now ctx.saved.stpitr_oldobj. The Lprier
+// deviance-increase warning print is deferred (like fcnar's diagnostics); it
+// gates on Lprier && ratio<0 and writes no output value, so control flow is
+// unaffected. Every branch falls through to storing objfcn into oldobj.
+bool stpitr(X13Context& ctx, bool lprier, double objfcn, double devtol, int iter,
+            int nliter, int mxiter, bool& convrg, int& armaer, bool lhiddn) {
+    (void)lprier;   // used only by the deferred deviance-increase warning print
+    (void)lhiddn;
+    constexpr double ZERO = 0.0, ONE = 1.0, TWO = 2.0;
+    double& oldobj = ctx.saved.stpitr_oldobj;
+    double mprec = dpmpar(1);
+
+    bool stpitr_r = true;
+    convrg = true;
+    if (nliter >= mxiter) {
+        // Stop: maximum number of overall iterations exceeded.
+        armaer = prm::PMXIER;
+        stpitr_r = false;
+        convrg = false;
+    } else if (iter > 1 && !dpeq(objfcn, ZERO)) {
+        // Only check the deviance differences after the second iteration.
+        double ratio = oldobj / objfcn - ONE;
+        if (devtol / TWO < mprec) {
+            // Convergence tolerance tighter than double precision.
+            armaer = prm::PCNTER;
+            stpitr_r = false;
+            convrg = false;
+        } else {
+            // (Deferred: Lprier && ratio<0 deviance-increase warning print.)
+            if (std::abs(ratio) < devtol) {
+                stpitr_r = false;  // converged
+            } else if (objfcn < mprec) {
+                // Deviance below machine precision: can't refine further.
+                armaer = prm::PDVTER;
+                stpitr_r = false;
+            }
+        }
+    } else {
+        oldobj = ZERO;
+    }
+    oldobj = objfcn;
+    return stpitr_r;
+}
 
 // olsreg.f -- normal equations then Cholesky back-substitution. The packed
 // factor chlxpx after dppfa holds [chol(X'X); z; sqrt(RSS)]; the betas solve

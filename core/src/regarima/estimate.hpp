@@ -10,6 +10,24 @@
 
 namespace x13 {
 
+// strtvl.f: ARMA starting values. Walks every lag of the DIFF..MA operators;
+// any free lag (arimaf false) whose arimap is still the not-set sentinel
+// (dpeq(arimap, DNOTST)) is seeded to 0.1. Fixed lags and already-valued lags
+// are left untouched. (Regression betas are computed elsewhere via olsreg.)
+void strtvl(X13Context& ctx);
+
+// stpitr.f: the IGLS step/convergence test (Fortran LOGICAL FUNCTION). Returns
+// true to keep iterating, false to stop. convrg (out) is false only on the two
+// hard-error stops; armaer (out) is written PMXIER/PCNTER/PDVTER on the error
+// stops and left alone otherwise. It compares the relative deviance
+// |oldobj/objfcn - 1| against devtol, where oldobj is the previous call's
+// objfcn -- carried in ctx.saved.stpitr_oldobj (the Fortran SAVE). The first
+// iteration (or objfcn==0) only records oldobj and returns "keep going". The
+// deviance-increase warning print (Lprier path) is deferred to the print
+// milestone, exactly as fcnar's diagnostics are -- it changes no output here.
+bool stpitr(X13Context& ctx, bool lprier, double objfcn, double devtol, int iter,
+            int nliter, int mxiter, bool& convrg, int& armaer, bool lhiddn);
+
 // olsreg.f: ordinary least squares by the normal equations. Forms [X:y]'[X:y]
 // (xprmx) into chlxpx, Cholesky-factors it (dppfa), and back-solves the upper-
 // triangular system L'b = z for the nb = ncxy-1 regression estimates b. The

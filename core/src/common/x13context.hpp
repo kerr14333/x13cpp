@@ -106,7 +106,13 @@ struct X13Context {
     ParseSettings captured;    // M1 instrumentation: key parsed settings for the gate
     SaveState saves;           // M2: captured save tables (numeric surface + text)
     // SAVEd Fortran locals (persist across calls, belong to no COMMON block).
-    struct { int armafl_nextma = 0; } saved;
+    // stpitr_oldobj: stpitr.f SAVEs oldobj (last iteration's objfcn) between
+    // calls to form the relative-deviance ratio. It is (re)set inside stpitr on
+    // every call -- the first iteration of an estimation (Iter<=1, or Objfcn==0)
+    // drives it through the ELSE reset, and every call ends by storing the
+    // current Objfcn -- so the 0.0 default here only matters until the first
+    // call, exactly as the Fortran SAVE (undefined but never read on iter 1).
+    struct { int armafl_nextma = 0; double stpitr_oldobj = 0.0; } saved;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

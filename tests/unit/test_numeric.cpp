@@ -11,6 +11,7 @@
 #include "regarima/armafl.hpp"
 #include "regarima/estimate.hpp"
 #include "numeric/minpack.hpp"
+#include "numeric/rpoly.hpp"
 
 #include <cmath>
 #include <memory>
@@ -963,6 +964,59 @@ TEST("fcnar: objective function, success + error paths") {
     CHECK_EQ(a[8], 1e6);    // ec_a9
 }
 
+// ---- strtvl (ARMA starting values; against ref_strtvl.f). AR(2)+MA(1): lag 1
+// free & DNOTST -> 0.1; lag 2 already 0.5 -> kept; lag 3 MA fixed -> kept. ------
+TEST("strtvl: seed free not-set ARMA lags to 0.1") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;  // DIFF empty, AR, MA
+    m.opr(0) = 1; m.opr(1) = 3; m.opr(2) = 4;                // AR lags 1..2, MA lag 3
+    d.arimap(1) = -999.0; m.arimaf(1) = false;  // DNOTST, free, not set -> seed
+    d.arimap(2) = 0.5;    m.arimaf(2) = false;  // free, already valued -> keep
+    d.arimap(3) = -999.0; m.arimaf(3) = true;   // DNOTST but fixed -> keep
+    strtvl(ctx);
+    CHECK(rclose(d.arimap(1), 1.0000000000000001e-01, 1e-12));  // sv1
+    CHECK_EQ(d.arimap(2), 5.0000000000000000e-01);              // sv2
+    CHECK_EQ(d.arimap(3), -9.9900000000000000e+02);             // sv3 (DNOTST kept)
+}
+
+// ---- stpitr (IGLS convergence test + SAVEd oldobj; against ref_stpitr.f). A
+// six-call sequence on ONE ctx so the oldobj carry is exercised: call 3 only
+// converges because oldobj=5 was carried from call 2 (without the SAVE, ratio
+// would be -1 and it would keep iterating). Calls 4-6 hit the error stops. -----
+TEST("stpitr: convergence test with carried oldobj (SAVE)") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    bool convrg;
+    int armaer;
+    // call 1: Iter=1 -> just record oldobj, keep going.
+    armaer = 0; convrg = false;
+    CHECK_EQ(stpitr(ctx, false, 10.0, 1e-5, 1, 1, 100, convrg, armaer, false), true);
+    CHECK_EQ(convrg, true);  CHECK_EQ(armaer, 0);              // st1
+    // call 2: Iter=2, 10->5, ratio uses carried oldobj=10.
+    armaer = 0; convrg = false;
+    CHECK_EQ(stpitr(ctx, false, 5.0, 1e-5, 2, 2, 100, convrg, armaer, false), true);
+    CHECK_EQ(convrg, true);  CHECK_EQ(armaer, 0);              // st2
+    // call 3: Iter=3, 5->5.00002, |ratio|<devtol -> converged (needs oldobj=5).
+    armaer = 0; convrg = false;
+    CHECK_EQ(stpitr(ctx, false, 5.00002, 1e-5, 3, 3, 100, convrg, armaer, false), false);
+    CHECK_EQ(convrg, true);  CHECK_EQ(armaer, 0);              // st3
+    // call 4: Nliter>=Mxiter -> PMXIER, hard stop.
+    armaer = 0; convrg = false;
+    CHECK_EQ(stpitr(ctx, false, 5.0, 1e-5, 4, 100, 100, convrg, armaer, false), false);
+    CHECK_EQ(convrg, false); CHECK_EQ(armaer, 5);              // st4 (PMXIER)
+    // call 5: devtol/2 < mprec -> PCNTER, hard stop.
+    armaer = 0; convrg = false;
+    CHECK_EQ(stpitr(ctx, false, 5.0, 1e-18, 5, 5, 100, convrg, armaer, false), false);
+    CHECK_EQ(convrg, false); CHECK_EQ(armaer, 14);             // st5 (PCNTER)
+    // call 6: objfcn<mprec but nonzero -> PDVTER (convrg stays true).
+    armaer = 0; convrg = false;
+    CHECK_EQ(stpitr(ctx, false, 1e-18, 1e-5, 6, 6, 100, convrg, armaer, false), false);
+    CHECK_EQ(convrg, true);  CHECK_EQ(armaer, 15);             // st6 (PDVTER)
+}
+
 // ---- leaf-level "don't clean up the math" edge cases (against ref_leafedge.f).
 // A9: ratneg leaves c(i) STALE when its sum lands exactly 0 (a naive port writes
 // 0). A10: ratpos skips a term whose coefficient underflows below 1e-150 (a naive
@@ -1192,6 +1246,90 @@ TEST("lmdif: cumulative counters + Info=5 (re-entrant Rosenbrock)") {
     CHECK(rclose(x[0], -5.7518863935252185e-01, 1e-12));  // c_x1
     CHECK(rclose(x[1], 2.9301052380426973e-01, 1e-12));   // c_x2
     CHECK(rclose(enorm(2, fvec), 1.6199818171907148e+00, 1e-12));  // c_fnorm
+}
+
+// ---- rpoly (Jenkins-Traub root finder; against ref_rpoly.f). ----------------
+// The vendored oracle has a Census bug: hardcoded single-precision-ish machine
+// constants (Eta=5e-15, smalno=1e-38) make lo=smalno/Eta~2e-24, and when any
+// coefficient magnitude is >= 10 the scaling branch (guarded by xmax<10) runs
+// and a dpeq(sc,0) absolute-threshold quirk rescales the whole polynomial by
+// ~1e-37, collapsing all convergence tests -> fail=true, degree->0. The trigger
+// is COEFFICIENT MAGNITUDE, not root location; X-13's own AR/MA polynomials
+// have constant term 1 and small coefficients, so the branch is never hit and
+// rpoly is reliable in practice. The port reproduces the bug bit-for-bit.
+// Coefficients below are in order of DECREASING powers.
+TEST("rpoly: deterministic failure when max|coeff| >= 10 (Census bug)") {
+    double op[4] = {1.0, -6.0, 11.0, -6.0};  // (x-1)(x-2)(x-3), max|c|=11
+    double zr[3] = {0}, zi[3] = {0};
+    int deg = 3;
+    bool fail = false;
+    rpoly(op, deg, zr, zi, fail);
+    CHECK(fail);        // r1_fail
+    CHECK_EQ(deg, 0);   // r1_deg
+    double op4[5] = {1.0, -10.0, 35.0, -50.0, 24.0};  // (x-1)..(x-4), max|c|=50
+    double zr4[4] = {0}, zi4[4] = {0};
+    int deg4 = 4;
+    bool fail4 = false;
+    rpoly(op4, deg4, zr4, zi4, fail4);
+    CHECK(fail4);       // r3_fail
+    CHECK_EQ(deg4, 0);  // r3_deg
+    // Roots INSIDE the unit circle (0.5,0.3,-0.2) still fail when max|c|=20:
+    // the trigger is coefficient magnitude, not root location.
+    double op6[4] = {20.0, -12.0, -0.2, 0.6};
+    double zr6[3] = {0}, zi6[3] = {0};
+    int deg6 = 3;
+    bool fail6 = false;
+    rpoly(op6, deg6, zr6, zi6, fail6);
+    CHECK(fail6);       // r6_fail
+    CHECK_EQ(deg6, 0);  // r6_deg
+}
+
+TEST("rpoly: cubic with a complex pair") {
+    double op[4] = {1.0, -2.0, 1.0, -2.0};  // (x^2+1)(x-2)
+    double zr[3] = {0}, zi[3] = {0};
+    int deg = 3;
+    bool fail = true;
+    rpoly(op, deg, zr, zi, fail);
+    CHECK(!fail);
+    CHECK_EQ(deg, 3);
+    CHECK(std::fabs(zr[0] - (-6.4854874656406277e-18)) <= 1e-14);  // r2_zr1
+    CHECK(rclose(zi[0], 1.0, 1e-12));                              // r2_zi1
+    CHECK(std::fabs(zr[1] - (-6.4854874656406277e-18)) <= 1e-14);  // r2_zr2
+    CHECK(rclose(zi[1], -1.0, 1e-12));                             // r2_zi2
+    CHECK(rclose(zr[2], 2.0, 1e-12));                              // r2_zr3
+    CHECK(rclose(zi[2], 0.0, 1e-12));                              // r2_zi3
+}
+
+TEST("rpoly: distinct real roots, small coefficients") {
+    double op[4] = {1.0, -0.6, -0.01, 0.03};  // (x-0.5)(x-0.3)(x+0.2)
+    double zr[3] = {0}, zi[3] = {0};
+    int deg = 3;
+    bool fail = true;
+    rpoly(op, deg, zr, zi, fail);
+    CHECK(!fail);
+    CHECK_EQ(deg, 3);
+    CHECK(rclose(zr[0], -1.9999999999999940e-01, 1e-12));  // r4_zr1
+    CHECK(rclose(zr[1], 2.9999999999999777e-01, 1e-12));   // r4_zr2
+    CHECK(rclose(zr[2], 5.0000000000000167e-01, 1e-12));   // r4_zr3
+    CHECK(rclose(zi[0], 0.0, 1e-12));
+    CHECK(rclose(zi[1], 0.0, 1e-12));
+    CHECK(rclose(zi[2], 0.0, 1e-12));
+}
+
+TEST("rpoly: real root + complex pair, small coefficients") {
+    double op[4] = {1.0, -0.4, 0.25, -0.1};  // (x-0.4)(x^2+0.25)
+    double zr[3] = {0}, zi[3] = {0};
+    int deg = 3;
+    bool fail = true;
+    rpoly(op, deg, zr, zi, fail);
+    CHECK(!fail);
+    CHECK_EQ(deg, 3);
+    CHECK(std::fabs(zr[0] - 1.3466778305049108e-17) <= 1e-14);  // r5_zr1
+    CHECK(rclose(zi[0], 4.9999999999999994e-01, 1e-12));        // r5_zi1
+    CHECK(std::fabs(zr[1] - 1.3466778305049108e-17) <= 1e-14);  // r5_zr2
+    CHECK(rclose(zi[1], -4.9999999999999994e-01, 1e-12));       // r5_zi2
+    CHECK(rclose(zr[2], 4.0000000000000002e-01, 1e-12));        // r5_zr3
+    CHECK(rclose(zi[2], 0.0, 1e-12));                           // r5_zi3
 }
 
 int main() { return mt::run_all(); }
