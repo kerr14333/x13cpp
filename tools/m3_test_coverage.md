@@ -37,11 +37,11 @@ model/mdldat commons + a matching `test_numeric` case. Highest risk first.
   what forecasting (`fcstxy`) and outlier detection (`idotlr`) do.
 - [x] **A8. q>p ARMA(1,2)** + companion ARMA(2,2) — opposite `euclid` branch mix
   from the covered AR(2)MA(1); D-loop `max(1,Mxarlg-row+1)` clamp.
-- [ ] **A9. ratneg exact-zero staleness** — engineer `sum==0` (MA θ=0.5,
+- [x] **A9. ratneg exact-zero staleness** — engineer `sum==0` (MA θ=0.5,
   C=[-1,2,0,…]) so C(i) keeps its OLD value (no write); a naive port writes 0.
-- [ ] **A10. ratpos/ddot underflow-skip in anger** — MA θ=0.1 len 170 (θ^k cross
+- [x] **A10. ratpos/ddot underflow-skip in anger** — MA θ=0.1 len 170 (θ^k cross
   1e-150); θ=1e-160 (whole term skipped, first-order visible diff).
-- [ ] **A11. Sparse lags [2 4]** and decreasing [4 2] — chkrts degree-recompute,
+- [x] **A11. Sparse lags [2 4]** and decreasing [4 2] — chkrts degree-recompute,
   ratpos multi-lag begelt branch, maxlag non-monotone scan. Most off-by-one-prone.
 - [x] **A12. Pure differencing (0 1 0)(0 1 0)₁₂** and (0 2 0) — Lar=Lma=F, both
   Linit branches false, empty-range DO loops, `Nopr` global side-effect write.

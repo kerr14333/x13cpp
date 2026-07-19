@@ -19,6 +19,8 @@ namespace x13 {
 // full X13Context); forward-declare it here to keep this leaf test lightweight.
 void ratneg(int nelta, const double* arimap, const int* arimal, const int* opr,
             int begopr, int endopr, double* c);
+void ratpos(int nelta, const double* arimap, const int* arimal, const int* opr,
+            int begopr, int endopr, int neltc, double* c);
 }  // namespace x13
 
 using namespace x13;
@@ -911,6 +913,57 @@ TEST("chkrts: invertibility boundary (1-c*c FMA canary)") {
         int pf = -99;
         CHECK_EQ(chkrts(ap, al, af, opr1, oprf12, 1, 1, pf), true);  // chkH
         CHECK_EQ(pf, 1);
+    }
+}
+
+// ---- leaf-level "don't clean up the math" edge cases (against ref_leafedge.f).
+// A9: ratneg leaves c(i) STALE when its sum lands exactly 0 (a naive port writes
+// 0). A10: ratpos skips a term whose coefficient underflows below 1e-150 (a naive
+// port propagates 1e-160). A11: chkrts with sparse / decreasing lag lists. ------
+TEST("ratneg: exact-zero no-write staleness (A9)") {
+    double ap[1] = {0.5};
+    int al[1] = {1};
+    int op[2] = {1, 2};
+    double c[4] = {-1.0, 2.0, 0.0, 0.0};
+    ratneg(4, ap, al, op, 1, 1, c);
+    CHECK_EQ(c[0], -1.0);  // rn1: sum=-1+0.5*2=0 exactly -> c(1) KEPT, not zeroed
+    CHECK_EQ(c[1], 2.0);   // rn2
+    CHECK_EQ(c[2], 0.0);   // rn3
+    CHECK_EQ(c[3], 0.0);   // rn4
+}
+
+TEST("ratpos: coefficient underflow-skip (A10)") {
+    double ap[1] = {1e-160};  // below the 1e-150 skip threshold
+    int al[1] = {1};
+    int op[2] = {1, 2};
+    double c[4] = {1.0, 0.0, 0.0, 0.0};
+    ratpos(1, ap, al, op, 1, 1, 4, c);
+    CHECK_EQ(c[0], 1.0);
+    CHECK_EQ(c[1], 0.0);  // rp2: term skipped -> 0, NOT 1e-160
+    CHECK_EQ(c[2], 0.0);
+    CHECK_EQ(c[3], 0.0);
+}
+
+TEST("chkrts: sparse and decreasing lag lists (A11)") {
+    int op[2] = {1, 3};
+    int oprf[1] = {1};
+    // A11a: sparse MA lags [2 4] -> degree 4 with coef(1)=coef(3)=0.
+    {
+        double ap[2] = {0.3, 0.2};
+        int al[2] = {2, 4};
+        bool af[2] = {false, false};
+        int pf = -99;
+        CHECK_EQ(chkrts(ap, al, af, op, oprf, 1, 1, pf), false);  // saa
+        CHECK_EQ(pf, -99);
+    }
+    // A11b: decreasing lags [4 2] -> degree fixed from the highest (first) lag.
+    {
+        double ap[2] = {0.3, 0.2};
+        int al[2] = {4, 2};
+        bool af[2] = {false, false};
+        int pf = -99;
+        CHECK_EQ(chkrts(ap, al, af, op, oprf, 1, 1, pf), false);  // sab
+        CHECK_EQ(pf, -99);
     }
 }
 
