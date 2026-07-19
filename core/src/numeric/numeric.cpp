@@ -331,6 +331,29 @@ void dsolve(const double* a, int nr, int nc, bool lainvb, double* b) {
     }
 }
 
+// dppsl.f -- LINPACK single-RHS packed-Cholesky solve (see hpp). Packed
+// upper-triangular column storage: kk accumulates 1,3,6,... so ap[kk-1] is the
+// k-th diagonal and ap+kk (Fortran Ap(kk+1)) starts column k's off-diagonal.
+void dppsl(const double* ap, int n, double* b, bool alt) {
+    int kk = 0;
+    // Forward: solve L w = b (L from a = L L').
+    for (int k = 1; k <= n; ++k) {
+        double t = ddot(k - 1, ap + kk, 1, b, 1);
+        kk = kk + k;
+        b[k - 1] = (b[k - 1] - t) / ap[kk - 1];
+    }
+    // The Census `alt` option stops after the forward solve (L x = b).
+    if (alt) return;
+    // Back: solve L' x = w, completing a x = b.
+    for (int kb = 1; kb <= n; ++kb) {
+        int k = n + 1 - kb;
+        b[k - 1] = b[k - 1] / ap[kk - 1];
+        kk = kk - k;
+        double t = -b[k - 1];
+        daxpy(k - 1, t, ap + kk, 1, b, 1);
+    }
+}
+
 // euclid.f -- fular/g 0-based; b/a 1-based workspace (b[i-1],a[i-1]).
 void euclid(const double* fular, double* b, double* a, int maxpq, int mxarlg,
             int mxmalg, double* g, int& err) {

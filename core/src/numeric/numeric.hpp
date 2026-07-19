@@ -93,6 +93,13 @@ void dppfa(double* ap, int n, int& info);
 // exercising the BLAS unequal-increment paths.
 void dsolve(const double* a, int nr, int nc, bool lainvb, double* b);
 
+// dppsl.f: LINPACK single-RHS solve a*x=b against the packed Cholesky factor ap
+// (from dppfa; a = L L'). With alt=true it stops after the forward solve,
+// returning x from L*x=b only (the Census `alt` extension used by fcstxy). b is
+// the length-n RHS, overwritten with the solution. Uses ddot/daxpy on the packed
+// column storage (ap[kk-1] the k-th diagonal, ap+kk the column off-diagonals).
+void dppsl(const double* ap, int n, double* b, bool alt);
+
 // euclid.f: solves Fular(z)F(1/z)+F(z)Fular(1/z)=G(z) by the Euclid algorithm
 // (AR-covariance step of armafl). fular/g are 0-based (fular[0..mxarlg],
 // g[0..maxpq]); b and a are 1-based workspace of length mxarlg (b[i-1],a[i-1]),

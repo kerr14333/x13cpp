@@ -260,6 +260,32 @@ TEST("dsolve: multi-RHS solve against packed factor") {
     CHECK(rclose(b[1], 2.7777777777777781e+00, 1e-14));  // dsolve2
 }
 
+// dppsl: single-RHS packed-Cholesky solve (against ref driver drv_dppsl.f, which
+// factors A=[[4,2,1],[2,5,3],[1,3,6]] with dppfa then solves for b=[1,2,3]).
+// Covers both the full a*x=b solve (alt=false) and the Census forward-only
+// L*x=b solve (alt=true).
+TEST("dppsl: packed-Cholesky single-RHS solve, full + alt paths") {
+    // Packed upper (col-major): a11,a12,a22,a13,a23,a33.
+    double ap[6] = {4.0, 2.0, 5.0, 1.0, 3.0, 6.0};
+    int info = 0;
+    dppfa(ap, 3, info);
+    CHECK_EQ(info, 0);
+    double apf[6];
+    for (int i = 0; i < 6; ++i) apf[i] = ap[i];
+
+    double b[3] = {1.0, 2.0, 3.0};
+    dppsl(apf, 3, b, /*alt=*/false);          // full A x = b
+    CHECK(rclose(b[0], 0.8955223880597013e-01, 1e-14));   // oracle full1
+    CHECK(rclose(b[1], 0.1044776119402986e+00, 1e-14));   // full2
+    CHECK(rclose(b[2], 0.4328358208955223e+00, 1e-14));   // full3
+
+    double b2[3] = {1.0, 2.0, 3.0};
+    dppsl(apf, 3, b2, /*alt=*/true);          // forward-only L x = b
+    CHECK(rclose(b2[0], 0.5000000000000000e+00, 1e-14));  // oracle alt1
+    CHECK(rclose(b2[1], 0.7500000000000000e+00, 1e-14));  // alt2
+    CHECK(rclose(b2[2], 0.8857284715832128e+00, 1e-14));  // alt3
+}
+
 TEST("mltpos: operator multiply with secpas zero-padding") {
     int opr[3] = {1, 2, 3};
     // Case A: single AR op lag1 phi=0.5, nelta=3, neltc=5, c=[1,2,3,0,0].
