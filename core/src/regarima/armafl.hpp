@@ -24,6 +24,16 @@ void intgpg(X13Context& ctx, int nextma, int& info);
 // model.nopr as a side effect. No-op unless model.nopr>0.
 void exctma(X13Context& ctx, int nc, double* a, int& nelta, int nata);
 
+// armafl.f: the exact ARMA filter. Filters the nr x nc matrix mata in place to
+// whitened residuals (returned length na = nelta/nc). When linit is set (and the
+// model has AR or MA terms) it (re)initializes G'G via intgpg, the ARMA ACVs
+// (uconv/euclid/xpand), the D matrix and chol(var(w_p|z)) in chlvwp, adding the
+// AR determinant term to lndtcv. lckrts gates the chkrts invertibility check
+// (info=PINVER on failure; PGPGER/PACFER/PVWPER for the init sub-steps). nextma
+// is SAVEd across calls in ctx.saved. nata is mata's declared length.
+void armafl(X13Context& ctx, int nr, int nc, bool linit, bool lckrts,
+            double* mata, int& na, int nata, int& info);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ARMAFL_HPP

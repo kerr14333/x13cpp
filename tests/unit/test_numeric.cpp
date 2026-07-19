@@ -385,4 +385,101 @@ TEST("intgpg/exctma: exact MA filter helpers, MA(2) model") {
     CHECK(rclose(a[6],  3.0665373959877948e+00, 1e-12));   // exc_a7
 }
 
+// ---- armafl (full exact ARMA filter; against ref_armaflx.f). ARMA(1,1) model
+// phi=0.5, theta=0.3, no differencing; a length-8 series is filtered to
+// residuals with Linit=T, Lckrts=T. Exercises the whole path: chkrts gate,
+// intgpg, uconv/euclid/xpand ACVs, the D matrix, chol(var(w_p|z)), the ddot
+// correction, and dsolve. rtol 1e-12. ------------------------------------------
+TEST("armafl: full exact ARMA filter, ARMA(1,1)") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = true;
+    m.lma = true;
+    m.nopr = 2;
+    m.mdl(0) = 1;
+    m.mdl(1) = 1;
+    m.mdl(2) = 2;
+    m.mdl(3) = 3;
+    m.opr(0) = 1;
+    m.opr(1) = 2;
+    m.opr(2) = 3;
+    m.arimal(1) = 1;
+    m.arimal(2) = 1;
+    d.arimap(1) = 0.5;
+    d.arimap(2) = 0.3;
+    m.arimaf(1) = false;
+    m.arimaf(2) = false;
+    m.oprfac(1) = 1;
+    m.oprfac(2) = 1;
+    m.mxarlg = 1;
+    m.mxmalg = 1;
+    m.mxdflg = 0;
+    d.lndtcv = 0.0;
+
+    double mata[200] = {0.0};
+    const double series[8] = {1.0, 2.0, -1.0, 0.5, 3.0, -2.0, 1.5, 0.25};
+    for (int i = 0; i < 8; ++i) mata[i] = series[i];
+    int na = -99, info = -99;
+    armafl(ctx, 8, 1, true, true, mata, na, 200, info);
+
+    CHECK_EQ(info, 0);   // ref af_info
+    CHECK_EQ(na, 9);     // ref af_na
+    CHECK(rclose(d.lndtcv, 5.6954892689151181e-02, 1e-12));  // af_ldt
+    const double golden[9] = {
+        1.3372276673516541e+00, -3.1248288398110585e-01, 1.4062551348056682e+00,
+        -1.5781234595582996e+00, 5.2656296213251008e-01, 2.9079688886397532e+00,
+        -2.6276093334080741e+00, 1.7117171999775778e+00, 1.3515159993273351e-02};
+    for (int i = 0; i < 9; ++i) CHECK(rclose(mata[i], golden[i], 1e-12));
+}
+
+// Case B: AR(2)MA(1) phi=(0.4,-0.2), theta=0.3 -- 2x2 D/Chlvwp, multi-lag ddot.
+TEST("armafl: full exact ARMA filter, AR(2)MA(1)") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = true;
+    m.lma = true;
+    m.nopr = 2;
+    m.mdl(0) = 1;
+    m.mdl(1) = 1;
+    m.mdl(2) = 2;
+    m.mdl(3) = 3;
+    m.opr(0) = 1;
+    m.opr(1) = 3;
+    m.opr(2) = 4;
+    m.arimal(1) = 1;
+    m.arimal(2) = 2;
+    m.arimal(3) = 1;
+    d.arimap(1) = 0.4;
+    d.arimap(2) = -0.2;
+    d.arimap(3) = 0.3;
+    m.arimaf(1) = false;
+    m.arimaf(2) = false;
+    m.arimaf(3) = false;
+    m.oprfac(1) = 1;
+    m.oprfac(2) = 1;
+    m.mxarlg = 2;
+    m.mxmalg = 1;
+    m.mxdflg = 0;
+    d.lndtcv = 0.0;
+
+    double mata[200] = {0.0};
+    const double series[8] = {1.0, 2.0, -1.0, 0.5, 3.0, -2.0, 1.5, 0.25};
+    for (int i = 0; i < 8; ++i) mata[i] = series[i];
+    int na = -99, info = -99;
+    armafl(ctx, 8, 1, true, true, mata, na, 200, info);
+
+    CHECK_EQ(info, 0);   // ref bf_info
+    CHECK_EQ(na, 9);     // ref bf_na
+    CHECK(rclose(d.lndtcv, 7.8567281094134883e-02, 1e-12));  // bf_ldt
+    const double golden[9] = {
+        9.7918409817936714e-01, 1.6417415706932461e+00,  3.1140437450799474e-01,
+        -1.5065786876476017e+00, 8.4802639370571953e-01, 2.8544079181117157e+00,
+        -2.2436776245664856e+00, 2.2268967126300545e+00, -8.1930986210983825e-02};
+    for (int i = 0; i < 9; ++i) CHECK(rclose(mata[i], golden[i], 1e-12));
+}
+
 int main() { return mt::run_all(); }

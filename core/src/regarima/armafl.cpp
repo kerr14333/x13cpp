@@ -2,6 +2,7 @@
 // of the vendored oracle Fortran; ex-COMMON state reached through ctx.
 #include "regarima/armafl.hpp"
 
+#include <algorithm>
 #include <vector>
 
 #include "regarima/armafilt.hpp"  // mltpos, arflt
@@ -80,6 +81,162 @@ void exctma(X13Context& ctx, int nc, double* a, int& nelta, int nata) {
         ratpos(nelta, d.arimap.data(), m.arimal.data(), m.opr.data(),
                m.mdl(prm::MA - 1), m.mdl(prm::MA) - 1, nelta, a);
     }
+}
+
+// armafl.f -- exact ARMA filter. Faithful line-for-line port; the four Fortran
+// GO TO 10 error exits collapse to early returns (all fire before any Arimal
+// mutation, so no cleanup is skipped). nextma is the SAVEd local (ctx.saved).
+void armafl(X13Context& ctx, int nr, int nc, bool linit, bool lckrts,
+            double* mata, int& na, int nata, int& info) {
+    constexpr double ONE = 1.0, ZERO = 0.0;
+    constexpr int PMATD = (prm::PLEN + prm::PORDER) * prm::PORDER;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    int& nextma = ctx.saved.armafl_nextma;  // SAVE nextma
+
+    info = 0;
+    if (m.nopr == 0) {  // No ARMA model to filter
+        na = nr;
+        return;
+    }
+    int begopr = m.lar ? m.mdl(prm::AR - 1) : m.mdl(prm::MA - 1);
+    int endopr = m.mdl(prm::MA) - 1;
+
+    if (lckrts && chkrts(d.arimap.data(), m.arimal.data(), m.arimaf.data(),
+                         m.opr.data(), m.oprfac.data(), begopr, endopr,
+                         d.prbfac)) {
+        info = prm::PINVER;
+        return;
+    }
+
+    std::vector<double> acv(prm::PORDER + 1, 0.0), fular(prm::PORDER + 1, 0.0),
+        fulma(prm::PORDER + 1, 0.0), psiwgt(prm::PORDER + 1, 0.0);
+
+    if (linit && (m.lma || m.lar)) {
+        nextma = nr - m.mxdflg - m.mxarlg + m.mxmalg;
+        intgpg(ctx, nextma, info);
+        if (info > 0) { info = prm::PGPGER; return; }
+
+        if (m.lar) {
+            // Expand the MA operator into fulma: theta(B)Theta(B)*1.
+            fulma[0] = ONE;
+            int nfulma = m.mxmalg + 1;
+            mltpos(1, d.arimap.data(), m.arimal.data(), m.opr.data(),
+                   m.mdl(prm::MA - 1), m.mdl(prm::MA) - 1, nfulma, fulma.data());
+            copy(fulma.data(), nfulma, 1, psiwgt.data());
+            ratpos(nfulma, d.arimap.data(), m.arimal.data(), m.opr.data(),
+                   m.mdl(prm::AR - 1), m.mdl(prm::AR) - 1, nfulma, psiwgt.data());
+            int maxpq = std::max(m.mxarlg, m.mxmalg);
+            uconv(fulma.data(), m.mxmalg, acv.data());
+            // Expand the AR operator into fular: phi(B)Phi(B)*1.
+            fular[0] = ONE;
+            int nfular = m.mxarlg + 1;
+            mltpos(1, d.arimap.data(), m.arimal.data(), m.opr.data(),
+                   m.mdl(prm::AR - 1), m.mdl(prm::AR) - 1, nfular, fular.data());
+            euclid(fular.data(), d.matd.data(), d.matd.data() + m.mxarlg, maxpq,
+                   m.mxarlg, m.mxmalg, acv.data(), info);
+            if (info > 0) { info = prm::PACFER; return; }
+            int nacv = m.mxarlg;
+            xpand(fular.data(), m.mxarlg, maxpq, nacv, acv.data(), prm::PORDER);
+            acv[0] = 2.0 * acv[0];
+        }
+
+        // Calculate D (only the last min(p,q) columns are nonzero).
+        if (m.lar && m.lma) {
+            int neltd = (nr - m.mxdflg - m.mxarlg) * m.mxarlg;
+            setdp(ZERO, neltd, d.matd.data());
+            for (int row = 1; row <= m.mxmalg; ++row) {
+                int qprow = m.mxmalg + row;
+                double tmp = ZERO;
+                for (int k = row; k <= m.mxmalg; ++k)
+                    tmp = tmp + fulma[qprow - k] * psiwgt[m.mxmalg - k];
+                int ielt = m.mxarlg * row;
+                for (int k = std::max(1, m.mxarlg - row + 1); k <= m.mxarlg;
+                     ++k) {
+                    d.matd(ielt) = tmp;
+                    ielt = ielt - m.mxarlg - 1;
+                }
+            }
+            // Multiply the lags by Mxarlg so a matrix filters like a vector.
+            int lastlg = m.opr(endopr) - 1;
+            for (int ilag = 1; ilag <= lastlg; ++ilag)
+                m.arimal(ilag) = m.mxarlg * m.arimal(ilag);
+            exctma(ctx, m.mxarlg, d.matd.data(), neltd, PMATD);
+            nextma = neltd / m.mxarlg;
+            for (int ilag = 1; ilag <= lastlg; ++ilag)
+                m.arimal(ilag) = m.arimal(ilag) / m.mxarlg;
+            xprmx(d.matd.data(), nextma, m.mxarlg, m.mxarlg, d.chlvwp.data());
+            int ielt = 0;
+            for (int j = 1; j <= m.mxarlg; ++j)
+                for (int i = 1; i <= j; ++i) {
+                    ielt = ielt + 1;
+                    d.chlvwp(ielt) = acv[j - i] - d.chlvwp(ielt);
+                }
+        } else if (m.lar) {
+            int ielt = 0;
+            for (int j = 1; j <= m.mxarlg; ++j)
+                for (int i = 1; i <= j; ++i) {
+                    ielt = ielt + 1;
+                    d.chlvwp(ielt) = acv[j - i];
+                }
+        }
+
+        if (m.lar) {
+            dppfa(d.chlvwp.data(), m.mxarlg, info);
+            if (info > 0) { info = prm::PVWPER; return; }
+            double ldtvwp;
+            logdet(d.chlvwp.data(), m.mxarlg, ldtvwp);
+            d.lndtcv = d.lndtcv + ldtvwp;
+        }
+    } else if (m.lma || m.lar) {
+        nextma = nr - m.mxdflg - m.mxarlg + m.mxmalg;
+    }
+
+    // Multiply the series length and lags by Nc to filter a matrix like a vector.
+    int nelta = nr * nc;
+    endopr = m.mdl(prm::MA) - 1;
+    int lastlg = m.opr(endopr) - 1;
+    for (int ilag = 1; ilag <= lastlg; ++ilag)
+        m.arimal(ilag) = nc * m.arimal(ilag);
+
+    // Difference, then (conditionally) AR filter.
+    arflt(nelta, d.arimap.data(), m.arimal.data(), m.opr.data(),
+          m.mdl(prm::DIFF - 1), m.mdl(prm::DIFF) - 1, mata, nelta);
+
+    int neltwp;
+    if (m.lar) {  // Put w_p first, then \hat{a}.
+        neltwp = m.mxarlg * nc;
+        copy(mata, nelta, -1, mata + neltwp);
+    } else {
+        neltwp = 0;
+    }
+
+    arflt(nelta, d.arimap.data(), m.arimal.data(), m.opr.data(),
+          m.mdl(prm::AR - 1), m.mdl(prm::AR) - 1, mata + neltwp, nelta);
+
+    exctma(ctx, nc, mata + neltwp, nelta, nata - neltwp);
+
+    // w_p - D' \hat{a}.
+    if (m.lar && m.lma) {
+        int ielt = 0;
+        for (int i = 1; i <= m.mxarlg; ++i)
+            for (int j = 1; j <= nc; ++j) {
+                ielt = ielt + 1;
+                mata[ielt - 1] =
+                    mata[ielt - 1] - ddot(nextma, d.matd.data() + (i - 1),
+                                          m.mxarlg, mata + neltwp + (j - 1), nc);
+            }
+    }
+
+    // chol(var(w_p|z)) x = w_p - D' \hat{a}.
+    if (m.lar) {
+        dsolve(d.chlvwp.data(), m.mxarlg, nc, false, mata);
+        nelta = nelta + neltwp;
+    }
+
+    na = nelta / nc;
+    for (int ilag = 1; ilag <= lastlg; ++ilag)
+        m.arimal(ilag) = m.arimal(ilag) / nc;
 }
 
 }  // namespace x13

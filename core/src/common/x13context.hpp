@@ -105,6 +105,8 @@ struct X13Context {
     LexState lex;              // spec-file lexer/parser state (lex.i /clex/, cchars.i)
     ParseSettings captured;    // M1 instrumentation: key parsed settings for the gate
     SaveState saves;           // M2: captured save tables (numeric surface + text)
+    // SAVEd Fortran locals (persist across calls, belong to no COMMON block).
+    struct { int armafl_nextma = 0; } saved;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;
