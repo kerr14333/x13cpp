@@ -17,6 +17,16 @@ namespace x13 {
 void arflt(int nelta, const double* arimap, const int* arimal, const int* opr,
            int begopr, int endopr, double* c, int& neltc);
 
+// mltpos.f: multiply the series c by the Difference/AR/MA operators
+// [begopr..endopr], producing neltc output elements. Uses a work buffer (only
+// indices 1..neltc are ever touched, so a neltc-sized buffer is faithful to the
+// fixed-PXA Fortran) and copies work->c after each operator. The secpas flag is
+// load-bearing: the FIRST operator pass zero-pads beyond the input length nelta
+// (tmp=0 and the c[itmp] term is gated by itmp<=nelta); every subsequent pass
+// (secpas true) treats the full neltc-length series with no nelta gate.
+void mltpos(int nelta, const double* arimap, const int* arimal, const int* opr,
+            int begopr, int endopr, int neltc, double* c);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ARMAFILT_HPP

@@ -252,4 +252,32 @@ TEST("dsolve: multi-RHS solve against packed factor") {
     CHECK(rclose(b[1], 2.7777777777777781e+00, 1e-14));  // dsolve2
 }
 
+TEST("mltpos: operator multiply with secpas zero-padding") {
+    int opr[3] = {1, 2, 3};
+    // Case A: single AR op lag1 phi=0.5, nelta=3, neltc=5, c=[1,2,3,0,0].
+    {
+        double arimap[1] = {0.5};
+        int arimal[1] = {1};
+        double c[5] = {1.0, 2.0, 3.0, 0.0, 0.0};
+        mltpos(3, arimap, arimal, opr, 1, 1, 5, c);
+        CHECK_EQ(c[0], 1.0);    // oracle mltA
+        CHECK_EQ(c[1], 1.5);
+        CHECK_EQ(c[2], 2.0);
+        CHECK_EQ(c[3], -1.5);
+        CHECK_EQ(c[4], 0.0);
+    }
+    // Case B: two AR ops (0.5 then 0.3); second pass runs with secpas=true.
+    {
+        double arimap[2] = {0.5, 0.3};
+        int arimal[2] = {1, 1};
+        double c[5] = {1.0, 2.0, 3.0, 0.0, 0.0};
+        mltpos(3, arimap, arimal, opr, 1, 2, 5, c);
+        CHECK_EQ(c[0], 1.0);    // oracle mltB
+        CHECK_EQ(c[1], 1.2);
+        CHECK(rclose(c[2], 1.55, 1e-15));
+        CHECK(rclose(c[3], -2.1000000000000001, 1e-15));
+        CHECK(rclose(c[4], 4.4999999999999996e-01, 1e-15));
+    }
+}
+
 int main() { return mt::run_all(); }

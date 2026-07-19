@@ -387,7 +387,7 @@ mkssky: pending
 mkstlb: pending
 mktdlb: pending
 mlist: pending
-mltpos: pending
+mltpos: ported
 month: pending
 mstest: pending
 mulmat: pending
