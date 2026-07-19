@@ -322,7 +322,19 @@ Open questions resolved:
   DIFF..AR..MA (not literal lag); the two differencing operators take fixed
   slots 1,2 (coef 1), so free MA coefs land at slots 3/4.
 
-Not yet closed here: the `Nb>0` real-data path (constant/TD/Easter regressors),
-the transform-Jacobian-adjusted `loglikelihood` the `.udg` reports (rgarma's raw
-`Lnlkhd` differs by the Box-Cox Jacobian, added at the likelihood-stats step),
-and multi-pass automatic-mean/outlier flows.
+**Nb>0 real-data — DONE.** airline + `regression{ (td easter[8]) }` through
+run_m2->rgarma drives the full GLS engine (regvar TD/Easter design, olsreg
+normal-eqn GLS, multi-pass IGLS) and matches the oracle `.udg`
+(02-airline-log-td-easter) bit-for-bit: niter=9/nfev=76, MA 0.21534/0.55175,
+TD-Mon + Easter betas, variance$mle, loglikelihood 259.3105 (test_numeric
+`run_m2->rgarma: airline + TD + Easter`). Nb=7, Ncxy=8.
+
+**Likelihood stats (prlkhd) — DONE.** `prlkhd` numeric core ported (prints
+deferred): the transform-Jacobian-adjusted Olkhd=Lnlkhd+jacadj and
+Aic/Aicc/Hnquin/Bic/Bic2/Eic into ctx.lkhd; run_m2 runs it after rgarma. Gotcha:
+the `.udg` `loglikelihood` key is the RAW `Lnlkhd` (arima.f:973), while
+AIC/AICC/BIC/HQ use the adjusted Olkhd -- the two differ by the Box-Cox Jacobian.
+
+Not yet closed here: multi-pass automatic-mean/outlier flows (idotlr/rdotlr),
+fixed-coefficient (`exact=none` / held ARMA lags) and AR-model corpus specs, and
+the `.out` print engine that turns these estimates into human-readable output.

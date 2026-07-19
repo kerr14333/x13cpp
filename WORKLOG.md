@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 15:56 EDT
+## Snapshot — 2026-07-19 17:01 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 15:56 EDT |
-| commits | 58 |
-| span, first→latest | 25h 50m |
-| active (gaps ≤45m) | ~6h 38m (9 breaks excluded) |
+| latest commit | 2026-07-19 17:01 EDT |
+| commits | 61 |
+| span, first→latest | 26h 54m |
+| active (gaps ≤45m) | ~6h 41m (10 breaks excluded) |
 | calendar days | 2 |
 
 **Census bug ledger:** `tools/census_bugs.md` records Census-source defects the
@@ -165,14 +165,27 @@ pip cmake when adding files.
   consistent post-regvar. `arimap` is packed by operator-coefficient position
   over DIFF..AR..MA, so the free MA coefs sit at slots 3/4 behind the two fixed
   differencing slots. `test_numeric` = 62 tests.
-- **Next — the Nb>0 / B-section corpus specs** (constant/TD/Easter regressors,
-  exact=none, AR models, fixed coeffs, RSXFSN/FEDFUNDS): exercise the real-data
-  estimation path with regression columns and the transform-Jacobian-adjusted
-  `loglikelihood` the `.udg` reports (rgarma's raw `Lnlkhd` differs by the
-  Box-Cox Jacobian, added at the likelihood-stats step). Then likelihood
-  stats/reports (Tier-6: xrlkhd/prlkhd/armats/...), outlier detection
-  (idotlr/rdotlr), and the deferred M2 regressor branches. See
-  `tools/m3_scouting.md` §5 Tier-6/7 and §7.
+- **`prlkhd` likelihood stats — LANDED.** Ported prlkhd.f's numeric core
+  (prints deferred): the transform-Jacobian-adjusted log likelihood
+  Olkhd=Lnlkhd+jacadj and the criteria Aic/Aicc/Hnquin/Bic/Bic2/Eic into
+  ctx.lkhd. jacadj sums the per-obs log Jacobian of the Box-Cox/logit transform
+  over the effective span (for log: -sum log(y)); unlike xrlkhd (AIC-test path,
+  drops the constant jacadj) the reported criteria include it. run_m2 runs it
+  after rgarma. **Subtlety:** the .udg `loglikelihood` key is the RAW `Lnlkhd`
+  (arima.f:973 writes it directly), while AIC/AICC/BIC/HQ use the adjusted
+  Olkhd -- the two differ by jacadj.
+- **Nb>0 real-data estimation — LANDED.** airline + regression{ (td easter[8]) }
+  through run_m2->rgarma drives the full GLS engine (regvar TD/Easter design,
+  olsreg normal-eqn GLS, multi-pass IGLS) from a real spec and matches the
+  oracle .udg (02-airline-log-td-easter) bit-for-bit: niter=9/nfev=76 EXACT,
+  MA 0.21534/0.55175, TD-Mon + Easter betas, variance$mle, loglikelihood
+  259.3105. Nb=7/Ncxy=8. `test_numeric` = 63 tests.
+- **Next — outlier detection** (idotlr/rdotlr AO/LS/TC scan) and the deferred M2
+  regressor branches (outlier/user/sincos/change-of-regime), then the .out print
+  engine so estimation results become human-readable output. See
+  `tools/m3_scouting.md` §5 Tier-6/7 and §7. Fixed-coefficient (`exact=none` /
+  held ARMA lags) and AR-model corpus specs also remain to exercise the
+  estimation path's fixed-lag branches end-to-end.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
