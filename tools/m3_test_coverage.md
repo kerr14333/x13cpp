@@ -100,12 +100,15 @@ save-file parity gate, plus branch gaps in the routines already landed.
   mixed models already in the corpus get checked for free) and catches
   regressions corpus-wide. Depends on: the "no auto file output" rule (results
   read off the object/captured state, opt-in write).
-- [ ] **C2. Fixed-coefficient spec — pins live bug CB-6.** `armats` misindexes
-  t-stats when an ARMA lag is held fixed (`itv` counts every lag, Armacm packed by
-  free params). Ported verbatim but NEVER exercised on a real fixed-coef spec. A
-  `model=(0 1 1)` with a held MA coef (`ma=(0.4f)` / `exact=none`) pins the
-  faithful-but-buggy behavior end-to-end. Overlaps B3; C2 is specifically the
-  armats-index assertion.
+- [~] **C2. Fixed-coefficient path.** PARTLY DONE via `ref_rgarma_fixed.f` --
+  ARMA(1,1) with theta held (arimaf=true) drives Nestpm=1, the single-param lmdif,
+  and the upespm/setmdl fixed-lag skip that every all-free case bypasses (phi/Var/
+  Lnlkhd + held-coef-exact verified). STILL TODO: the CB-6 `armats` misindex
+  itself -- with a fixed ARMA lag `itv` reads `Armacm(itv,itv)` past the free-param
+  block, so the fixed lag's t-stat is garbage (stale/zero -> Inf/NaN). Not a
+  stable rtol target; assert the free-lag t-stat is correct AND document/xfail the
+  fixed-lag one rather than pinning its value. Full end-to-end fixed-coef spec
+  (`ma=(0.4f)`) still comes with C1.
 - [ ] **C3. `prlkhd` branch coverage.** Only log+airline (jacadj=-Σlog y) tested.
   Untested: `Var<=0` (returns, no likelihood); non-exact-ML `lclaic=F` (Olkhd set
   but Aic/Aicc/etc NOT computed); logit `jacadj` (Fcntyp=3); prior-adjustment

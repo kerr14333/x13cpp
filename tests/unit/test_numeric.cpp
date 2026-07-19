@@ -1517,6 +1517,55 @@ TEST("rgarma: ARMA(1,1) no-regression IGLS estimation") {
     CHECK(rclose(tval[1],  6.8319105929467638e-01, 1e-12));  // as_ttheta
 }
 
+// ---- rgarma with a FIXED ARMA coefficient (against ref_rgarma_fixed.f). --------
+// ARMA(1,1) with theta HELD at 0.4 (arimaf(2)=true), so only phi is estimated:
+// Nestpm=1, lmdif optimizes one parameter, and upespm/setmdl exercise the
+// fixed-lag skip that every all-free rgarma case bypasses (test-plan C2/B3). The
+// held coefficient must come back exactly 0.4. Oracle at rtol 1e-12.
+TEST("rgarma: fixed ARMA coefficient (theta held, only phi estimated)") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    d.nspobs = 24;
+    m.ncxy = 1;
+    const double series[24] = {0.5, -0.3, 0.8, -0.6, 0.2,  0.9, -0.7, 0.4,
+                               0.1, -0.5, 0.6, -0.2, 0.7,  -0.8, 0.3, 0.5,
+                               -0.4, 0.9, -0.1, 0.6, -0.7, 0.2, 0.4, -0.5};
+    for (int i = 1; i <= 24; ++i) d.xy(i) = series[i - 1];
+
+    m.lar = true; m.lma = true; m.lextma = true; m.lextar = false;
+    m.lprier = false; ctx.hiddn.lhiddn = false;
+    m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    m.arimaf(1) = false; m.arimaf(2) = true;   // phi free, theta FIXED
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    d.arimap(1) = 0.3; d.arimap(2) = 0.4;       // phi start, theta held at 0.4
+    m.nb = 0; m.nintvl = 0; m.nextvl = 0; m.iregfx = 0;
+    m.tol = 1e-5; m.nltol0 = 1e-5; m.nltol = 1e-5; m.stepln = 0.0;
+    ctx.hiddn.issap = 0; ctx.hiddn.irev = 0;
+    ctx.error.lfatal = false;
+    ctx.units.mt1 = 6; ctx.units.mt2 = 6;
+
+    auto a = std::make_unique<double[]>(1092);
+    int na = 0, nefobs = 0;
+    bool lauto = false;
+    rgarma(ctx, true, 200, 60, false, a.get(), na, nefobs, lauto);
+
+    CHECK(d.convrg);
+    CHECK_EQ(d.nliter, 3);
+    CHECK_EQ(d.nfev, 7);
+    CHECK_EQ(m.nestpm, 1);   // only phi is a free parameter
+    CHECK(rclose(d.arimap(1), -3.3700310088310953e-01, 1e-12));  // estimated phi
+    CHECK(rclose(d.arimap(2), 0.4, 1e-15));                      // theta held exact
+    CHECK(rclose(d.var, 1.8611106696857027e-01, 1e-12));
+    CHECK(rclose(d.lnlkhd, -1.4151496390762206e+01, 1e-12));
+}
+
 // ---- fcstxy (forecasts + forecast SEs; against ref_fcstxy.f). ------------------
 // Estimates the same no-regression ARMA(1,1) as the rgarma test, then forecasts
 // 6 steps ahead. Nb=0 so the design-uncertainty term is skipped (Rgvar all 0);
