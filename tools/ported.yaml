@@ -409,7 +409,7 @@ npsa: pending
 nrmtst: pending
 numaff: pending
 numfmt: pending
-olsreg: pending
+olsreg: ported
 opnfil: pending
 otsort: pending
 outchr: pending
@@ -503,7 +503,7 @@ regvar: partial   # const/seasonal/td/lom-loq/lpyear/stock-td/stock-lom/easter b
 regx11: pending
 replac: pending
 replyf: pending
-resid: pending
+resid: ported
 resid2: pending
 restor: pending
 revchk: pending

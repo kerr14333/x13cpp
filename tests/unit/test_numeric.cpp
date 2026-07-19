@@ -9,6 +9,7 @@
 #include "numeric/numeric.hpp"
 #include "regarima/armafilt.hpp"
 #include "regarima/armafl.hpp"
+#include "regarima/estimate.hpp"
 
 #include <cmath>
 #include <memory>
@@ -480,6 +481,30 @@ TEST("armafl: full exact ARMA filter, AR(2)MA(1)") {
         -1.5065786876476017e+00, 8.4802639370571953e-01, 2.8544079181117157e+00,
         -2.2436776245664856e+00, 2.2268967126300545e+00, -8.1930986210983825e-02};
     for (int i = 0; i < 9; ++i) CHECK(rclose(mata[i], golden[i], 1e-12));
+}
+
+// ---- olsreg + resid (regression solve / residuals; against ref_estimate.f).
+// 4-obs OLS: intercept + one regressor, y in the 3rd column. rtol 1e-12. -------
+TEST("olsreg/resid: OLS normal-equations solve + residuals") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    // [X:y] row-major per obs: [1, x2, y], pcxy=3, nr=4.
+    double xy[12] = {1.0, 1.0, 2.1, 1.0, 2.0, 3.9,
+                     1.0, 3.0, 6.2, 1.0, 4.0, 7.8};
+    double b[2] = {0.0, 0.0};
+    double chlxpx[10] = {0.0};
+    int info = -99;
+    olsreg(ctx, xy, 4, 3, 3, b, chlxpx, 10, info);
+    CHECK_EQ(info, 0);                                    // ref ols_info
+    CHECK(rclose(b[0], 1.4999999999999858e-01, 1e-12));   // ols_b1
+    CHECK(rclose(b[1], 1.9400000000000006e+00, 1e-12));   // ols_b2
+
+    double rsd[4] = {0.0};
+    resid(ctx, xy, 4, 3, 3, 1, 2, -1.0, b, rsd);
+    CHECK(rclose(rsd[0],  1.0000000000000897e-02, 1e-12));  // rsd1
+    CHECK(rclose(rsd[1], -1.2999999999999989e-01, 1e-12));  // rsd2
+    CHECK(rclose(rsd[2],  2.2999999999999954e-01, 1e-12));  // rsd3
+    CHECK(rclose(rsd[3], -1.1000000000000121e-01, 1e-12));  // rsd4
 }
 
 int main() { return mt::run_all(); }
