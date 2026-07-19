@@ -302,12 +302,27 @@ Arimaf/Oprfac/Nopr + Mxarlg/Mxdflg/Mxmalg), and builds `[X:y]` into
   `Lndtcv`, `Nefobs=Nspobs-Nintvl`. **Default-OK from zero-init:** `Issap/Irev`
   (→ gudrun=T), `Lprier/Lprtit/Lhiddn` (deferred prints).
 
-**Remaining integration step (the M3 headline):** an end-to-end test — `run_m2`
-on an airline spec (e.g. `02-airline-log-td-easter.spc`, or a self-contained
-inline-data spec) → `rgarma` → compare the estimated ARMA coefficients / `Var` /
-`Lnlkhd` against the oracle `.udg` (`arima.ar`/`arima.ma`/`likelihood.*`) via the
-x13compare harness. Open questions to resolve there: (a) is `Tsrs` seeded from
-the transformed series before rgarma, or does run_m2 need to copy `trnsrs`→`Tsrs`?
-(b) does Xy need differencing applied first, or does armafl's internal filtering
-suffice given `Nintvl`? (c) `Nb`/`Ncxy` consistency post-regvar. That is the
-first **real-data** end-to-end estimation parity.
+**Integration step (the M3 headline) — DONE.** `run_m2` gained a defaulted
+`estimate` flag (off keeps the M2 save-only binary + parity gate, on estimates
+the built model in place after regvar via `rgarma`). A self-contained inline
+airline spec (144 obs, log, ARMA (0 1 1)(0 1 1), no regression) driven through
+the whole front end matches the oracle `.udg` golden (`airline_check`)
+bit-for-bit: `niter=6`/`nfev=19` EXACT, MA nonseasonal `0.40180794878596` /
+seasonal `0.55694564337114`, `variance$mle 0.13480973219978E-02`, armats
+t-stats `5.0946`/`7.3037` (test_numeric `run_m2->rgarma: airline`).
+
+Open questions resolved:
+- (a) **`Tsrs`** — not seeded externally; `rgarma`→`resid` writes it from `Xy`.
+- (b) **Xy differencing** — none applied first; `rgarma` differences `Xy` into
+  `Xy` internally via `Nintvl` (rgarma.f:152 `arflt`), so the un-differenced
+  `[X:y]` regvar builds is exactly its input (`Nintvl=13` → `Nefobs=131`).
+- (c) **`Nb`/`Ncxy`** — no-regression airline: `Nb=0`, `Ncxy=1` (gtinpt init,
+  unchanged by regvar), the `yprmy` path. Consistent post-regvar.
+- Note: `arimap` is packed by operator-coefficient **position** over
+  DIFF..AR..MA (not literal lag); the two differencing operators take fixed
+  slots 1,2 (coef 1), so free MA coefs land at slots 3/4.
+
+Not yet closed here: the `Nb>0` real-data path (constant/TD/Easter regressors),
+the transform-Jacobian-adjusted `loglikelihood` the `.udg` reports (rgarma's raw
+`Lnlkhd` differs by the Box-Cox Jacobian, added at the likelihood-stats step),
+and multi-pass automatic-mean/outlier flows.

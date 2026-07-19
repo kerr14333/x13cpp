@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 10:45 EDT
+## Snapshot — 2026-07-19 15:56 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 10:45 EDT |
-| commits | 53 |
-| span, first→latest | 20h 39m |
-| active (gaps ≤45m) | ~5h 45m (7 breaks excluded) |
+| latest commit | 2026-07-19 15:56 EDT |
+| commits | 58 |
+| span, first→latest | 25h 50m |
+| active (gaps ≤45m) | ~6h 38m (9 breaks excluded) |
 | calendar days | 2 |
 
 **Census bug ledger:** `tools/census_bugs.md` records Census-source defects the
@@ -149,12 +149,30 @@ pip cmake when adding files.
   ARMA lags while Armacm is packed by free params -> misindexed t-stats for
   fixed-coef models (ported verbatim, logged). `armacr`/`prlkhd` are print-heavy,
   deferred to the .out milestone.
-- **Next — the B-section corpus specs** (exact=none, AR models, fixed coeffs,
-  RSXFSN/FEDFUNDS): now exercise rgarma end-to-end through the real
-  spec-parse -> model-build pipeline (not hand-set common state). Then
-  likelihood stats/reports (Tier-6:
-  xrlkhd/prlkhd/armats/...), outlier detection (idotlr/rdotlr), and the deferred
-  M2 regressor branches. See `tools/m3_scouting.md` §5 Tier-6/7.
+- **run_m2 -> rgarma real-data estimation — LANDED (the M3 headline).** `run_m2`
+  gained a defaulted `estimate` flag: off keeps the M2 save-only binary (M2
+  parity gate still 94 pass), on estimates the built model in place after regvar
+  via `rgarma`. A self-contained inline airline spec (144 obs, log, ARMA
+  (0 1 1)(0 1 1), no regression) driven through the **whole front end**
+  (parse_spec -> getsrs/transform/getmdl/regvar -> rgarma) matches the oracle
+  `.udg` golden (`airline_check`) **bit-for-bit**: `niter=6`/`nfev=19` EXACT (the
+  trajectory canary), MA nonseasonal `0.40180794878596` / seasonal
+  `0.55694564337114`, `variance$mle 0.13480973219978E-02`, both armats t-stats
+  (5.0946 / 7.3037) at rtol 1e-9..1e-12. First **real-data** end-to-end
+  estimation parity (not hand-set common state). Scouting §7 open questions
+  resolved: (a) Tsrs written by rgarma->resid from Xy, (b) rgarma differences Xy
+  internally via Nintvl (no external differencing), (c) Nb=0/Ncxy=1 yprmy path
+  consistent post-regvar. `arimap` is packed by operator-coefficient position
+  over DIFF..AR..MA, so the free MA coefs sit at slots 3/4 behind the two fixed
+  differencing slots. `test_numeric` = 62 tests.
+- **Next — the Nb>0 / B-section corpus specs** (constant/TD/Easter regressors,
+  exact=none, AR models, fixed coeffs, RSXFSN/FEDFUNDS): exercise the real-data
+  estimation path with regression columns and the transform-Jacobian-adjusted
+  `loglikelihood` the `.udg` reports (rgarma's raw `Lnlkhd` differs by the
+  Box-Cox Jacobian, added at the likelihood-stats step). Then likelihood
+  stats/reports (Tier-6: xrlkhd/prlkhd/armats/...), outlier detection
+  (idotlr/rdotlr), and the deferred M2 regressor branches. See
+  `tools/m3_scouting.md` §5 Tier-6/7 and §7.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
