@@ -61,6 +61,19 @@ void upespm(X13Context& ctx, const double* estprm);
 void fcnar(X13Context& ctx, int& na, int testpm, const double* estprm, double* a,
            bool lauto, bool gudrun, int& err, bool lckinv);
 
+// roots.f: modulus and frequency of the roots of a polynomial. thetab holds the
+// degree+1 coefficients of theta(B) in INCREASING powers; it is reversed to
+// decreasing powers and (leading near-zero coefficients stripped) handed to
+// rpoly. On success allinv is set true iff every root has modulus >= 1 (all
+// zeros invertible), and zerom/zerof receive each root's modulus and frequency
+// (angle/2pi); complex roots fill their conjugate slot too. degree is in/out
+// (reduced if leading coefficients are ~0, or if rpoly finds fewer roots). NB:
+// the rpoly-failure warning (roots.f WRITE to Mt1/STDERR) is deferred to the
+// .out print milestone; on failure allinv is left as the caller passed it,
+// matching the oracle. See tools/census_bugs.md CB-3 for the off-by-typo 2pi.
+void roots(X13Context& ctx, const double* thetab, int& degree, bool& allinv,
+           double* zeror, double* zeroi, double* zerom, double* zerof);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ESTIMATE_HPP

@@ -1332,4 +1332,55 @@ TEST("rpoly: real root + complex pair, small coefficients") {
     CHECK(rclose(zi[2], 0.0, 1e-12));                           // r5_zi3
 }
 
+// ---- roots (polynomial root modulus/frequency; against ref_roots.f). --------
+// Wraps rpoly with revrse + modulus/frequency; Allinv = all zeros invertible
+// (every modulus >= 1). Reproduces CB-3: the frequency divisor is a typo'd 2pi
+// (6.28318730707959), so a +-2i pair reports frequency 0.24999992... not 0.25.
+TEST("roots: MA(2) invertible, MA(1) non-invertible, complex pair") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    {  // (1-0.2B)(1-0.3B) = 1 -0.5B +0.06B^2: roots 3.33 and 5 (invertible)
+        double thetab[3] = {1.0, -0.5, 0.06};
+        double zr[2] = {0}, zi[2] = {0}, zm[2] = {0}, zf[2] = {0};
+        int deg = 2;
+        bool allinv = false;
+        roots(ctx, thetab, deg, allinv, zr, zi, zm, zf);
+        CHECK_EQ(deg, 2);
+        CHECK(allinv);                                    // ro1_ainv
+        CHECK(rclose(zr[0], 3.3333333333333326, 1e-12));  // ro1_zr1
+        CHECK(rclose(zr[1], 5.0000000000000009, 1e-12));  // ro1_zr2
+        CHECK(rclose(zm[0], 3.3333333333333326, 1e-12));  // ro1_zm1
+        CHECK(rclose(zm[1], 5.0000000000000009, 1e-12));  // ro1_zm2
+        CHECK(rclose(zi[0], 0.0, 1e-12));
+        CHECK(rclose(zf[0], 0.0, 1e-12));
+    }
+    {  // 1 -2B: root 0.5 -> modulus < 1 -> NOT invertible
+        double thetab[2] = {1.0, -2.0};
+        double zr[1] = {0}, zi[1] = {0}, zm[1] = {0}, zf[1] = {0};
+        int deg = 1;
+        bool allinv = false;
+        roots(ctx, thetab, deg, allinv, zr, zi, zm, zf);
+        CHECK_EQ(deg, 1);
+        CHECK(!allinv);                    // ro2_ainv
+        CHECK(rclose(zr[0], 0.5, 1e-12));  // ro2_zr1
+        CHECK(rclose(zm[0], 0.5, 1e-12));  // ro2_zm1
+        CHECK(rclose(zf[0], 0.0, 1e-12));  // ro2_zf1
+    }
+    {  // 1 +0.25B^2: roots +-2i (invertible); conjugate fill + CB-3 frequency
+        double thetab[3] = {1.0, 0.0, 0.25};
+        double zr[2] = {0}, zi[2] = {0}, zm[2] = {0}, zf[2] = {0};
+        int deg = 2;
+        bool allinv = false;
+        roots(ctx, thetab, deg, allinv, zr, zi, zm, zf);
+        CHECK_EQ(deg, 2);
+        CHECK(allinv);                                        // ro3_ainv
+        CHECK(rclose(zi[0], 2.0, 1e-12));                     // ro3_zi1
+        CHECK(rclose(zi[1], -2.0, 1e-12));                    // ro3_zi2
+        CHECK(rclose(zm[0], 2.0, 1e-12));                     // ro3_zm1
+        CHECK(rclose(zm[1], 2.0, 1e-12));                     // ro3_zm2
+        CHECK(rclose(zf[0], 2.4999992042653249e-01, 1e-12));  // ro3_zf1 (CB-3)
+        CHECK(rclose(zf[1], -2.4999992042653249e-01, 1e-12)); // ro3_zf2
+    }
+}
+
 int main() { return mt::run_all(); }

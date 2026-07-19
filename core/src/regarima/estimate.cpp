@@ -6,7 +6,8 @@
 #include <string>
 
 #include "regarima/armafl.hpp"      // armafl
-#include "numeric/numeric.hpp"      // xprmx, dppfa, dcopy, daxpy, scrmlt
+#include "numeric/numeric.hpp"      // xprmx, dppfa, dcopy, daxpy, scrmlt, revrse
+#include "numeric/rpoly.hpp"        // rpoly
 #include "specparse/specparse.hpp"  // copy, setdp, abend, errhdr, writln
 #include "gen/model.hpp"            // prm::DIFF, prm::MA, prm::PORDER, error codes
 #include "gen/srslen.hpp"           // prm::PLEN (PA sizing)
@@ -183,6 +184,52 @@ void fcnar(X13Context& ctx, int& na, int testpm, const double* estprm, double* a
         double fac = std::exp(d.lndtcv / TWO / ctx.series.dnefob);
         scrmlt(fac, na, a);
     }
+}
+
+// roots.f -- modulus/frequency of a polynomial's roots via rpoly (see the hpp).
+void roots(X13Context& ctx, const double* thetab, int& degree, bool& allinv,
+           double* zeror, double* zeroi, double* zerom, double* zerof) {
+    (void)ctx;  // only needed for the deferred rpoly-failure warning
+    constexpr double ZERO = 0.0, ONE = 1.0;
+    // The Census 2pi divisor is a digit-transposition typo (true 2pi is
+    // 6.283185307179586); reproduced verbatim for parity -- see census_bugs.md
+    // CB-3. It perturbs the reported frequency in ~its 7th significant digit.
+    constexpr double CENSUS_TWOPI = 6.28318730707959;
+    int degp1 = degree + 1;
+    double op[prm::PORDER + 1];
+    // Reverse thetab (increasing powers) to op (decreasing powers).
+    revrse(thetab, degp1, 1, op);
+    // Strip leading (highest-degree) coefficients that are ~0.
+    while (dpeq(op[0], ZERO)) {
+        if (degree == 1) {
+            allinv = true;
+            degree = degree - 1;
+            return;  // GO TO 10: nothing to check
+        }
+        for (int i = 1; i <= degree; ++i) op[i - 1] = op[i];
+        degree = degree - 1;
+    }
+    bool fail;
+    rpoly(op, degree, zeror, zeroi, fail);
+    if (!fail) {
+        allinv = true;
+        int i = 0;
+        while (i < degree) {
+            i = i + 1;
+            zerom[i - 1] = std::sqrt(zeror[i - 1] * zeror[i - 1] +
+                                     zeroi[i - 1] * zeroi[i - 1]);
+            zerof[i - 1] = std::atan2(zeroi[i - 1], zeror[i - 1]) / CENSUS_TWOPI;
+            if (zerom[i - 1] < ONE && allinv) allinv = false;
+            // Complex root: fill its conjugate's modulus/frequency and skip it.
+            if (!dpeq(zeroi[i - 1], ZERO)) {
+                i = i + 1;
+                zerom[i - 1] = zerom[i - 2];
+                zerof[i - 1] = ZERO - zerof[i - 2];
+            }
+        }
+    }
+    // else: rpoly failed -> warning deferred to the .out milestone; allinv is
+    // left as the caller passed it (matching the oracle).
 }
 
 }  // namespace x13

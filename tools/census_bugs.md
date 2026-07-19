@@ -60,6 +60,24 @@ that pins it.
   `ctx.saved.stpitr_oldobj`. Pinned by the stpitr multi-call test.
 - **Modernize:** drop the dead assignment. Zero risk.
 
+## CB-3 — roots.f uses a typo'd 2pi when reporting root frequency
+
+- **Where:** `oracle/fortran/roots.f:83` — `Zerof(i) = datan2(Zeroi,Zeror) /
+  6.28318730707959D0`.
+- **Severity:** `benign` (output-only; the frequency feeds root-summary tables,
+  not the estimation math).
+- **Symptom:** the reported root frequency is wrong in ~its 7th significant
+  digit. The divisor `6.28318730707959` is a digit-transposition typo of 2*pi
+  (true value `6.283185307179586`); relative error ~3.18e-7. Example: a purely
+  imaginary root pair `+-2i` should report frequency `0.25`, but the oracle
+  yields `0.24999992042653249`.
+- **Port:** `core/src/regarima/estimate.cpp` (roots) -- reproduced as
+  `constexpr double CENSUS_TWOPI = 6.28318730707959;` with a comment. Pinned by
+  `tests/unit/test_numeric.cpp` "roots: MA(2) invertible, ..." (the complex-pair
+  case asserts the `0.24999992...` value).
+- **Modernize:** use the correct 2*pi (`std::atan2` result divided by
+  `6.283185307179586` or `2.0 * M_PI`). Pure output fix; no estimation impact.
+
 ---
 
 _Append new entries as they are found while porting. Keep each pinned to a test._
