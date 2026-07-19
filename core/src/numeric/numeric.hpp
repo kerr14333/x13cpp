@@ -37,6 +37,25 @@ void cumnor(double arg, double& result, double& ccum);
 // convergence. Used by prtfct for the CI critical value dinvnr((Ciprob+1)/2).
 double dinvnr(double p, double q);
 
+// dscal.f: BLAS scale dx <- da*dx over n strided elements (no-op if n<=0).
+// Scaling has no accumulation, so the mod-5 unrolling of the oracle is dropped;
+// the result is bit-identical.
+void dscal(int n, double da, double* dx, int incx);
+
+// shlsrt.f: in-place ascending shell sort of vecx[0..nr-1] (gap = nr/2, halved).
+void shlsrt(int nr, double* vecx);
+
+// medabs.f: median of the absolute values of s[0..nr-1] (shell-sorted). Even nr
+// averages the two central order statistics. The Fortran PA work-array guard is
+// dropped (the C++ scratch grows to nr).
+void medabs(const double* s, int nr, double& median);
+
+// dppdi.f: LINPACK determinant/inverse from a packed Cholesky factor ap (from
+// dppfa). job: 11 both, 01 inverse only, 10 determinant only. The upper triangle
+// of ap is overwritten with the inverse; det = det[0]*10^det[1]. Uses dscal/daxpy
+// on the packed columns.
+void dppdi(double* ap, int n, double* det, int job);
+
 // dpmpar.f: MINPACK machine parameters. i in {1,2,3} selects machine precision,
 // smallest magnitude, largest magnitude. NOTE: the active oracle DATA statement
 // uses TRUNCATED literals (dpmpar(1)=2.220446e-16, NOT DBL_EPSILON); ported

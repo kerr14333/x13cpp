@@ -11,6 +11,8 @@
 #include "regarima/armafl.hpp"
 #include "regarima/estimate.hpp"
 #include "regarima/forecast.hpp"
+#include "regarima/outlier.hpp"
+#include "gen/model.hpp"
 #include "transform/transform.hpp"
 #include "specparse/specparse.hpp"
 #include "numeric/minpack.hpp"
@@ -2151,6 +2153,99 @@ TEST("dinvnr: inverse normal CDF (CI critical values)") {
     CHECK(rclose(dinvnr(0.001, 0.999), -3.0902323061678136e+00, 1e-13));
     // P=0.5 -> 0 (Newton noise ~6.6e-17).
     CHECK(std::fabs(dinvnr(0.5, 0.5)) < 1e-14);
+}
+
+// ---- outlier-identification leaves (shlsrt/medabs/makotl/dppdi/ttest). -------
+// Numeric leaves of idotlr.f's automatic outlier scan. Golden values from
+// ref_outlier.f (leaves driven directly on small fixed inputs).
+TEST("shlsrt: ascending shell sort") {
+    double v[8] = {3, -1, 4, -1, 5, -9, 2, -6};
+    shlsrt(8, v);
+    for (int i = 1; i < 8; ++i) CHECK(v[i - 1] <= v[i]);
+    CHECK(v[0] == -9 && v[7] == 5);
+    double one[1] = {42};
+    shlsrt(1, one);
+    CHECK(one[0] == 42);
+}
+
+TEST("medabs: median of absolute values") {
+    const double s[8] = {3, -1, 4, -1, 5, -9, 2, -6};
+    double m = 0;
+    medabs(s, 8, m);
+    CHECK(rclose(m, 3.5, 1e-14));          // even n: mean of two central
+    medabs(s, 5, m);
+    CHECK(rclose(m, 3.0, 1e-14));          // odd n: central order statistic
+}
+
+TEST("makotl: AO/LS/TC outlier regressor construction") {
+    // AO+LS+TC at t0=3, nr=5, tcalfa=0.7 -> interleaved [AO,LS,TC] per time.
+    const int all3[3] = {1, 1, 1};
+    double ov[15] = {0};
+    int notlr = 0;
+    makotl(3, 5, all3, ov, notlr, 0.7, 12);
+    CHECK(notlr == 3);
+    const double exp[15] = {0, -1, 0,  0, -1, 0,  1, 0, 1,
+                            0, 0, 0.7, 0, 0, 0.49};
+    for (int i = 0; i < 15; ++i) CHECK(rclose(ov[i], exp[i], 1e-14));
+
+    // AO only.
+    const int aoonly[3] = {1, 0, 0};
+    double ao[5] = {9, 9, 9, 9, 9};
+    makotl(3, 5, aoonly, ao, notlr, 0.7, 12);
+    CHECK(notlr == 1);
+    CHECK(ao[0] == 0 && ao[1] == 0 && ao[2] == 1 && ao[3] == 0 && ao[4] == 0);
+
+    // LS only: -1 before t0, 0 from t0 on.
+    const int lsonly[3] = {0, 1, 0};
+    double ls[5] = {9, 9, 9, 9, 9};
+    makotl(3, 5, lsonly, ls, notlr, 0.7, 12);
+    CHECK(ls[0] == -1 && ls[1] == -1 && ls[2] == 0 && ls[3] == 0 && ls[4] == 0);
+}
+
+TEST("dppdi: packed determinant + inverse of a Cholesky factor") {
+    // A = [[4,2],[2,3]] packed upper = {4,2,3}.
+    double ap[3] = {4, 2, 3};
+    int info = 0;
+    dppfa(ap, 2, info);
+    CHECK(info == 0);
+    double det[2] = {0, 0};
+    dppdi(ap, 2, det, 11);
+    CHECK(rclose(ap[0], 0.375, 1e-14));    // inverse packed upper
+    CHECK(rclose(ap[1], -0.25, 1e-14));
+    CHECK(rclose(ap[2], 0.5, 1e-14));
+    CHECK(rclose(det[0], 8.0, 1e-14));     // det = 8 * 10^0
+    CHECK(rclose(det[1], 0.0, 1e-14));
+}
+
+TEST("ttest: proportional outlier t-statistics (augmented Cholesky)") {
+    // X = const(6), y = [2,3,1,8,4,5]; [X:y] row-major, ncxy=2.
+    const int nspobs = 6, ncxy = 2;
+    double xy[12] = {1, 2, 1, 3, 1, 1, 1, 8, 1, 4, 1, 5};
+    double chlxpx[3] = {0};
+    xprmx(xy, nspobs, ncxy, ncxy, chlxpx);
+    int info = 0;
+    dppfa(chlxpx, ncxy, info);
+    CHECK(info == 0);
+
+    double ov[3 * 6] = {0};
+    int notlr = 0, mxcol[3] = {0};
+    double propt[3] = {0};
+    bool snglr[3] = {false};
+
+    // AO only at t0=3.
+    const int aoonly[3] = {1, 0, 0};
+    makotl(3, nspobs, aoonly, ov, notlr, 0.7, 12);
+    ttest(xy, nspobs, ncxy, chlxpx, ov, aoonly, mxcol, propt, snglr);
+    CHECK(rclose(propt[prm::AO - 1], -3.10376115919594, 1e-12));
+
+    // AO+LS+TC at t0=4; check values and the |t| ranking (TC > AO > LS).
+    const int all3[3] = {1, 1, 1};
+    makotl(4, nspobs, all3, ov, notlr, 0.7, 12);
+    ttest(xy, nspobs, ncxy, chlxpx, ov, all3, mxcol, propt, snglr);
+    CHECK(rclose(propt[prm::AO - 1], 4.56435464587638, 1e-12));
+    CHECK(rclose(propt[prm::LS - 1], 4.49073119510250, 1e-12));
+    CHECK(rclose(propt[prm::TC - 1], 5.03237170472164, 1e-12));
+    CHECK(mxcol[0] == prm::TC && mxcol[1] == prm::AO && mxcol[2] == prm::LS);
 }
 
 int main() { return mt::run_all(); }

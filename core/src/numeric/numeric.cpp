@@ -405,6 +405,137 @@ void euclid(const double* fular, double* b, double* a, int maxpq, int mxarlg,
     }
 }
 
+// dscal.f -- BLAS scale dx <- da*dx (strided). Pure scaling: no FP-order
+// dependence, so the oracle's mod-5 unrolling is elided losslessly.
+void dscal(int n, double da, double* dx, int incx) {
+    if (n <= 0) return;
+    int idx = 0;
+    for (int i = 0; i < n; ++i) {
+        dx[idx] = da * dx[idx];
+        idx += incx;
+    }
+}
+
+// shlsrt.f -- ascending shell sort, in place (1-based logic preserved via the
+// -1 offsets). gap starts at nr, is halved each outer pass; within a pass,
+// gap-separated pairs are bubbled down until ordered.
+void shlsrt(int nr, double* vecx) {
+    int gap = nr;
+    while (true) {
+        gap = gap / 2;
+        if (gap > 0) {
+            int nsrt = nr - gap;
+            int bot = 0;
+            bool exit_bot = false;
+            while (!exit_bot) {           // bot loop
+                bot = bot + 1;
+                if (bot <= nsrt) {
+                    while (true) {         // exchange loop
+                        int top = bot + gap;
+                        if (vecx[bot - 1] <= vecx[top - 1]) break;  // -> label 10
+                        double tmp = vecx[top - 1];
+                        vecx[top - 1] = vecx[bot - 1];
+                        vecx[bot - 1] = tmp;
+                        if (bot <= gap) break;                      // -> label 10
+                        bot = bot - gap;
+                    }
+                    // label 10: fall through to next bot iteration.
+                } else {
+                    exit_bot = true;       // GO TO 20: halve gap again
+                }
+            }
+        } else {
+            return;                        // gap==0: done
+        }
+    }
+}
+
+// medabs.f -- median of |s[i]|. Sorts the absolute values (shlsrt), then takes
+// the central order statistic (average of the two middle for even nr).
+void medabs(const double* s, int nr, double& median) {
+    std::vector<double> abss(nr > 0 ? nr : 1);
+    for (int i = 0; i < nr; ++i) abss[i] = std::fabs(s[i]);
+    shlsrt(nr, abss.data());
+    int midpt = nr / 2;   // 1-based midpt; 0-based central index is midpt-1/midpt
+    if (nr % 2 == 0) {
+        median = (abss[midpt - 1] + abss[midpt]) / 2.0;
+    } else {
+        median = abss[midpt];   // abss(midpt+1) 1-based == abss[midpt] 0-based
+    }
+}
+
+// dppdi.f -- determinant/inverse of an SPD matrix from its packed Cholesky
+// factor (LINPACK). Packed upper-triangle indexing preserved 1-based via kk/j1/
+// kj/etc. det = det[0]*10^det[1] with 1<=det[0]<10 (or 0). ap overwritten with
+// the packed inverse when the inverse is requested.
+void dppdi(double* ap, int n, double* det, int job) {
+    constexpr double ZERO = 0.0, ONE = 1.0;
+    // Determinant.
+    if (job / 10 != 0) {
+        det[0] = ONE;
+        det[1] = ZERO;
+        const double s = 10.0;
+        int ii = 0;
+        for (int i = 1; i <= n; ++i) {
+            ii += i;
+            det[0] = ap[ii - 1] * ap[ii - 1] * det[0];
+            if (!dpeq(det[0], ZERO)) {
+                while (det[0] < ONE) {
+                    det[0] = s * det[0];
+                    det[1] = det[1] - ONE;
+                }
+                while (det[0] >= s) {
+                    det[0] = det[0] / s;
+                    det[1] = det[1] + ONE;
+                }
+            }
+        }
+    }
+    // Inverse.
+    if (job % 10 != 0) {
+        // inverse(r)
+        int kk = 0;
+        for (int k = 1; k <= n; ++k) {
+            int k1 = kk + 1;
+            kk += k;
+            ap[kk - 1] = ONE / ap[kk - 1];
+            double t = -ap[kk - 1];
+            dscal(k - 1, t, &ap[k1 - 1], 1);
+            int kp1 = k + 1;
+            int j1 = kk + 1;
+            int kj = kk + k;
+            if (n >= kp1) {
+                for (int j = kp1; j <= n; ++j) {
+                    t = ap[kj - 1];
+                    ap[kj - 1] = ZERO;
+                    daxpy(k, t, &ap[k1 - 1], 1, &ap[j1 - 1], 1);
+                    j1 += j;
+                    kj += j;
+                }
+            }
+        }
+        // inverse(r) * trans(inverse(r))
+        int jj = 0;
+        for (int j = 1; j <= n; ++j) {
+            int j1 = jj + 1;
+            jj += j;
+            int jm1 = j - 1;
+            int k1 = 1;
+            int kj = j1;
+            if (jm1 >= 1) {
+                for (int k = 1; k <= jm1; ++k) {
+                    double t = ap[kj - 1];
+                    daxpy(k, t, &ap[j1 - 1], 1, &ap[k1 - 1], 1);
+                    k1 += k;
+                    kj += 1;
+                }
+            }
+            double t = ap[jj - 1];
+            dscal(j, t, &ap[j1 - 1], 1);
+        }
+    }
+}
+
 // eltfcn.f -- elementwise cvec = avec <op> bvec over nelt elements. Oprn:
 // ADD=1, SUB=2, MULT=3, DIV=4. The Fortran Pc argument only sizes Cvec's
 // declaration (writes are 1..Nelt); C++ callers guarantee cvec length, so it is
