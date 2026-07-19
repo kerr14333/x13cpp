@@ -34,13 +34,18 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   values, 0 mismatches** (O0 vs O2).
 - **M1** — spec-parser port (lexer, dispatch, series I/O), `x13parse` CLI; parse
   outcomes match the oracle on 42 specs; malformed-input `.err` byte-identical.
-- **M2 (partial)** — transform (`trn`), prior adjustment (`a2`/`a3`), and the a1
-  save path — all **byte-identical** to the oracle at rtol 1e-8.
+- **M2** — transform (`trn`), prior adjustment (`a2`/`a3`), the a1 save path, and
+  the regression design matrix (`rmx`: constant/seasonal/TD/LOM-LOQ/leap-year/
+  stock/Easter regressors via `regvar`→`savmtx`) — all **byte-identical** to the
+  oracle at rtol 1e-8. rmx parity green on 7 specs (TD, Easter, quarterly,
+  forecast-extension, no-log variants). Outlier/user/sincos/change-of-regime
+  regressor branches deferred (abend loudly) — they need M3 estimation state.
 - **Corpus** — 61 specs / 200 extra goldens (spectrum, history, slidingspans,
   x11regression, force, metadata, pickmdl, seats, outlier), Git LFS.
 - **Scouted & ready** — M3 (regARIMA estimation) and the `.out` print engine, each
   with a written call-graph/parity-risk map under `tools/`.
-- **In flight** — the regression design matrix (`rmx`), the last M2 numeric piece.
+- **Next** — M3 (regARIMA estimation engine) per `tools/m3_scouting.md`:
+  rgarma → lmdif → fcnar → armafl (ARMA filter, likelihood, optimizer).
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
