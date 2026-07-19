@@ -689,4 +689,56 @@ void rgarma(X13Context& ctx, bool lestim, int mxiter, int mxnlit, bool lprtit,
     }
 }
 
+// xrlkhd.f -- corrected AIC (AICC) for the estimated model (see hpp).
+void xrlkhd(X13Context& ctx, double& aicc, int nxcld) {
+    constexpr double ONE = 1.0, TWO = 2.0, ZERO = 0.0;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    int nefobs = d.nspobs - nxcld;
+    double dnefob = static_cast<double>(nefobs);
+    // Estimated-parameter count: Ncxy less any held-fixed regression betas.
+    double dnp = static_cast<double>(m.ncxy);
+    if (m.nb > 0) {
+        for (int ilag = 1; ilag <= m.nb; ++ilag)
+            if (m.regfx(ilag)) dnp = dnp - ONE;
+    }
+    double dnp1 = dnp + ONE;
+    aicc = prm::DNOTST;
+    if (d.var > ZERO && d.convrg && dnefob > dnp1)
+        aicc = -TWO * (d.lnlkhd - dnefob * dnp / (dnefob - dnp1));
+}
+
+// armats.f -- t-statistics for the ARMA parameter estimates (see hpp).
+void armats(X13Context& ctx, double* tval) {
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    if (d.armaer == prm::PACSER) {
+        writln(ctx,
+               "ERROR: The covariance matrix of the ARMA parameters is "
+               "singular;",
+               stdio::STDERR, ctx.units.mt2, true);
+        writln(ctx,
+               "       cannot compute t-statistics for the ARMA parameters.",
+               stdio::STDERR, ctx.units.mt2, false);
+        abend(ctx);
+        return;
+    }
+    int itv = 0;
+    for (int iflt = prm::AR; iflt <= prm::MA; ++iflt) {
+        int begopr = m.mdl(iflt - 1);
+        int endopr = m.mdl(iflt) - 1;
+        for (int iopr = begopr; iopr <= endopr; ++iopr) {
+            int beglag = m.opr(iopr - 1);
+            int endlag = m.opr(iopr) - 1;
+            for (int ilag = beglag; ilag <= endlag; ++ilag) {
+                // CB-6: itv counts every lag (not just free ones) while Armacm
+                // is packed by the free params -- misindexes on fixed ARMA lags.
+                itv = itv + 1;
+                tval[itv - 1] =
+                    d.arimap(ilag) / std::sqrt(d.var * d.armacm(itv, itv));
+            }
+        }
+    }
+}
+
 }  // namespace x13

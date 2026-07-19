@@ -106,6 +106,28 @@ that pins it.
   states what the code actually does and flags the stale original.
 - **Modernize:** fix the Fortran comment.
 
+## CB-6 — armats `itv` counts fixed ARMA lags but Armacm is packed by free params
+
+- **Where:** `oracle/fortran/armats.f` — the `itv=itv+1` /
+  `tval(itv)=Arimap(ilag)/sqrt(Var*Armacm(itv,itv))` loop over AR..MA lags.
+- **Severity:** `latent`→`active` — wrong whenever a model **fixes** an ARMA
+  coefficient (a supported X-13 feature; the B-section corpus includes fixed-coef
+  models), harmless when every ARMA lag is free.
+- **Symptom:** `itv` advances on **every** lag in the AR..MA operators, fixed or
+  free, but `Armacm` (the ARMA parameter covariance from `covar`) is packed by
+  the **free** parameters only (`Nestpm` of them, in free-lag order). So for a
+  model with a fixed ARMA lag, `Armacm(itv,itv)` reads the wrong diagonal (and,
+  once `itv` exceeds `Nestpm`, past the filled block), giving a bogus t-stat for
+  every ARMA parameter at or after the fixed one. `sqrt` of a garbage/negative
+  value can even NaN. Contrast `setmdl`/`upespm`/`armacr`, which all correctly
+  skip fixed lags (`.not.arimaf`) when indexing the free-param space.
+- **Port:** `core/src/regarima/estimate.cpp` (armats) — reproduced verbatim with
+  a code comment. Pinned by the all-free ARMA(1,1) case in the "rgarma:
+  ...no-regression" test (where itv==free index, so the bug is dormant and the
+  t-stats match the oracle to 1e-12).
+- **Modernize:** gate the `itv` increment on `.not.Arimaf(ilag)` (and skip
+  emitting a t-stat for fixed lags), matching `armacr`'s correct indexing.
+
 ---
 
 _Append new entries as they are found while porting. Keep each pinned to a test._

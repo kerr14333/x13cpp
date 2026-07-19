@@ -113,6 +113,24 @@ void chkrt2(X13Context& ctx, bool lprmsg, int& inverr, bool lhiddn);
 void rgarma(X13Context& ctx, bool lestim, int mxiter, int mxnlit, bool lprtit,
             double* a, int& na, int& nefobs, bool& lauto);
 
+// xrlkhd.f: the corrected Akaike information criterion (AICC) for the estimated
+// model. The parameter count dnp is Ncxy (regressors + the implicit variance
+// column) less any held-fixed regression coefficients (regfx), and aicc =
+// -2*(Lnlkhd - n*dnp/(n-dnp-1)) where n = Nspobs-nxcld. Returns the not-set
+// sentinel (DNOTST) when the criterion is undefined (Var<=0, not converged, or
+// too few effective observations). The commented-out "irregular regression"
+// abort in the oracle is dead code and not reproduced.
+void xrlkhd(X13Context& ctx, double& aicc, int nxcld);
+
+// armats.f: t-statistics for the estimated ARMA parameters,
+// tval(k) = Arimap(lag_k) / sqrt(Var * Armacm(k,k)), walking the AR..MA
+// operators in lag order. If the ARMA covariance was flagged singular
+// (Armaer==PACSER) it abends (the two-line diagnostic print is reproduced via
+// writln). NB (census_bugs.md CB-6): the itv counter advances on EVERY lag,
+// fixed or free, while Armacm is packed by the free params only -- so a model
+// with a fixed ARMA coefficient misindexes the covariance. Ported verbatim.
+void armats(X13Context& ctx, double* tval);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ESTIMATE_HPP

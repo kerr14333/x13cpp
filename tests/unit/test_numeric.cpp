@@ -1478,6 +1478,15 @@ TEST("rgarma: ARMA(1,1) no-regression IGLS estimation") {
     CHECK(rclose(d.lndtcv,     5.2806970546683596e-01, 1e-12));  // rg_ldtcv
     CHECK(rclose(d.armacm(1, 1), 3.8913728603066050e-01, 1e-12));  // rg_cm11
     CHECK(rclose(d.armacm(2, 2), 5.1567691371183755e-01, 1e-12));  // rg_cm22
+
+    // Post-estimation stats off this converged state (against ref_armastat.f).
+    double aicc = 0.0;
+    xrlkhd(ctx, aicc, /*nxcld=*/0);
+    CHECK(rclose(aicc, 2.9646544507393372e+01, 1e-12));  // as_aicc
+    double tval[2] = {0.0, 0.0};
+    armats(ctx, tval);
+    CHECK(rclose(tval[0], -1.8858804037050478e+00, 1e-12));  // as_tphi
+    CHECK(rclose(tval[1],  6.8319105929467638e-01, 1e-12));  // as_ttheta
 }
 
 // ---- rgarma WITH regression (Nb>0; against ref_rgarma2.f). ---------------------

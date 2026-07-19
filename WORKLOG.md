@@ -141,6 +141,14 @@ pip cmake when adding files.
     stress case (parity risk 1) -- and C++ still matches bit-for-bit:
     Nliter=12/Nfev=56 exact, b1/phi/theta/Var/Lnlkhd + covariance at rtol
     1e-12. `test_numeric` = 59 tests.
+- **Tier-6 likelihood stats (started)** — the post-estimation numeric leaves that
+  consume rgarma's output: `xrlkhd` (corrected AIC / AICC from Lnlkhd, Nspobs,
+  Ncxy less fixed betas) and `armats` (ARMA t-stats, Arimap/sqrt(Var·Armacm_kk)).
+  Verified against `ref_armastat.f` (rgarma -> xrlkhd -> armats on the Nb=0
+  case): AICC + both t-stats at rtol 1e-12. Found **CB-6**: armats counts fixed
+  ARMA lags while Armacm is packed by free params -> misindexed t-stats for
+  fixed-coef models (ported verbatim, logged). `armacr`/`prlkhd` are print-heavy,
+  deferred to the .out milestone.
 - **Next — the B-section corpus specs** (exact=none, AR models, fixed coeffs,
   RSXFSN/FEDFUNDS): now exercise rgarma end-to-end through the real
   spec-parse -> model-build pipeline (not hand-set common state). Then
