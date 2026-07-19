@@ -14,7 +14,7 @@ model/mdldat commons + a matching `test_numeric` case. Highest risk first.
   `ratpos`/`ratneg` in `intgpg` (order-dependent FP), 13×13 packed `Chlgpg`,
   `exctma` with neltq=13. θ₁=0.6, Θ₁₂=0.5; diff ops (lag1 & lag12, coef 1.0
   fixed). Nr≈40.
-- [ ] **A2. Multi-column Nc=3, ARMA(1,1)** — `rgarma` calls `armafl(Nspobs,Ncxy,…)`
+- [x] **A2. Multi-column Nc=3, ARMA(1,1)** — `rgarma` calls `armafl(Nspobs,Ncxy,…)`
   on the whole [X:y] each IGLS iter, so Nc>1 is the normal case, tested nowhere.
   Exercises `Arimal*=Nc` scale/restore, overlapping `copy(…,-1,…)` shift,
   multi-RHS `dsolve`/`exctma`, strided `ddot(…,Nc)` unequal-increment branch.
@@ -26,10 +26,10 @@ model/mdldat commons + a matching `test_numeric` case. Highest risk first.
   φ=1.05 → PACFER=12 (assert partial Mata too); fixed φ=1.0 → Inf/NaN → PVWPER=13;
   fixed θ=1.2 → PGPGER=11. rgarma/fcnar branch on the exact code; Inf/NaN
   propagation must NOT be "cleaned up".
-- [ ] **A5. Seasonal AR (0 1 0)(1 0 0)₁₂** — pure-AR exact path (untested `ELSE
+- [x] **A5. Seasonal AR (0 1 0)(1 0 0)₁₂** — pure-AR exact path (untested `ELSE
   IF(Lar)` Chlvwp=acv fill), sparse fular (zeros lags 1..11), `euclid` Mxmalg=0
   branch ×12, `Lndtcv` accumulation on intgpg's Lma=F zero.
-- [ ] **A6. Mixed (1 0 1)(1 0 1)₁₂** — `mltpos` secpas on real data (fular lags
+- [x] **A6. Mixed (1 0 1)(1 0 1)₁₂** — `mltpos` secpas on real data (fular lags
   {1,12,13}), largest D machinery (13×13 Σp−D′D), regular-then-seasonal order FP.
 - [ ] **A7. Linit=F reuse** — init on Nr=8, re-call `armafl(12,…,.false.,…)`:
   SAVE nextma recompute with new Nr while Matd/Chlgpg hold old factorization;
@@ -43,7 +43,7 @@ model/mdldat commons + a matching `test_numeric` case. Highest risk first.
   1e-150); θ=1e-160 (whole term skipped, first-order visible diff).
 - [ ] **A11. Sparse lags [2 4]** and decreasing [4 2] — chkrts degree-recompute,
   ratpos multi-lag begelt branch, maxlag non-monotone scan. Most off-by-one-prone.
-- [ ] **A12. Pure differencing (0 1 0)(0 1 0)₁₂** and (0 2 0) — Lar=Lma=F, both
+- [x] **A12. Pure differencing (0 1 0)(0 1 0)₁₂** and (0 2 0) — Lar=Lma=F, both
   Linit branches false, empty-range DO loops, `Nopr` global side-effect write.
 - [ ] **A13. Partially-fixed operator** — pins that Arimaf has NO effect on filter
   numerics, only on the chkrts gate.

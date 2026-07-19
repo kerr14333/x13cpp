@@ -164,4 +164,157 @@ C     ==== Case D: Nopr=0 no-op -> Na=Nr, Mata untouched, Info=0 ====
       WRITE(*,'(A,I4)') 'df_info ',info
       WRITE(*,'(A,I4)') 'df_na ',na
       WRITE(*,'(A,ES24.16)') 'df_a1 ',mata(1)
+
+C     ==== Case E (A2): multi-column Nc=3 ARMA(1,1), phi=0.5 theta=0.3, Nr=10 ====
+      Lar=.true.
+      Lma=.true.
+      Nopr=2
+      Mdl(0)=1
+      Mdl(1)=1
+      Mdl(2)=2
+      Mdl(3)=3
+      Opr(0)=1
+      Opr(1)=2
+      Opr(2)=3
+      Arimal(1)=1
+      Arimal(2)=1
+      Arimap(1)=0.5D0
+      Arimap(2)=0.3D0
+      Arimaf(1)=.false.
+      Arimaf(2)=.false.
+      Oprfac(1)=1
+      Oprfac(2)=1
+      Mxarlg=1
+      Mxmalg=1
+      Mxdflg=0
+      Lndtcv=0D0
+      DO i=1,30
+       mata(i)=DBLE(MOD(7*i,13))-6D0+0.25D0*DBLE(MOD(3*i,8))
+      END DO
+      info=-99
+      na=-99
+      CALL armafl(10,3,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)')      'ef_info ',info
+      WRITE(*,'(A,I4)')      'ef_na ',na
+      WRITE(*,'(A,ES24.16)') 'ef_ldt ',Lndtcv
+      WRITE(*,'(A,ES24.16)') 'ef_a1 ',mata(1)
+      WRITE(*,'(A,ES24.16)') 'ef_a5 ',mata(5)
+      WRITE(*,'(A,ES24.16)') 'ef_alast ',mata(na*3)
+
+C     ==== Case F (A5): seasonal AR (0 1 0)(1 0 0)12, Phi=0.4, Nr=40 ====
+      Lar=.true.
+      Lma=.false.
+      Nopr=2
+      Mdl(0)=1
+      Mdl(1)=2
+      Mdl(2)=3
+      Mdl(3)=3
+      Opr(0)=1
+      Opr(1)=2
+      Opr(2)=3
+      Arimal(1)=1
+      Arimal(2)=12
+      Arimap(1)=1D0
+      Arimap(2)=0.4D0
+      Arimaf(1)=.true.
+      Arimaf(2)=.false.
+      Oprfac(1)=1
+      Oprfac(2)=12
+      Mxarlg=12
+      Mxmalg=0
+      Mxdflg=1
+      Lndtcv=0D0
+      DO i=1,40
+       mata(i)=DBLE(MOD(7*i,13))-6D0+0.25D0*DBLE(MOD(3*i,8))
+      END DO
+      info=-99
+      na=-99
+      CALL armafl(40,1,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)')      'ff_info ',info
+      WRITE(*,'(A,I4)')      'ff_na ',na
+      WRITE(*,'(A,ES24.16)') 'ff_ldt ',Lndtcv
+      WRITE(*,'(A,ES24.16)') 'ff_a1 ',mata(1)
+      WRITE(*,'(A,ES24.16)') 'ff_a13 ',mata(13)
+      WRITE(*,'(A,ES24.16)') 'ff_alast ',mata(na)
+
+C     ==== Case G (A6): mixed (1 0 1)(1 0 1)12, phi=.3 Phi=.2 th=.4 Th=.3, Nr=45 =
+      Lar=.true.
+      Lma=.true.
+      Nopr=4
+      Mdl(0)=1
+      Mdl(1)=1
+      Mdl(2)=3
+      Mdl(3)=5
+      Opr(0)=1
+      Opr(1)=2
+      Opr(2)=3
+      Opr(3)=4
+      Opr(4)=5
+      Arimal(1)=1
+      Arimal(2)=12
+      Arimal(3)=1
+      Arimal(4)=12
+      Arimap(1)=0.3D0
+      Arimap(2)=0.2D0
+      Arimap(3)=0.4D0
+      Arimap(4)=0.3D0
+      Arimaf(1)=.false.
+      Arimaf(2)=.false.
+      Arimaf(3)=.false.
+      Arimaf(4)=.false.
+      Oprfac(1)=1
+      Oprfac(2)=12
+      Oprfac(3)=1
+      Oprfac(4)=12
+      Mxarlg=13
+      Mxmalg=13
+      Mxdflg=0
+      Lndtcv=0D0
+      DO i=1,45
+       mata(i)=DBLE(MOD(7*i,13))-6D0+0.25D0*DBLE(MOD(3*i,8))
+      END DO
+      info=-99
+      na=-99
+      CALL armafl(45,1,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)')      'gf_info ',info
+      WRITE(*,'(A,I4)')      'gf_na ',na
+      WRITE(*,'(A,ES24.16)') 'gf_ldt ',Lndtcv
+      WRITE(*,'(A,ES24.16)') 'gf_a1 ',mata(1)
+      WRITE(*,'(A,ES24.16)') 'gf_a20 ',mata(20)
+      WRITE(*,'(A,ES24.16)') 'gf_alast ',mata(na)
+
+C     ==== Case J (A12): pure differencing (0 1 0)(0 1 0)12, Nr=40 ====
+      Lar=.false.
+      Lma=.false.
+      Nopr=2
+      Mdl(0)=1
+      Mdl(1)=3
+      Mdl(2)=3
+      Mdl(3)=3
+      Opr(0)=1
+      Opr(1)=2
+      Opr(2)=3
+      Arimal(1)=1
+      Arimal(2)=12
+      Arimap(1)=1D0
+      Arimap(2)=1D0
+      Arimaf(1)=.true.
+      Arimaf(2)=.true.
+      Oprfac(1)=1
+      Oprfac(2)=12
+      Mxarlg=0
+      Mxmalg=0
+      Mxdflg=13
+      Lndtcv=-42D0
+      DO i=1,40
+       mata(i)=DBLE(MOD(7*i,13))-6D0+0.25D0*DBLE(MOD(3*i,8))
+      END DO
+      info=-99
+      na=-99
+      CALL armafl(40,1,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)')      'jf_info ',info
+      WRITE(*,'(A,I4)')      'jf_na ',na
+      WRITE(*,'(A,I4)')      'jf_nopr ',Nopr
+      WRITE(*,'(A,ES24.16)') 'jf_a1 ',mata(1)
+      WRITE(*,'(A,ES24.16)') 'jf_alast ',mata(na)
       END

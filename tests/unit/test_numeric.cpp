@@ -531,6 +531,122 @@ TEST("armafl: Nopr=0 no-op") {
     CHECK_EQ(mata[0], 3.14);     // df_a1 (untouched)
 }
 
+// Case E (A2): multi-column Nc=3 ARMA(1,1). Exercises Arimal*=Nc scale/restore,
+// overlapping backward copy, multi-RHS dsolve/exctma, strided ddot.
+TEST("armafl: multi-column Nc=3 ARMA(1,1)") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = true; m.lma = true; m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    d.arimap(1) = 0.5; d.arimap(2) = 0.3;
+    m.arimaf(1) = false; m.arimaf(2) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    d.lndtcv = 0.0;
+    double mata[200] = {0.0};
+    for (int i = 1; i <= 30; ++i)
+        mata[i - 1] = double(7 * i % 13) - 6.0 + 0.25 * double(3 * i % 8);
+    int na = -99, info = -99;
+    armafl(ctx, 10, 3, true, true, mata, na, 200, info);
+    CHECK_EQ(info, 0);   // ef_info
+    CHECK_EQ(na, 11);    // ef_na
+    CHECK(rclose(d.lndtcv, 5.6954892925541983e-02, 1e-12));   // ef_ldt
+    CHECK(rclose(mata[0],   1.1306818363801443e+00, 1e-12));  // ef_a1
+    CHECK(rclose(mata[4],  -1.7332616287235918e+00, 1e-12));  // ef_a5
+    CHECK(rclose(mata[32], -4.1250034239322408e+00, 1e-12));  // ef_alast (na*3)
+}
+
+// Case F (A5): seasonal AR (0 1 0)(1 0 0)12 -- pure-AR exact path (ELSE IF Lar
+// Chlvwp=acv fill), sparse fular, euclid Mxmalg=0 branch, Lndtcv accumulation.
+TEST("armafl: seasonal AR (0 1 0)(1 0 0)12") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = true; m.lma = false; m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 2; m.mdl(2) = 3; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 12;
+    d.arimap(1) = 1.0; d.arimap(2) = 0.4;
+    m.arimaf(1) = true; m.arimaf(2) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 12;
+    m.mxarlg = 12; m.mxmalg = 0; m.mxdflg = 1;
+    d.lndtcv = 0.0;
+    double mata[200] = {0.0};
+    for (int i = 1; i <= 40; ++i)
+        mata[i - 1] = double(7 * i % 13) - 6.0 + 0.25 * double(3 * i % 8);
+    int na = -99, info = -99;
+    armafl(ctx, 40, 1, true, true, mata, na, 200, info);
+    CHECK_EQ(info, 0);   // ff_info
+    CHECK_EQ(na, 39);    // ff_na
+    CHECK(rclose(d.lndtcv, 2.0922406457373310e+00, 1e-12));   // ff_ldt
+    CHECK(rclose(mata[0],  -4.8117044797036321e+00, 1e-12));  // ff_a1
+    CHECK(rclose(mata[12],  7.8499999999999996e+00, 1e-12));  // ff_a13
+    CHECK(rclose(mata[38],  7.8499999999999996e+00, 1e-12));  // ff_alast
+}
+
+// Case G (A6): mixed (1 0 1)(1 0 1)12 -- largest D machinery (13x13 Sigma_p-D'D),
+// mltpos secpas on real data, regular-then-seasonal operator-order FP.
+TEST("armafl: mixed (1 0 1)(1 0 1)12") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = true; m.lma = true; m.nopr = 4;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 3; m.mdl(3) = 5;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3; m.opr(3) = 4; m.opr(4) = 5;
+    m.arimal(1) = 1; m.arimal(2) = 12; m.arimal(3) = 1; m.arimal(4) = 12;
+    d.arimap(1) = 0.3; d.arimap(2) = 0.2; d.arimap(3) = 0.4; d.arimap(4) = 0.3;
+    m.arimaf(1) = false; m.arimaf(2) = false;
+    m.arimaf(3) = false; m.arimaf(4) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 12; m.oprfac(3) = 1; m.oprfac(4) = 12;
+    m.mxarlg = 13; m.mxmalg = 13; m.mxdflg = 0;
+    d.lndtcv = 0.0;
+    double mata[200] = {0.0};
+    for (int i = 1; i <= 45; ++i)
+        mata[i - 1] = double(7 * i % 13) - 6.0 + 0.25 * double(3 * i % 8);
+    int na = -99, info = -99;
+    armafl(ctx, 45, 1, true, true, mata, na, 200, info);
+    CHECK_EQ(info, 0);   // gf_info
+    CHECK_EQ(na, 58);    // gf_na
+    CHECK(rclose(d.lndtcv, 1.4955153694748469e-01, 1e-12));   // gf_ldt
+    CHECK(rclose(mata[0],   1.6818026153991728e+00, 1e-12));  // gf_a1
+    CHECK(rclose(mata[19],  7.3953276312852423e-01, 1e-12));  // gf_a20
+    CHECK(rclose(mata[57], -6.1351674219679686e-01, 1e-12));  // gf_alast
+}
+
+// Case J (A12): pure differencing (0 1 0)(0 1 0)12 -- Lar=Lma=F, both Linit
+// branches false, empty-range loops, Nopr global side-effect write.
+TEST("armafl: pure differencing (0 1 0)(0 1 0)12") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = false; m.lma = false; m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 3; m.mdl(2) = 3; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 12;
+    d.arimap(1) = 1.0; d.arimap(2) = 1.0;
+    m.arimaf(1) = true; m.arimaf(2) = true;
+    m.oprfac(1) = 1; m.oprfac(2) = 12;
+    m.mxarlg = 0; m.mxmalg = 0; m.mxdflg = 13;
+    d.lndtcv = -42.0;
+    double mata[200] = {0.0};
+    for (int i = 1; i <= 40; ++i)
+        mata[i - 1] = double(7 * i % 13) - 6.0 + 0.25 * double(3 * i % 8);
+    int na = -99, info = -99;
+    armafl(ctx, 40, 1, true, true, mata, na, 200, info);
+    CHECK_EQ(info, 0);   // jf_info
+    CHECK_EQ(na, 27);    // jf_na
+    CHECK_EQ(m.nopr, 2); // jf_nopr (exctma side-effect write)
+    CHECK(rclose(mata[0],  1.1000000000000000e+01, 1e-12));  // jf_a1
+    CHECK(rclose(mata[26], 1.1000000000000000e+01, 1e-12));  // jf_alast
+}
+
 // ---- olsreg + resid (regression solve / residuals; against ref_estimate.f).
 // 4-obs OLS: intercept + one regressor, y in the 3rd column. rtol 1e-12. -------
 TEST("olsreg/resid: OLS normal-equations solve + residuals") {
