@@ -133,10 +133,18 @@ pip cmake when adding files.
   estimation parity: `ref_rgarma.f` drives an Nb=0 ARMA(1,1) on a 24-point
   series -> C++ matches the oracle bit-for-bit** -- Nliter=14, Nfev=47 EXACT
   (the trajectory-identical canary), phi/theta/Var/Lnlkhd/Lndtcv + covariance
-  diag at rtol 1e-12, Convrg/Armaer/Lcalcm exact. `test_numeric` = 58 tests.
+  diag at rtol 1e-12, Convrg/Armaer/Lcalcm exact.
+  - **Nb>0 regression case** (`ref_rgarma2.f`): ARMA(1,1) + intercept
+    (Ncxy=2), driving the olsreg GLS solve, `Nfev+=Ncxy+1`/pass, and the
+    multi-pass IGLS outer loop (tnltol 2/n·Nltol0 -> 2/n·Nltol after iter 2).
+    Oracle converges to a NEAR-UNIT MA root (theta~0.99999) -- a penalty-wall
+    stress case (parity risk 1) -- and C++ still matches bit-for-bit:
+    Nliter=12/Nfev=56 exact, b1/phi/theta/Var/Lnlkhd + covariance at rtol
+    1e-12. `test_numeric` = 59 tests.
 - **Next — the B-section corpus specs** (exact=none, AR models, fixed coeffs,
-  RSXFSN/FEDFUNDS) now unblocked: exercise rgarma with regression (Nb>0, olsreg
-  path + IGLS multi-pass) end-to-end. Then likelihood stats/reports (Tier-6:
+  RSXFSN/FEDFUNDS): now exercise rgarma end-to-end through the real
+  spec-parse -> model-build pipeline (not hand-set common state). Then
+  likelihood stats/reports (Tier-6:
   xrlkhd/prlkhd/armats/...), outlier detection (idotlr/rdotlr), and the deferred
   M2 regressor branches. See `tools/m3_scouting.md` §5 Tier-6/7.
 

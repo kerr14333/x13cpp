@@ -1480,4 +1480,69 @@ TEST("rgarma: ARMA(1,1) no-regression IGLS estimation") {
     CHECK(rclose(d.armacm(2, 2), 5.1567691371183755e-01, 1e-12));  // rg_cm22
 }
 
+// ---- rgarma WITH regression (Nb>0; against ref_rgarma2.f). ---------------------
+// Same 24-point series shifted to mean 2.0 with an intercept column, so Xy is
+// 24x2 = [1, y] (Ncxy=2, Nb=1). Drives the branches the Nb=0 case skips: the
+// olsreg GLS solve (Nfev+=Ncxy+1 per pass), the multi-pass IGLS outer loop
+// (locest stays true while Nb>0; tnltol switches from 2/n*Nltol0 to 2/n*Nltol
+// after iter 2), and resid over a real regression column. The oracle converges
+// to a NEAR-UNIT MA root (theta~0.99999) -- a penalty-wall stress case (parity
+// risk 1); the exact Nliter=12/Nfev=56 match confirms the trajectory is
+// bit-identical even at the invertibility boundary.
+TEST("rgarma: ARMA(1,1) + intercept, multi-pass IGLS (Nb>0)") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    const double ser[24] = {0.5, -0.3, 0.8, -0.6, 0.2,  0.9, -0.7, 0.4,
+                            0.1, -0.5, 0.6, -0.2, 0.7,  -0.8, 0.3, 0.5,
+                            -0.4, 0.9, -0.1, 0.6, -0.7, 0.2, 0.4, -0.5};
+    d.nspobs = 24;
+    m.ncxy = 2;
+    for (int i = 1; i <= 24; ++i) {
+        d.xy(2 * i - 1) = 1.0;             // intercept column
+        d.xy(2 * i) = ser[i - 1] + 2.0;    // y column (mean 2.0)
+    }
+
+    m.lar = true; m.lma = true; m.lextma = true; m.lextar = false;
+    m.lprier = false; ctx.hiddn.lhiddn = false;
+    m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    m.arimaf(1) = false; m.arimaf(2) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    d.arimap(1) = 0.3; d.arimap(2) = 0.3;
+
+    m.nb = 1; m.nintvl = 0; m.nextvl = 0;
+    m.tol = 1e-5; m.nltol0 = 1e-3; m.nltol = 1e-5; m.stepln = 0.0;
+    ctx.hiddn.issap = 0; ctx.hiddn.irev = 0;
+    ctx.error.lfatal = false;
+    ctx.units.mt1 = 6; ctx.units.mt2 = 6;
+
+    auto a = std::make_unique<double[]>(1092);
+    int na = 0, nefobs = 0;
+    bool lauto = false;
+    rgarma(ctx, true, 200, 60, false, a.get(), na, nefobs, lauto);
+
+    CHECK_EQ(d.armaer, 0);   // rg_armaer
+    CHECK(d.convrg);         // rg_convrg
+    CHECK_EQ(d.nliter, 12);  // rg_nliter
+    CHECK_EQ(d.nfev, 56);    // rg_nfev
+    CHECK_EQ(na, 25);        // rg_na
+    CHECK_EQ(nefobs, 24);    // rg_nefobs
+    CHECK(!lauto);           // rg_lauto
+    CHECK(m.lcalcm);         // rg_lcalcm
+    CHECK(rclose(d.b(1),       2.1008134628340014e+00, 1e-12));  // rg_b1
+    CHECK(rclose(d.arimap(1), -3.0600322414778652e-01, 1e-12));  // rg_phi
+    CHECK(rclose(d.arimap(2),  9.9999478122852692e-01, 1e-12));  // rg_theta
+    CHECK(rclose(d.var,        1.0067810894278280e-01, 1e-12));  // rg_var
+    CHECK(rclose(d.lnlkhd,    -8.4206459605326067e+00, 1e-12));  // rg_lnlkhd
+    CHECK(rclose(d.lndtcv,     3.8320880866185578e+00, 1e-12));  // rg_ldtcv
+    CHECK(rclose(d.armacm(1, 1), 3.4961993382451767e-01, 1e-12));  // rg_cm11
+    CHECK(rclose(d.armacm(2, 2), 1.8308075964429438e-01, 1e-12));  // rg_cm22
+}
+
 int main() { return mt::run_all(); }
