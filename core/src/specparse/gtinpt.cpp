@@ -87,6 +87,8 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.extend.nfcst = prm::NOTSET;   // gtinpt.f: Nfcst=NOTSET
     ctx.extend.nbcst = prm::NOTSET;   // gtinpt.f: Nbcst=NOTSET
     ctx.arima.fctdrp = 0;             // gtinpt.f: Fctdrp=0
+    ctx.arima.ciprob = 0.95;          // gtinpt.f: Ciprob=.95D0
+    ctx.arima.lognrm = false;         // gtinpt.f: Lognrm=F
     ctx.picktd.tdzero = 0;
     ctx.picktd.lnzero = 0;
     setint(prm::NOTSET, 2, ctx.picktd.tddate.data());

@@ -203,21 +203,32 @@ pip cmake when adding files.
   unit coverage: fixed-ARMA-coefficient estimation (C2 partial, ref_rgarma_fixed)
   and all three `fcstxy` branches (C4, differencing via ref_fcstxy3). test_numeric
   = 68.
-- **Forecast-output leaves (started): `invfcn` + `lgnrmc` LANDED.** The inverse
+- **Forecast-output leaves: `invfcn` + `lgnrmc` LANDED.** The inverse
   Box-Cox/logit transform (invfcn.f) and the lognormal mean-correction (lgnrmc.f)
   that put fcstxy's transformed forecasts back on the original scale. Shared
   transform leaves (x11/tables reuse them later). Oracle-verified all branches at
-  rtol 1e-14. `test_numeric` = 70.
-- **Next — finish the forecast-output chain** to produce real `.fct` forecasts
-  (date, forecast, lowerci, upperci on the original scale): remaining leaves
-  `dinvnr` (inverse-normal critical value; pulls in `cumnor` + `stvaln`) and
-  `eltfcn` (elementwise add/sub/mul/div), then assemble the fcstout path
-  (fcstxy → lgnrmc/invfcn point forecast; `cv=dinvnr((Ciprob+1)/2)`,
-  CI = invfcn(fcst ± cv·se)) and wire it into run_m2 behind `forecast{}`,
-  verifying against the `.fct` goldens (this also exercises fcstxy's differencing
-  branch on real airline data). Then outlier detection (idotlr/rdotlr AO/LS/TC
-  scan), the deferred M2 regressor branches, and the .out print engine. See
-  `tools/m3_scouting.md` §5 Tier-6/7 and §7.
+  rtol 1e-14.
+- **Forecast-output chain COMPLETE — real `.fct` forecasts LANDED.** Ported the
+  remaining leaves `dinvnr` (inverse-normal critical value) + its helpers
+  `cumnor`/`stvaln`/`devlpl`, and `eltfcn` (elementwise add/sub/mul/div); cumnor
+  inlines the two spmpar machine constants (0.5·DBL_EPSILON / DBL_MIN, exact
+  under the active ipmpar block). New `fcstout` (regarima/forecast.cpp) is the
+  numeric core of prtfct.f's LFOROS path: fcstxy → invfcn/lgnrmc point forecast,
+  then the two-tailed band `invfcn(fcst ± dinvnr((Ciprob+1)/2)·se)`. Wired into
+  run_m2 behind `forecast{}` (results on `ctx.forecasts`, no file output); the
+  forecast{} reader now also parses `probability`/`lognormal`, and gtinpt seeds
+  the Ciprob=0.95 / Lognrm=F defaults. New parity gate `test_m3_forecast.py`:
+  the C++ original-scale forecast table matches the oracle `.fct` bit-for-bit at
+  the printed precision across 4 real series (airline/expgs/payems/unrate, log
+  airline model) — **this exercises fcstxy's differencing branch on real airline
+  data end-to-end** (rtol 1e-9). `test_numeric` = 74; full suite 227 passed / 9
+  skipped / 11 xfailed. (The oracle's seats-driven forecast-count override — 3·sp
+  vs the requested maxlead — is a later seats-phase concern; the gate compares the
+  overlapping leads, which are count-independent.)
+- **Next — outlier detection** (idotlr/rdotlr AO/LS/TC scan; unblocks the many
+  corpus specs the estimation/forecast gates currently skip for auto-outliers),
+  the deferred M2 regressor branches, and the .out/.fct print engine (byte-exact
+  save-file emission). See `tools/m3_scouting.md` §5 Tier-6/7 and §7.
 - **Packaging scaffolding (r-pkg/py-pkg) built by an agent, parked on branch
   `worktree-agent-ae1edc2bc3b17f4d4`** (NOT merged; merge after the main
   milestones). R CMD check / twine check clean; datasets bundled; result-object

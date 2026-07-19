@@ -118,5 +118,13 @@ int main(int argc, char** argv) {
     for (int j = 1; j <= m.nb; ++j)
         std::printf("beta%d: %.14E\n", j, d.b(j));
 
+    // Forecast-output table (fcstout / prtfct .fct path): original-scale point
+    // forecast + two-tailed confidence band, one line per lead.
+    const auto& fo = ctx.forecasts;
+    std::printf("nfcst: %d\n", fo.nfcst);
+    for (int i = 0; i < fo.nfcst; ++i)
+        std::printf("fcst%d: %.14E %.14E %.14E\n", i + 1, fo.fcst[i],
+                    fo.lwrci[i], fo.uprci[i]);
+
     return 0;
 }

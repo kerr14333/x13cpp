@@ -10,7 +10,8 @@
 #include "regarima/armafl.hpp"      // armafl
 #include "regarima/regvar.hpp"      // ratpos
 #include "regarima/estimate.hpp"    // resid
-#include "numeric/numeric.hpp"      // dppsl, yprmy
+#include "numeric/numeric.hpp"      // dppsl, yprmy, dinvnr, scrmlt, eltfcn, dpeq
+#include "transform/transform.hpp"  // invfcn, lgnrmc
 #include "specparse/specparse.hpp"  // polyml, eltlen, copy, setdp
 #include "gen/model.hpp"            // prm::DIFF, AR, MA, PB, PORDER, PDIFOR, POPR
 #include "gen/srslen.hpp"           // prm::PLEN, prm::PFCST
@@ -144,6 +145,61 @@ void fcstxy(X13Context& ctx, int fctori, int nfcst, double* fcst, double* se,
         se[i - 1] = std::sqrt(tmp * d.var);
         ielt += m.ncxy;
     }
+}
+
+// fcstout -- prtfct.f's forecast-output (LFOROS) numeric path, minus printing,
+// save-file I/O, and the user-prior/holiday/TD correction branches. Produces the
+// original-scale point forecast and two-tailed confidence band from the
+// estimated model, storing them on ctx.forecasts.
+void fcstout(X13Context& ctx, int nfcst, int fctdrp, double ciprob, bool lognrm) {
+    if (nfcst <= 0) return;
+    const int fcntyp = ctx.arima.fcntyp;
+    const double lam = ctx.arima.lam;
+    // prtfct.f: fctori = Nspobs - Fctdrp (the undifferenced series length fed to
+    // fcstxy). ltrns is true unless the transform is the identity (lam==1 and the
+    // "no transform" function code 4).
+    const int fctori = ctx.mdldat.nspobs - fctdrp;
+    const bool ltrns = (!dpeq(lam, 1.0)) || fcntyp != 4;
+    const bool lam0 = dpeq(lam, 0.0);
+
+    std::vector<double> fcst(prm::PFCST), fcstse(prm::PFCST), rgvar(prm::PFCST);
+    fcstxy(ctx, fctori, nfcst, fcst.data(), fcstse.data(), rgvar.data());
+    if (ctx.error.lfatal) return;
+
+    // Point forecast on the original scale (untfct): lognormal mean-correction
+    // for the log transform when requested, else the plain inverse transform.
+    std::vector<double> untfct(prm::PFCST);
+    if (lognrm && lam0) {
+        lgnrmc(nfcst, fcst.data(), fcstse.data(), untfct.data(), /*ltrans=*/true);
+    } else {
+        invfcn(ctx, fcst.data(), nfcst, fcntyp, lam, untfct.data());
+    }
+    if (ctx.error.lfatal) return;
+
+    // Stash the transformed-scale forecast + SE before scrmlt scales fcstse.
+    auto& out = ctx.forecasts;
+    out.trnfct.assign(fcst.begin(), fcst.begin() + nfcst);
+    out.trnse.assign(fcstse.begin(), fcstse.begin() + nfcst);
+
+    // Confidence band: cv = dinvnr((Ciprob+1)/2) (two-tailed), then
+    // [fcst - cv*se, fcst + cv*se] on the transformed scale, mapped back through
+    // invfcn when the series was transformed.
+    const double pval = (ciprob + 1.0) / 2.0;
+    const double cv = dinvnr(pval, 1.0 - pval);
+    scrmlt(cv, nfcst, fcstse.data());   // fcstse := cv * se
+    std::vector<double> lwrci(prm::PFCST), uprci(prm::PFCST);
+    eltfcn(ELT_SUB, fcst.data(), fcstse.data(), nfcst, lwrci.data());
+    eltfcn(ELT_ADD, fcst.data(), fcstse.data(), nfcst, uprci.data());
+    if (ltrns) {
+        invfcn(ctx, lwrci.data(), nfcst, fcntyp, lam, lwrci.data());
+        invfcn(ctx, uprci.data(), nfcst, fcntyp, lam, uprci.data());
+        if (ctx.error.lfatal) return;
+    }
+
+    out.nfcst = nfcst;
+    out.fcst.assign(untfct.begin(), untfct.begin() + nfcst);
+    out.lwrci.assign(lwrci.begin(), lwrci.begin() + nfcst);
+    out.uprci.assign(uprci.begin(), uprci.begin() + nfcst);
 }
 
 }  // namespace x13

@@ -159,22 +159,30 @@ void gt_forecast(X13Context& ctx, bool& inptok) {
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
         std::vector<std::string> cap;
-        bool want = (argidx == 1 || argidx == 2 || argidx == 6);
+        // gtfcst.f: 1 exclude->Fctdrp, 2 maxlead->Nfcst, 3 probability->Ciprob,
+        // 6 maxback->Nbcst, 7 lognormal->Lognrm.
+        bool want = (argidx == 1 || argidx == 2 || argidx == 3 || argidx == 6 ||
+                     argidx == 7);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
-        // gtfcst.f: 1 exclude -> Fctdrp, 2 maxlead -> Nfcst, 6 maxback -> Nbcst.
         if (!cap.empty()) {
-            int v = 0;
-            bool ok = true;
-            try { v = std::stoi(cap[0]); } catch (...) { ok = false; }
-            if (ok) {
-                if (argidx == 1) {
-                    ctx.arima.fctdrp = v;
-                } else if (argidx == 2) {
-                    ctx.captured.forecast_maxlead = v;
-                    if (v <= prm::PFCST) ctx.extend.nfcst = v;
-                } else if (argidx == 6) {
-                    if (v <= prm::PFCST) ctx.extend.nbcst = v;
+            if (argidx == 3) {                       // probability (real)
+                try { ctx.arima.ciprob = std::stod(cap[0]); } catch (...) {}
+            } else if (argidx == 7) {                // lognormal (yes/no)
+                ctx.arima.lognrm = (cap[0] == "yes" || cap[0] == "1");
+            } else {                                 // integer-valued args
+                int v = 0;
+                bool ok = true;
+                try { v = std::stoi(cap[0]); } catch (...) { ok = false; }
+                if (ok) {
+                    if (argidx == 1) {
+                        ctx.arima.fctdrp = v;
+                    } else if (argidx == 2) {
+                        ctx.captured.forecast_maxlead = v;
+                        if (v <= prm::PFCST) ctx.extend.nfcst = v;
+                    } else if (argidx == 6) {
+                        if (v <= prm::PFCST) ctx.extend.nbcst = v;
+                    }
                 }
             }
         }

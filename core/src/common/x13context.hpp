@@ -121,6 +121,18 @@ struct X13Context {
         double stpitr_oldobj = 0.0;
         bool setmdl_first = true;
     } saved;
+    // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
+    // scale point forecast + confidence interval, plus the transformed-scale
+    // forecast/SE. Stored on the context (no auto file output); a thin driver
+    // surfaces them. All length nfcst.
+    struct FcstOut {
+        int nfcst = 0;
+        std::vector<double> fcst;    // point forecast, original scale (untfct)
+        std::vector<double> lwrci;   // lower confidence bound, original scale
+        std::vector<double> uprci;   // upper confidence bound, original scale
+        std::vector<double> trnfct;  // forecast on the transformed scale
+        std::vector<double> trnse;   // forecast standard error, transformed scale
+    } forecasts;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

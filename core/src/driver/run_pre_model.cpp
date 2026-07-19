@@ -12,6 +12,7 @@
 #include "regarima/priadj.hpp"
 #include "regarima/regvar.hpp"
 #include "regarima/estimate.hpp"
+#include "regarima/forecast.hpp"
 #include "gen/srslen.hpp"           // prm::PLEN (residual work-vector sizing)
 #include "gen/model.hpp"            // prm::PORDER
 
@@ -183,6 +184,16 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
             prlkhd(ctx, aptr, fac.data(), ctx.adj.adjmod, ctx.arima.fcntyp,
                    ctx.arima.lam);
             if (ctx.error.lfatal) return false;
+
+            // Forecasting (arima.f:1164 prtfct, when Nfcst>0). Produces the
+            // original-scale point forecast + confidence band on ctx.forecasts.
+            // The prior-adjustment/holiday branches of prtfct are out of this
+            // slice, so it is exact only without user prior factors (Priadj<=1).
+            if (nfcst > 0) {
+                fcstout(ctx, nfcst, ctx.arima.fctdrp, ctx.arima.ciprob,
+                        ctx.arima.lognrm);
+                if (ctx.error.lfatal) return false;
+            }
         }
     }
 
