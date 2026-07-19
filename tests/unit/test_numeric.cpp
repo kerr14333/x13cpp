@@ -1574,6 +1574,71 @@ TEST("fcstxy: ARMA(1,1) no-regression forecasts + standard errors") {
     }
 }
 
+// ---- fcstxy WITH regression (Nb>0; against ref_fcstxy2.f). ---------------------
+// Estimates the ARMA(1,1)+intercept of the Nb>0 rgarma case, extends the
+// intercept design into the 6 forecast rows (Xy rows 25..30 = [1, 0]), then
+// forecasts. Nb=1, Iregfx=0 -> nb2=1, so the design-uncertainty term
+// X_f(X'X)^-1 X_f' fires (dppsl/yprmy) and Rgvar is nonzero -- the branch the
+// no-regression case skips. Oracle at rtol 1e-11.
+TEST("fcstxy: ARMA(1,1) + intercept forecasts (Nb>0, dppsl design term)") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    const double ser[24] = {0.5, -0.3, 0.8, -0.6, 0.2,  0.9, -0.7, 0.4,
+                            0.1, -0.5, 0.6, -0.2, 0.7,  -0.8, 0.3, 0.5,
+                            -0.4, 0.9, -0.1, 0.6, -0.7, 0.2, 0.4, -0.5};
+    d.nspobs = 24;
+    m.ncxy = 2;
+    for (int i = 1; i <= 24; ++i) {
+        d.xy(2 * i - 1) = 1.0;
+        d.xy(2 * i) = ser[i - 1] + 2.0;
+    }
+    m.lar = true; m.lma = true; m.lextma = true; m.lextar = false;
+    m.lprier = false; ctx.hiddn.lhiddn = false;
+    m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    m.arimaf(1) = false; m.arimaf(2) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    d.arimap(1) = 0.3; d.arimap(2) = 0.3;
+    m.nb = 1; m.nintvl = 0; m.nextvl = 0; m.iregfx = 0;
+    m.tol = 1e-5; m.nltol0 = 1e-3; m.nltol = 1e-5; m.stepln = 0.0;
+    ctx.hiddn.issap = 0; ctx.hiddn.irev = 0;
+    ctx.error.lfatal = false;
+    ctx.units.mt1 = 6; ctx.units.mt2 = 6;
+
+    auto a = std::make_unique<double[]>(1092);
+    int na = 0, nefobs = 0;
+    bool lauto = false;
+    rgarma(ctx, true, 200, 60, false, a.get(), na, nefobs, lauto);
+    CHECK(d.convrg);
+
+    // Extend the intercept design into the forecast rows (y slot zeroed by fcstxy).
+    for (int i = 25; i <= 30; ++i) { d.xy(2 * i - 1) = 1.0; d.xy(2 * i) = 0.0; }
+
+    double fcst[6] = {0}, se[6] = {0}, rgvar[6] = {0};
+    fcstxy(ctx, /*fctori=*/24, /*nfcst=*/6, fcst, se, rgvar);
+
+    const double ofcst[6] = {
+        2.5716559843740114e+00, 1.9567341331768837e+00, 2.1449022022421316e+00,
+        2.0873221664265023e+00, 2.1049418430326297e+00, 2.0995501651827131e+00};
+    const double ose[6] = {
+        3.3687688811033284e-01, 5.2254376660852997e-01, 5.3736600702490056e-01,
+        5.3851466405151294e-01, 5.3868891974149136e-01, 5.3868478718934021e-01};
+    const double orgv[6] = {
+        1.2807928800118933e-02, 6.5419658213969225e-04, 2.8495104099106040e-04,
+        1.5118733177552387e-05, 6.1841553817841690e-05, 4.4187604400179843e-05};
+    for (int i = 0; i < 6; ++i) {
+        CHECK(rclose(fcst[i], ofcst[i], 1e-11));
+        CHECK(rclose(se[i], ose[i], 1e-11));
+        CHECK(rclose(rgvar[i], orgv[i], 1e-10));
+    }
+}
+
 // ---- rgarma WITH regression (Nb>0; against ref_rgarma2.f). ---------------------
 // Same 24-point series shifted to mean 2.0 with an intercept column, so Xy is
 // 24x2 = [1, y] (Ncxy=2, Nb=1). Drives the branches the Nb=0 case skips: the
