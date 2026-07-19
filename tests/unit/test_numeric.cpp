@@ -1085,4 +1085,113 @@ TEST("fdjac2: forward-difference Jacobian") {
     CHECK(rclose(fjac[5],  1.0000000110901848e+00, 1e-12));  // fj32
 }
 
+TEST("covar: covariance matrix from QR output (permuted)") {
+    // 3x3 nonsingular upper-tri R, column-major (ldr=3), NON-identity
+    // ipvt=(2,3,1) to exercise the permutation. Goldens from tools/ref_covar.f.
+    const double golden[9] = {
+         6.2500000000000000e-02, -2.0833333333333336e-02, -2.0833333333333332e-02,
+        -2.0833333333333336e-02,  2.8472222222222221e-01, -4.8611111111111105e-02,
+        -2.0833333333333332e-02, -4.8611111111111105e-02,  1.1805555555555555e-01};
+    // Case 1: Tol=0 (auto tolerance path, dpmpar(1)).
+    {
+        double r[9] = {2, 0, 0, 1, 3, 0, 1, 1, 4};
+        int ipvt[3] = {2, 3, 1};
+        double wa[3] = {0};
+        int info = -99;
+        covar(3, r, 3, ipvt, 0.0, info, wa);
+        CHECK_EQ(info, 0);  // cv_info
+        for (int i = 0; i < 9; ++i) CHECK(rclose(r[i], golden[i], 1e-12));
+    }
+    // Case 2: explicit Tol=1e-10 (ELSE tolerance path); still nonsingular.
+    {
+        double r[9] = {2, 0, 0, 1, 3, 0, 1, 1, 4};
+        int ipvt[3] = {2, 3, 1};
+        double wa[3] = {0};
+        int info = -99;
+        covar(3, r, 3, ipvt, 1.0e-10, info, wa);
+        CHECK_EQ(info, 0);  // cw_info
+        for (int i = 0; i < 9; ++i) CHECK(rclose(r[i], golden[i], 1e-12));
+    }
+}
+
+// ---- lmdif (Census-modified MINPACK LM core; against ref_lmdif.f). ----------
+// Analytic objectives matching the vendored fcn signature. Near-zero gradient
+// components (qtf at convergence) get an absolute tolerance -- a relative rtol
+// is meaningless on a quantity built from catastrophic cancellation.
+TEST("lmdif: Rosenbrock, full trajectory to convergence") {
+    MinpackFcn rosen = [](int&, int, const double* x, double* f, bool, bool,
+                          int&, bool) {
+        f[0] = 1.0e1 * (x[1] - x[0] * x[0]);
+        f[1] = 1.0 - x[0];
+    };
+    double x[2] = {-1.2, 1.0};
+    double fvec[2] = {0}, diag[2] = {0}, fjac[4] = {0}, qtf[2] = {0};
+    double wa1[2] = {0}, wa2[2] = {0}, wa3[2] = {0}, wa4[2] = {0};
+    int ipvt[2] = {0};
+    int info = -99, nliter = 0, nfev = 0;
+    lmdif(rosen, 2, 2, x, fvec, false, false, 1e-10, 1e-10, 0.0, 100, 0.0, diag,
+          1, 100.0, 0, info, nliter, nfev, fjac, 2, ipvt, qtf, wa1, wa2, wa3, wa4);
+    CHECK_EQ(info, 2);       // a_info (xtol convergence)
+    CHECK_EQ(nliter, 16);    // a_nliter (trajectory canary)
+    CHECK_EQ(nfev, 54);      // a_nfev
+    CHECK(rclose(x[0], 1.0, 1e-12));  // a_x1
+    CHECK(rclose(x[1], 1.0, 1e-12));  // a_x2
+    CHECK(rclose(enorm(2, fvec), 0.0, 1e-12));  // a_fnorm (exact 0)
+    CHECK(rclose(fjac[0], 2.0024984467011738e+01, 1e-12));  // a_fj11
+    CHECK_EQ(ipvt[0], 1); CHECK_EQ(ipvt[1], 2);             // a_ipvt
+    CHECK(rclose(diag[0], 2.4020824177816124e+01, 1e-12));  // a_diag1
+    CHECK(rclose(diag[1], 1.0000000045103494e+01, 1e-12));  // a_diag2
+    CHECK(std::fabs(qtf[0] - (-3.6941376259390850e-10)) <= 1e-12);  // a_qtf1
+    CHECK(std::fabs(qtf[1] - 1.8470687992078067e-11) <= 1e-12);     // a_qtf2
+}
+
+TEST("lmdif: overdetermined exponential fit, M>N, Mode=2") {
+    MinpackFcn expfit = [](int&, int, const double* x, double* f, bool, bool,
+                           int&, bool) {
+        const double t[5] = {0.5, 1.0, 1.5, 2.0, 2.5};
+        const double y[5] = {1.8, 1.2, 0.9, 0.5, 0.3};
+        for (int i = 0; i < 5; ++i) f[i] = x[0] * std::exp(x[1] * t[i]) - y[i];
+    };
+    double x[2] = {1.0, 0.0};
+    double fvec[5] = {0}, diag[2] = {2.0, 0.5}, fjac[10] = {0}, qtf[2] = {0};
+    double wa1[2] = {0}, wa2[2] = {0}, wa3[2] = {0}, wa4[5] = {0};
+    int ipvt[2] = {0};
+    int info = -99, nliter = 0, nfev = 0;
+    lmdif(expfit, 5, 2, x, fvec, false, false, 1e-10, 1e-10, 1e-10, 100, 0.0,
+          diag, 2, 100.0, 0, info, nliter, nfev, fjac, 5, ipvt, qtf, wa1, wa2,
+          wa3, wa4);
+    CHECK_EQ(info, 1);     // b_info (ftol convergence, nonzero residual)
+    CHECK_EQ(nliter, 7);   // b_nliter
+    CHECK_EQ(nfev, 22);    // b_nfev
+    CHECK(rclose(x[0], 2.7220291273816937e+00, 1e-12));   // b_x1
+    CHECK(rclose(x[1], -8.1179791426242320e-01, 1e-12));  // b_x2
+    CHECK(rclose(enorm(5, fvec), 1.1782056122644691e-01, 1e-12));  // b_fnorm
+    CHECK(rclose(fjac[0], -2.3865052096440240e+00, 1e-12));  // b_fj11
+    CHECK(rclose(fjac[6], 4.4536936170477159e-01, 1e-12));   // b_fj22 (fjac(2,2))
+    CHECK_EQ(ipvt[0], 2); CHECK_EQ(ipvt[1], 1);              // b_ipvt
+    CHECK(std::fabs(qtf[0] - 3.7826624683240384e-08) <= 1e-12);  // b_qtf1
+    CHECK(std::fabs(qtf[1] - 6.4333247720791548e-08) <= 1e-12);  // b_qtf2
+}
+
+TEST("lmdif: cumulative counters + Info=5 (re-entrant Rosenbrock)") {
+    MinpackFcn rosen = [](int&, int, const double* x, double* f, bool, bool,
+                          int&, bool) {
+        f[0] = 1.0e1 * (x[1] - x[0] * x[0]);
+        f[1] = 1.0 - x[0];
+    };
+    double x[2] = {-1.2, 1.0};
+    double fvec[2] = {0}, diag[2] = {0}, fjac[4] = {0}, qtf[2] = {0};
+    double wa1[2] = {0}, wa2[2] = {0}, wa3[2] = {0}, wa4[2] = {0};
+    int ipvt[2] = {0};
+    int info = -99, nliter = 7, nfev = 13;  // fake prior IGLS accumulation
+    lmdif(rosen, 2, 2, x, fvec, false, false, 1e-10, 1e-10, 0.0, 10, 0.0, diag,
+          1, 100.0, 0, info, nliter, nfev, fjac, 2, ipvt, qtf, wa1, wa2, wa3, wa4);
+    CHECK_EQ(info, 5);      // c_info (mxiter cap via cumulative nliter>=10)
+    CHECK_EQ(nliter, 10);   // c_nliter (7 + 3 accepted)
+    CHECK_EQ(nfev, 25);     // c_nfev (13 + evals)
+    CHECK(rclose(x[0], -5.7518863935252185e-01, 1e-12));  // c_x1
+    CHECK(rclose(x[1], 2.9301052380426973e-01, 1e-12));   // c_x2
+    CHECK(rclose(enorm(2, fvec), 1.6199818171907148e+00, 1e-12));  // c_fnorm
+}
+
 int main() { return mt::run_all(); }

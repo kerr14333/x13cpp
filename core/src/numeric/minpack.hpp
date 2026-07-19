@@ -54,6 +54,55 @@ void fdjac2(const MinpackFcn& fcn, int m, int n, double* x, const double* fvec,
             double* fjac, int ldfjac, int& iflag, double epsfcn, double* wa,
             bool lauto, bool gudrun, bool lckinv);
 
+// covar.f: covariance matrix (R'R)^-1 from the QR factorization output of lmdif.
+// r is the n-by-n matrix (column-major, leading dim ldr) whose upper triangle
+// holds R; on output its full symmetric content is the covariance matrix with
+// the ipvt column pivot applied. ipvt is qrfac's permutation, tol the relative
+// singularity tolerance (tol<=0 selects dpmpar(1)). wa is work (n). info returns
+// 0 when R was nonsingular, otherwise the count of nonsingular leading columns
+// found before the first singular pivot (the NOTSET sentinel if column 1 is
+// already singular). Census specific: the singularity test is the literal
+// |R(k,k)|<=tolr, not the dpeq() equality used by the sibling leaves.
+void covar(int n, double* r, int ldr, const int* ipvt, double tol, int& info,
+           double* wa);
+
+// Model-state sync hook. lmdif calls it with the current accepted parameter
+// vector x after every Jacobian (fdjac2 leaves the model synced to a perturbed
+// x) and after every rejected trial step, so that on exit the model state
+// matches the returned x. It never feeds back into lmdif's numerics (the
+// objective re-syncs on every call); an empty hook is a bit-for-bit no-op.
+// regarima passes [&ctx](const double* x){ upespm(ctx, x); }.
+using MinpackSync = std::function<void(const double* x)>;
+
+// Iteration-print hook standing in for prtitr.f. Args mirror
+// prtitr(A,Na,Parms,Nparms,Itrlbl,Iter,Nfev). Returns true iff a fatal error
+// occurred (error.cmn Lfatal), which makes lmdif return immediately. An empty
+// hook = no printing (the nprint<=0 behavior); the .out print engine is
+// deferred, so production callers pass an empty hook for now.
+using MinpackPrtitr = std::function<bool(const double* fvec, int m,
+                                         const double* x, int n,
+                                         const char* itrlbl, int nliter,
+                                         int nfev)>;
+
+// lmdif.f: the Census-modified MINPACK Levenberg-Marquardt core (forward-
+// difference Jacobian). Minimizes ||fcn(x)||^2. NOT stock MINPACK: MAXFEV is
+// derived internally from mxiter (maxfev = max(mxiter,200)*(n+1)), fcn carries
+// lauto/gudrun/lckinv, nliter/nfev are CUMULATIVE in/out counters (not zeroed
+// on entry, so repeated IGLS/AIC-test calls accumulate), and dpeq() replaces
+// every ==0 test. x is start (in) / final estimate (out); fvec the residuals at
+// the final x; diag the scale factors (in/out for mode!=2, in for mode==2);
+// info the termination code 0..8 (or the negative iflag on a user abort). fjac
+// (m-by-n, leading dim ldfjac), ipvt, qtf return the final QR of the Jacobian.
+// wa1/wa2/wa3 are work (n), wa4 work (m). sync/prtitr default to empty; see
+// their hook docs above. m is aliased through fcn like fdjac2.
+void lmdif(const MinpackFcn& fcn, int m, int n, double* x, double* fvec,
+           bool lauto, bool gudrun, double ftol, double xtol, double gtol,
+           int mxiter, double epsfcn, double* diag, int mode, double factor,
+           int nprint, int& info, int& nliter, int& nfev, double* fjac,
+           int ldfjac, int* ipvt, double* qtf, double* wa1, double* wa2,
+           double* wa3, double* wa4, const MinpackSync& sync = {},
+           const MinpackPrtitr& prtitr = {});
+
 }  // namespace x13
 
 #endif  // X13_NUMERIC_MINPACK_HPP
