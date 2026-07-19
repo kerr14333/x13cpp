@@ -139,9 +139,9 @@ cumnor: pending
 cvcmma: pending
 cvdttm: pending
 cvrerr: pending
-daxpy: pending
-dcopy: pending
-ddot: pending
+daxpy: ported
+dcopy: ported
+ddot: ported
 decibl: pending
 delstr: ported
 deltst: pending
@@ -158,8 +158,8 @@ dlrgef: ported
 dlrgrw: pending
 dlusrg: pending
 dot: pending
-dpeq: pending
-dpmpar: pending
+dpeq: ported
+dpmpar: ported
 dppdi: pending
 dppfa: pending
 dppsl: pending
@@ -175,7 +175,7 @@ eltlen: ported
 emcomp: pending
 ends: pending
 endsf: pending
-enorm: pending
+enorm: ported
 entsch: pending
 eprint: n-a
 errhdr: ported
@@ -357,7 +357,7 @@ map: ported
 matrix: pending
 maxidx: pending
 maxlag: ported
-maxvec: pending
+maxvec: ported
 mdlchk: pending
 mdlfix: ported
 mdlinp: pending
@@ -509,7 +509,7 @@ restor: pending
 revchk: pending
 revdrv: pending
 revhdr: pending
-revrse: pending
+revrse: ported
 rgarma: pending
 rgtdhl: pending
 rho2: pending
@@ -549,7 +549,7 @@ savtbl: gated
 savtpk: pending
 savwkf: pending
 sceast: ported
-scrmlt: pending
+scrmlt: ported
 sdev: pending
 sdxtrm: pending
 seatad: pending

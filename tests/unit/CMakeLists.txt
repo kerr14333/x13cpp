@@ -15,6 +15,16 @@ foreach(t ${X13_UNIT_TESTS})
   add_test(NAME ${t} COMMAND ${t})
 endforeach()
 
+# test_numeric links the core library (M3 Tier-0 numeric leaves live in
+# core/src/numeric) and needs core/src on the include path for numeric/numeric.hpp.
+add_executable(test_numeric test_numeric.cpp)
+target_include_directories(test_numeric PRIVATE
+  "${CMAKE_SOURCE_DIR}/core/include"
+  "${CMAKE_SOURCE_DIR}/core/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(test_numeric PRIVATE x13core x13_fp_flags)
+add_test(NAME test_numeric COMMAND test_numeric)
+
 # The fformat test validates against gfortran when available. Point it at the
 # gfortran the build already knows about (Fortran optional), and give it a
 # writable scratch directory. If gfortran cannot be found the test self-skips.
