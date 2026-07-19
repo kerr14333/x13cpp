@@ -16,12 +16,12 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 18:24 EDT
+## Snapshot — 2026-07-19 18:40 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 18:24 EDT |
+| latest commit | 2026-07-19 18:40 EDT |
 | commits | 72 |
 | span, first→latest | 28h 17m |
 | active (gaps ≤45m) | ~7h 15m (11 breaks excluded) |
@@ -203,11 +203,26 @@ pip cmake when adding files.
   unit coverage: fixed-ARMA-coefficient estimation (C2 partial, ref_rgarma_fixed)
   and all three `fcstxy` branches (C4, differencing via ref_fcstxy3). test_numeric
   = 68.
-- **Next — wire fcstxy into run_m2** (forecast{} path → transformed forecasts,
-  then the inverse-transform + prediction-interval step and the .fct/.ftr output
-  the packaging must expose from the object, not a file). Then outlier detection
-  (idotlr/rdotlr AO/LS/TC scan), the deferred M2 regressor branches, and the
-  .out print engine. See `tools/m3_scouting.md` §5 Tier-6/7 and §7.
+- **Forecast-output leaves (started): `invfcn` + `lgnrmc` LANDED.** The inverse
+  Box-Cox/logit transform (invfcn.f) and the lognormal mean-correction (lgnrmc.f)
+  that put fcstxy's transformed forecasts back on the original scale. Shared
+  transform leaves (x11/tables reuse them later). Oracle-verified all branches at
+  rtol 1e-14. `test_numeric` = 70.
+- **Next — finish the forecast-output chain** to produce real `.fct` forecasts
+  (date, forecast, lowerci, upperci on the original scale): remaining leaves
+  `dinvnr` (inverse-normal critical value; pulls in `cumnor` + `stvaln`) and
+  `eltfcn` (elementwise add/sub/mul/div), then assemble the fcstout path
+  (fcstxy → lgnrmc/invfcn point forecast; `cv=dinvnr((Ciprob+1)/2)`,
+  CI = invfcn(fcst ± cv·se)) and wire it into run_m2 behind `forecast{}`,
+  verifying against the `.fct` goldens (this also exercises fcstxy's differencing
+  branch on real airline data). Then outlier detection (idotlr/rdotlr AO/LS/TC
+  scan), the deferred M2 regressor branches, and the .out print engine. See
+  `tools/m3_scouting.md` §5 Tier-6/7 and §7.
+- **Packaging scaffolding (r-pkg/py-pkg) built by an agent, parked on branch
+  `worktree-agent-ae1edc2bc3b17f4d4`** (NOT merged; merge after the main
+  milestones). R CMD check / twine check clean; datasets bundled; result-object
+  API honors the no-auto-file-output rule. See second-brain
+  `x13cpp-pending-pkg-merge`.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
