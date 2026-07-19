@@ -272,3 +272,35 @@ table machinery; `lgnrmc/invfcn/eltfcn/numfmt/subset` come from M2 transform clu
     contents — it starts at `txy(5·PARIMA+PA+1)`, disjoint. Document, don't replicate.
 12. **prtfct/mkback rounding**: output formatting (`numfmt`, Kdec) rounds for tables —
     compare saved-table numbers at print precision, raw fcstxy vectors at 1e-8.
+
+## 7. Spec→estimate integration gap (post-rgarma roadmap)
+
+`rgarma` + its numeric stack (Tiers 0–6) are ported and oracle-verified via
+hand-set common state (`ref_rgarma*.f` / test_numeric). To drive rgarma from a
+**real corpus spec**, the missing tissue between `run_m2` (driver/run_pre_model.cpp)
+and a `rgarma` call is small and now mapped. `run_m2` already parses the spec,
+builds the ARMA operators (getmdl → insopr/mkoprt/maxlag sets Mdl/Opr/Arimal/
+Arimaf/Oprfac/Nopr + Mxarlg/Mxdflg/Mxmalg), and builds `[X:y]` into
+`ctx.mdldat.xy` with `Ncxy` (regvar). What rgarma additionally needs:
+
+- **Estimate-spec defaults** (gtinpt.f:271–279, a flat block): `Mxiter=1500`,
+  `Mxnlit=40`, `Stepln=0`, `Tol=DFTOL(1e-5)`, `Nltol0=100·DFTOL`, `Nltol=DFTOL`,
+  `Lextar=T`, `Lextma=T`, `Lestim=T`. Then the `estimate{}` spec reader (getest/
+  gtestm) overrides these — **not yet ported**.
+- **Model-finalize block** (gtinpt.f:220, ~8 lines, self-contained, pure int/bool):
+  `Lar=Lextar∧Mxarlg>0`, `Lma=Lextma∧Mxmalg>0`; if `Lextar`: `Nintvl=Mxdflg`,
+  `Nextvl=Mxarlg+Mxmalg`; else `Nintvl=Mxdflg+Mxarlg`, `Nextvl= Lextma?Mxmalg:0`.
+  Same logic in mdlset.f:190–196. **Not yet ported** — the cheapest gap-closer.
+- **`Nb`** (regression β count): confirm provenance — `Ncxy-1`, or set by regvar/
+  loadxr. rgarma reads `Nb` for the olsreg-vs-yprmy branch and `resid` column span.
+- **Already handled inside rgarma:** `Tsrs` (written by resid from Xy), `Dnefob`,
+  `Lndtcv`, `Nefobs=Nspobs-Nintvl`. **Default-OK from zero-init:** `Issap/Irev`
+  (→ gudrun=T), `Lprier/Lprtit/Lhiddn` (deferred prints).
+
+**Suggested first integration step:** port the two flat blocks above (defaults +
+finalize) into the gtinpt slice, add the minimal `estimate{}` reader for the
+common knobs (`tol`, `maxiter`, `exact`), then an integration test: `run_m2` on
+`02-airline-log-td-easter.spc` → set Lestim → `rgarma` → compare estimated ARMA
+coefficients / Var / Lnlkhd against the oracle `.udg` (`arima.ar`/`arima.ma`/
+`likelihood.*`) via the x13compare harness. That is the first **real-data**
+end-to-end estimation parity — the M3 headline.

@@ -10,6 +10,7 @@
 #include "regarima/armafilt.hpp"
 #include "regarima/armafl.hpp"
 #include "regarima/estimate.hpp"
+#include "specparse/specparse.hpp"
 #include "numeric/minpack.hpp"
 #include "numeric/rpoly.hpp"
 
@@ -1552,6 +1553,47 @@ TEST("rgarma: ARMA(1,1) + intercept, multi-pass IGLS (Nb>0)") {
     CHECK(rclose(d.lndtcv,     3.8320880866185578e+00, 1e-12));  // rg_ldtcv
     CHECK(rclose(d.armacm(1, 1), 3.4961993382451767e-01, 1e-12));  // rg_cm11
     CHECK(rclose(d.armacm(2, 2), 1.8308075964429438e-01, 1e-12));  // rg_cm22
+}
+
+// ---- mdlfin (gtinpt.f:220 model-finalize; the spec->estimate bridge). ----------
+// Derives Lar/Lma/Nintvl/Nextvl from the operator max-lags + exact-ARMA switches.
+// Pure int/bool, so the formula is its own oracle; four configs cover both
+// branches and the flag gates. (Closes the cheapest slice of the m3_scouting.md
+// section 7 spec->estimate gap.)
+TEST("mdlfin: ARMA model-dimension finalize for estimation") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+
+    // (a) Airline (0 1 1)(0 1 1)12, exact ARMA default: no AR, diff=1+12,
+    //     MA=1+12. Lar off (Mxarlg=0), Lma on; Lextar branch.
+    m.lextar = true; m.lextma = true;
+    m.mxarlg = 0; m.mxdflg = 13; m.mxmalg = 13;
+    mdlfin(ctx);
+    CHECK(!m.lar); CHECK(m.lma);
+    CHECK_EQ(m.nintvl, 13); CHECK_EQ(m.nextvl, 13);
+
+    // (b) Pure AR(2), exact: Lar on, Lma off; Lextar branch, no differencing.
+    m.lextar = true; m.lextma = true;
+    m.mxarlg = 2; m.mxdflg = 0; m.mxmalg = 0;
+    mdlfin(ctx);
+    CHECK(m.lar); CHECK(!m.lma);
+    CHECK_EQ(m.nintvl, 0); CHECK_EQ(m.nextvl, 2);
+
+    // (c) Conditional AR (Lextar=F) with AR(1), diff 1, MA(1): AR folded into
+    //     the differencing count; Lma on via Lextma. else branch.
+    m.lextar = false; m.lextma = true;
+    m.mxarlg = 1; m.mxdflg = 1; m.mxmalg = 1;
+    mdlfin(ctx);
+    CHECK(!m.lar); CHECK(m.lma);
+    CHECK_EQ(m.nintvl, 2); CHECK_EQ(m.nextvl, 1);
+
+    // (d) Conditional throughout (Lextar=F, Lextma=F): no exact paths, Nextvl 0.
+    m.lextar = false; m.lextma = false;
+    m.mxarlg = 0; m.mxdflg = 0; m.mxmalg = 1;
+    mdlfin(ctx);
+    CHECK(!m.lar); CHECK(!m.lma);
+    CHECK_EQ(m.nintvl, 0); CHECK_EQ(m.nextvl, 0);
 }
 
 int main() { return mt::run_all(); }

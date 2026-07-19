@@ -57,6 +57,20 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.prior.kfmt = 0;      // gtinpt.f: Kfmt=0
     ctx.arima.reglom = 0;    // gtinpt.f: Reglom=0
 
+    // gtinpt.f 259, 271-279: estimation-control defaults (an estimate{} spec
+    // overrides these; that reader is a later M3 step). DFTOL etc. from model.prm.
+    constexpr double DFTOL = 1e-5;
+    ctx.model.nintvl = 0;              // gtinpt.f:259
+    ctx.arima.mxiter = 1500;
+    ctx.arima.mxnlit = 40;
+    ctx.model.stepln = 0.0;
+    ctx.model.tol = DFTOL;
+    ctx.model.nltol0 = 100.0 * DFTOL;  // DFNLT0
+    ctx.model.nltol = DFTOL;           // DFNLTL
+    ctx.model.lextar = true;
+    ctx.model.lextma = true;
+    ctx.arima.lestim = true;
+
     // gtinpt.f 188-207 (+ mdlint.f): regression-group / ARIMA-operator state.
     intlst(prm::PB, ctx.model.colptr.data(), ctx.model.ncoltl);
     ctx.model.nb = ctx.model.ncoltl;
@@ -333,6 +347,10 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             }
         }
 
+        // gtinpt.f:220: finalize the ARMA model dimensions for estimation
+        // (Lar/Lma flags, Nintvl differencing order, Nextvl floor).
+        mdlfin(ctx);
+
         // gtinpt.f 1110-1117: no forecasts excluded when seasonal adjustment done.
         if (lx11 && ctx.arima.fctdrp > 0) {
             writln(ctx, "WARNING: No observations should be excluded from "
@@ -359,6 +377,20 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             }
         }
         return;
+    }
+}
+
+// mdlfin -- gtinpt.f:220 model-finalize block (see specparse.hpp).
+void mdlfin(X13Context& ctx) {
+    auto& m = ctx.model;
+    m.lar = m.lextar && m.mxarlg > 0;
+    m.lma = m.lextma && m.mxmalg > 0;
+    if (m.lextar) {
+        m.nintvl = m.mxdflg;
+        m.nextvl = m.mxarlg + m.mxmalg;
+    } else {
+        m.nintvl = m.mxdflg + m.mxarlg;
+        m.nextvl = m.lextma ? m.mxmalg : 0;
     }
 }
 

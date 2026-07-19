@@ -213,6 +213,16 @@ void getsrs(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr, bool ldata,
             std::string& dtafil, bool& inptok);
 void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inptok);
 
+// mdlfin: finalize the parsed ARMA model for estimation (gtinpt.f:220 block).
+// Derives, from the operator max-lags set by getmdl and the exact-ARMA switches
+// (Lextar/Lextma, from estimate{}), the flags the estimation engine reads:
+//   Lar = Lextar & Mxarlg>0,  Lma = Lextma & Mxmalg>0
+//   Lextar:  Nintvl = Mxdflg,          Nextvl = Mxarlg + Mxmalg
+//   else:    Nintvl = Mxdflg + Mxarlg, Nextvl = Lextma ? Mxmalg : 0
+// Nintvl is the total differencing order (drops effective observations),
+// Nextvl the extra-observation floor rgarma checks against. Pure int/bool.
+void mdlfin(X13Context& ctx);
+
 // Simple spec readers: each consumes its arguments token-faithfully and
 // captures key settings. Signature reduced to (ctx, inptok).
 void gt_transform(X13Context& ctx, bool& inptok);   // transform{} (getadj)
