@@ -317,4 +317,187 @@ C     ==== Case J (A12): pure differencing (0 1 0)(0 1 0)12, Nr=40 ====
       WRITE(*,'(A,I4)')      'jf_nopr ',Nopr
       WRITE(*,'(A,ES24.16)') 'jf_a1 ',mata(1)
       WRITE(*,'(A,ES24.16)') 'jf_alast ',mata(na)
+
+C     ==== Case K (A8a): q>p ARMA(1,2), phi=0.5 theta=(0.3,-0.2), Nr=10 ====
+      Lar=.true.
+      Lma=.true.
+      Nopr=2
+      Mdl(0)=1
+      Mdl(1)=1
+      Mdl(2)=2
+      Mdl(3)=3
+      Opr(0)=1
+      Opr(1)=2
+      Opr(2)=4
+      Arimal(1)=1
+      Arimal(2)=1
+      Arimal(3)=2
+      Arimap(1)=0.5D0
+      Arimap(2)=0.3D0
+      Arimap(3)=-0.2D0
+      Arimaf(1)=.false.
+      Arimaf(2)=.false.
+      Arimaf(3)=.false.
+      Oprfac(1)=1
+      Oprfac(2)=1
+      Oprfac(3)=1
+      Mxarlg=1
+      Mxmalg=2
+      Mxdflg=0
+      Lndtcv=0D0
+      DO i=1,10
+       mata(i)=DBLE(MOD(7*i,13))-6D0+0.25D0*DBLE(MOD(3*i,8))
+      END DO
+      info=-99
+      na=-99
+      CALL armafl(10,1,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)')      'kf_info ',info
+      WRITE(*,'(A,I4)')      'kf_na ',na
+      WRITE(*,'(A,ES24.16)') 'kf_ldt ',Lndtcv
+      WRITE(*,'(A,ES24.16)') 'kf_a1 ',mata(1)
+      WRITE(*,'(A,ES24.16)') 'kf_alast ',mata(na)
+
+C     ==== Case L (A8b): p=q ARMA(2,2), phi=(0.4,-0.2) theta=(0.3,-0.1) Nr=10 ====
+      Lar=.true.
+      Lma=.true.
+      Nopr=2
+      Mdl(0)=1
+      Mdl(1)=1
+      Mdl(2)=2
+      Mdl(3)=3
+      Opr(0)=1
+      Opr(1)=3
+      Opr(2)=5
+      Arimal(1)=1
+      Arimal(2)=2
+      Arimal(3)=1
+      Arimal(4)=2
+      Arimap(1)=0.4D0
+      Arimap(2)=-0.2D0
+      Arimap(3)=0.3D0
+      Arimap(4)=-0.1D0
+      Arimaf(1)=.false.
+      Arimaf(2)=.false.
+      Arimaf(3)=.false.
+      Arimaf(4)=.false.
+      Oprfac(1)=1
+      Oprfac(2)=1
+      Oprfac(3)=1
+      Oprfac(4)=1
+      Mxarlg=2
+      Mxmalg=2
+      Mxdflg=0
+      Lndtcv=0D0
+      DO i=1,10
+       mata(i)=DBLE(MOD(7*i,13))-6D0+0.25D0*DBLE(MOD(3*i,8))
+      END DO
+      info=-99
+      na=-99
+      CALL armafl(10,1,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)')      'lf_info ',info
+      WRITE(*,'(A,I4)')      'lf_na ',na
+      WRITE(*,'(A,ES24.16)') 'lf_ldt ',Lndtcv
+      WRITE(*,'(A,ES24.16)') 'lf_a1 ',mata(1)
+      WRITE(*,'(A,ES24.16)') 'lf_alast ',mata(na)
+
+C     ==== Case M (A13): partially-fixed ARMA(1,1), MA fixed -- SAME numerics as
+C          the free case A (Arimaf only gates chkrts, not the filter) ====
+      Lar=.true.
+      Lma=.true.
+      Nopr=2
+      Mdl(0)=1
+      Mdl(1)=1
+      Mdl(2)=2
+      Mdl(3)=3
+      Opr(0)=1
+      Opr(1)=2
+      Opr(2)=3
+      Arimal(1)=1
+      Arimal(2)=1
+      Arimap(1)=0.5D0
+      Arimap(2)=0.3D0
+      Arimaf(1)=.false.
+      Arimaf(2)=.true.
+      Oprfac(1)=1
+      Oprfac(2)=1
+      Mxarlg=1
+      Mxmalg=1
+      Mxdflg=0
+      Lndtcv=0D0
+      mata(1)=1.0D0
+      mata(2)=2.0D0
+      mata(3)=-1.0D0
+      mata(4)=0.5D0
+      mata(5)=3.0D0
+      mata(6)=-2.0D0
+      mata(7)=1.5D0
+      mata(8)=0.25D0
+      info=-99
+      na=-99
+      CALL armafl(8,1,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)')      'mf_info ',info
+      WRITE(*,'(A,I4)')      'mf_na ',na
+      WRITE(*,'(A,ES24.16)') 'mf_a1 ',mata(1)
+      WRITE(*,'(A,ES24.16)') 'mf_a9 ',mata(9)
+
+C     ==== Case N (A4a): non-stationary AR phi=1.05, Lckrts=F -> PACFER=12,
+C          mata untouched (error in the init block before filtering) ====
+      Lar=.true.
+      Lma=.true.
+      Nopr=2
+      Mdl(0)=1
+      Mdl(1)=1
+      Mdl(2)=2
+      Mdl(3)=3
+      Opr(0)=1
+      Opr(1)=2
+      Opr(2)=3
+      Arimal(1)=1
+      Arimal(2)=1
+      Arimap(1)=1.05D0
+      Arimap(2)=0.3D0
+      Arimaf(1)=.false.
+      Arimaf(2)=.false.
+      Oprfac(1)=1
+      Oprfac(2)=1
+      Mxarlg=1
+      Mxmalg=1
+      Mxdflg=0
+      Lndtcv=0D0
+      mata(1)=1.0D0
+      mata(2)=2.0D0
+      mata(3)=-1.0D0
+      info=-99
+      na=-99
+      CALL armafl(8,1,.true.,.false.,mata,na,200,info)
+      WRITE(*,'(A,I4)') 'nf_info ',info
+      WRITE(*,'(A,ES24.16)') 'nf_a1 ',mata(1)
+
+C     ==== Case O (A4b): fixed AR phi=1.0 -> chkrts skips, euclid s=1/(1-1)=Inf
+C          -> dppfa fail -> PVWPER=13 ====
+      Arimap(1)=1.0D0
+      Arimap(2)=0.3D0
+      Arimaf(1)=.true.
+      Arimaf(2)=.false.
+      Lndtcv=0D0
+      mata(1)=1.0D0
+      mata(2)=2.0D0
+      info=-99
+      na=-99
+      CALL armafl(8,1,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)') 'of_info ',info
+
+C     ==== Case P (A4c): fixed MA theta=1.2 -> chkrts skips, intgpg dppfa fail
+C          -> PGPGER=11 ====
+      Arimap(1)=0.3D0
+      Arimap(2)=1.2D0
+      Arimaf(1)=.false.
+      Arimaf(2)=.true.
+      Lndtcv=0D0
+      mata(1)=1.0D0
+      mata(2)=2.0D0
+      info=-99
+      na=-99
+      CALL armafl(8,1,.true.,.true.,mata,na,200,info)
+      WRITE(*,'(A,I4)') 'pf_info ',info
       END

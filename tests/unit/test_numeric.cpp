@@ -647,6 +647,176 @@ TEST("armafl: pure differencing (0 1 0)(0 1 0)12") {
     CHECK(rclose(mata[26], 1.1000000000000000e+01, 1e-12));  // jf_alast
 }
 
+// Case (A7): Linit=F reuse. Init ARMA(1,1) on Nr=8, then re-filter a NEW Nr=12
+// series with Linit=F/Lckrts=F -- nextma recomputed, Chlgpg/Chlvwp/Matd reused,
+// ddot reads the zero Matd tail, Lndtcv NOT re-accumulated. A fresh ctx gives the
+// zero Matd the Fortran driver zeroes explicitly. (forecasting/outlier pattern.)
+TEST("armafl: Linit=F reuse across two calls") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = true; m.lma = true; m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    d.arimap(1) = 0.5; d.arimap(2) = 0.3;
+    m.arimaf(1) = false; m.arimaf(2) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    d.lndtcv = 0.0;
+
+    double mata[200] = {0.0};
+    for (int i = 1; i <= 8; ++i)
+        mata[i - 1] = double(7 * i % 13) - 6.0 + 0.25 * double(3 * i % 8);
+    int na = -99, info = -99;
+    armafl(ctx, 8, 1, true, true, mata, na, 200, info);  // call 1: Linit=T
+    CHECK_EQ(na, 9);                                          // r1_na
+    CHECK(rclose(d.lndtcv, 5.6954892689151181e-02, 1e-12));   // r1_ldt
+
+    for (int i = 1; i <= 12; ++i)  // NEW series
+        mata[i - 1] = double(5 * i % 11) - 5.0 + 0.5 * double(2 * i % 7);
+    na = -99; info = -99;
+    armafl(ctx, 12, 1, false, false, mata, na, 200, info);  // call 2: Linit=F
+    CHECK_EQ(info, 0);   // r2_info
+    CHECK_EQ(na, 13);    // r2_na
+    CHECK(rclose(d.lndtcv, 5.6954892689151181e-02, 1e-12));   // r2_ldt (preserved)
+    CHECK(rclose(mata[0],  2.9525617825546679e+00, 1e-12));   // r2_a1
+    CHECK(rclose(mata[6],  5.2475382813583993e+00, 1e-12));   // r2_a7
+    CHECK(rclose(mata[12], 2.1818029554071101e+00, 1e-12));   // r2_alast
+}
+
+// Case (A8): q>p ARMA(1,2) and p=q ARMA(2,2) -- opposite euclid branch mix from
+// the covered AR(2)MA(1); D-loop max(1,Mxarlg-row+1) clamp.
+TEST("armafl: ARMA(1,2) and ARMA(2,2)") {
+    // A8a: ARMA(1,2) phi=0.5, theta=(0.3,-0.2).
+    {
+        auto ctxp = std::make_unique<X13Context>();
+        X13Context& ctx = *ctxp;
+        auto& m = ctx.model;
+        auto& d = ctx.mdldat;
+        m.lar = true; m.lma = true; m.nopr = 2;
+        m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+        m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 4;
+        m.arimal(1) = 1; m.arimal(2) = 1; m.arimal(3) = 2;
+        d.arimap(1) = 0.5; d.arimap(2) = 0.3; d.arimap(3) = -0.2;
+        m.arimaf(1) = false; m.arimaf(2) = false; m.arimaf(3) = false;
+        m.oprfac(1) = 1; m.oprfac(2) = 1; m.oprfac(3) = 1;
+        m.mxarlg = 1; m.mxmalg = 2; m.mxdflg = 0;
+        d.lndtcv = 0.0;
+        double mata[200] = {0.0};
+        for (int i = 1; i <= 10; ++i)
+            mata[i - 1] = double(7 * i % 13) - 6.0 + 0.25 * double(3 * i % 8);
+        int na = -99, info = -99;
+        armafl(ctx, 10, 1, true, true, mata, na, 200, info);
+        CHECK_EQ(info, 0); CHECK_EQ(na, 12);                     // kf
+        CHECK(rclose(d.lndtcv, 2.2314353556278715e-01, 1e-12));  // kf_ldt
+        CHECK(rclose(mata[0],  5.9555400043398588e-01, 1e-12));  // kf_a1
+        CHECK(rclose(mata[11], -3.3654835780478798e-01, 1e-12)); // kf_alast
+    }
+    // A8b: ARMA(2,2) phi=(0.4,-0.2), theta=(0.3,-0.1).
+    {
+        auto ctxp = std::make_unique<X13Context>();
+        X13Context& ctx = *ctxp;
+        auto& m = ctx.model;
+        auto& d = ctx.mdldat;
+        m.lar = true; m.lma = true; m.nopr = 2;
+        m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+        m.opr(0) = 1; m.opr(1) = 3; m.opr(2) = 5;
+        m.arimal(1) = 1; m.arimal(2) = 2; m.arimal(3) = 1; m.arimal(4) = 2;
+        d.arimap(1) = 0.4; d.arimap(2) = -0.2; d.arimap(3) = 0.3;
+        d.arimap(4) = -0.1;
+        m.arimaf(1) = false; m.arimaf(2) = false;
+        m.arimaf(3) = false; m.arimaf(4) = false;
+        m.oprfac(1) = 1; m.oprfac(2) = 1; m.oprfac(3) = 1; m.oprfac(4) = 1;
+        m.mxarlg = 2; m.mxmalg = 2; m.mxdflg = 0;
+        d.lndtcv = 0.0;
+        double mata[200] = {0.0};
+        for (int i = 1; i <= 10; ++i)
+            mata[i - 1] = double(7 * i % 13) - 6.0 + 0.25 * double(3 * i % 8);
+        int na = -99, info = -99;
+        armafl(ctx, 10, 1, true, true, mata, na, 200, info);
+        CHECK_EQ(info, 0); CHECK_EQ(na, 12);                     // lf
+        CHECK(rclose(d.lndtcv, 2.2887660549580469e-02, 1e-12));  // lf_ldt
+        CHECK(rclose(mata[0],  1.4796812403305011e+00, 1e-12));  // lf_a1
+        CHECK(rclose(mata[11], -6.6965817759949309e-02, 1e-12)); // lf_alast
+    }
+}
+
+// Case (A13): partially-fixed ARMA(1,1) (MA lag fixed) -- filter output is BYTE-
+// IDENTICAL to the free case A: Arimaf only gates chkrts, never the numerics.
+TEST("armafl: partially-fixed = same numerics as free") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = true; m.lma = true; m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    d.arimap(1) = 0.5; d.arimap(2) = 0.3;
+    m.arimaf(1) = false; m.arimaf(2) = true;  // MA fixed
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    d.lndtcv = 0.0;
+    double mata[200] = {1.0, 2.0, -1.0, 0.5, 3.0, -2.0, 1.5, 0.25};
+    int na = -99, info = -99;
+    armafl(ctx, 8, 1, true, true, mata, na, 200, info);
+    CHECK_EQ(info, 0); CHECK_EQ(na, 9);
+    CHECK(rclose(mata[0], 1.3372276673516541e+00, 1e-12));  // == case A af_a1
+    CHECK(rclose(mata[8], 1.3515159993273351e-02, 1e-12));  // == case A af_a9
+}
+
+// Case (A4): error-code paths. Non-stationary AR with Lckrts=F reaches euclid ->
+// PACFER=12, and mata is left UNTOUCHED (error fires in the init block, before
+// filtering). The two fixed-boundary cases return info=0 (no spurious error --
+// the allfix chkrts-skip path runs clean; PVWPER/PGPGER need other triggers).
+TEST("armafl: error-code paths (PACFER + no-spurious-error)") {
+    // A4a: phi=1.05 non-stationary, Lckrts=F -> PACFER=12, mata untouched.
+    {
+        auto ctxp = std::make_unique<X13Context>();
+        X13Context& ctx = *ctxp;
+        auto& m = ctx.model;
+        auto& d = ctx.mdldat;
+        m.lar = true; m.lma = true; m.nopr = 2;
+        m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+        m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+        m.arimal(1) = 1; m.arimal(2) = 1;
+        d.arimap(1) = 1.05; d.arimap(2) = 0.3;
+        m.arimaf(1) = false; m.arimaf(2) = false;
+        m.oprfac(1) = 1; m.oprfac(2) = 1;
+        m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+        d.lndtcv = 0.0;
+        double mata[200] = {1.0, 2.0, -1.0};
+        int na = -99, info = -99;
+        armafl(ctx, 8, 1, true, false, mata, na, 200, info);
+        CHECK_EQ(info, 12);         // nf_info = PACFER
+        CHECK_EQ(mata[0], 1.0);     // nf_a1 untouched
+    }
+    // A4b/A4c: fixed boundary coeffs -> info=0 (allfix chkrts skip, no error).
+    auto run_fixed = [](double ap1, double ap2, bool f1, bool f2) {
+        auto ctxp = std::make_unique<X13Context>();
+        X13Context& ctx = *ctxp;
+        auto& m = ctx.model;
+        auto& d = ctx.mdldat;
+        m.lar = true; m.lma = true; m.nopr = 2;
+        m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+        m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+        m.arimal(1) = 1; m.arimal(2) = 1;
+        d.arimap(1) = ap1; d.arimap(2) = ap2;
+        m.arimaf(1) = f1; m.arimaf(2) = f2;
+        m.oprfac(1) = 1; m.oprfac(2) = 1;
+        m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+        d.lndtcv = 0.0;
+        double mata[200] = {1.0, 2.0};
+        int na = -99, info = -99;
+        armafl(ctx, 8, 1, true, true, mata, na, 200, info);
+        return info;
+    };
+    CHECK_EQ(run_fixed(1.0, 0.3, true, false), 0);  // of_info (fixed AR=1.0)
+    CHECK_EQ(run_fixed(0.3, 1.2, false, true), 0);  // pf_info (fixed MA=1.2)
+}
+
 // ---- olsreg + resid (regression solve / residuals; against ref_estimate.f).
 // 4-obs OLS: intercept + one regressor, y in the 3rd column. rtol 1e-12. -------
 TEST("olsreg/resid: OLS normal-equations solve + residuals") {

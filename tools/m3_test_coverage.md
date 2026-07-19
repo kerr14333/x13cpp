@@ -22,7 +22,7 @@ model/mdldat commons + a matching `test_numeric` case. Highest risk first.
   build without `-ffp-contract=off` flips the ≤0 invertibility decision within
   1 ulp of |θ|=1. Cases: θ=1.0 (cfncsq=0→non-inv); θ=1-1e-16 (inv); degree-2
   (0.5,0.5) intermediate coef>1; seasonal Θ=1.0 lag12 fac12 (degree=12/12=1).
-- [ ] **A4. Error-path Info codes, Lckrts=F** (rgarma's calling convention) — AR
+- [x] **A4. Error-path Info codes, Lckrts=F** (rgarma's calling convention) — AR
   φ=1.05 → PACFER=12 (assert partial Mata too); fixed φ=1.0 → Inf/NaN → PVWPER=13;
   fixed θ=1.2 → PGPGER=11. rgarma/fcnar branch on the exact code; Inf/NaN
   propagation must NOT be "cleaned up".
@@ -31,11 +31,11 @@ model/mdldat commons + a matching `test_numeric` case. Highest risk first.
   branch ×12, `Lndtcv` accumulation on intgpg's Lma=F zero.
 - [x] **A6. Mixed (1 0 1)(1 0 1)₁₂** — `mltpos` secpas on real data (fular lags
   {1,12,13}), largest D machinery (13×13 Σp−D′D), regular-then-seasonal order FP.
-- [ ] **A7. Linit=F reuse** — init on Nr=8, re-call `armafl(12,…,.false.,…)`:
+- [x] **A7. Linit=F reuse** — init on Nr=8, re-call `armafl(12,…,.false.,…)`:
   SAVE nextma recompute with new Nr while Matd/Chlgpg hold old factorization;
   ddot reads zero-init Matd tail; Lndtcv NOT re-accumulated. This is exactly
   what forecasting (`fcstxy`) and outlier detection (`idotlr`) do.
-- [ ] **A8. q>p ARMA(1,2)** + companion ARMA(2,2) — opposite `euclid` branch mix
+- [x] **A8. q>p ARMA(1,2)** + companion ARMA(2,2) — opposite `euclid` branch mix
   from the covered AR(2)MA(1); D-loop `max(1,Mxarlg-row+1)` clamp.
 - [ ] **A9. ratneg exact-zero staleness** — engineer `sum==0` (MA θ=0.5,
   C=[-1,2,0,…]) so C(i) keeps its OLD value (no write); a naive port writes 0.
@@ -45,7 +45,7 @@ model/mdldat commons + a matching `test_numeric` case. Highest risk first.
   ratpos multi-lag begelt branch, maxlag non-monotone scan. Most off-by-one-prone.
 - [x] **A12. Pure differencing (0 1 0)(0 1 0)₁₂** and (0 2 0) — Lar=Lma=F, both
   Linit branches false, empty-range DO loops, `Nopr` global side-effect write.
-- [ ] **A13. Partially-fixed operator** — pins that Arimaf has NO effect on filter
+- [x] **A13. Partially-fixed operator** — pins that Arimaf has NO effect on filter
   numerics, only on the chkrts gate.
 - [x] **A14. Nopr=0 no-op** — Na=Nr, Mata untouched, Info=0. One-liner guard.
 
