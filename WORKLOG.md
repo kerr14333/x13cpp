@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 02:45 EDT
+## Snapshot — 2026-07-19 02:55 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 02:41 EDT |
-| commits | 30 |
-| span, first→latest | 12h 35m |
-| active (gaps ≤45m) | ~3h 36m (4 breaks excluded) |
+| latest commit | 2026-07-19 02:51 EDT |
+| commits | 32 |
+| span, first→latest | 12h 44m |
+| active (gaps ≤45m) | ~3h 46m (4 breaks excluded) |
 | calendar days | 2 |
 
 ## What was reached in that window
@@ -54,17 +54,20 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
     `regarima/armafilt`); `xprmx`, `dppfa` (Census packed Cholesky), `dsolve`.
   - **Stateful cluster** (new `regarima/armafl`, takes `X13Context&`): `chkrts`
     (invertibility detector), `intgpg` (builds+factors G'G, sets Lndtcv),
-    `exctma` (exact MA filter w*=-(G'G)⁻¹G'Hw). intgpg+exctma verified end-to-end
-    on a minimal MA(2) model (`tools/ref_armafl.f`) at rtol 1e-12.
-  - 22 routines ported + verified so far. Fable-model agent audited the Tier-0
-    port and produced the Tier-1 plan; FP-contraction parity confirmed
-    (oracle & C++ both `-ffp-contract=off`).
-- **Next** — **armafl** proper (first big parity target: exact ARMA filter,
-  residuals + Lndtcv at rtol 1e-12; all its leaf deps now ported — chkrts gate,
-  mltpos/ratpos/uconv/euclid/xpand for the AR path, intgpg/exctma, xprmx/dppfa/
-  logdet/dsolve for the residual solve). Then `olsreg`/`rgarma` (IGLS driver).
-  `rpoly` (quad/fxshfr) is a separate cluster for `roots`/`setmdl`. See
-  `tools/m3_scouting.md`.
+    `exctma` (exact MA filter w*=-(G'G)⁻¹G'Hw), and **`armafl`** itself — the
+    first big parity target, the whole exact ARMA filter (chkrts gate + intgpg +
+    the ACV chain uconv/euclid/xpand + D matrix + chol(var(w_p|z)) + ddot
+    correction + dsolve). The SAVEd Fortran local `nextma` lives in
+    `X13Context::saved`. Verified end-to-end against `tools/ref_armaflx.f` on
+    ARMA(1,1) and AR(2)MA(1) (2×2 D/Chlvwp, multi-lag ddot): residuals + Lndtcv
+    match at **rtol 1e-12**. intgpg/exctma also verified alone on MA(2)
+    (`tools/ref_armafl.f`).
+  - 23 routines ported + verified so far (`test_numeric` = 50 checks). Fable
+    audited Tier-0 + produced the Tier-1 plan; FP-contraction parity confirmed.
+- **Next** — `olsreg`/`rgarma` (IGLS estimation driver that calls armafl per
+  iteration) → `fcnar` → `lmdif` (the Census-modified MINPACK optimizer, see
+  [[x13cpp-lmdif-modified]]). `rpoly` (quad/fxshfr) is a separate cluster for
+  `roots`/`setmdl`. See `tools/m3_scouting.md`.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
