@@ -708,6 +708,90 @@ void xrlkhd(X13Context& ctx, double& aicc, int nxcld) {
         aicc = -TWO * (d.lnlkhd - dnefob * dnp / (dnefob - dnp1));
 }
 
+// prlkhd.f -- likelihood statistics for the estimated model (see hpp). Computes
+// the transform-Jacobian-adjusted log likelihood Olkhd=Lnlkhd+jacadj and the
+// information criteria (Aic/Aicc/Hnquin/Bic/Bic2/Eic) into ctx.lkhd. All the
+// WRITE output (the "Likelihood Statistics" block, the savelog rows) and the
+// x11-holiday/x11reg penalty notes are deferred to the .out/save milestone; the
+// numerics and the exact-ML / convergence gates are reproduced. y is the
+// original untransformed, undifferenced series over the span; adj the prior-
+// adjustment factors (1 when there is no prior). Reachable pre-x11: Adjmod<2 with
+// Khol/Ixreg absent, so the Jacobian is the pure Box-Cox/logit term.
+void prlkhd(X13Context& ctx, const double* y, const double* adj, int adjmod,
+            int fcntyp, double lam) {
+    constexpr double ONE = 1.0, TWO = 2.0, ZERO = 0.0;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    auto& lk = ctx.lkhd;
+
+    // Fixmdl==3 with automatically-identified outliers suppresses the stats
+    // (prlkhd.f:68). That path needs the fixed-model + auto-outlier flow (not
+    // reachable here); the group-title search is deferred with the print.
+    int nefobs = d.nspobs - m.nintvl;
+    double dnefob = static_cast<double>(nefobs);
+
+    // np: estimated parameters = Ncxy, less held-fixed regression betas, plus the
+    // free ARMA lags (Opr(Nopr)-1 lags, Arimaf false).
+    int np = m.ncxy;
+    if (m.nb > 0)
+        for (int ilag = 1; ilag <= m.nb; ++ilag)
+            if (m.regfx(ilag)) np = np - 1;
+    bool lclaic = (m.mdl(prm::AR) - m.mdl(prm::DIFF) == 0 || m.lar) &&
+                  (m.mdl(prm::MA) - m.mdl(prm::AR) == 0 || m.lma);
+    if (m.nopr > 0) {
+        int endlag = m.opr(m.nopr) - 1;
+        for (int ilag = 1; ilag <= endlag; ++ilag)
+            if (!m.arimaf(ilag)) np = np + 1;
+    }
+
+    if (d.var <= ZERO) return;  // no variance -> no likelihood (prlkhd.f:138)
+
+    // Jacobian of the transformation, summed over the effective span
+    // (i = Nintvl+1..Nspobs). f'(y/a)*a^-1 by the chain rule.
+    double jacadj = ZERO;
+    if (adjmod < 2) {
+        for (int i = m.nintvl + 1; i <= d.nspobs; ++i) {
+            double yi_full = y[i - 1], adji = adj[i - 1];
+            if (dpeq(yi_full, ZERO) || dpeq(adji, ZERO)) continue;
+            double jaci = adji;   // Khol/Ixreg x11 factors deferred (absent here)
+            if (fcntyp != 4) {
+                double yi = yi_full / jaci;
+                if (fcntyp == 3)  // logit
+                    jaci = jaci / (jaci * yi_full - yi_full * yi_full);
+                else if (!dpeq(lam, ONE))  // Box-Cox (incl. log, sqrt)
+                    jaci = std::pow(std::abs(yi), lam - ONE) / jaci;
+            }
+            jacadj = jacadj + std::log(jaci);
+        }
+    } else if (!dpeq(lam, ONE) || fcntyp == 3) {
+        for (int i = m.nintvl + 1; i <= d.nspobs; ++i) {
+            double yi = y[i - 1];
+            double jaci = ONE;
+            if (fcntyp == 3)
+                jaci = jaci / (jaci * yi - yi * yi);
+            else if (!dpeq(lam, ONE))
+                jaci = std::pow(std::abs(yi), lam - ONE) / jaci;
+            jacadj = jacadj + std::log(jaci);
+        }
+    }
+    lk.olkhd = d.lnlkhd + jacadj;  // dpeq(jacadj,0) -> Olkhd=Lnlkhd (same value)
+
+    // AIC and relatives -- only for exact-ML estimation, and only on convergence.
+    if (!lclaic || !d.convrg) return;
+    double dnp = static_cast<double>(np);
+    lk.aic = -TWO * (d.lnlkhd + jacadj - dnp);
+    if (nefobs > np + 1)
+        lk.aicc =
+            -TWO * (d.lnlkhd + jacadj - dnefob * dnp / (dnefob - (dnp + ONE)));
+    lk.hnquin = -TWO * (d.lnlkhd + jacadj - std::log(std::log(dnefob)) * dnp);
+    lk.bic = -TWO * (d.lnlkhd + jacadj) + dnp * std::log(dnefob);
+    lk.bic2 = (-TWO * d.lnlkhd + dnp * std::log(dnefob)) / dnefob;
+    if (d.eick > ZERO)
+        lk.eic = -TWO * (d.lnlkhd + jacadj) + dnp * d.eick;
+    else
+        lk.eic = prm::DNOTST;
+}
+
 // armats.f -- t-statistics for the ARMA parameter estimates (see hpp).
 void armats(X13Context& ctx, double* tval) {
     auto& m = ctx.model;

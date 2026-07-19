@@ -175,6 +175,14 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
             (void)na;
             (void)nefobs;  // nefobs == Nspobs-Nintvl; the estimates live in mdldat
             if (ctx.error.lfatal) return false;
+
+            // Likelihood statistics (arima.f:742 prlkhd): the transform-Jacobian-
+            // adjusted log likelihood + AIC/AICC/BIC/HQ into ctx.lkhd. Y is the
+            // original untransformed series over the span (aptr == Y(Frstsy)); the
+            // prior factors are `fac` (all 1 with no prior).
+            prlkhd(ctx, aptr, fac.data(), ctx.adj.adjmod, ctx.arima.fcntyp,
+                   ctx.arima.lam);
+            if (ctx.error.lfatal) return false;
         }
     }
 

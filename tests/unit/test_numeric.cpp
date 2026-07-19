@@ -1713,6 +1713,17 @@ TEST("run_m2->rgarma: airline (0 1 1)(0 1 1) real-data estimation vs oracle udg"
     armats(ctx, tval);
     CHECK(rclose(tval[0], 5.0945818522955, 1e-9));   // MA nonseasonal t
     CHECK(rclose(tval[1], 7.3036848055248, 1e-9));   // MA seasonal t
+
+    // Likelihood statistics. The .udg "loglikelihood" key is the RAW Lnlkhd
+    // (arima.f:973 writes Lnlkhd directly), while AIC/AICC/BIC/HQ come from
+    // prlkhd and use the transform-Jacobian-adjusted Olkhd=Lnlkhd+jacadj
+    // internally. run_m2 ran prlkhd into ctx.lkhd. The .udg rounds to 4
+    // decimals, so compare at rtol 1e-6.
+    CHECK(rclose(d.lnlkhd, 244.6965, 1e-6));         // loglikelihood (raw Lnlkhd)
+    CHECK(rclose(ctx.lkhd.aic, 987.1956, 1e-6));     // AIC
+    CHECK(rclose(ctx.lkhd.aicc, 987.3845, 1e-6));    // AICC
+    CHECK(rclose(ctx.lkhd.bic, 995.8211, 1e-6));     // BIC
+    CHECK(rclose(ctx.lkhd.hnquin, 990.7005, 1e-6));  // Hannan-Quinn
 }
 
 int main() { return mt::run_all(); }

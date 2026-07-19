@@ -122,6 +122,22 @@ void rgarma(X13Context& ctx, bool lestim, int mxiter, int mxnlit, bool lprtit,
 // abort in the oracle is dead code and not reproduced.
 void xrlkhd(X13Context& ctx, double& aicc, int nxcld);
 
+// prlkhd.f: the final likelihood-statistics report for the estimated model.
+// Forms the transform-Jacobian-adjusted log likelihood Olkhd = Lnlkhd + jacadj
+// (jacadj summed over the effective span i=Nintvl+1..Nspobs; the per-obs term is
+// the log Jacobian of the Box-Cox/logit transform, f'(y/a)*a^-1) and the
+// information criteria Aic/Aicc/Hnquin(Hannan-Quinn)/Bic/Bic2/Eic into ctx.lkhd.
+// Unlike xrlkhd (the AIC-test path, which drops the constant jacadj so within-
+// series comparisons are unaffected), this is the reported likelihood the .udg
+// prints, so it INCLUDES jacadj. Aic and relatives are formed only for exact-ML
+// estimation (lclaic) on convergence; Eic only when Eick>0 (else DNOTST). All
+// prints and the x11-holiday/x11reg penalty notes are deferred. y is the
+// original untransformed undifferenced series over the span; adj the prior
+// factors (1 with no prior); adjmod the adjustment mode; fcntyp/lam the
+// transform (fcntyp 3 logit, 4 none, else Box-Cox with parameter lam).
+void prlkhd(X13Context& ctx, const double* y, const double* adj, int adjmod,
+            int fcntyp, double lam);
+
 // armats.f: t-statistics for the estimated ARMA parameters,
 // tval(k) = Arimap(lag_k) / sqrt(Var * Armacm(k,k)), walking the AR..MA
 // operators in lag order. If the ARMA covariance was flagged singular
