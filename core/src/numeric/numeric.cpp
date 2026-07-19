@@ -249,4 +249,54 @@ void xpand(const double* b, int mxarlg, int na, int nc, double* c, int pc) {
     }
 }
 
+// euclid.f -- fular/g 0-based; b/a 1-based workspace (b[i-1],a[i-1]).
+void euclid(const double* fular, double* b, double* a, int maxpq, int mxarlg,
+            int mxmalg, double* g, int& err) {
+    constexpr double ONE = 1.0, TWO = 2.0, ZERO = 0.0;
+    for (int i = 1; i <= mxarlg; ++i) b[i - 1] = fular[i];
+    err = 0;
+    // Order-reduction loop.
+    for (int i = maxpq; i >= 1; --i) {
+        if (i <= mxarlg) {
+            double r = b[i - 1];
+            if (std::fabs(r) > ONE) {
+                err = 1;
+                return;  // GO TO 10: early exit, g left partially modified.
+            }
+            double s = ONE / (ONE - r * r);
+            a[i - 1] = s;
+            int midpt = i / 2;
+            for (int fsthlf = 1; fsthlf <= midpt; ++fsthlf) {
+                int lsthlf = i - fsthlf;
+                double bs = b[fsthlf - 1];
+                double br = b[lsthlf - 1];
+                b[fsthlf - 1] = (bs - br * r) * s;
+                b[lsthlf - 1] = (br - bs * r) * s;
+            }
+        }
+        int lim = i - 1;
+        if (i > mxarlg) lim = mxarlg;
+        if (i > mxmalg) {
+            lim = 0;
+            g[i] = ZERO;
+        }
+        for (int fsthlf = 1; fsthlf <= lim; ++fsthlf) {
+            int lsthlf = i - fsthlf;
+            g[lsthlf] = g[lsthlf] - b[fsthlf - 1] * g[i];
+        }
+    }
+    // Construction loop.
+    g[0] = g[0] / TWO;
+    for (int i = 1; i <= mxarlg; ++i) {
+        int midpt = i / 2;
+        for (int fsthlf = 0; fsthlf <= midpt; ++fsthlf) {
+            int lsthlf = i - fsthlf;
+            double gs = g[fsthlf];
+            double gr = g[lsthlf];
+            g[fsthlf] = (gs - b[i - 1] * gr) * a[i - 1];
+            g[lsthlf] = (gr - b[i - 1] * gs) * a[i - 1];
+        }
+    }
+}
+
 }  // namespace x13

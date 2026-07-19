@@ -57,7 +57,7 @@ antilg: pending
 apply: pending
 ar30rg: pending
 arfit: pending
-arflt: pending
+arflt: ported
 arima: pending
 armacr: pending
 armafl: pending
@@ -180,7 +180,7 @@ entsch: pending
 eprint: n-a
 errhdr: ported
 estrmu: ported
-euclid: pending
+euclid: ported
 exctma: pending
 extend: pending
 extsgnl: pending

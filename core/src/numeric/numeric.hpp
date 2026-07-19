@@ -69,6 +69,17 @@ void uconv(const double* fulma, int mxmalg, double* c);
 // numerator is snapshotted before the recursion begins.
 void xpand(const double* b, int mxarlg, int na, int nc, double* c, int pc);
 
+// euclid.f: solves Fular(z)F(1/z)+F(z)Fular(1/z)=G(z) by the Euclid algorithm
+// (AR-covariance step of armafl). fular/g are 0-based (fular[0..mxarlg],
+// g[0..maxpq]); b and a are 1-based workspace of length mxarlg (b[i-1],a[i-1]),
+// caller-provided. On success g[0..maxpq] holds F and err=0. If an AR coeff
+// fails |r|>1 (non-stationary), err=1 and the routine returns early with g
+// PARTIALLY modified -- callers must check err before using g. The even-i
+// midpoint element is written twice with the same value in both the reduction
+// and construction loops; preserved verbatim.
+void euclid(const double* fular, double* b, double* a, int maxpq, int mxarlg,
+            int mxmalg, double* g, int& err);
+
 }  // namespace x13
 
 #endif  // X13_NUMERIC_NUMERIC_HPP

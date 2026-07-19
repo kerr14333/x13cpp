@@ -1,0 +1,32 @@
+// armafilt.cpp -- ARMA filter routines over the model-operator structure
+// (see armafilt.hpp). Faithful ports of the vendored oracle Fortran.
+#include "regarima/armafilt.hpp"
+
+#include "specparse/specparse.hpp"  // maxlag
+
+namespace x13 {
+
+// arflt.f -- ntmpa shrinks by each operator's max lag; C(i) written while
+// C(off) and C(off-Arimal(ilag)) are read ahead (ascending i is load-bearing).
+void arflt(int nelta, const double* arimap, const int* arimal, const int* opr,
+           int begopr, int endopr, double* c, int& neltc) {
+    int ntmpa = nelta;
+    for (int iopr = begopr; iopr <= endopr; ++iopr) {
+        int mxlag;
+        maxlag(arimal, opr, iopr, iopr, mxlag);
+        ntmpa = ntmpa - mxlag;
+        int beglag = opr[iopr - 1];
+        int endlag = opr[iopr] - 1;
+        for (int i = 1; i <= ntmpa; ++i) {
+            int off = i + mxlag;
+            double tmp = c[off - 1];
+            for (int ilag = beglag; ilag <= endlag; ++ilag) {
+                tmp = tmp - arimap[ilag - 1] * c[off - arimal[ilag - 1] - 1];
+            }
+            c[i - 1] = tmp;
+        }
+        neltc = ntmpa;
+    }
+}
+
+}  // namespace x13

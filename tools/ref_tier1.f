@@ -6,7 +6,8 @@ C
 C       gfortran -O2 -Ioracle/fortran tools/ref_tier1.f \
 C         oracle/fortran/yprmy.f oracle/fortran/logdet.f \
 C         oracle/fortran/uconv.f oracle/fortran/xpand.f \
-C         oracle/fortran/ratneg.f -o ref_tier1 && ./ref_tier1
+C         oracle/fortran/ratneg.f oracle/fortran/arflt.f \
+C         oracle/fortran/euclid.f oracle/fortran/maxlag.f -o ref_tier1 && ./ref_tier1
 C
       PROGRAM ref_tier1
       IMPLICIT NONE
@@ -15,6 +16,8 @@ C
       DOUBLE PRECISION bx(0:1),cx(0:3)
       DOUBLE PRECISION arimap(25),cn(4)
       INTEGER arimal(25),opr(0:9),i
+      DOUBLE PRECISION caf(5),fular(0:2),bw(2),aw(2),gw(0:1)
+      INTEGER neltc,err
 
 C     yprmy: y=[1,2,3,4] -> 30
       y(1)=1.0D0
@@ -71,4 +74,36 @@ C     opr(0)=1 (beglag), opr(1)=2 (endlag=1); arimal(1)=1; arimap(1)=0.5
       WRITE(*,'(A,ES24.16)') 'ratneg2 ', cn(2)
       WRITE(*,'(A,ES24.16)') 'ratneg3 ', cn(3)
       WRITE(*,'(A,ES24.16)') 'ratneg4 ', cn(4)
+
+C     arflt: single AR operator, lag 1, phi=0.5, nelta=5, c=[1,2,3,4,5]
+C     reuse opr(0)=1,opr(1)=2,arimal(1)=1,arimap(1)=0.5 from ratneg setup
+      caf(1)=1.0D0
+      caf(2)=2.0D0
+      caf(3)=3.0D0
+      caf(4)=4.0D0
+      caf(5)=5.0D0
+      CALL arflt(5,arimap,arimal,opr,1,1,caf,neltc)
+      WRITE(*,'(A,I3)')      'arflt_neltc ', neltc
+      WRITE(*,'(A,ES24.16)') 'arflt1 ', caf(1)
+      WRITE(*,'(A,ES24.16)') 'arflt2 ', caf(2)
+      WRITE(*,'(A,ES24.16)') 'arflt3 ', caf(3)
+      WRITE(*,'(A,ES24.16)') 'arflt4 ', caf(4)
+      WRITE(*,'(A,ES24.16)') 'arflt5 ', caf(5)
+
+C     euclid A: Fular=[1,0.5] mxarlg=1, maxpq=1, mxmalg=1, G=[2,1]
+      fular(0)=1.0D0
+      fular(1)=0.5D0
+      gw(0)=2.0D0
+      gw(1)=1.0D0
+      CALL euclid(fular,bw,aw,1,1,1,gw,err)
+      WRITE(*,'(A,I3)')      'euclid_err ', err
+      WRITE(*,'(A,ES24.16)') 'euclid_g0 ', gw(0)
+      WRITE(*,'(A,ES24.16)') 'euclid_g1 ', gw(1)
+
+C     euclid err path: Fular(1)=1.5 -> |r|>1 -> err=1
+      fular(1)=1.5D0
+      gw(0)=2.0D0
+      gw(1)=1.0D0
+      CALL euclid(fular,bw,aw,1,1,1,gw,err)
+      WRITE(*,'(A,I3)')      'euclid_err2 ', err
       END

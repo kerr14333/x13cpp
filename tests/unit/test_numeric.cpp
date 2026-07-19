@@ -7,6 +7,7 @@
 // including the truncated dpmpar literal and ddot's underflow-skip.
 #include "microtest.hpp"
 #include "numeric/numeric.hpp"
+#include "regarima/armafilt.hpp"
 
 #include <cmath>
 
@@ -179,6 +180,41 @@ TEST("ratneg: negative-power expansion, backward recursion") {
     CHECK_EQ(c[1], 4.5);   // ratneg2
     CHECK_EQ(c[2], 5.0);   // ratneg3
     CHECK_EQ(c[3], 4.0);   // ratneg4 (never updated; loop starts at i=3)
+}
+
+TEST("arflt: conditional AR filter in place") {
+    // single AR operator, lag 1, phi=0.5, nelta=5, c=[1,2,3,4,5].
+    double arimap[1] = {0.5};
+    int arimal[1] = {1};
+    int opr[2] = {1, 2};
+    double c[5] = {1.0, 2.0, 3.0, 4.0, 5.0};
+    int neltc = -1;
+    arflt(5, arimap, arimal, opr, 1, 1, c, neltc);
+    CHECK_EQ(neltc, 4);    // oracle arflt_neltc
+    CHECK_EQ(c[0], 1.5);   // arflt1
+    CHECK_EQ(c[1], 2.0);   // arflt2
+    CHECK_EQ(c[2], 2.5);   // arflt3
+    CHECK_EQ(c[3], 3.0);   // arflt4
+    CHECK_EQ(c[4], 5.0);   // arflt5 (beyond neltc, untouched)
+}
+
+TEST("euclid: AR-covariance solve + non-stationary early-out") {
+    // Fular=[1,0.5], mxarlg=1, maxpq=1, mxmalg=1, G=[2,1].
+    double fular[2] = {1.0, 0.5};
+    double b[1], a[1];
+    double g[2] = {2.0, 1.0};
+    int err = -1;
+    euclid(fular, b, a, 1, 1, 1, g, err);
+    CHECK_EQ(err, 0);  // oracle euclid_err
+    CHECK(rclose(g[0], 6.6666666666666663e-01, 1e-15));  // euclid_g0
+    CHECK(rclose(g[1], 6.6666666666666663e-01, 1e-15));  // euclid_g1
+
+    // |r|>1 -> non-stationary -> err=1.
+    double fular2[2] = {1.0, 1.5};
+    double g2[2] = {2.0, 1.0};
+    err = -1;
+    euclid(fular2, b, a, 1, 1, 1, g2, err);
+    CHECK_EQ(err, 1);  // oracle euclid_err2
 }
 
 int main() { return mt::run_all(); }
