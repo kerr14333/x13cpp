@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 08:25 EDT
+## Snapshot — 2026-07-19 08:47 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 08:22 EDT |
-| commits | 43 |
-| span, first→latest | 18h 16m |
-| active (gaps ≤45m) | ~4h 20m (6 breaks excluded) |
+| latest commit | 2026-07-19 08:47 EDT |
+| commits | 45 |
+| span, first→latest | 18h 41m |
+| active (gaps ≤45m) | ~4h 45m (6 breaks excluded) |
 | calendar days | 2 |
 
 ## What was reached in that window
@@ -74,11 +74,27 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   - **armafl coverage** — all 14 A-gaps in `tools/m3_test_coverage.md` closed:
     airline/seasonal-AR/mixed/multi-col/differencing/reuse/error-code/FMA-canary/
     underflow-skip/exact-zero-no-write. `test_numeric` = 163 checks.
-- **Next** — `lmdif` (the 530-line Census-modified LM core; [[x13cpp-lmdif-modified]]
-  — port the vendored version, not textbook) → `covar` → then `rgarma` glues the
-  IGLS loop (olsreg + lmdif(fcnar)). B-section corpus specs (exact=none, AR
-  models, fixed coeffs, RSXFSN/FEDFUNDS) land once rgarma runs end-to-end. See
-  `tools/m3_test_coverage.md` and `tools/m3_scouting.md`.
+  - **`lmdif`** (`numeric/minpack`) — the 530-line Census-modified LM core
+    ([[x13cpp-lmdif-modified]]; vendored, not textbook). Two nested loops + a
+    single goto for the 6 GO-TO-20 termination sites, dpeq at all 7 exact-zero
+    tests. The model-specific `upespm`/`prtitr` calls are threaded as optional
+    model-independent hooks (`MinpackSync`/`MinpackPrtitr`) so the optimizer
+    stays decoupled from regarima; empty hooks are a bit-for-bit no-op.
+    Census-vs-stock diffs documented in a header block. Oracle-verified on
+    `tools/ref_lmdif.f` (3 cases: Rosenbrock full-converge info=2; exp-fit M>N
+    mode=2 info=1; re-entrant cumulative-counter info=5) — integer nliter/nfev +
+    Info exact, x/fjac/qtf/diag at rtol 1e-12. Port audit in
+    `tools/lmdif_port_spec.md`.
+  - **`covar`** (`numeric/minpack`) — covariance `(R'R)⁻¹` from lmdif's QR
+    output; literal `|R(k,k)|<=tolr` singularity test, NOTSET=-32767 sentinel.
+    Oracle-verified (`tools/ref_covar.f`, permuted ipvt, both tolerance paths).
+  - `test_numeric` = 49 tests / all MINPACK optimizer leaves landed.
+- **Next** — `rgarma` (rgarma.f) glues the IGLS loop: strtvl/setmdl start values,
+  olsreg (GLS betas), the `lmdif(fcnar)` nonlinear ARMA step, stpitr convergence
+  test, then fdjac2/qrfac/covar for the post-convergence ARMA covariance. First
+  full end-to-end estimation parity target (coeff estimates, Var, Lnlkhd, Nliter,
+  Nfev, Convrg). B-section corpus specs (exact=none, AR models, fixed coeffs,
+  RSXFSN/FEDFUNDS) land once rgarma runs. See `tools/m3_scouting.md` §5 Tier-5.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
