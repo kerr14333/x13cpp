@@ -40,6 +40,28 @@ void ratpos(int nelta, const double* arimap, const int* arimal, const int* opr,
     }
 }
 
+// ratneg.f -- negative-power expansion; backward recursion from
+// nelta-arimal(beglag) down to 1. Three-state flush preserved: sum exactly 0
+// leaves c[i-1] untouched (no store), matching ratneg.f:104-108.
+void ratneg(int nelta, const double* arimap, const int* arimal, const int* opr,
+            int begopr, int endopr, double* c) {
+    constexpr double M300 = 1.0e-300;
+    constexpr double ZERO = 0.0;
+    for (int iopr = begopr; iopr <= endopr; ++iopr) {
+        int beglag = opr[iopr - 1];
+        int endlag = opr[iopr] - 1;
+        for (int i = nelta - arimal[beglag - 1]; i >= 1; --i) {
+            double sum = c[i - 1];
+            for (int ilag = beglag; ilag <= endlag; ++ilag) {
+                int itmp = i + arimal[ilag - 1];
+                if (itmp <= nelta) sum = sum + arimap[ilag - 1] * c[itmp - 1];
+            }
+            if (std::fabs(sum) > M300) c[i - 1] = sum;
+            else if (std::fabs(sum) > ZERO) c[i - 1] = ZERO;
+        }
+    }
+}
+
 // copycl.f
 void copycl(const double* from, int nr, int nfrmcl, int ifrmcl, int ntocl,
             int itocl, double* to) {

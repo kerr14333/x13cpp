@@ -22,6 +22,14 @@ namespace x13 {
 void ratpos(int nelta, const double* arimap, const int* arimal, const int* opr,
             int begopr, int endopr, int neltc, double* c);
 
+// ratneg.f: sibling of ratpos for a denominator in NEGATIVE powers (backward
+// recursion, c[nelta-...] solved first). No neltc argument -- nelta bounds the
+// series. Three-state flush per coefficient: |sum|>1e-300 stores sum;
+// 0<|sum|<=1e-300 stores 0.0; sum exactly 0 leaves c[i] UNCHANGED (stale). No
+// underflow guard on the accumulation (the oracle's under0 calls are disabled).
+void ratneg(int nelta, const double* arimap, const int* arimal, const int* opr,
+            int begopr, int endopr, double* c);
+
 // copycl.f: copy column ifrmcl of from (nr x nfrmcl, row-major) into column
 // itocl of to (nr x ntocl).
 void copycl(const double* from, int nr, int nfrmcl, int ifrmcl, int ntocl,

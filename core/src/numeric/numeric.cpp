@@ -4,6 +4,7 @@
 #include "numeric/numeric.hpp"
 
 #include <cmath>
+#include <vector>
 
 namespace x13 {
 
@@ -205,6 +206,47 @@ double enorm(int n, const double* x) {
         }
     }
     return result;
+}
+
+// yprmy.f -- sum of squares, sequential accumulation (Y(i)**2 -> y*y).
+void yprmy(const double* y, int nr, double& ypy) {
+    ypy = 0.0;
+    for (int i = 1; i <= nr; ++i) ypy = ypy + y[i - 1] * y[i - 1];
+}
+
+// logdet.f -- packed diagonal walk ielt += i (1,3,6,...); 2*log of each diag.
+void logdet(const double* ap, int n, double& lgdt) {
+    lgdt = 0.0;
+    int ielt = 0;
+    for (int i = 1; i <= n; ++i) {
+        ielt = ielt + i;
+        lgdt = lgdt + 2.0 * std::log(ap[ielt - 1]);
+    }
+}
+
+// uconv.f -- MA autocovariance in place; both arrays 0-based (0..mxmalg).
+void uconv(const double* fulma, int mxmalg, double* c) {
+    for (int i = 0; i <= mxmalg; ++i) c[i] = fulma[i];
+    for (int i = 0; i <= mxmalg; ++i) {
+        double sum = fulma[i];
+        int qmi = mxmalg - i;
+        for (int k = 1; k <= qmi; ++k) sum = sum + fulma[k] * c[i + k];
+        c[i] = sum;
+    }
+}
+
+// xpand.f -- expansion of A(z)/B(z) to order nc, in place. Local workspace `a`
+// snapshots the numerator c[0..na] before the recursion overwrites c.
+void xpand(const double* b, int mxarlg, int na, int nc, double* c, int pc) {
+    constexpr double ZERO = 0.0;
+    std::vector<double> a(pc + 1, ZERO);
+    for (int i = 0; i <= na; ++i) a[i] = c[i];
+    for (int i = 0; i <= nc; ++i) {
+        int nlag = (mxarlg < i) ? mxarlg : i;
+        double sum = (i <= na) ? a[i] : ZERO;
+        for (int w = 1; w <= nlag; ++w) sum = sum - b[w] * c[i - w];
+        c[i] = sum;
+    }
 }
 
 }  // namespace x13

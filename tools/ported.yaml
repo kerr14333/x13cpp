@@ -346,7 +346,7 @@ lmpar: pending
 loadxr: pending
 locshk: pending
 logar: pending
-logdet: pending
+logdet: ported
 lomaic: pending
 lstpth: pending
 m2q: pending
@@ -491,7 +491,7 @@ qtoken: ported
 quad: pending
 quadit: pending
 quadsd: pending
-ratneg: pending
+ratneg: ported
 ratpos: ported
 rdotlr: pending
 rdotls: pending
@@ -664,7 +664,7 @@ tstdrv: pending
 tstmd1: pending
 tstmd2: pending
 ttest: pending
-uconv: pending
+uconv: ported
 upbuf.g77: n-a
 upespm: pending
 upmeta.g77: n-a
@@ -702,7 +702,7 @@ x11ref: pending
 x12hdr: pending
 x12run: pending
 xchng: pending
-xpand: pending
+xpand: ported
 xprmx: pending
 xrgdiv: pending
 xrgdrv: pending
@@ -710,5 +710,5 @@ xrghol: pending
 xrgtrn: pending
 xrlkhd: pending
 xtrm: pending
-yprmy: pending
+yprmy: ported
 yrly: pending

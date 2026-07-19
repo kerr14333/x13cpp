@@ -47,6 +47,28 @@ void revrse(const double* frwd, int nr, int nc, double* bkwd);
 // in lmdif) match the oracle.
 double enorm(int n, const double* x);
 
+// yprmy.f: inner product y'y = sum y[i]^2 into ypy (sequential accumulation,
+// order preserved). y is nr long.
+void yprmy(const double* y, int nr, double& ypy);
+
+// logdet.f: log-determinant of a packed triangular (Cholesky) factor,
+// lgdt = sum_{i=1..n} 2*log(ap[diag_i]) where diag_i walks the packed
+// diagonal (offsets 1,3,6,...). A zero diagonal legally yields -inf (dppfa may
+// leave one); the log is NOT guarded.
+void logdet(const double* ap, int n, double& lgdt);
+
+// uconv.f: autocovariance of a moving-average polynomial, C(z)=A(z)*A(1/z),
+// computed in place. fulma and c are 0-based, indices 0..mxmalg. The in-place
+// read of c[i+k] above the write cursor is load-bearing (ascending i keeps
+// those entries at their original values) -- do not reorder.
+void uconv(const double* fulma, int mxmalg, double* c);
+
+// xpand.f: power-series expansion of A(z)/B(z) = C(z) up to order nc, in place.
+// On entry c[0..na] holds the numerator A; b is 0-based (b[0] unused, the
+// denominator is 1 - b[1]z - ...). pc bounds the workspace/output order. The
+// numerator is snapshotted before the recursion begins.
+void xpand(const double* b, int mxarlg, int na, int nc, double* c, int pc);
+
 }  // namespace x13
 
 #endif  // X13_NUMERIC_NUMERIC_HPP

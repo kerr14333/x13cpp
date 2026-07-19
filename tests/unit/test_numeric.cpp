@@ -10,6 +10,13 @@
 
 #include <cmath>
 
+namespace x13 {
+// ratneg lives in core/src/regarima (declared in regvar.hpp, which pulls in the
+// full X13Context); forward-declare it here to keep this leaf test lightweight.
+void ratneg(int nelta, const double* arimap, const int* arimal, const int* opr,
+            int begopr, int endopr, double* c);
+}  // namespace x13
+
 using namespace x13;
 
 namespace {
@@ -122,6 +129,56 @@ TEST("enorm: MINPACK 3-bin scaled norm") {
 
     double mixed[3] = {1.0e-20, 3.0, 1.0e19};
     CHECK(rclose(enorm(3, mixed), 1.0e19, 1e-15));  // enorm4 (large dominates)
+}
+
+// ---- M3 Tier-1 numeric/ARMA leaves. Goldens from tools/ref_tier1.f driving
+// the oracle yprmy/logdet/uconv/xpand/ratneg (gfortran -O2, exact match). ----
+
+TEST("yprmy: y'y sum of squares") {
+    double y[4] = {1.0, 2.0, 3.0, 4.0};
+    double ypy = -1.0;
+    yprmy(y, 4, ypy);
+    CHECK_EQ(ypy, 30.0);  // oracle yprmy
+}
+
+TEST("logdet: 2*sum(log(packed diag))") {
+    double ap[6] = {2.0, 9.0, 3.0, 9.0, 9.0, 4.0};  // diag at 1,3,6 = 2,3,4
+    double lgdt = -1.0;
+    logdet(ap, 3, lgdt);
+    // oracle 6.3561076606958906 == 2*ln(24)
+    CHECK(rclose(lgdt, 6.3561076606958906, 1e-15));
+}
+
+TEST("uconv: MA autocovariance in place") {
+    double fulma[3] = {1.0, 0.5, 0.25};
+    double c[3] = {0.0, 0.0, 0.0};
+    uconv(fulma, 2, c);
+    CHECK_EQ(c[0], 1.3125);  // oracle uconv0
+    CHECK_EQ(c[1], 0.625);   // uconv1
+    CHECK_EQ(c[2], 0.25);    // uconv2
+}
+
+TEST("xpand: A(z)/B(z) expansion in place") {
+    double b[2] = {0.0, 0.5};             // b[1]=0.5
+    double c[4] = {1.0, 0.0, 0.0, 0.0};   // numerator A=[1], na=0
+    xpand(b, 1, 0, 3, c, 3);
+    CHECK_EQ(c[0], 1.0);      // oracle xpand0
+    CHECK_EQ(c[1], -0.5);     // xpand1
+    CHECK_EQ(c[2], 0.25);     // xpand2
+    CHECK_EQ(c[3], -0.125);   // xpand3
+}
+
+TEST("ratneg: negative-power expansion, backward recursion") {
+    // single AR operator, lag 1, phi=0.5, nelta=4, c=[1,2,3,4].
+    double arimap[1] = {0.5};
+    int arimal[1] = {1};
+    int opr[2] = {1, 2};  // opr[0]=beglag=1, opr[1]=2 -> endlag=1
+    double c[4] = {1.0, 2.0, 3.0, 4.0};
+    ratneg(4, arimap, arimal, opr, 1, 1, c);
+    CHECK_EQ(c[0], 3.25);  // oracle ratneg1
+    CHECK_EQ(c[1], 4.5);   // ratneg2
+    CHECK_EQ(c[2], 5.0);   // ratneg3
+    CHECK_EQ(c[3], 4.0);   // ratneg4 (never updated; loop starts at i=3)
 }
 
 int main() { return mt::run_all(); }
