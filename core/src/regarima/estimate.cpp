@@ -232,4 +232,145 @@ void roots(X13Context& ctx, const double* thetab, int& degree, bool& allinv,
     // left as the caller passed it (matching the oracle).
 }
 
+// gfortran real(8)**int(4): square-and-multiply (matches PT9**lag exactly).
+static double dpowri(double base, int n) {
+    if (n == 0) return 1.0;
+    bool neg = n < 0;
+    unsigned u = neg ? static_cast<unsigned>(-n) : static_cast<unsigned>(n);
+    double pow = 1.0, x = base;
+    for (;;) {
+        if (u & 1u) pow *= x;
+        u >>= 1;
+        if (u)
+            x *= x;
+        else
+            break;
+    }
+    return neg ? 1.0 / pow : pow;
+}
+
+// setmdl.f -- pack estprm + root-check the starting values (see the hpp).
+void setmdl(X13Context& ctx, double* estprm, bool& laumts) {
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    constexpr double ZERO = 0.0, PT9 = 0.9;
+    bool& first = ctx.saved.setmdl_first;
+    bool mainsa = false, maonua = false, arona = false;
+    // Fortran sizes lagind(PORDER); ilag indexes the PARIMA lag space, so size
+    // to PARIMA here to avoid the latent Fortran undersizing (census_bugs.md
+    // CB-4). lagind[ilag] = the estprm slot of that free lag (non-first calls).
+    int lagind[prm::PARIMA];
+
+    // Pack the free (non-fixed) AR/MA coefficients into estprm.
+    m.nestpm = 0;
+    for (int iflt = prm::DIFF; iflt <= prm::MA; ++iflt) {
+        int begopr = m.mdl(iflt - 1);
+        int endopr = m.mdl(iflt) - 1;
+        for (int iopr = begopr; iopr <= endopr; ++iopr) {
+            int beglag = m.opr(iopr - 1);
+            int endlag = m.opr(iopr) - 1;
+            for (int ilag = beglag; ilag <= endlag; ++ilag) {
+                if (!m.arimaf(ilag)) {
+                    m.nestpm = m.nestpm + 1;
+                    estprm[m.nestpm - 1] = d.arimap(ilag);
+                    if (!first) lagind[ilag - 1] = m.nestpm;
+                }
+            }
+        }
+    }
+
+    double coef[prm::PORDER + 1], zeror[prm::PORDER], zeroi[prm::PORDER],
+        zerom[prm::PORDER], zerof[prm::PORDER];
+
+    // ---- roots of the initial theta(B): invertibility ----
+    {
+        int begopr = m.mdl(prm::MA - 1);
+        int endopr = m.mdl(prm::MA) - 1;
+        if (endopr > 0) {
+            for (int iopr = begopr; iopr <= endopr; ++iopr) {
+                int beglag = m.opr(iopr - 1);
+                int endlag = m.opr(iopr) - 1;
+                int factor = m.oprfac(iopr);
+                int degree = m.arimal(endlag) / factor;
+                coef[0] = -1.0;
+                setdp(ZERO, degree, coef + 1);
+                setdp(ZERO, prm::PORDER, zeror);
+                setdp(ZERO, prm::PORDER, zeroi);
+                setdp(ZERO, prm::PORDER, zerom);
+                for (int ilag = beglag; ilag <= endlag; ++ilag)
+                    coef[m.arimal(ilag) / factor] = d.arimap(ilag);
+                bool allinv = false;
+                roots(ctx, coef, degree, allinv, zeror, zeroi, zerom, zerof);
+                if (!allinv) mainsa = true;  // noninvertible (error deferred)
+                bool onunit = false, shrnkp = false;
+                int i = 0;
+                while (i < degree) {
+                    i = i + 1;
+                    if (first) {
+                        if (dpeq(zerom[i - 1], 1.0) && !onunit) onunit = true;
+                    } else {
+                        if (zerom[i - 1] <= 1.06 && !shrnkp) shrnkp = true;
+                    }
+                }
+                bool allfix = true;
+                for (int ilag = beglag; ilag <= endlag; ++ilag)
+                    if (!m.arimaf(ilag) && allfix) allfix = false;
+                if (onunit && !allfix) maonua = true;  // MA root on unit circle
+                // Shrink a near-unit-circle operator (IGLS re-entries only).
+                if (shrnkp && !allfix) {
+                    for (int ilag = beglag; ilag <= endlag; ++ilag) {
+                        if (!m.arimaf(ilag)) {
+                            d.arimap(ilag) =
+                                d.arimap(ilag) * dpowri(PT9, m.arimal(ilag));
+                            estprm[lagind[ilag - 1] - 1] = d.arimap(ilag);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- roots of the initial phi(B): stationarity ----
+    {
+        int begopr = m.mdl(prm::AR - 1);
+        int endopr = m.mdl(prm::AR) - 1;
+        if (endopr > 0) {
+            for (int iopr = begopr; iopr <= endopr; ++iopr) {
+                int beglag = m.opr(iopr - 1);
+                int endlag = m.opr(iopr) - 1;
+                int factor = m.oprfac(iopr);
+                int degree = m.arimal(endlag) / factor;
+                coef[0] = -1.0;
+                setdp(ZERO, prm::PORDER, zeror);
+                setdp(ZERO, prm::PORDER, zeroi);
+                setdp(ZERO, prm::PORDER, zerom);
+                setdp(ZERO, degree, coef + 1);
+                for (int ilag = beglag; ilag <= endlag; ++ilag)
+                    coef[m.arimal(ilag) / factor] = d.arimap(ilag);
+                bool allinv = false;
+                roots(ctx, coef, degree, allinv, zeror, zeroi, zerom, zerof);
+                bool onunit = false;
+                int i = 0;
+                while (i < degree) {
+                    i = i + 1;
+                    if (dpeq(zerom[i - 1], 1.0) && !onunit) onunit = true;
+                }
+                if (!allinv || onunit) {
+                    // Nonstationary start: error (+arona) if exact AR, else a
+                    // deferred warning. The root-table print is deferred.
+                    if (m.lar) arona = true;
+                }
+            }
+        }
+    }
+
+    first = false;
+    if (mainsa || maonua || arona) {
+        if (laumts)
+            laumts = false;  // signal failed HR initial values to the caller
+        else
+            abend(ctx);
+    }
+}
+
 }  // namespace x13

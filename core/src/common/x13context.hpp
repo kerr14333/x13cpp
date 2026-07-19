@@ -112,7 +112,15 @@ struct X13Context {
     // drives it through the ELSE reset, and every call ends by storing the
     // current Objfcn -- so the 0.0 default here only matters until the first
     // call, exactly as the Fortran SAVE (undefined but never read on iter 1).
-    struct { int armafl_nextma = 0; double stpitr_oldobj = 0.0; } saved;
+    // setmdl_first: setmdl.f SAVEs `first` (DATA .true.), cleared at the end of
+    // the first call. It gates the initial-value root check: on the first call
+    // an MA root ON the unit circle is an error; afterwards (IGLS re-entries)
+    // near-unit MA operators are instead shrunk. Persists per estimation.
+    struct {
+        int armafl_nextma = 0;
+        double stpitr_oldobj = 0.0;
+        bool setmdl_first = true;
+    } saved;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

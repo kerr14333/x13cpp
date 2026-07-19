@@ -78,6 +78,34 @@ that pins it.
 - **Modernize:** use the correct 2*pi (`std::atan2` result divided by
   `6.283185307179586` or `2.0 * M_PI`). Pure output fix; no estimation impact.
 
+## CB-4 — setmdl `lagind` array undersized (PORDER, indexed over PARIMA)
+
+- **Where:** `oracle/fortran/setmdl.f` — `DIMENSION lagind(PORDER)` (PORDER=36),
+  written as `lagind(ilag)` where `ilag` ranges over the lag space that
+  `arimap`/`arimal`/`arimaf` use (dimension PARIMA=133).
+- **Severity:** `latent` (out-of-bounds for models whose lag indices exceed 36).
+- **Symptom:** for a model where a free operator's `ilag` exceeds PORDER, the
+  non-first-call shrinkage bookkeeping `lagind(ilag)=Nestpm` writes past the end
+  of `lagind` (Fortran silently clobbers adjacent storage). Never triggered by
+  ordinary seasonal ARMA models (lag indices stay small).
+- **Port:** `core/src/regarima/estimate.cpp` (setmdl) — sized `lagind[PARIMA]`
+  to avoid the C++ UB while preserving behavior for in-range models. Pinned
+  indirectly by the setmdl shrinkage test (ilag=1).
+- **Modernize:** size `lagind` to PARIMA in the Fortran too (harmless, matches
+  the index domain).
+
+## CB-5 — setmdl doc comment is stale ("differences the X:y matrix")
+
+- **Where:** `oracle/fortran/setmdl.f:7-9` header comment.
+- **Severity:** `benign` (comment only; no code effect).
+- **Symptom:** the comment says setmdl "differences the X:y matrix and changes
+  the model to remove the differencing", but this version does no such thing --
+  it only packs `estprm` and root-checks the starting values. Differencing of
+  Xy lives elsewhere (regvar/rgcpnt). Misleading to a reader.
+- **Port:** `core/src/regarima/estimate.cpp` (setmdl) -- the port's doc comment
+  states what the code actually does and flags the stale original.
+- **Modernize:** fix the Fortran comment.
+
 ---
 
 _Append new entries as they are found while porting. Keep each pinned to a test._

@@ -74,6 +74,18 @@ void fcnar(X13Context& ctx, int& na, int testpm, const double* estprm, double* a
 void roots(X13Context& ctx, const double* thetab, int& degree, bool& allinv,
            double* zeror, double* zeroi, double* zerom, double* zerof);
 
+// setmdl.f: pack the free AR/MA coefficients into estprm (setting model.nestpm)
+// and root-check the starting values -- theta(B) for invertibility, phi(B) for
+// stationarity. On the first call (ctx.saved.setmdl_first) an MA root ON the
+// unit circle is an error; on later calls near-unit-circle MA operators are
+// shrunk by PT9**lag instead. laumts is in/out: if any check fails and laumts
+// is set it is cleared (signaling failed Hannan-Rissanen initial values),
+// otherwise the routine abends. The header's "differences the X:y matrix"
+// comment is stale -- this version does not touch Xy (census_bugs.md CB-5).
+// Error/warning prints and getstr operator-title lookups are deferred to the
+// .out milestone; the flag logic driving the abend/laumts handshake is kept.
+void setmdl(X13Context& ctx, double* estprm, bool& laumts);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ESTIMATE_HPP

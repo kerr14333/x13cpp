@@ -1383,4 +1383,35 @@ TEST("roots: MA(2) invertible, MA(1) non-invertible, complex pair") {
     }
 }
 
+// ---- setmdl (pack estprm + starting-value root check; against ref_setmdl.f). -
+// MA(1) theta=0.95 (root modulus ~1.0526). Three calls on one context exercise
+// the SAVEd `first`: call 1 packs + validates (no shrink); call 2 shrinks the
+// near-unit-circle operator by 0.9**lag -> 0.855; call 3 leaves it (root now
+// ~1.169). All invertible, so no abend and Laumts stays false.
+TEST("setmdl: estprm packing, root check, and operator shrinkage") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    // MA(1) shell: DIFF empty, AR empty, MA = operator 1, lag 1.
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 1; m.mdl(3) = 2;
+    m.opr(0) = 1; m.opr(1) = 2;
+    m.arimal(1) = 1;
+    m.oprfac(1) = 1;
+    d.arimap(1) = 0.95;
+    m.arimaf(1) = false;
+    m.lar = false;
+
+    double estprm[133] = {0};  // PARIMA
+    const double c_ep[3] = {0.95, 0.855, 0.855};  // c1/c2/c3_ep1
+    for (int call = 1; call <= 3; ++call) {
+        bool laumts = false;
+        setmdl(ctx, estprm, laumts);
+        CHECK_EQ(m.nestpm, 1);                            // c_nestpm
+        CHECK(!laumts);                                   // c_laum
+        CHECK(rclose(estprm[0], c_ep[call - 1], 1e-12));  // c_ep1
+        CHECK(rclose(d.arimap(1), c_ep[call - 1], 1e-12));  // c_ap1
+    }
+}
+
 int main() { return mt::run_all(); }
