@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 17:01 EDT
+## Snapshot — 2026-07-19 18:01 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 17:01 EDT |
-| commits | 61 |
-| span, first→latest | 26h 54m |
-| active (gaps ≤45m) | ~6h 41m (10 breaks excluded) |
+| latest commit | 2026-07-19 18:01 EDT |
+| commits | 65 |
+| span, first→latest | 27h 55m |
+| active (gaps ≤45m) | ~6h 53m (11 breaks excluded) |
 | calendar days | 2 |
 
 **Census bug ledger:** `tools/census_bugs.md` records Census-source defects the
@@ -180,12 +180,24 @@ pip cmake when adding files.
   oracle .udg (02-airline-log-td-easter) bit-for-bit: niter=9/nfev=76 EXACT,
   MA 0.21534/0.55175, TD-Mon + Easter betas, variance$mle, loglikelihood
   259.3105. Nb=7/Ncxy=8. `test_numeric` = 63 tests.
-- **Next — outlier detection** (idotlr/rdotlr AO/LS/TC scan) and the deferred M2
-  regressor branches (outlier/user/sincos/change-of-regime), then the .out print
-  engine so estimation results become human-readable output. See
-  `tools/m3_scouting.md` §5 Tier-6/7 and §7. Fixed-coefficient (`exact=none` /
-  held ARMA lags) and AR-model corpus specs also remain to exercise the
-  estimation path's fixed-lag branches end-to-end.
+- **Tier-7 forecasting (started) — `fcstxy` LANDED.** The MMSE forecast engine:
+  forecasts of the transformed/regression-adjusted series + forecast standard
+  errors. Forecast recursion runs the full AR·diff and MA operators (polyml)
+  forward, seeded by the exact ARMA-filtered residuals (armafl); resid applies
+  the regression adjustment; SEs from the psi(B)=MA/AR weights (ratpos) plus the
+  design-uncertainty term X_f(X'X)⁻¹X_f' (dppsl/yprmy) for unfixed regressors.
+  Prereq `dppsl` (LINPACK packed single-RHS solve, Census `alt` forward-only
+  extension) ported too. Oracle-verified on the ARMA(1,1) case both no-regression
+  (`ref_fcstxy.f`, Rgvar=0) and +intercept (`ref_fcstxy2.f`, dppsl design term,
+  Rgvar≠0) at rtol 1e-11/1e-12. `test_numeric` = 66 tests. **Not yet
+  exercised:** the differencing branch (mxdfar>0 tfcst seeding) — covered once
+  fcstxy is wired into run_m2 behind a `forecast{}` request for real airline
+  forecasts.
+- **Next — wire fcstxy into run_m2** (forecast{} path → transformed forecasts,
+  then the inverse-transform + prediction-interval step and the .fct/.ftr output
+  the packaging must expose from the object, not a file). Then outlier detection
+  (idotlr/rdotlr AO/LS/TC scan), the deferred M2 regressor branches, and the
+  .out print engine. See `tools/m3_scouting.md` §5 Tier-6/7 and §7.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
