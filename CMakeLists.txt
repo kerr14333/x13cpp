@@ -72,6 +72,13 @@ add_executable(x13run_m2 tools/x13run_m2.cpp)
 target_link_libraries(x13run_m2 PRIVATE x13core)
 
 # ---------------------------------------------------------------------------
+# x13run_m3 -- M3 CLI harness: parse + pre-model + estimate the regARIMA model,
+# printing the estimation results to stdout for the estimation parity gate.
+# ---------------------------------------------------------------------------
+add_executable(x13run_m3 tools/x13run_m3.cpp)
+target_link_libraries(x13run_m3 PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
 # Unit tests (self-contained microtest framework; no external dependencies).
 # ---------------------------------------------------------------------------
 option(X13_BUILD_TESTS "Build unit tests" ON)
