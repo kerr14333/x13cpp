@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-18 19:50 EDT
+## Snapshot — 2026-07-19 02:45 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 00:14 EDT |
-| commits | 25 |
-| span, first→latest | 10h 08m |
-| active (gaps ≤45m) | ~3h 20m (3 breaks excluded) |
+| latest commit | 2026-07-19 02:41 EDT |
+| commits | 30 |
+| span, first→latest | 12h 35m |
+| active (gaps ≤45m) | ~3h 36m (4 breaks excluded) |
 | calendar days | 2 |
 
 ## What was reached in that window
@@ -44,23 +44,27 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   x11regression, force, metadata, pickmdl, seats, outlier), Git LFS.
 - **Scouted & ready** — M3 (regARIMA estimation) and the `.out` print engine, each
   with a written call-graph/parity-risk map under `tools/`.
-- **M3 (in progress)** — regARIMA estimation leaves, all oracle-verified at
-  bit level (`tools/ref_tier0.f`/`ref_tier1.f`/`ref_tier2.f` drive the real
-  Fortran; `test_numeric` = 19 checks, ctest 5/5 green):
+- **M3 (in progress)** — regARIMA estimation, all oracle-verified at bit level
+  (`tools/ref_*.f` drive the real Fortran; `test_numeric` = 26 checks, ctest
+  5/5 green):
   - **Tier-0** (`core/src/numeric/`): `dpmpar`, `dpeq`, `scrmlt`, `maxvec`,
     `dcopy`, `daxpy`, `ddot` (underflow-skip), `revrse`, `enorm` (MINPACK 3-bin).
-  - **Tier-1** (complete): `yprmy`, `logdet`, `uconv`, `xpand`, `euclid` (numeric);
+  - **Tier-1**: `yprmy`, `logdet`, `uconv`, `xpand`, `euclid` (numeric);
     `ratneg` (beside `ratpos` in regarima); `arflt`, `mltpos` (new
-    `regarima/armafilt`); `xprmx`, `dppfa` (Census packed Cholesky), `dsolve`
-    (numeric). 20 numeric leaves total, `test_numeric` = 20 checks.
-  - Fable-model agent audited the Tier-0 port (all faithful) and produced the
-    Tier-1 dependency-ordered plan; both build-level parity cautions (FP
-    contraction, ddot log10) checked -- oracle & C++ both `-ffp-contract=off`.
-- **Next** — `chkrts` (LOGICAL fn, setdp-only), then `intgpg`/`exctma` ->
-  **armafl** (first big parity target: exact ARMA filter, residuals + Lndtcv at
-  rtol 1e-12) -> `olsreg`/`rgarma` (IGLS estimation driver). `rpoly` is a
-  separate mini-cluster (quad/fxshfr) for `roots`/`setmdl`, not on the armafl
-  path. See `tools/m3_scouting.md`.
+    `regarima/armafilt`); `xprmx`, `dppfa` (Census packed Cholesky), `dsolve`.
+  - **Stateful cluster** (new `regarima/armafl`, takes `X13Context&`): `chkrts`
+    (invertibility detector), `intgpg` (builds+factors G'G, sets Lndtcv),
+    `exctma` (exact MA filter w*=-(G'G)⁻¹G'Hw). intgpg+exctma verified end-to-end
+    on a minimal MA(2) model (`tools/ref_armafl.f`) at rtol 1e-12.
+  - 22 routines ported + verified so far. Fable-model agent audited the Tier-0
+    port and produced the Tier-1 plan; FP-contraction parity confirmed
+    (oracle & C++ both `-ffp-contract=off`).
+- **Next** — **armafl** proper (first big parity target: exact ARMA filter,
+  residuals + Lndtcv at rtol 1e-12; all its leaf deps now ported — chkrts gate,
+  mltpos/ratpos/uconv/euclid/xpand for the AR path, intgpg/exctma, xprmx/dppfa/
+  logdet/dsolve for the residual solve). Then `olsreg`/`rgarma` (IGLS driver).
+  `rpoly` (quad/fxshfr) is a separate cluster for `roots`/`setmdl`. See
+  `tools/m3_scouting.md`.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
