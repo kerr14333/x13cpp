@@ -110,11 +110,11 @@ save-file parity gate, plus branch gaps in the routines already landed.
   Untested: `Var<=0` (returns, no likelihood); non-exact-ML `lclaic=F` (Olkhd set
   but Aic/Aicc/etc NOT computed); logit `jacadj` (Fcntyp=3); prior-adjustment
   `jacadj` with `Adjmod>=2` (the second jacadj loop); `Eick>0` → Eic computed.
-- [ ] **C4. `fcstxy` differencing branch.** Current fcstxy tests are both no-diff
-  (mxdfar=0). The `tfcst` seeding from the last mxdfar rows of Xy + the
-  ndltar-offset recursion are unexercised. Covered by C1 once fcstxy is wired into
-  run_m2 (real airline (0 1 1)(0 1 1) forecast, mxdfar=13), or a differenced
-  `ref_fcstxy3.f`.
+- [x] **C4. `fcstxy` differencing branch.** DONE via `ref_fcstxy3.f` -- (0 1 1)
+  differenced model (mxdfar=1) exercises the tfcst-seeding-from-the-last-row +
+  ndltar-offset recursion. All three fcstxy branches (Nb=0/no-diff, Nb>0/dppsl,
+  differenced) now covered. Real airline (mxdfar=13) still comes for free once C1
+  wires fcstxy into run_m2.
 - [ ] **C5. Determinism re-gate with estimation.** The M0 O0-vs-O2 determinism
   sweep predates all M3. The `nfev`/`nliter` trajectory canary is FP-sensitive
   (lmdif secant path) — re-run the determinism gate with estimation+forecast in
