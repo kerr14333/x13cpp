@@ -483,6 +483,54 @@ TEST("armafl: full exact ARMA filter, AR(2)MA(1)") {
     for (int i = 0; i < 9; ++i) CHECK(rclose(mata[i], golden[i], 1e-12));
 }
 
+// Case C: AIRLINE (0 1 1)(0 1 1)12 -- the production model. DIFF block in arflt
+// (Mxdflg=13), seasonal operators (Oprfac=12), 13x13 Chlgpg, exctma neltq=13.
+TEST("armafl: airline (0 1 1)(0 1 1)12") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = false;
+    m.lma = true;
+    m.nopr = 4;
+    m.mdl(0) = 1; m.mdl(1) = 3; m.mdl(2) = 3; m.mdl(3) = 5;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3; m.opr(3) = 4; m.opr(4) = 5;
+    m.arimal(1) = 1; m.arimal(2) = 12; m.arimal(3) = 1; m.arimal(4) = 12;
+    d.arimap(1) = 1.0; d.arimap(2) = 1.0; d.arimap(3) = 0.6; d.arimap(4) = 0.5;
+    m.arimaf(1) = true; m.arimaf(2) = true;
+    m.arimaf(3) = false; m.arimaf(4) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 12; m.oprfac(3) = 1; m.oprfac(4) = 12;
+    m.mxarlg = 0; m.mxmalg = 13; m.mxdflg = 13;
+    d.lndtcv = 0.0;
+
+    double mata[200] = {0.0};
+    for (int i = 1; i <= 40; ++i)  // same integer formula as ref driver
+        mata[i - 1] = double(7 * i % 13) - 6.0 + 0.25 * double(3 * i % 8);
+    int na = -99, info = -99;
+    armafl(ctx, 40, 1, true, true, mata, na, 200, info);
+
+    CHECK_EQ(info, 0);   // cf_info
+    CHECK_EQ(na, 40);    // cf_na (27 differenced + 13 exctma init values)
+    CHECK(rclose(d.lndtcv, 3.7464539386530329e+00, 1e-12));  // cf_ldt
+    CHECK(rclose(mata[0],   7.4454852918611214e-01, 1e-12)); // cf_a1
+    CHECK(rclose(mata[1],  -2.2120944119000976e+00, 1e-12)); // cf_a2
+    CHECK(rclose(mata[13],  6.8062918685969880e+00, 1e-12)); // cf_a14
+    CHECK(rclose(mata[39],  3.3861287209896620e+00, 1e-12)); // cf_alast
+}
+
+// Case D: Nopr=0 no-op guard -> Na=Nr, Mata untouched, Info=0.
+TEST("armafl: Nopr=0 no-op") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    ctx.model.nopr = 0;
+    double mata[8] = {3.14, -2.71, 0, 0, 0, 0, 0, 0};
+    int na = -99, info = -99;
+    armafl(ctx, 5, 1, true, true, mata, na, 200, info);
+    CHECK_EQ(info, 0);           // df_info
+    CHECK_EQ(na, 5);             // df_na = Nr
+    CHECK_EQ(mata[0], 3.14);     // df_a1 (untouched)
+}
+
 // ---- olsreg + resid (regression solve / residuals; against ref_estimate.f).
 // 4-obs OLS: intercept + one regressor, y in the 3rd column. rtol 1e-12. -------
 TEST("olsreg/resid: OLS normal-equations solve + residuals") {
@@ -532,6 +580,52 @@ TEST("upespm: parameter-vector scatter with fixed-lag skip") {
     CHECK(rclose(d.arimap(1), 0.4, 1e-15));   // up1
     CHECK(rclose(d.arimap(2), -0.2, 1e-15));  // up2
     CHECK_EQ(d.arimap(3), 0.99);              // up3 (fixed, untouched)
+}
+
+// ---- chkrts invertibility BOUNDARY (FMA canary; against ref_chkrts.f E-H).
+// The 1-c*c test at |theta|~1 flips if the build contracts to an FMA. Both sides
+// are -ffp-contract=off, so theta=1 gives cfncsq=0 (non-inv) and theta=1-1e-16
+// stays >0 (invertible). ------------------------------------------------------
+TEST("chkrts: invertibility boundary (1-c*c FMA canary)") {
+    int opr1[2] = {1, 2};
+    int oprf1[1] = {1};
+    // E: theta=1.0 exactly -> non-invertible.
+    {
+        double ap[1] = {1.0};
+        int al[1] = {1};
+        bool af[1] = {false};
+        int pf = -99;
+        CHECK_EQ(chkrts(ap, al, af, opr1, oprf1, 1, 1, pf), true);  // chkE
+        CHECK_EQ(pf, 1);
+    }
+    // F: theta=1-1e-16 -> invertible (cfncsq ~2.2e-16 > 0).
+    {
+        double ap[1] = {0.9999999999999999};
+        int al[1] = {1};
+        bool af[1] = {false};
+        int pf = -99;
+        CHECK_EQ(chkrts(ap, al, af, opr1, oprf1, 1, 1, pf), false);  // chkF
+    }
+    // G: degree-2 (0.5,0.5) -> reflection drives coef(1) to 1.0 -> non-invertible.
+    {
+        double ap[2] = {0.5, 0.5};
+        int al[2] = {1, 2};
+        bool af[2] = {false, false};
+        int opr2[2] = {1, 3};
+        int pf = -99;
+        CHECK_EQ(chkrts(ap, al, af, opr2, oprf1, 1, 1, pf), true);  // chkG
+        CHECK_EQ(pf, 1);
+    }
+    // H: seasonal Theta=1.0 lag12 factor12 -> degree=12/12=1 -> non-invertible.
+    {
+        double ap[1] = {1.0};
+        int al[1] = {12};
+        bool af[1] = {false};
+        int oprf12[1] = {12};
+        int pf = -99;
+        CHECK_EQ(chkrts(ap, al, af, opr1, oprf12, 1, 1, pf), true);  // chkH
+        CHECK_EQ(pf, 1);
+    }
 }
 
 int main() { return mt::run_all(); }
