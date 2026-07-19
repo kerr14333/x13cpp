@@ -2096,4 +2096,61 @@ TEST("lgnrmc: lognormal mean-correction of forecasts") {
     CHECK(rclose(cor[2], -0.16875, 1e-14));
 }
 
+// ---- eltfcn / devlpl / cumnor / dinvnr (forecast-output numeric leaves). -----
+// eltfcn: elementwise vector op. devlpl: Horner polynomial. cumnor: normal CDF.
+// dinvnr: inverse normal CDF (CI critical value for prtfct). Golden values from
+// ref_dinvnr.f (dinvnr/cumnor/stvaln/devlpl/spmpar/ipmpar driven directly).
+TEST("eltfcn: elementwise add/sub/mult/div") {
+    const double av[4] = {6.0, 8.0, 3.0, 10.0};
+    const double bv[4] = {2.0, 4.0, 3.0, 5.0};
+    double cv[4];
+    eltfcn(ELT_ADD, av, bv, 4, cv);
+    CHECK(cv[0] == 8.0 && cv[3] == 15.0);
+    eltfcn(ELT_SUB, av, bv, 4, cv);
+    CHECK(cv[0] == 4.0 && cv[1] == 4.0);
+    eltfcn(ELT_MULT, av, bv, 4, cv);
+    CHECK(cv[2] == 9.0 && cv[3] == 50.0);
+    eltfcn(ELT_DIV, av, bv, 4, cv);
+    CHECK(cv[0] == 3.0 && cv[1] == 2.0 && cv[3] == 2.0);
+    // In-place aliasing (as prtfct uses it).
+    double x[3] = {1.0, 2.0, 3.0};
+    const double y[3] = {10.0, 20.0, 30.0};
+    eltfcn(ELT_ADD, x, y, 3, x);
+    CHECK(x[0] == 11.0 && x[2] == 33.0);
+}
+
+TEST("devlpl: Horner polynomial A(1)+A(2)X+...+A(N)X^(N-1)") {
+    const double a[3] = {1.0, 2.0, 3.0};   // 1 + 2x + 3x^2
+    CHECK(rclose(devlpl(a, 3, 2.0), 17.0, 1e-15));   // 1+4+12
+    CHECK(rclose(devlpl(a, 3, 0.0), 1.0, 1e-15));
+    CHECK(rclose(devlpl(a, 1, 5.0), 1.0, 1e-15));    // constant term only
+}
+
+TEST("cumnor: cumulative normal CDF + complement") {
+    double cum, ccum;
+    cumnor(-0.5, cum, ccum);
+    CHECK(rclose(cum, 3.0853753872598694e-01, 1e-14));
+    CHECK(rclose(ccum, 6.9146246127401301e-01, 1e-14));
+    cumnor(3.0, cum, ccum);
+    CHECK(rclose(cum, 9.9865010196836990e-01, 1e-14));
+    CHECK(rclose(ccum, 1.3498980316300946e-03, 1e-14));
+    cumnor(1.959963984540054, cum, ccum);   // z_0.975
+    CHECK(rclose(cum, 0.975, 1e-13));
+    CHECK(rclose(ccum, 0.025, 1e-12));
+}
+
+TEST("dinvnr: inverse normal CDF (CI critical values)") {
+    CHECK(rclose(dinvnr(0.75, 0.25), 6.7448975019608159e-01, 1e-13));
+    CHECK(rclose(dinvnr(0.90, 0.10), 1.2815515655446006e+00, 1e-13));
+    CHECK(rclose(dinvnr(0.95, 0.05), 1.6448536269514722e+00, 1e-13));
+    CHECK(rclose(dinvnr(0.975, 0.025), 1.9599639845400538e+00, 1e-13));
+    CHECK(rclose(dinvnr(0.99, 0.01), 2.3263478740408408e+00, 1e-13));
+    CHECK(rclose(dinvnr(0.995, 0.005), 2.5758293035489004e+00, 1e-13));
+    // Lower-tail sign symmetry.
+    CHECK(rclose(dinvnr(0.025, 0.975), -1.9599639845400543e+00, 1e-13));
+    CHECK(rclose(dinvnr(0.001, 0.999), -3.0902323061678136e+00, 1e-13));
+    // P=0.5 -> 0 (Newton noise ~6.6e-17).
+    CHECK(std::fabs(dinvnr(0.5, 0.5)) < 1e-14);
+}
+
 int main() { return mt::run_all(); }

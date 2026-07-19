@@ -4,6 +4,7 @@
 #include "numeric/numeric.hpp"
 
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace x13 {
@@ -402,6 +403,192 @@ void euclid(const double* fular, double* b, double* a, int maxpq, int mxarlg,
             g[lsthlf] = (gr - b[i - 1] * gs) * a[i - 1];
         }
     }
+}
+
+// eltfcn.f -- elementwise cvec = avec <op> bvec over nelt elements. Oprn:
+// ADD=1, SUB=2, MULT=3, DIV=4. The Fortran Pc argument only sizes Cvec's
+// declaration (writes are 1..Nelt); C++ callers guarantee cvec length, so it is
+// dropped. avec/bvec/cvec may alias (prtfct calls it in place).
+void eltfcn(int oprn, const double* avec, const double* bvec, int nelt,
+            double* cvec) {
+    for (int i = 0; i < nelt; ++i) {
+        switch (oprn) {
+            case ELT_ADD:  cvec[i] = avec[i] + bvec[i]; break;
+            case ELT_SUB:  cvec[i] = avec[i] - bvec[i]; break;
+            case ELT_MULT: cvec[i] = avec[i] * bvec[i]; break;
+            case ELT_DIV:  cvec[i] = avec[i] / bvec[i]; break;
+        }
+    }
+}
+
+// devlpl.f -- Horner evaluation of A(1)+A(2)X+...+A(N)X^(N-1). a is 0-based
+// (a[0..n-1]); walks from the high-order term down.
+double devlpl(const double* a, int n, double x) {
+    double term = a[n - 1];
+    for (int i = n - 1; i >= 1; --i) term = a[i - 1] + term * x;
+    return term;
+}
+
+// stvaln.f -- STarting VALue for the Newton-Raphson normal-inverse iteration
+// (Kennedy & Gentle rational approximation). Returns X with CUMNOR(X)~=P.
+double stvaln(double p) {
+    // DATA arrays kept 1-based (index [0] a dummy); devlpl reads &x_[1].
+    static const double xnum[6] = {0.0, -0.322232431088, -1.000000000000,
+                                   -0.342242088547, -0.204231210245e-1,
+                                   -0.453642210148e-4};
+    static const double xden[6] = {0.0, 0.993484626060e-1, 0.588581570495,
+                                   0.531103462366, 0.103537752850,
+                                   0.38560700634e-2};
+    double xsign, z;
+    if (p > 0.5) {
+        xsign = 1.0;
+        z = 1.0 - p;
+    } else {
+        xsign = -1.0;
+        z = p;
+    }
+    double y = std::sqrt(-2.0 * std::log(z));
+    double s = y + devlpl(&xnum[1], 5, y) / devlpl(&xden[1], 5, y);
+    return xsign * s;
+}
+
+// cumnor.f -- cumulative normal (Cody ALGORITHM 715 / ANORM), returning both the
+// CDF (result) and its complement (ccum) via near-minimax rational fits over
+// three |x| intervals. The two machine constants come from spmpar: eps =
+// spmpar(1)*0.5 = 2^-53 = 0.5*DBL_EPSILON, minx = spmpar(2) = 2^-1022 = DBL_MIN
+// (exact under the oracle's active ipmpar DATA block), inlined rather than
+// porting ipmpar/spmpar for two constants.
+void cumnor(double arg, double& result, double& ccum) {
+    // DATA arrays 1-based ([0] dummy) to mirror the Fortran indexing directly.
+    static const double a[6] = {0.0, 2.2352520354606839287e00,
+                                1.6102823106855587881e02,
+                                1.0676894854603709582e03,
+                                1.8154981253343561249e04,
+                                6.5682337918207449113e-2};
+    static const double b[5] = {0.0, 4.7202581904688241870e01,
+                                9.7609855173777669322e02,
+                                1.0260932208618978205e04,
+                                4.5507789335026729956e04};
+    static const double c[10] = {0.0, 3.9894151208813466764e-1,
+                                 8.8831497943883759412e00,
+                                 9.3506656132177855979e01,
+                                 5.9727027639480026226e02,
+                                 2.4945375852903726711e03,
+                                 6.8481904505362823326e03,
+                                 1.1602651437647350124e04,
+                                 9.8427148383839780218e03,
+                                 1.0765576773720192317e-8};
+    static const double d[9] = {0.0, 2.2266688044328115691e01,
+                                2.3538790178262499861e02,
+                                1.5193775994075548050e03,
+                                6.4855582982667607550e03,
+                                1.8615571640885098091e04,
+                                3.4900952721145977266e04,
+                                3.8912003286093271411e04,
+                                1.9685429676859990727e04};
+    static const double p[7] = {0.0, 2.1589853405795699e-1,
+                                1.274011611602473639e-1,
+                                2.2235277870649807e-2,
+                                1.421619193227893466e-3,
+                                2.9112874951168792e-5,
+                                2.307344176494017303e-2};
+    static const double q[6] = {0.0, 1.28426009614491121e00,
+                                4.68238212480865118e-1,
+                                6.59881378689285515e-2,
+                                3.78239633202758244e-3,
+                                7.29751555083966205e-5};
+    const double one = 1.0, half = 0.5, zero = 0.0, sixten = 1.60;
+    const double sqrpi = 3.9894228040143267794e-1, thrsh = 0.66291,
+                 root32 = 5.656854248;
+    const double eps = 0.5 * std::numeric_limits<double>::epsilon();  // spmpar(1)*0.5
+    const double minx = std::numeric_limits<double>::min();           // spmpar(2)
+
+    double x = arg;
+    double y = std::fabs(x);
+    double xnum, xden, xsq, del, temp;
+    if (y <= thrsh) {
+        // |x| <= 0.66291
+        xsq = zero;
+        if (y > eps) xsq = x * x;
+        xnum = a[5] * xsq;
+        xden = xsq;
+        for (int i = 1; i <= 3; ++i) {
+            xnum = (xnum + a[i]) * xsq;
+            xden = (xden + b[i]) * xsq;
+        }
+        result = x * (xnum + a[4]) / (xden + b[4]);
+        temp = result;
+        result = half + temp;
+        ccum = half - temp;
+    } else if (y <= root32) {
+        // 0.66291 <= |x| <= sqrt(32)
+        xnum = c[9] * y;
+        xden = y;
+        for (int i = 1; i <= 7; ++i) {
+            xnum = (xnum + c[i]) * y;
+            xden = (xden + d[i]) * y;
+        }
+        result = (xnum + c[8]) / (xden + d[8]);
+        xsq = std::trunc(y * sixten) / sixten;  // aint
+        del = (y - xsq) * (y + xsq);
+        result = std::exp(-xsq * xsq * half) * std::exp(-del * half) * result;
+        ccum = one - result;
+        if (x > zero) {
+            temp = result;
+            result = ccum;
+            ccum = temp;
+        }
+    } else {
+        // |x| > sqrt(32)
+        result = zero;
+        xsq = one / (x * x);
+        xnum = p[6] * xsq;
+        xden = xsq;
+        for (int i = 1; i <= 4; ++i) {
+            xnum = (xnum + p[i]) * xsq;
+            xden = (xden + q[i]) * xsq;
+        }
+        result = xsq * (xnum + p[5]) / (xden + q[5]);
+        result = (sqrpi - result) / y;
+        xsq = std::trunc(x * sixten) / sixten;
+        del = (x - xsq) * (x + xsq);
+        result = std::exp(-xsq * xsq * half) * std::exp(-del * half) * result;
+        ccum = one - result;
+        if (x > zero) {
+            temp = result;
+            result = ccum;
+            ccum = temp;
+        }
+    }
+    if (result < minx) result = 0.0;
+    if (ccum < minx) ccum = 0.0;
+}
+
+// dinvnr.f -- inverse normal CDF: returns X with CUMNOR(X)=P, via a Newton
+// iteration seeded by stvaln. qporq picks min(P,Q) to iterate on the closer
+// tail; the sign is restored on the not-qporq branch. On non-convergence
+// (MAXIT=100) it returns the (signed) starting value, per the Fortran.
+double dinvnr(double p, double q) {
+    const int MAXIT = 100;
+    const double EPS = 1.0e-13;
+    const double R2PI = 0.3989422804014326;
+    const double NHALF = -0.5;
+    bool qporq = p <= q;
+    double pp = qporq ? p : q;
+    double strtx = stvaln(pp);
+    double xcur = strtx;
+    for (int i = 1; i <= MAXIT; ++i) {
+        double cum, ccum;
+        cumnor(xcur, cum, ccum);
+        double dennor = R2PI * std::exp(NHALF * xcur * xcur);
+        double dx = (cum - pp) / dennor;
+        xcur = xcur - dx;
+        if (std::fabs(dx / xcur) < EPS) {  // converged
+            return qporq ? xcur : -xcur;
+        }
+    }
+    // Newton failed.
+    return qporq ? strtx : -strtx;
 }
 
 }  // namespace x13

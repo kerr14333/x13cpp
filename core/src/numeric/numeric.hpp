@@ -11,6 +11,32 @@
 
 namespace x13 {
 
+// eltfcn.f operation selectors (ADD/SUB/MULT/DIV in the Fortran).
+enum EltOp { ELT_ADD = 1, ELT_SUB = 2, ELT_MULT = 3, ELT_DIV = 4 };
+
+// eltfcn.f: elementwise cvec = avec <oprn> bvec over nelt elements (see EltOp).
+// The Fortran Pc arg only sizes Cvec's declaration; dropped here. Arrays may
+// alias (prtfct calls it in place).
+void eltfcn(int oprn, const double* avec, const double* bvec, int nelt,
+            double* cvec);
+
+// devlpl.f: Horner evaluation of A(1)+A(2)X+...+A(N)X^(N-1); a is 0-based.
+double devlpl(const double* a, int n, double x);
+
+// stvaln.f: starting value for the Newton normal-inverse iteration (Kennedy &
+// Gentle rational approximation).
+double stvaln(double p);
+
+// cumnor.f: cumulative normal (Cody ANORM). result = CDF(arg), ccum = 1-result,
+// computed by three-interval rational fits. Machine constants eps=0.5*DBL_EPSILON
+// and minx=DBL_MIN inline the oracle's spmpar(1)*0.5 / spmpar(2) exactly.
+void cumnor(double arg, double& result, double& ccum);
+
+// dinvnr.f: inverse normal CDF -- returns X with CUMNOR(X)=P (Q=1-P). Newton
+// iteration seeded by stvaln; falls back to the starting value on non-
+// convergence. Used by prtfct for the CI critical value dinvnr((Ciprob+1)/2).
+double dinvnr(double p, double q);
+
 // dpmpar.f: MINPACK machine parameters. i in {1,2,3} selects machine precision,
 // smallest magnitude, largest magnitude. NOTE: the active oracle DATA statement
 // uses TRUNCATED literals (dpmpar(1)=2.220446e-16, NOT DBL_EPSILON); ported
