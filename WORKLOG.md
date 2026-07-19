@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 18:01 EDT
+## Snapshot — 2026-07-19 18:24 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 18:01 EDT |
-| commits | 65 |
-| span, first→latest | 27h 55m |
-| active (gaps ≤45m) | ~6h 53m (11 breaks excluded) |
+| latest commit | 2026-07-19 18:24 EDT |
+| commits | 72 |
+| span, first→latest | 28h 17m |
+| active (gaps ≤45m) | ~7h 15m (11 breaks excluded) |
 | calendar days | 2 |
 
 **Census bug ledger:** `tools/census_bugs.md` records Census-source defects the
@@ -193,6 +193,16 @@ pip cmake when adding files.
   exercised:** the differencing branch (mxdfar>0 tfcst seeding) — covered once
   fcstxy is wired into run_m2 behind a `forecast{}` request for real airline
   forecasts.
+- **Estimation corpus parity GATE — LANDED (test-plan C1).** New `x13run_m3` CLI
+  (run_m2 estimate=true, stdout dump, writes no file) + `test_m3_estimate.py`
+  sweep: **25 corpus specs** estimate and match the oracle `.udg` (niter/nfev/
+  nreg/nefobs exact, loglikelihood/aic/aicc/bic/hq/variance + ARMA coefs rtol
+  1e-6); 9 skip as pre-model parser gaps (distinguished from real regressions by
+  checking x13run_m2 also fatals). This replaces the 2-hand-spec estimation
+  coverage — quarterly/AR/mixed corpus models now checked automatically. Plus
+  unit coverage: fixed-ARMA-coefficient estimation (C2 partial, ref_rgarma_fixed)
+  and all three `fcstxy` branches (C4, differencing via ref_fcstxy3). test_numeric
+  = 68.
 - **Next — wire fcstxy into run_m2** (forecast{} path → transformed forecasts,
   then the inverse-transform + prediction-interval step and the .fct/.ftr output
   the packaging must expose from the object, not a file). Then outlier detection
