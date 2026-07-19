@@ -91,15 +91,16 @@ Tier A/B verify individual routines/models via `ref_*.f` drivers or new specs.
 These items are about *systematic* end-to-end coverage — the analog of the M2
 save-file parity gate, plus branch gaps in the routines already landed.
 
-- [ ] **C1. Estimation corpus parity gate (highest value).** A new `x13run_m3`
-  CLI binary (run_m2 with `estimate=true`, plus fcstxy when `forecast{}` present)
-  + a pytest that sweeps EVERY corpus spec with an arima model and compares
-  `arima.ar`/`arima.ma`/`variance`/`loglikelihood`/`aic..hq`/`nfev`/`niter`
-  against the `.udg` goldens (via x13compare). Today estimation is checked on
-  exactly 2 hand specs. This subsumes B1/B2 breadth automatically (quarterly, AR,
-  mixed models already in the corpus get checked for free) and catches
-  regressions corpus-wide. Depends on: the "no auto file output" rule (results
-  read off the object/captured state, opt-in write).
+- [x] **C1. Estimation corpus parity gate — DONE.** `x13run_m3` CLI (run_m2
+  estimate=true, stdout dump, no file written) + `tests/parity/test_m3_estimate.py`
+  sweep every corpus spec with an explicit arima model + `.udg` golden that is
+  estimation-reproducible, comparing niter/nfev/nreg/nefobs (exact) +
+  loglikelihood/aic/aicc/bic/hq/variance + the ARMA coefficients (rtol 1e-6) vs
+  the oracle. **25 specs pass**, 9 skip (pre-model parser gaps -- distinguished
+  from real regressions by checking x13run_m2 also fatals). Replaces the "2 hand
+  specs" coverage; quarterly/AR/mixed corpus models now checked automatically.
+  Remaining stretch: forecast{} → fcstxy output keys, and the per-coefficient
+  standard-error/t-stat columns (currently only the coef value is compared).
 - [~] **C2. Fixed-coefficient path.** PARTLY DONE via `ref_rgarma_fixed.f` --
   ARMA(1,1) with theta held (arimaf=true) drives Nestpm=1, the single-param lmdif,
   and the upespm/setmdl fixed-lag skip that every all-free case bypasses (phi/Var/
