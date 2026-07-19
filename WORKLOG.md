@@ -21,10 +21,10 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-18 19:45 EDT |
-| commits | 16 |
-| span, first→latest | 5h 39m |
-| active (gaps ≤45m) | ~2h 49m (1 break excluded) |
+| latest commit | 2026-07-18 23:54 EDT |
+| commits | 20 |
+| span, first→latest | 9h 47m |
+| active (gaps ≤45m) | ~2h 59m (3 breaks excluded) |
 | calendar days | 1 |
 
 ## What was reached in that window
@@ -44,8 +44,14 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   x11regression, force, metadata, pickmdl, seats, outlier), Git LFS.
 - **Scouted & ready** — M3 (regARIMA estimation) and the `.out` print engine, each
   with a written call-graph/parity-risk map under `tools/`.
-- **Next** — M3 (regARIMA estimation engine) per `tools/m3_scouting.md`:
-  rgarma → lmdif → fcnar → armafl (ARMA filter, likelihood, optimizer).
+- **M3 (in progress)** — Tier-0 numeric leaves ported: `dpmpar`, `dpeq`, `scrmlt`,
+  `maxvec`, `dcopy`, `daxpy`, `ddot` (underflow-skip), `revrse`, `enorm`
+  (MINPACK 3-bin norm) in `core/src/numeric/`. Verified against the real oracle
+  via `tools/ref_tier0.f` (16 reference values, gfortran -O2, exact match);
+  `test_numeric` in the unit suite, ctest 5/5 green.
+- **Next** — M3 next tier per `tools/m3_scouting.md`, building toward `armafl`
+  (ARMA filter = likelihood) then `rgarma` (estimation driver):
+  strtvl/upespm/setmdl/roots/chkrts/chkrt2/arflt/exctma/intgpg → armafl → rgarma.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
