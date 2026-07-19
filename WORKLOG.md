@@ -16,16 +16,21 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 09:17 EDT
+## Snapshot — 2026-07-19 10:27 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 09:17 EDT |
-| commits | 47 |
-| span, first→latest | 19h 11m |
-| active (gaps ≤45m) | ~5h 15m (6 breaks excluded) |
+| latest commit | 2026-07-19 10:27 EDT |
+| commits | 51 |
+| span, first→latest | 20h 21m |
+| active (gaps ≤45m) | ~5h 27m (7 breaks excluded) |
 | calendar days | 2 |
+
+**Census bug ledger:** `tools/census_bugs.md` records Census-source defects the
+port reproduces faithfully, for deliberate modernization later (each pinned to a
+test). CB-1 rpoly scaling collapse (max|coeff|>=10), CB-2 stpitr dead store,
+CB-3 roots typo'd 2pi, CB-4 setmdl lagind undersize, CB-5 setmdl stale comment.
 
 **Toolchain note:** adding the first NEW source file (rpoly.cpp) tripped CMake's
 CONFIGURE_DEPENDS glob reconfigure, which the machine's cmake 3.14.3 rejects
@@ -105,16 +110,27 @@ pip cmake when adding files.
   - **`strtvl`** (`regarima/estimate`) — ARMA starting values.
   - **`stpitr`** (`regarima/estimate`) — IGLS step/convergence test; SAVEd
     oldobj -> `ctx.saved.stpitr_oldobj`.
-  - `test_numeric` = 55 tests. All oracle-verified (rpoly bit-for-bit incl.
-    failures; strtvl/stpitr rtol 1e-12 / exact int+bool).
-- **Next** — `roots` (revrse+rpoly wrapper, modulus/frequency + invertibility
-  flag) -> `setmdl` (pack estprm, start-value root check, fold differencing into
-  Xy) -> then `rgarma` (rgarma.f) glues the IGLS loop: strtvl/setmdl start values,
-  olsreg (GLS betas), the `lmdif(fcnar)` nonlinear ARMA step, stpitr convergence
-  test, then fdjac2/qrfac/covar for the post-convergence ARMA covariance. First
-  full end-to-end estimation parity target (coeff estimates, Var, Lnlkhd, Nliter,
-  Nfev, Convrg). B-section corpus specs (exact=none, AR models, fixed coeffs,
-  RSXFSN/FEDFUNDS) land once rgarma runs. See `tools/m3_scouting.md` §5 Tier-5.
+  - **`roots`** (`regarima/estimate`) — revrse+rpoly wrapper; modulus/frequency
+    + invertibility flag (Allinv). Reproduces CB-3 (typo'd 2pi frequency).
+  - **`setmdl`** (`regarima/estimate`) — pack estprm + starting-value root check
+    (theta invertibility, phi stationarity), near-unit MA operator shrinkage,
+    SAVEd `first` -> `ctx.saved.setmdl_first`, abend/laumts handshake. Does NOT
+    difference Xy (CB-5, stale header comment). CB-4 lagind undersize.
+  - `test_numeric` = 57 tests. All oracle-verified (rpoly bit-for-bit incl.
+    failures; the rest rtol 1e-12 / exact int+bool).
+  - **All rgarma prerequisites now landed.** Remaining: the driver itself.
+- **Next — `rgarma` (rgarma.f, 475 lines): the capstone.** Glues the IGLS loop:
+  strtvl/setmdl start values, olsreg (GLS betas), resid/yprmy, the `lmdif(fcnar)`
+  nonlinear ARMA step, stpitr convergence test, then fdjac2/qrfac/covar for the
+  post-convergence ARMA covariance. First full end-to-end estimation parity
+  target (coeff estimates, Var, Lnlkhd, Nliter, Nfev, Convrg). Highest-risk port
+  in M3 -- see `tools/m3_scouting.md` §6 for the 12 parity traps (EQUIVALENCE
+  workspace aliasing, cumulative Nliter/Nfev across IGLS rounds, tolerance
+  scaling devtol/tnltol, order-sensitive reductions, Var flush). Needs a full
+  series+regression+model oracle harness, not a leaf test. B-section corpus
+  specs (exact=none, AR models, fixed coeffs, RSXFSN/FEDFUNDS) land once rgarma
+  runs end-to-end -> then outlier detection (idotlr/rdotlr) and the deferred M2
+  regressor branches. See `tools/m3_scouting.md` §5 Tier-5.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
