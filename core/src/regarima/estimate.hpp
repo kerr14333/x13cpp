@@ -31,6 +31,18 @@ void resid(X13Context& ctx, const double* xy, int nr, int nc, int pc, int begcol
 // fixed lags are skipped (their arimap value is left untouched).
 void upespm(X13Context& ctx, const double* estprm);
 
+// fcnar.f: the residual (objective) function driven by the nonlinear optimizer
+// lmdif. Scatters estprm into the model (upespm), copies the working series
+// tsrs into a, exact-ARMA-filters it (armafl), and returns the deviances in a
+// (length na). On a filter failure it floods a with the large-residual sentinel
+// lrgrsd (so a bad optimizer step is pulled back in bounds) and clears info/err;
+// on success under exact ML (lextma) it scales the residuals by
+// exp(lndtcv/2/dnefob), the likelihood Jacobian. lckinv gates armafl's root
+// check. NB: the info!=0 diagnostic warnings (fcnar.f Lprier block) are not yet
+// emitted -- deferred to the .out print milestone; the numerics here are exact.
+void fcnar(X13Context& ctx, int& na, int testpm, const double* estprm, double* a,
+           bool lauto, bool gudrun, int& err, bool lckinv);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ESTIMATE_HPP

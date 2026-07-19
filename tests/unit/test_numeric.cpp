@@ -916,6 +916,52 @@ TEST("chkrts: invertibility boundary (1-c*c FMA canary)") {
     }
 }
 
+// ---- fcnar (lmdif objective; against ref_fcnar.f). ARMA(1,1) via upespm, then
+// armafl-filter tsrs. Success under exact ML scales residuals by
+// exp(lndtcv/2/dnefob); a filter failure floods with lrgrsd + clears err. -------
+TEST("fcnar: objective function, success + error paths") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    m.lar = true; m.lma = true; m.lextma = true; m.lprier = false;
+    m.nopr = 2; m.nestpm = 2;
+    d.nspobs = 8;
+    ctx.series.dnefob = 8.0;
+    ctx.series.lrgrsd = 1e6;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    m.arimaf(1) = false; m.arimaf(2) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    const double series[8] = {1.0, 2.0, -1.0, 0.5, 3.0, -2.0, 1.5, 0.25};
+    for (int i = 0; i < 8; ++i) ctx.series.tsrs(i + 1) = series[i];
+
+    double a[1092] = {0.0};
+    // success: exact-ML scaling.
+    double est1[2] = {0.5, 0.3};
+    d.lndtcv = 0.0;
+    int na = 9, err = -99;
+    fcnar(ctx, na, 2, est1, a, false, true, err, true);
+    CHECK_EQ(na, 9);        // fc_na
+    CHECK_EQ(err, -99);     // fc_err (untouched on success)
+    CHECK(rclose(d.lndtcv, 5.6954892689151181e-02, 1e-12));  // fc_ldt
+    CHECK(rclose(a[0],  1.3419962532816043e+00, 1e-12));     // fc_a1
+    CHECK(rclose(a[1], -3.1359720543906200e-01, 1e-12));     // fc_a2
+    CHECK(rclose(a[8],  1.3563355377917604e-02, 1e-12));     // fc_a9
+
+    // error: phi=1.05 non-stationary, lckinv=F -> flood lrgrsd, err->0.
+    double est2[2] = {1.05, 0.3};
+    d.lndtcv = 0.0;
+    na = 9; err = -99;
+    fcnar(ctx, na, 2, est2, a, false, true, err, false);
+    CHECK_EQ(na, 9);        // ec_na
+    CHECK_EQ(err, 0);       // ec_err
+    CHECK_EQ(a[0], 1e6);    // ec_a1
+    CHECK_EQ(a[8], 1e6);    // ec_a9
+}
+
 // ---- leaf-level "don't clean up the math" edge cases (against ref_leafedge.f).
 // A9: ratneg leaves c(i) STALE when its sum lands exactly 0 (a naive port writes
 // 0). A10: ratpos skips a term whose coefficient underflows below 1e-150 (a naive

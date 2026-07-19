@@ -2,11 +2,14 @@
 // ports of the vendored oracle Fortran.
 #include "regarima/estimate.hpp"
 
+#include <cmath>
 #include <string>
 
-#include "numeric/numeric.hpp"      // xprmx, dppfa, dcopy, daxpy
-#include "specparse/specparse.hpp"  // copy, abend, errhdr, writln, stdio::STDERR
-#include "gen/model.hpp"            // prm::DIFF, prm::MA
+#include "regarima/armafl.hpp"      // armafl
+#include "numeric/numeric.hpp"      // xprmx, dppfa, dcopy, daxpy, scrmlt
+#include "specparse/specparse.hpp"  // copy, setdp, abend, errhdr, writln
+#include "gen/model.hpp"            // prm::DIFF, prm::MA, prm::PORDER
+#include "gen/srslen.hpp"           // prm::PLEN (PA sizing)
 
 namespace x13 {
 
@@ -80,6 +83,38 @@ void upespm(X13Context& ctx, const double* estprm) {
                 }
             }
         }
+    }
+}
+
+// fcnar.f -- optimizer objective. The info!=0 warning prints (Lprier block) are
+// deferred to the print milestone; the sentinel-fill / info / err resets below
+// them run unconditionally and ARE reproduced, as is the exact-ML scaling.
+void fcnar(X13Context& ctx, int& na, int testpm, const double* estprm, double* a,
+           bool lauto, bool gudrun, int& err, bool lckinv) {
+    (void)testpm;   // dummy that should equal Nestpm (Estprm's declared length)
+    (void)lauto;    // used only by the deferred diagnostic prints
+    (void)gudrun;
+    constexpr double TWO = 2.0;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    constexpr int PA = prm::PLEN + 2 * prm::PORDER;
+
+    // Insert the estimated parameters into the ARIMA filter structures.
+    upespm(ctx, estprm);
+    // Filter the working series into the deviance vector a.
+    copy(ctx.series.tsrs.data(), d.nspobs, 1, a);
+    int info = 0;
+    armafl(ctx, d.nspobs, 1, true, lckinv, a, na, PA, info);
+
+    if (info != 0) {
+        // (fcnar.f Lprier diagnostics deferred -- do not affect a/na/info/err.)
+        // Flood the residuals so a bad jump is brought back in bounds.
+        setdp(ctx.series.lrgrsd, na, a);
+        info = 0;
+        err = -info;
+    } else if (m.lextma) {
+        double fac = std::exp(d.lndtcv / TWO / ctx.series.dnefob);
+        scrmlt(fac, na, a);
     }
 }
 

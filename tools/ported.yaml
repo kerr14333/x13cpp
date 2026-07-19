@@ -187,7 +187,7 @@ extsgnl: pending
 f3cal: pending
 f3gen: pending
 fclose: pending
-fcnar: pending
+fcnar: partial   # numeric path exact + oracle-verified; info!=0 diagnostic warning prints deferred to .out milestone
 fcstxy: pending
 fdate: n-a
 fdjac2: pending
