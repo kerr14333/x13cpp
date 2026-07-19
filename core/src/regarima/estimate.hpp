@@ -86,6 +86,33 @@ void roots(X13Context& ctx, const double* thetab, int& degree, bool& allinv,
 // .out milestone; the flag logic driving the abend/laumts handshake is kept.
 void setmdl(X13Context& ctx, double* estprm, bool& laumts);
 
+// chkrt2.f: re-check the roots of theta(B) (and phi(B) when exact AR) after an
+// ARMA-filter failure. In the vendored version the only persistent effect is
+// inverr=0 -- despite the name it does NOT invert anything; the ".not.allinv"
+// block is entirely the Lprier-gated root-table print, deferred to the .out
+// milestone. lprmsg/lhiddn only steer that deferred print. Kept as a named port
+// so rgarma's filter-error branch stays a faithful call, not an inlined 0.
+void chkrt2(X13Context& ctx, bool lprmsg, int& inverr, bool lhiddn);
+
+// rgarma.f: THE regARIMA estimation engine. IGLS outer loop -- at each pass the
+// regression betas are the GLS solution given the current ARMA parameters
+// (olsreg, or y'y when Nb==0), then the ARMA parameters are re-estimated by the
+// nonlinear least-squares core lmdif(fcnar). Convergence is on the deviance
+// objfcn = a'a*exp(Lndtcv/n) via stpitr. On convergence the ML Var / Lnlkhd are
+// formed and the ARMA parameter covariance (Armacm) is built from the optimizer
+// QR (fdjac2 -> qrfac -> covar). Cumulative counters Nliter/Nfev accumulate
+// across IGLS passes AND across repeated rgarma calls (mxiter is passed to lmdif
+// as Nliter+tnlitr). Inputs: lestim (estimate the model), mxiter/mxnlit (max
+// cumulative ARMA / nonlinear iterations), lprtit (iteration printing -- the
+// prtitr/savitr output is deferred, so this only toggles the deferred hooks).
+// a is the PA-length residual work vector, na (out) the residual count, nefobs
+// (out) the effective-observation count, lauto (in/out: cleared instead of
+// abending when an automatic-modeling pass hits an error). Diagnostic prints and
+// the LESTIT iteration-save (savitr) are deferred to the .out/save milestone;
+// all estimation numerics and the abend/lauto control flow are reproduced.
+void rgarma(X13Context& ctx, bool lestim, int mxiter, int mxnlit, bool lprtit,
+            double* a, int& na, int& nefobs, bool& lauto);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_ESTIMATE_HPP

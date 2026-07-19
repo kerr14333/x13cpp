@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 10:27 EDT
+## Snapshot — 2026-07-19 10:45 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 10:27 EDT |
-| commits | 51 |
-| span, first→latest | 20h 21m |
-| active (gaps ≤45m) | ~5h 27m (7 breaks excluded) |
+| latest commit | 2026-07-19 10:45 EDT |
+| commits | 53 |
+| span, first→latest | 20h 39m |
+| active (gaps ≤45m) | ~5h 45m (7 breaks excluded) |
 | calendar days | 2 |
 
 **Census bug ledger:** `tools/census_bugs.md` records Census-source defects the
@@ -118,19 +118,27 @@ pip cmake when adding files.
     difference Xy (CB-5, stale header comment). CB-4 lagind undersize.
   - `test_numeric` = 57 tests. All oracle-verified (rpoly bit-for-bit incl.
     failures; the rest rtol 1e-12 / exact int+bool).
-  - **All rgarma prerequisites now landed.** Remaining: the driver itself.
-- **Next — `rgarma` (rgarma.f, 475 lines): the capstone.** Glues the IGLS loop:
-  strtvl/setmdl start values, olsreg (GLS betas), resid/yprmy, the `lmdif(fcnar)`
-  nonlinear ARMA step, stpitr convergence test, then fdjac2/qrfac/covar for the
-  post-convergence ARMA covariance. First full end-to-end estimation parity
-  target (coeff estimates, Var, Lnlkhd, Nliter, Nfev, Convrg). Highest-risk port
-  in M3 -- see `tools/m3_scouting.md` §6 for the 12 parity traps (EQUIVALENCE
-  workspace aliasing, cumulative Nliter/Nfev across IGLS rounds, tolerance
-  scaling devtol/tnltol, order-sensitive reductions, Var flush). Needs a full
-  series+regression+model oracle harness, not a leaf test. B-section corpus
-  specs (exact=none, AR models, fixed coeffs, RSXFSN/FEDFUNDS) land once rgarma
-  runs end-to-end -> then outlier detection (idotlr/rdotlr) and the deferred M2
-  regressor branches. See `tools/m3_scouting.md` §5 Tier-5.
+  - **All rgarma prerequisites now landed.**
+- **`rgarma` (rgarma.f, 475 lines): the capstone — LANDED, oracle-verified.**
+  The IGLS driver glued end-to-end: strtvl/setmdl start values, olsreg (GLS
+  betas) / yprmy (Nb=0 path), resid, the `lmdif(fcnar)` nonlinear ARMA step with
+  cumulative Nliter/Nfev, stpitr convergence, then fdjac2/qrfac/covar for the
+  post-convergence ARMA covariance. Fortran labels 10 (RETURN) / 20 (loop) map
+  to `return`/`continue`; the EQUIVALENCE workspace overlay (diag/qtf/wa1..4/
+  tmpa on txy) becomes disjoint arrays (no live overlap, parity risk 11). `Na+
+  tnltol` snapshotted before the ref counter is passed to lmdif (risk 4).
+  `chkrt2` ported too (vendored version inverts nothing -- inverr=0 + deferred
+  root-table print); `savitr` LESTIT save guarded/deferred; prtitr/Frstcl/Scndcl
+  deferred with the print hook (no numeric effect). **First full end-to-end
+  estimation parity: `ref_rgarma.f` drives an Nb=0 ARMA(1,1) on a 24-point
+  series -> C++ matches the oracle bit-for-bit** -- Nliter=14, Nfev=47 EXACT
+  (the trajectory-identical canary), phi/theta/Var/Lnlkhd/Lndtcv + covariance
+  diag at rtol 1e-12, Convrg/Armaer/Lcalcm exact. `test_numeric` = 58 tests.
+- **Next — the B-section corpus specs** (exact=none, AR models, fixed coeffs,
+  RSXFSN/FEDFUNDS) now unblocked: exercise rgarma with regression (Nb>0, olsreg
+  path + IGLS multi-pass) end-to-end. Then likelihood stats/reports (Tier-6:
+  xrlkhd/prlkhd/armats/...), outlier detection (idotlr/rdotlr), and the deferred
+  M2 regressor branches. See `tools/m3_scouting.md` §5 Tier-6/7.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._

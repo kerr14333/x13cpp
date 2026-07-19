@@ -1414,4 +1414,70 @@ TEST("setmdl: estprm packing, root check, and operator shrinkage") {
     }
 }
 
+// ---- rgarma (THE regARIMA IGLS estimation engine; against ref_rgarma.f). ------
+// No-regression (Nb=0) pure ARMA(1,1) -- phi & theta both free, exact ML -- on a
+// 24-point stationary series held in Xy (Ncxy=1). Lprier/Lprtit both false and
+// Savtab clear, so all deferred prints/saves are inert. Estimation runs one IGLS
+// pass driving lmdif over the two ARMA parameters (14 nonlinear iterations, 47
+// fcn evals), then builds the ARMA covariance (fdjac2/qrfac/covar). The exact
+// integer counters Nliter/Nfev matching is the strong canary that the whole
+// optimizer trajectory is bit-identical to the oracle (scouting parity risk 1/4).
+TEST("rgarma: ARMA(1,1) no-regression IGLS estimation") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    // 24-point stationary working series (the y column of Xy, Ncxy=1).
+    d.nspobs = 24;
+    m.ncxy = 1;
+    const double series[24] = {0.5, -0.3, 0.8, -0.6, 0.2,  0.9, -0.7, 0.4,
+                               0.1, -0.5, 0.6, -0.2, 0.7,  -0.8, 0.3, 0.5,
+                               -0.4, 0.9, -0.1, 0.6, -0.7, 0.2, 0.4, -0.5};
+    for (int i = 1; i <= 24; ++i) d.xy(i) = series[i - 1];
+
+    // ARMA(1,1) model shell: one AR operator (lag 1), one MA operator (lag 1).
+    m.lar = true; m.lma = true; m.lextma = true; m.lextar = false;
+    m.lprier = false; ctx.hiddn.lhiddn = false;
+    m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    m.arimaf(1) = false; m.arimaf(2) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    d.arimap(1) = 0.3; d.arimap(2) = 0.3;  // starting values
+
+    // No regression, no differencing intervals.
+    m.nb = 0; m.nintvl = 0; m.nextvl = 0;
+    // Tolerances / step (overall Tol used since Nb=0).
+    m.tol = 1e-5; m.nltol0 = 1e-5; m.nltol = 1e-5; m.stepln = 0.0;
+    // Run controls: gudrun=T, no fatal, table saves off (zero-init already).
+    ctx.hiddn.issap = 0; ctx.hiddn.irev = 0;
+    ctx.error.lfatal = false;
+    ctx.units.mt1 = 6; ctx.units.mt2 = 6;
+
+    auto a = std::make_unique<double[]>(1092);  // PA residual work vector
+    int na = 0, nefobs = 0;
+    bool lauto = false;
+    rgarma(ctx, /*lestim=*/true, /*mxiter=*/200, /*mxnlit=*/60, /*lprtit=*/false,
+           a.get(), na, nefobs, lauto);
+
+    CHECK_EQ(d.armaer, 0);   // rg_armaer
+    CHECK(d.convrg);         // rg_convrg
+    CHECK_EQ(d.nliter, 14);  // rg_nliter
+    CHECK_EQ(d.nfev, 47);    // rg_nfev
+    CHECK_EQ(na, 25);        // rg_na
+    CHECK_EQ(nefobs, 24);    // rg_nefobs
+    CHECK(!lauto);           // rg_lauto
+    CHECK(m.lcalcm);         // rg_lcalcm
+    CHECK(rclose(d.arimap(1), -4.9893724335763090e-01, 1e-12));  // rg_phi
+    CHECK(rclose(d.arimap(2),  2.0807091229579630e-01, 1e-12));  // rg_theta
+    CHECK(rclose(d.var,        1.7987081616384901e-01, 1e-12));  // rg_var
+    CHECK(rclose(d.lnlkhd,    -1.3732363162787594e+01, 1e-12));  // rg_lnlkhd
+    CHECK(rclose(d.lndtcv,     5.2806970546683596e-01, 1e-12));  // rg_ldtcv
+    CHECK(rclose(d.armacm(1, 1), 3.8913728603066050e-01, 1e-12));  // rg_cm11
+    CHECK(rclose(d.armacm(2, 2), 5.1567691371183755e-01, 1e-12));  // rg_cm22
+}
+
 int main() { return mt::run_all(); }

@@ -2,11 +2,16 @@
 // ports of the vendored oracle Fortran.
 #include "regarima/estimate.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
+#include <vector>
 
 #include "regarima/armafl.hpp"      // armafl
-#include "numeric/numeric.hpp"      // xprmx, dppfa, dcopy, daxpy, scrmlt, revrse
+#include "regarima/armafilt.hpp"    // arflt
+#include "numeric/numeric.hpp"      // xprmx, dppfa, dcopy, daxpy, scrmlt, revrse,
+                                    // yprmy, maxvec, dpmpar, dpeq
+#include "numeric/minpack.hpp"      // lmdif, fdjac2, qrfac, covar (+ hook types)
 #include "numeric/rpoly.hpp"        // rpoly
 #include "specparse/specparse.hpp"  // copy, setdp, abend, errhdr, writln
 #include "gen/model.hpp"            // prm::DIFF, prm::MA, prm::PORDER, error codes
@@ -370,6 +375,317 @@ void setmdl(X13Context& ctx, double* estprm, bool& laumts) {
             laumts = false;  // signal failed HR initial values to the caller
         else
             abend(ctx);
+    }
+}
+
+// chkrt2.f -- re-check theta(B) (and phi(B) when exact AR) after a filter
+// failure. In the vendored version this DOES NOT invert anything: inverr is set
+// to 0 and never changed, and the only other work is the Lprier-gated root-table
+// print (deferred to the .out milestone). Kept as a named routine so rgarma's
+// filter-error branch stays a faithful call rather than an inlined 0. See hpp.
+void chkrt2(X13Context& ctx, bool lprmsg, int& inverr, bool lhiddn) {
+    (void)ctx;
+    (void)lprmsg;  // steers only the deferred root-table print
+    (void)lhiddn;
+    inverr = 0;
+}
+
+// rgarma.f -- the regARIMA IGLS estimation engine (see hpp for the overview).
+void rgarma(X13Context& ctx, bool lestim, int mxiter, int mxnlit, bool lprtit,
+            double* a, int& na, int& nefobs, bool& lauto) {
+    constexpr double ONE = 1.0, PI = 3.14159265358979, TWO = 2.0, ZERO = 0.0,
+                     MONE = -1.0;
+    constexpr int PA = prm::PLEN + 2 * prm::PORDER;         // 1092
+    constexpr int PXY = prm::PLEN * (prm::PB + 1);          // 82620
+    constexpr int PXA = PA * (prm::PB + 1);                 // 88452
+    constexpr int LESTIT = 59;  // mdltbl.i iteration-save table index
+
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    auto& s = ctx.series;
+    auto& h = ctx.hiddn;
+
+    // The EQUIVALENCE overlay of diag/qtf/wa1..wa4/tmpa onto txy (rgarma.f:100-
+    // 104) has no live overlap, so use disjoint arrays (scouting parity risk 11).
+    std::vector<double> txy(PXA);
+    double estprm[prm::PARIMA];
+    int ipvt[prm::PARIMA];
+    double diag[prm::PARIMA], qtf[prm::PARIMA], wa1[prm::PARIMA], wa2[prm::PARIMA],
+        wa3[prm::PARIMA], wa4[PA], tmpa[PA], wacov[prm::PARIMA];
+
+    // (Lprtit sets /lgiter/ Frstcl/Scndcl for prtitr's formatting -- deferred
+    // with the prtitr print hook; it has no numeric effect here.)
+    bool gudrun = h.issap < 2 && h.irev < 4;
+
+    // Check the work array size.
+    if (d.nspobs * m.ncxy > PXY) {
+        errhdr(ctx);
+        writln(ctx,
+               " ERROR: Work array too small, " + std::to_string(d.nspobs) +
+                   "*" + std::to_string(m.ncxy) + ">" + std::to_string(PXY) + ".",
+               stdio::STDERR, ctx.units.mt2, true);
+        if (lauto)
+            lauto = false;
+        else
+            abend(ctx);
+        return;
+    }
+
+    int info = 1;
+    d.armaer = 0;
+    constexpr bool intflt = true;  // always re-initialize |G'G| in armafl
+    bool locest = lestim;
+    s.lrgrsd = 1e6;
+    int nprint = lprtit ? 1 : 0;
+    (void)nprint;  // fed only to the deferred lmdif prtitr hook
+
+    // Copy the model specs to the common variables and set the starting values.
+    strtvl(ctx);
+    bool la = false;
+    setmdl(ctx, estprm, la);
+    if (ctx.error.lfatal) return;
+
+    nefobs = d.nspobs - m.nintvl;
+    if (nefobs < m.nextvl) {
+        writln(ctx,
+               " ERROR: Number of observations after differencing (" +
+                   std::to_string(nefobs) + ") < minimum series length (" +
+                   std::to_string(m.nextvl) + ").",
+               stdio::STDERR, ctx.units.mt2, true);
+        if (lauto)
+            lauto = false;
+        else
+            abend(ctx);
+        return;
+    }
+
+    s.dnefob = static_cast<double>(nefobs);
+    int neltxy = d.nspobs * m.ncxy;
+
+    // Check whether the objective function is identically zero: if the series is
+    // annihilated by the Difference/AR operators there is nothing to estimate.
+    if (m.mdl(prm::DIFF) - m.mdl(prm::DIFF - 1) > 0) {
+        int nelta = d.nspobs;
+        int i2 = 0;
+        for (int i = m.ncxy; i <= neltxy; i += m.ncxy) {
+            i2 = i2 + 1;
+            txy[i2 - 1] = d.xy(i);
+        }
+        arflt(nelta, d.arimap.data(), m.arimal.data(), m.opr.data(),
+              m.mdl(prm::DIFF - 1), m.mdl(prm::DIFF) - 1, txy.data(), nelta);
+        i2 = 1;
+        bool xyzero = dpeq(txy[0], ZERO);
+        while (i2 < nelta && xyzero) {
+            i2 = i2 + 1;
+            xyzero = dpeq(txy[i2 - 1], ZERO);
+        }
+        if (xyzero) {
+            d.armaer = prm::POBFN0;
+            if (lauto) lauto = false;
+            return;
+        }
+    }
+
+    // Input tolerances are on the log likelihood; convert to the deviance the
+    // program actually checks. (scouting parity risk 6.)
+    double devtol = TWO / s.dnefob * m.tol;
+    if (m.lar || m.lma)
+        na = nefobs + m.mxmalg;
+    else
+        na = nefobs;
+
+    double eps = m.stepln;
+    double tnltol, nltolf = 0.0;
+    int tnlitr;
+    if (m.nb > 0) {
+        tnltol = TWO / s.dnefob * m.nltol0;
+        nltolf = TWO / s.dnefob * m.nltol;
+        tnlitr = mxnlit;
+    } else {
+        tnltol = devtol;
+        tnlitr = mxiter;
+    }
+
+    // Check the nonlinear work arrays are big enough.
+    if (m.nestpm > 0) {
+        d.nlwrk = std::max(na, d.nspobs) * (m.nestpm + 1) + 5 * m.nestpm;
+        if (d.nlwrk > PXA) {
+            writln(ctx,
+                   " ERROR: Non linear work array too small " +
+                       std::to_string(d.nlwrk) + ">" + std::to_string(PXA) + ".",
+                   stdio::STDERR, ctx.units.mt2, true);
+            if (lauto)
+                lauto = false;
+            else
+                abend(ctx);
+            return;
+        } else {
+            d.nlwrk = std::max(na, d.nspobs);
+        }
+    }
+
+    int iter = 0;
+    d.nliter = 0;
+    d.nfev = 0;
+    double apa = 0.0, objfcn = 0.0;
+
+    // The fcn callback (fcnar) and the model-sync hook (upespm) threaded into
+    // lmdif/fdjac2.
+    MinpackFcn fcn = [&ctx](int& mm, int nn, const double* x, double* fvec,
+                            bool lau, bool gr, int& iflag, bool lck) {
+        fcnar(ctx, mm, nn, x, fvec, lau, gr, iflag, lck);
+    };
+    MinpackSync sync = [&ctx](const double* x) { upespm(ctx, x); };
+
+    // IGLS iteration loop: GLS regression given the current ARMA parameters,
+    // then a nonlinear ARMA re-estimation (lmdif). Fortran label 10 == RETURN;
+    // label 20 == continue the loop.
+    int lstnit = 0;
+    while (true) {
+        copy(d.xy.data(), neltxy, 1, txy.data());
+        int nrtxy = 0, flterr = 0;
+        armafl(ctx, d.nspobs, m.ncxy, intflt, false, txy.data(), nrtxy, PXA,
+               flterr);
+
+        // Filter failure: check invertibility/stationarity, record the error.
+        if (flterr > 0) {
+            if (m.mdl(prm::MA) > m.mdl(prm::DIFF)) {
+                int inverr = 0;
+                chkrt2(ctx, true, inverr, h.lhiddn);
+                if (ctx.error.lfatal) return;
+                if (inverr > 0) {
+                    d.armaer = inverr;
+                } else {
+                    d.armaer = flterr;
+                    d.var = ZERO;
+                }
+            } else {
+                d.armaer = flterr;
+                d.var = ZERO;
+            }
+            return;  // GO TO 10
+        }
+
+        // Regression parameters given the current ARMA parameters.
+        apa = 0.0;
+        if (m.nb <= 0) {
+            yprmy(txy.data(), nrtxy, apa);
+            d.chlxpx(1) = std::sqrt(apa);
+        } else {
+            olsreg(ctx, txy.data(), nrtxy, m.ncxy, m.ncxy, d.b.data(),
+                   d.chlxpx.data(), prm::PXPX, d.sngcol);
+            if (ctx.error.lfatal) return;
+            if (d.sngcol > 0) {
+                d.convrg = false;
+                d.armaer = prm::PSNGER;
+                if (lauto) lauto = false;
+                return;  // GO TO 10
+            }
+            d.nfev = d.nfev + m.ncxy + 1;
+        }
+
+        // Objective function and convergence test.
+        resid(ctx, txy.data(), nrtxy, m.ncxy, m.ncxy, 1, m.nb, MONE, d.b.data(),
+              a);
+        if (ctx.error.lfatal) return;
+        yprmy(a, nrtxy, apa);
+        objfcn = apa * std::exp(d.lndtcv / s.dnefob);
+
+        // Largest residual magnitude for the constrained Minpack estimation.
+        if (iter == 0) {
+            maxvec(a, nrtxy, s.lrgrsd);
+            s.lrgrsd = s.lrgrsd * std::exp(d.lndtcv / TWO / s.dnefob);
+        }
+        bool lnxstp = locest && m.nestpm > 0 &&
+                      stpitr(ctx, m.lprier, objfcn, devtol, iter, d.nliter,
+                             mxiter, d.convrg, d.armaer, h.lhiddn);
+        iter = iter + 1;
+
+        // (Lprtit ARMA/IGLS prtitr iteration prints deferred to the .out
+        // milestone; they have no numeric effect.)
+
+        // Re-estimate the ARMA parameters.
+        bool goto20 = false;
+        if (lnxstp) {
+            if (iter > 2) tnltol = nltolf;
+            lstnit = d.nliter;
+            resid(ctx, d.xy.data(), d.nspobs, m.ncxy, m.ncxy, 1, m.nb, MONE,
+                  d.b.data(), s.tsrs.data());
+            int lm_mxiter = d.nliter + tnlitr;  // snapshot before the ref counter
+            lmdif(fcn, na, m.nestpm, estprm, a, lauto, gudrun, tnltol, ZERO, ZERO,
+                  lm_mxiter, eps, diag, 1, 100.0, nprint, info, d.nliter, d.nfev,
+                  d.armacm.data(), PA, ipvt, qtf, wa1, wa2, wa3, wa4, sync);
+            if (ctx.error.lfatal) return;
+            locest = m.nb > 0;
+            if (info >= 1 && info <= 8 && d.nliter > lstnit) goto20 = true;
+        }
+        if (goto20) continue;  // GO TO 20
+
+        // ---- convergence classification (only when the model is estimated) ----
+        if (lestim && m.nestpm > 0) {
+            if (m.nb == 0) {
+                // .AND. binds tighter than .OR. (rgarma.f:389-390).
+                d.convrg = (d.convrg && (info >= 1 && info <= 4)) ||
+                           (info >= 6 && info <= 8);
+            } else {
+                d.convrg = d.convrg && info >= 1 && info <= 8;
+            }
+            if (info < 0) {
+                d.armaer = prm::PUNKER;
+                d.convrg = false;
+                d.var = ZERO;
+                return;  // GO TO 10
+            } else if (info == 0) {
+                d.armaer = prm::PINPER;
+            } else if (info == 5 || (d.nliter >= mxiter && !d.convrg)) {
+                if (d.nliter >= mxiter)
+                    d.armaer = prm::PMXIER;
+                else
+                    d.armaer = prm::PMXFER;
+            } else if (info >= 1 && info <= 4) {
+                d.armaer = 0;
+            } else {
+                d.armaer = info;
+            }
+        }
+
+        // ---- ML variance and log likelihood ----
+        d.var = apa / s.dnefob;
+        if (d.var < TWO * dpmpar(1)) d.var = ZERO;
+        if (dpeq(d.var, ZERO)) {
+            d.lnlkhd = ZERO;
+        } else {
+            d.lnlkhd =
+                -(d.lndtcv + s.dnefob * (std::log(TWO * PI * d.var) + ONE)) / TWO;
+        }
+
+        // ---- ARMA parameter covariance from the optimizer QR (only at the MLE)
+        if (lestim && m.nestpm > 0 && d.convrg) {
+            resid(ctx, d.xy.data(), d.nspobs, m.ncxy, m.ncxy, 1, m.nb, MONE,
+                  d.b.data(), s.tsrs.data());
+            fcnar(ctx, na, m.nestpm, estprm, tmpa, lauto, gudrun, info, false);
+            if (ctx.error.lfatal) return;
+            int iflag = 2;
+            fdjac2(fcn, na, m.nestpm, estprm, tmpa, d.armacm.data(), PA, iflag,
+                   0.0, wa4, lauto, gudrun, false);
+            upespm(ctx, estprm);
+            if (iflag >= 0) {
+                qrfac(na, m.nestpm, d.armacm.data(), PA, true, ipvt, m.nestpm,
+                      wa1, wa2, wa3);
+                for (int i = 1; i <= m.nestpm; ++i) d.armacm(i, i) = wa1[i - 1];
+                covar(m.nestpm, d.armacm.data(), PA, ipvt, tnltol, info, wacov);
+                m.lcalcm = info == 0;
+                if (!m.lcalcm) d.armaer = prm::PACSER;
+            } else {
+                m.lcalcm = false;
+            }
+        }
+
+        // (LESTIT iteration-save via savitr deferred to the .out/save milestone.)
+        if (ctx.tbllog.savtab(LESTIT)) {
+            // dvec(1)=0; savitr(LCLOSE, iter, iter, 0, dvec, 1);  -- deferred
+        }
+        return;  // GO TO 10
     }
 }
 
