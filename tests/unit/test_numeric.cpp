@@ -10,6 +10,7 @@
 #include "regarima/armafilt.hpp"
 #include "regarima/armafl.hpp"
 #include "regarima/estimate.hpp"
+#include "regarima/forecast.hpp"
 #include "specparse/specparse.hpp"
 #include "numeric/minpack.hpp"
 #include "numeric/rpoly.hpp"
@@ -1514,6 +1515,63 @@ TEST("rgarma: ARMA(1,1) no-regression IGLS estimation") {
     armats(ctx, tval);
     CHECK(rclose(tval[0], -1.8858804037050478e+00, 1e-12));  // as_tphi
     CHECK(rclose(tval[1],  6.8319105929467638e-01, 1e-12));  // as_ttheta
+}
+
+// ---- fcstxy (forecasts + forecast SEs; against ref_fcstxy.f). ------------------
+// Estimates the same no-regression ARMA(1,1) as the rgarma test, then forecasts
+// 6 steps ahead. Nb=0 so the design-uncertainty term is skipped (Rgvar all 0);
+// this validates the forecast recursion (full AR*diff and MA operators via
+// polyml, seeded by the exact ARMA-filtered residuals) and the psi(B)-weight
+// standard errors. Fctori=Nspobs=24 (no differencing). Oracle at rtol 1e-12.
+TEST("fcstxy: ARMA(1,1) no-regression forecasts + standard errors") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    d.nspobs = 24;
+    m.ncxy = 1;
+    const double series[24] = {0.5, -0.3, 0.8, -0.6, 0.2,  0.9, -0.7, 0.4,
+                               0.1, -0.5, 0.6, -0.2, 0.7,  -0.8, 0.3, 0.5,
+                               -0.4, 0.9, -0.1, 0.6, -0.7, 0.2, 0.4, -0.5};
+    for (int i = 1; i <= 24; ++i) d.xy(i) = series[i - 1];
+
+    m.lar = true; m.lma = true; m.lextma = true; m.lextar = false;
+    m.lprier = false; ctx.hiddn.lhiddn = false;
+    m.nopr = 2;
+    m.mdl(0) = 1; m.mdl(1) = 1; m.mdl(2) = 2; m.mdl(3) = 3;
+    m.opr(0) = 1; m.opr(1) = 2; m.opr(2) = 3;
+    m.arimal(1) = 1; m.arimal(2) = 1;
+    m.arimaf(1) = false; m.arimaf(2) = false;
+    m.oprfac(1) = 1; m.oprfac(2) = 1;
+    m.mxarlg = 1; m.mxmalg = 1; m.mxdflg = 0;
+    d.arimap(1) = 0.3; d.arimap(2) = 0.3;
+    m.nb = 0; m.nintvl = 0; m.nextvl = 0; m.iregfx = 0;
+    m.tol = 1e-5; m.nltol0 = 1e-5; m.nltol = 1e-5; m.stepln = 0.0;
+    ctx.hiddn.issap = 0; ctx.hiddn.irev = 0;
+    ctx.error.lfatal = false;
+    ctx.units.mt1 = 6; ctx.units.mt2 = 6;
+
+    auto a = std::make_unique<double[]>(1092);
+    int na = 0, nefobs = 0;
+    bool lauto = false;
+    rgarma(ctx, true, 200, 60, false, a.get(), na, nefobs, lauto);
+    CHECK(d.convrg);
+
+    double fcst[6] = {0}, se[6] = {0}, rgvar[6] = {0};
+    fcstxy(ctx, /*fctori=*/24, /*nfcst=*/6, fcst, se, rgvar);
+
+    const double ofcst[6] = {
+        2.9218163115413764e-01, -1.4578029760778152e-01, 7.2735219824281550e-02,
+        -3.6290310074138341e-02, 1.8106587268984245e-02, -9.0340507386013728e-03};
+    const double ose[6] = {
+        4.2411179677515337e-01, 5.1940459956728047e-01, 5.4052129216262779e-01,
+        5.4565102227665507e-01, 5.4692052957970538e-01, 5.4723610083821750e-01};
+    for (int i = 0; i < 6; ++i) {
+        CHECK(rclose(fcst[i], ofcst[i], 1e-12));
+        CHECK(rclose(se[i], ose[i], 1e-12));
+        CHECK_EQ(rgvar[i], 0.0);
+    }
 }
 
 // ---- rgarma WITH regression (Nb>0; against ref_rgarma2.f). ---------------------
