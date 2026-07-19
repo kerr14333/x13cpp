@@ -1640,4 +1640,79 @@ TEST("estimate{}: spec reader applies knobs + mdlfin finalize") {
     CHECK_EQ(m.nextvl, 1);   // Lextma ? Mxmalg : 0
 }
 
+// ---- run_m2 -> rgarma end-to-end REAL-DATA estimation parity (the M3 headline).
+// Drives the full front end -- parse_spec (getsrs/transform/getmdl/regvar) then
+// rgarma -- on the classic airline series (144 obs, log transform, ARMA
+// (0 1 1)(0 1 1), no regression) exactly as the airline_check corpus spec, and
+// compares the estimated ARMA coefficients / variance / iteration counters
+// against the ORACLE .udg golden (tests/golden/extra/airline_check). This is the
+// first estimation parity from a real spec through the real pipeline (not
+// hand-set common state): rgarma differences Xy internally (Nintvl=13 -> Nefobs=
+// 131) and writes Tsrs from Xy itself. udg targets: MA nonseasonal coef
+// 0.40180794878596 (t 5.0945818522955), MA seasonal 0.55694564337114 (t
+// 7.3036848055248), variance$mle 0.13480973219978E-02, niter 6, nfev 19.
+TEST("run_m2->rgarma: airline (0 1 1)(0 1 1) real-data estimation vs oracle udg") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    const char* spec =
+        "series{\n"
+        "  title = \"International Airline Passengers\"\n"
+        "  start = 1949.01\n"
+        "  period = 12\n"
+        "  data = (\n"
+        "   112 118 132 129 121 135 148 148 136 119 104 118\n"
+        "   115 126 141 135 125 149 170 170 158 133 114 140\n"
+        "   145 150 178 163 172 178 199 199 184 162 146 166\n"
+        "   171 180 193 181 183 218 230 242 209 191 172 194\n"
+        "   196 196 236 235 229 243 264 272 237 211 180 201\n"
+        "   204 188 235 227 234 264 302 293 259 229 203 229\n"
+        "   242 233 267 269 270 315 364 347 312 274 237 278\n"
+        "   284 277 317 313 318 374 413 405 355 306 271 306\n"
+        "   315 301 356 348 355 422 465 467 404 347 305 336\n"
+        "   340 318 362 348 363 435 491 505 404 359 310 337\n"
+        "   360 342 406 396 420 472 548 559 463 407 362 405\n"
+        "   417 391 419 461 472 535 622 606 508 461 390 432 )\n"
+        "}\n"
+        "transform{ function = log }\n"
+        "arima{ model = (0 1 1)(0 1 1) }\n"
+        "estimate{ }\n";
+
+    bool ok = run_m2(ctx, spec, "airline_check", /*estimate=*/true);
+    CHECK(ok);
+    CHECK(!ctx.error.lfatal);
+
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    // Model dimensions the front end derived (mdlfin): (0 1 1)(0 1 1) -> Mxarlg=0,
+    // Mxmalg=12, Mxdflg=13 (1 + 12). Nintvl=Mxdflg=13, Nefobs=144-13=131.
+    CHECK_EQ(d.nspobs, 144);
+    CHECK_EQ(m.nb, 0);
+    CHECK_EQ(m.nintvl, 13);
+    CHECK_EQ(d.nspobs - m.nintvl, 131);   // nefobs
+
+    // Estimation converged; the integer optimizer counters are the exact-
+    // trajectory canary against the oracle udg (niter 6, nfev 19).
+    CHECK(d.convrg);
+    CHECK_EQ(d.armaer, 0);
+    CHECK_EQ(d.nliter, 6);
+    CHECK_EQ(d.nfev, 19);
+
+    // ARMA coefficients. arimap is packed by operator-coefficient position over
+    // DIFF..AR..MA (not by literal lag): the two differencing operators (1-B),
+    // (1-B^12) take fixed slots 1,2 (coef 1), so the free MA coefficients land at
+    // slots 3 (nonseasonal lag 1) and 4 (seasonal lag 12).
+    CHECK(rclose(d.arimap(3), 0.40180794878596, 1e-10));   // MA nonseasonal
+    CHECK(rclose(d.arimap(4), 0.55694564337114, 1e-10));   // MA seasonal
+    // MLE innovation variance.
+    CHECK(rclose(d.var, 0.13480973219978e-02, 1e-12));
+
+    // ARMA t-statistics (armats): coef / sqrt(Var * Armacm_kk), oracle udg
+    // reports 5.0945818522955 and 7.3036848055248 as the third field.
+    double tval[2] = {0.0, 0.0};
+    armats(ctx, tval);
+    CHECK(rclose(tval[0], 5.0945818522955, 1e-9));   // MA nonseasonal t
+    CHECK(rclose(tval[1], 7.3036848055248, 1e-9));   // MA seasonal t
+}
+
 int main() { return mt::run_all(); }

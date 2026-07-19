@@ -11,6 +11,9 @@
 #include "transform/transform.hpp"
 #include "regarima/priadj.hpp"
 #include "regarima/regvar.hpp"
+#include "regarima/estimate.hpp"
+#include "gen/srslen.hpp"           // prm::PLEN (residual work-vector sizing)
+#include "gen/model.hpp"            // prm::PORDER
 
 #include <algorithm>
 #include <string>
@@ -31,7 +34,8 @@ bool wants_save(const X13Context& ctx, const std::string& ext) {
 }
 }  // namespace
 
-bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base) {
+bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base,
+            bool estimate) {
     if (!parse_spec(ctx, spec_text, base)) return false;
     if (!ctx.captured.has_series) return false;
 
@@ -151,6 +155,25 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
             savmtx(ctx, LREGDT, ctx.arima.begxy.data(), sp, ctx.mdldat.xy.data(),
                    nrxy, ctx.model.ncxy, ctx.model.colttl.data(),
                    ctx.model.colptr.data(), ctx.model.ncoltl, base);
+            if (ctx.error.lfatal) return false;
+        }
+
+        // regARIMA estimation (arima.f:705). The M2 save path stops before this;
+        // the M3 driver estimates the model in place. rgarma differences Xy
+        // internally (Nintvl), so the un-differenced [X:y] regvar just built is
+        // exactly what it wants; it writes Tsrs from Xy itself (no external seed).
+        // Estimation outputs land in ctx.mdldat (arimap/var/lnlkhd/lndtcv/armacm/
+        // nliter/nfev/convrg/armaer). Deferred prints/saves keep it side-effect
+        // free, so the M2 save comparisons above are untouched.
+        if (estimate && ctx.arima.lestim) {
+            constexpr int PA = prm::PLEN + 2 * prm::PORDER;
+            std::vector<double> a(static_cast<std::size_t>(PA));
+            int na = 0, nefobs = 0;
+            bool lauto = false;
+            rgarma(ctx, ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
+                   /*lprtit=*/false, a.data(), na, nefobs, lauto);
+            (void)na;
+            (void)nefobs;  // nefobs == Nspobs-Nintvl; the estimates live in mdldat
             if (ctx.error.lfatal) return false;
         }
     }
