@@ -1726,4 +1726,71 @@ TEST("run_m2->rgarma: airline (0 1 1)(0 1 1) real-data estimation vs oracle udg"
     CHECK(rclose(ctx.lkhd.hnquin, 990.7005, 1e-6));  // Hannan-Quinn
 }
 
+// ---- run_m2 -> rgarma REAL-DATA estimation WITH regression (Nb>0). -------------
+// Same airline series, but regression{ variables = (td easter[8]) } -- 6 free
+// trading-day columns + 1 Easter column (Nb=7, Ncxy=8), the derived Sunday
+// column reconstructed post-hoc. Drives the GLS olsreg path (not the Nb=0 yprmy
+// path) through the real regvar-built design matrix (td6var/td7var + Easter),
+// matching the oracle .udg golden (02-airline-log-td-easter). The forecast{}/
+// x11{} of the corpus spec are dropped -- they run after estimation and don't
+// change the fit -- so the .udg estimation values are the oracle for this spec.
+// Targets: niter 9, nfev 76, MA 0.21534460625351 / 0.55174518432520,
+// Easter beta 0.0219499756200038, TD-Mon beta -0.00547059178976284,
+// variance$mle 0.10803917843822E-02, loglikelihood 259.3105.
+TEST("run_m2->rgarma: airline + TD + Easter regression (Nb>0) vs oracle udg") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    const char* spec =
+        "series{\n"
+        "  title = \"International Airline Passengers\"\n"
+        "  start = 1949.01\n"
+        "  period = 12\n"
+        "  data = (\n"
+        "   112 118 132 129 121 135 148 148 136 119 104 118\n"
+        "   115 126 141 135 125 149 170 170 158 133 114 140\n"
+        "   145 150 178 163 172 178 199 199 184 162 146 166\n"
+        "   171 180 193 181 183 218 230 242 209 191 172 194\n"
+        "   196 196 236 235 229 243 264 272 237 211 180 201\n"
+        "   204 188 235 227 234 264 302 293 259 229 203 229\n"
+        "   242 233 267 269 270 315 364 347 312 274 237 278\n"
+        "   284 277 317 313 318 374 413 405 355 306 271 306\n"
+        "   315 301 356 348 355 422 465 467 404 347 305 336\n"
+        "   340 318 362 348 363 435 491 505 404 359 310 337\n"
+        "   360 342 406 396 420 472 548 559 463 407 362 405\n"
+        "   417 391 419 461 472 535 622 606 508 461 390 432 )\n"
+        "}\n"
+        "transform{ function = log }\n"
+        "regression{ variables = (td easter[8]) }\n"
+        "arima{ model = (0 1 1)(0 1 1) }\n"
+        "estimate{ }\n";
+
+    bool ok = run_m2(ctx, spec, "02-airline-log-td-easter", /*estimate=*/true);
+    CHECK(ok);
+    CHECK(!ctx.error.lfatal);
+
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    // 6 TD + 1 Easter free regressors -> Nb=7, Ncxy=8.
+    CHECK_EQ(m.nb, 7);
+    CHECK_EQ(m.ncxy, 8);
+    CHECK(d.convrg);
+    CHECK_EQ(d.armaer, 0);
+    CHECK_EQ(d.nliter, 9);   // niter
+    CHECK_EQ(d.nfev, 76);    // nfev
+
+    // ARMA coefficients (slots 3/4 behind the two differencing slots).
+    CHECK(rclose(d.arimap(3), 0.21534460625351, 1e-10));   // MA nonseasonal
+    CHECK(rclose(d.arimap(4), 0.55174518432520, 1e-10));   // MA seasonal
+    CHECK(rclose(d.var, 0.10803917843822e-02, 1e-11));     // variance$mle
+
+    // Regression betas (b packs the design columns in spec order: 6 TD then
+    // Easter). Check the first TD contrast and the Easter coefficient.
+    CHECK(rclose(d.b(1), -0.547059178976284e-02, 1e-9));   // Trading Day Mon
+    CHECK(rclose(d.b(7),  0.219499756200038e-01, 1e-9));   // Easter[8]
+
+    // Raw log likelihood (the .udg key), transform-Jacobian AIC via prlkhd.
+    CHECK(rclose(d.lnlkhd, 259.3105, 1e-6));
+}
+
 int main() { return mt::run_all(); }
