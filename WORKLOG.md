@@ -16,15 +16,15 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
-## Snapshot — 2026-07-19 02:55 EDT
+## Snapshot — 2026-07-19 08:25 EDT
 
 | metric | value |
 |---|---|
 | start (first commit) | 2026-07-18 14:06 EDT |
-| latest commit | 2026-07-19 02:51 EDT |
-| commits | 32 |
-| span, first→latest | 12h 44m |
-| active (gaps ≤45m) | ~3h 46m (4 breaks excluded) |
+| latest commit | 2026-07-19 08:22 EDT |
+| commits | 43 |
+| span, first→latest | 18h 16m |
+| active (gaps ≤45m) | ~4h 20m (6 breaks excluded) |
 | calendar days | 2 |
 
 ## What was reached in that window
@@ -64,10 +64,21 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
     (`tools/ref_armafl.f`).
   - 23 routines ported + verified so far (`test_numeric` = 50 checks). Fable
     audited Tier-0 + produced the Tier-1 plan; FP-contraction parity confirmed.
-- **Next** — `olsreg`/`rgarma` (IGLS estimation driver that calls armafl per
-  iteration) → `fcnar` → `lmdif` (the Census-modified MINPACK optimizer, see
-  [[x13cpp-lmdif-modified]]). `rpoly` (quad/fxshfr) is a separate cluster for
-  `roots`/`setmdl`. See `tools/m3_scouting.md`.
+  - **Estimation driver stack** (`regarima/estimate`): `olsreg` (normal-eqn OLS),
+    `resid`, `upespm` (param scatter), `fcnar` (lmdif objective: upespm→armafl→
+    exact-ML scale; numeric path exact, info!=0 warning prints deferred to .out).
+  - **MINPACK optimizer leaves** (`numeric/minpack`, Census-modified — dpeq for
+    .eq.0): `qrfac`, `qrsolv`, `lmpar` (LM trust-region secant), `fdjac2`
+    (forward-diff Jacobian via a `MinpackFcn` callback so the optimizer stays
+    model-independent). All oracle-verified.
+  - **armafl coverage** — all 14 A-gaps in `tools/m3_test_coverage.md` closed:
+    airline/seasonal-AR/mixed/multi-col/differencing/reuse/error-code/FMA-canary/
+    underflow-skip/exact-zero-no-write. `test_numeric` = 163 checks.
+- **Next** — `lmdif` (the 530-line Census-modified LM core; [[x13cpp-lmdif-modified]]
+  — port the vendored version, not textbook) → `covar` → then `rgarma` glues the
+  IGLS loop (olsreg + lmdif(fcnar)). B-section corpus specs (exact=none, AR
+  models, fixed coeffs, RSXFSN/FEDFUNDS) land once rgarma runs end-to-end. See
+  `tools/m3_test_coverage.md` and `tools/m3_scouting.md`.
 
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
