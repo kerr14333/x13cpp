@@ -11,6 +11,7 @@
 #include "regarima/armafl.hpp"
 #include "regarima/estimate.hpp"
 #include "regarima/forecast.hpp"
+#include "transform/transform.hpp"
 #include "specparse/specparse.hpp"
 #include "numeric/minpack.hpp"
 #include "numeric/rpoly.hpp"
@@ -2046,6 +2047,53 @@ TEST("run_m2->rgarma: airline + TD + Easter regression (Nb>0) vs oracle udg") {
 
     // Raw log likelihood (the .udg key), transform-Jacobian AIC via prlkhd.
     CHECK(rclose(d.lnlkhd, 259.3105, 1e-6));
+}
+
+// ---- invfcn / lgnrmc (inverse transform + lognormal correction). --------------
+// The forecast-output numeric leaves: invfcn maps transformed forecasts back to
+// the original scale, lgnrmc applies the lognormal mean-correction. Oracle values
+// from drv_inv.f (invfcn.f/lgnrmc.f driven directly). rtol 1e-14.
+TEST("invfcn: inverse Box-Cox / logit transform (all branches)") {
+    auto ctxp = std::make_unique<X13Context>();
+    X13Context& ctx = *ctxp;
+    const double t[4] = {0.5, -0.3, 1.2, 2.0};
+    double y[4] = {0, 0, 0, 0};
+
+    invfcn(ctx, t, 4, /*fcntyp=*/1, /*lam=*/0.0, y);   // exp (log inverse)
+    CHECK(rclose(y[0], 0.1648721270700128e+01, 1e-14));
+    CHECK(rclose(y[1], 0.7408182206817179e+00, 1e-14));
+    CHECK(rclose(y[2], 0.3320116922736547e+01, 1e-14));
+    CHECK(rclose(y[3], 0.7389056098930650e+01, 1e-14));
+
+    invfcn(ctx, t, 4, /*fcntyp=*/0, /*lam=*/0.5, y);   // inverse box-cox
+    CHECK(rclose(y[0], 1.265625, 1e-14));
+    CHECK(rclose(y[1], 0.525625, 1e-14));
+    CHECK(rclose(y[2], 2.175625, 1e-14));
+    CHECK(rclose(y[3], 3.515625, 1e-14));
+
+    invfcn(ctx, t, 4, /*fcntyp=*/3, /*lam=*/0.0, y);   // inverse logit
+    CHECK(rclose(y[0], 0.6224593312018546e+00, 1e-14));
+    CHECK(rclose(y[3], 0.8807970779778824e+00, 1e-14));
+
+    invfcn(ctx, t, 4, /*fcntyp=*/0, /*lam=*/1.0, y);   // identity
+    CHECK(rclose(y[0], 0.5, 1e-15));
+    CHECK(rclose(y[1], -0.3, 1e-15));
+}
+
+TEST("lgnrmc: lognormal mean-correction of forecasts") {
+    const double unc[3] = {0.5, 1.0, -0.2};
+    const double se[3] = {0.3, 0.4, 0.25};
+    double cor[3] = {0, 0, 0};
+
+    lgnrmc(3, unc, se, cor, /*ltrans=*/true);   // exp(0.5*se^2 + unc)
+    CHECK(rclose(cor[0], 0.1724608382376436e+01, 1e-14));
+    CHECK(rclose(cor[1], 0.2944679551065524e+01, 1e-14));
+    CHECK(rclose(cor[2], 0.8447200570049834e+00, 1e-14));
+
+    lgnrmc(3, unc, se, cor, /*ltrans=*/false);  // 0.5*se^2 + unc (still transformed)
+    CHECK(rclose(cor[0], 0.545, 1e-14));
+    CHECK(rclose(cor[1], 1.080, 1e-14));
+    CHECK(rclose(cor[2], -0.16875, 1e-14));
 }
 
 int main() { return mt::run_all(); }

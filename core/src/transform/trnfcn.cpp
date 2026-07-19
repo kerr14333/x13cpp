@@ -91,4 +91,39 @@ void trnfcn(X13Context& ctx, const double* y, int nsrs, int fcntyp, double lam,
     if (lstop) abend(ctx);
 }
 
+// invfcn.f -- inverse Box-Cox / logit transform (see hpp).
+void invfcn(X13Context& ctx, const double* trny, int nsrs, int fcntyp,
+            double lam, double* y) {
+    constexpr double ZO = 0.0, ONE = 1.0;
+    (void)ctx;  // only the deferred out-of-domain diagnostic uses it
+    if (fcntyp == 3) {                        // inverse logit
+        for (int i = 1; i <= nsrs; ++i) {
+            double tmp = std::exp(trny[i - 1]);
+            y[i - 1] = tmp / (ONE + tmp);
+        }
+    } else if (dpeq(lam, ONE) || fcntyp == 4) {  // identity
+        copy(trny, nsrs, 1, y);
+    } else if (dpeq(lam, ZO) || fcntyp == 1) {   // exp
+        for (int i = 1; i <= nsrs; ++i) y[i - 1] = std::exp(trny[i - 1]);
+    } else {                                  // inverse box-cox
+        double invlam = ONE / lam;
+        for (int i = 1; i <= nsrs; ++i) {
+            double fact = lam * (trny[i - 1] - lam * lam) + ONE;
+            if (fact > ZO) y[i - 1] = std::pow(fact, invlam);
+            // else: leave y(i) unchanged; the Cox-Box diagnostic is deferred.
+        }
+    }
+}
+
+// lgnrmc.f -- lognormal mean-correction of forecasts (see hpp).
+void lgnrmc(int nfcst, const double* fctunc, const double* fctse,
+            double* fctcor, bool ltrans) {
+    constexpr double PT5 = 0.5;
+    for (int i = 1; i <= nfcst; ++i) {
+        double corfac = fctse[i - 1] * fctse[i - 1] * PT5;
+        fctcor[i - 1] =
+            ltrans ? std::exp(corfac + fctunc[i - 1]) : corfac + fctunc[i - 1];
+    }
+}
+
 }  // namespace x13
