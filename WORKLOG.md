@@ -360,13 +360,29 @@ pip cmake when adding files.
   confirms the achievable set is exactly airline/expgs/payems/unrate;
   region_north/south need the adequacy retry (arimamdl (3 2 1)) and span-modelspan
   needs model-span handling.
-- **Next — transform=auto (`trnaic`, 436 lines) then the remaining automd
-  features.** `trnaic` estimates the default airline model under no-transform and
-  log, compares AICC, and picks the transform — the unblocker for 03-automdl and
-  the many `function=auto` corpus specs (gate-able via `aictest.trans.aicc.*`).
-  Then the automd AIC-test family (tdaic/easaic/chkchi), auto outlier ID, pass0,
-  and the tstmd1/tstmd2/tstodf adequacy retry (region), plus model-span (span).
-  A full end-to-end
+- **`trnaic` (transform=auto) — LANDED (parallel subagent, merged 5c7591a).**
+  Estimates the default airline model untransformed vs log, compares AICC, picks
+  the transform; bit-exact vs the oracle on airline/expgs/payems/03-automdl
+  (`test_m4_trnaic.py`, 8 tests). Wired into run_m2 (function=auto -> trnaic
+  before transforming). **03-automdl now runs end-to-end** (was FATAL): transform
+  auto-selects Log, automd identifies (0 1 1)(0 1 1). Its variance still differs
+  from the oracle only because the `aictest=(td easter)` regressor selection is
+  unported (the oracle's final model carries td+easter; mine is plain airline).
+- **Broader parity testing (user-requested).** Added 13 diverse fixed-model
+  specs (pure-AR/MA/mixed/seasonal) + oracle goldens -> M3 gate now covers the
+  estimation engine across model orders, not just airline (a 23-model
+  oracle-vs-C++ sweep confirmed bit-exactness). Added **NSA seasonal datasets**
+  from R (nottem/ukgas/co2/usdeaths) since the FRED corpus series are all SA at
+  source (network blocked -- see `data/NSA_DATA_DROP.md`): the seasonal automdl
+  path (D=1) is now bit-exact on nottem (1 0 0)(1 1 1) / ukgas (1 0 2)(0 1 0) /
+  co2 (0 1 1)(0 1 1). **usdeaths exposed a real iddiff bug** (picks d=0 vs oracle
+  d=1; scouting 3c). Suite **293 passed**.
+- **Next — the remaining automd features.** aictest regressor family
+  (tdaic/lomaic/easaic/chkchi) -- needed for 03-automdl's full estimation and any
+  `aictest=` spec; auto outlier ID within automd (amidot), pass0, and the
+  tstmd1/testodf adequacy retry (fixes usdeaths + region arimamdl). Then pickmdl
+  (the X-11-ARIMA alternative). After M4: X-11 and SEATS (the seasonal-adjustment
+  engines -- not started). A full end-to-end
   automdl estimation gate vs the oracle `.udg` still needs: (a) resolve the
   exact-AR gap; (b) `transform=auto` selection (autotrans/aictrans — 03-automdl
   uses it; independently gate-able via `aictest.trans.aicc.*`); (c) the regressor
