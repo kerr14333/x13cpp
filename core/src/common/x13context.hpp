@@ -133,6 +133,16 @@ struct X13Context {
         std::vector<double> trnfct;  // forecast on the transformed scale
         std::vector<double> trnse;   // forecast standard error, transformed scale
     } forecasts;
+    // trnaic.f automatic transform-selection result (transform{function=auto}).
+    // The two default-airline-model AICC values the oracle reports as
+    // aictest.trans.aicc.nolog / .log, plus the chosen transform. Populated only
+    // when run_m2 runs trnaic (Fcntyp==0 on entry); no auto file output.
+    struct TrnAicResult {
+        bool ran = false;
+        double aicno = 0.0;    // AICC, untransformed model
+        double aiclog = 0.0;   // AICC, log-transformed model
+        bool selected_log = false;
+    } trnaic_result;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

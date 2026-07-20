@@ -101,6 +101,8 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     for (int i = 1; i <= prm::POTLR; ++i)
         ctx.arima.critvl(i) = prm::DNOTST;   // setdp(DNOTST,...)
     ctx.model.tcalfa = prm::DNOTST;   // gtinpt.f: Tcalfa=DNOTST
+    ctx.arima.traicd = prm::DNOTST;   // gtinpt.f:293: Traicd=DNOTST (aicdiff);
+                                      // editor.f defaults it to -2 (monthly/qtly)
     ctx.picktd.tdzero = 0;
     ctx.picktd.lnzero = 0;
     setint(prm::NOTSET, 2, ctx.picktd.tddate.data());

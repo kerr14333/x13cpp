@@ -74,9 +74,10 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
         // Capture the value tokens for the args whose state we set here:
-        //   6 = adjust, 8 = power, 9 = function, 11 = save.
+        //   6 = adjust, 8 = power, 9 = function, 11 = save, 17 = aicdiff.
         std::vector<std::string> cap;
-        bool want = (argidx == 6 || argidx == 8 || argidx == 9 || argidx == 11);
+        bool want = (argidx == 6 || argidx == 8 || argidx == 9 || argidx == 11 ||
+                     argidx == 17);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
         if (argidx == 6 && !cap.empty()) {
@@ -113,6 +114,11 @@ void gt_transform(X13Context& ctx, bool& inptok) {
             } catch (...) { /* malformed handled by the Fortran error path */ }
         } else if (argidx == 11) {
             for (const auto& t : cap) ctx.captured.save_tables.push_back(t);
+        } else if (argidx == 17 && !cap.empty()) {
+            // getadj.f:398 aicdiff= : the transform AICC threshold (Traicd).
+            try {
+                ctx.arima.traicd = std::stod(cap[0]);
+            } catch (...) { /* malformed handled by the Fortran error path */ }
         }
     }
 }

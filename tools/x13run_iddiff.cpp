@@ -92,10 +92,29 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    bool do_amdid = false, do_automd = false;
+    bool do_amdid = false, do_automd = false, do_trnaic = false;
     for (int i = 2; i < argc; ++i) {
         if (std::string(argv[i]) == "--amdid") do_amdid = true;
         if (std::string(argv[i]) == "--automd") do_automd = true;
+        if (std::string(argv[i]) == "--trnaic") do_trnaic = true;
+    }
+
+    // --trnaic: report the automatic transform-selection result. run_m2 already
+    // ran trnaic during the pre-model phase (transform{function=auto} sets
+    // Fcntyp==0); print the two default-airline-model AICC values and the choice,
+    // matching the oracle .udg aictest.trans.aicc.nolog / .log / aictrans keys.
+    if (do_trnaic) {
+        std::printf("OUTCOME: OK\n");
+        if (!ctx.trnaic_result.ran) {
+            std::printf("trnaic.ran: no\n");
+            return 0;
+        }
+        std::printf("aictest.trans.aicc.nolog: %.15E\n",
+                    ctx.trnaic_result.aicno);
+        std::printf("aictest.trans.aicc.log: %.15E\n", ctx.trnaic_result.aiclog);
+        std::printf("aictrans: %s\n",
+                    ctx.trnaic_result.selected_log ? "Log(y)" : "None");
+        return 0;
     }
 
     // --automd: run the unified (reduced) driver end to end, then read back the

@@ -9,6 +9,7 @@
 #include "specparse/specparse.hpp"
 #include "tables/tables.hpp"
 #include "transform/transform.hpp"
+#include "transform/trnaic.hpp"     // trnaic (automatic transform selection)
 #include "regarima/priadj.hpp"
 #include "regarima/regvar.hpp"
 #include "regarima/estimate.hpp"
@@ -123,6 +124,24 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
     if (has_prior && wants_save(ctx, "a3")) {
         savtbl(ctx, LTRNA3, begspn, 1, nspobs, sp, padj.data(), base, base, nser);
         if (ctx.error.lfatal) return false;
+    }
+
+    // Automatic transform selection (x11ari.f:81 trnaic), when
+    // transform{function=auto} left Fcntyp==0. trnaic estimates the default
+    // airline model untransformed and log-transformed, compares AICC, and leaves
+    // the chosen Fcntyp/Lam in ctx before the series is transformed below. It
+    // reads the untransformed span series (aptr == Y(Frstsy)); rgarma inside it
+    // writes residuals into ctx.series.tsrs, which the trn block below refills.
+    if (ctx.arima.fcntyp == 0) {
+        bool lmodel = ctx.captured.has_model &&
+                      !(ctx.arima.lautom || ctx.arima.lautox);
+        double aicno = 0.0, aiclog = 0.0;
+        trnaic(ctx, aptr, frstsy, nspobs, nobspf, lmodel, aicno, aiclog);
+        if (ctx.error.lfatal) return false;
+        ctx.trnaic_result.ran = true;
+        ctx.trnaic_result.aicno = aicno;
+        ctx.trnaic_result.aiclog = aiclog;
+        ctx.trnaic_result.selected_log = (ctx.arima.fcntyp == 1);
     }
 
     // Table trn (LTRNDT): the transformed prior-adjusted series that feeds
