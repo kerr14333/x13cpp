@@ -167,20 +167,32 @@ harness now hands iddiff/amdid their own copy. Misleading intermediate readings
 - Lesson for the run_m2 automd wire: keep the transformed-series buffer distinct
   from ctx.series.tsrs (rgarma owns Tsrs).
 
-## 3c. iddiff regular-differencing discrepancy on usdeaths (NSA) — OPEN
+## 3c. usdeaths / region final model = the unported ADEQUACY stage (NOT a bug)
 
 NSA seasonal testing (R `datasets`, dropped into the corpus) validates the
 seasonal automdl path bit-for-bit on nottem `(1 0 0)(1 1 1)`, ukgas
 `(1 0 2)(0 1 0)`, co2 `(0 1 1)(0 1 1)` — arimamdl + variance + loglikelihood all
-match the oracle. **usdeaths** (US monthly accidental deaths, 72 obs) is the one
-miss: automd picks `(1 0 1)(0 1 1)` where the oracle picks `(0 1 1)(0 1 1)` —
-iddiff chooses **d=0** where the oracle chooses **d=1** (seasonal D=1 agrees).
-So the regular unit-root decision in iddiff differs for this short, strongly
-seasonal series. First debugging step: dump iddiff's per-round idr/rmaxr and the
-AR-root moduli (chkrt1) for usdeaths vs the oracle's unit-root test trace; the
-likely suspects are the round-2 cancellation (`Cancel`/`Ub2lim`) thresholds or
-the `Frstar`-seeded first model on a 72-obs series. Gated on identification only
-(excluded from the automd estimation gate) until resolved.
+match the oracle. **usdeaths** (US monthly accidental deaths, 72 obs) differs on
+the FINAL model only, and it is NOT an iddiff/amdid bug — the oracle `.out` trace
+confirms our engine is correct through identification:
+
+```
+Results of Unit Root Test ... Regular 0, Seasonal 1     <- iddiff (mine matches)
+Automatic model choice : (1 0 1)(0 1 1)                 <- amdid  (mine matches EXACTLY)
+Checking for Unit Roots. No unit roots found.           <- tstmd2
+Checking for nonseasonal overdifferencing.              <- testodf
+Final automatic model choice : (0 1 1)(0 1 1)           <- testodf REWRITES the model
+```
+
+So `testodf` (over-differencing test) converts the near-unit AR(1) of
+`(1 0 1)(0 1 1)` into a regular difference → `(0 1 1)(0 1 1)`. region_north is the
+same class (its `(1 2 2)(0 1 1)` → `(3 2 1)(0 1 1)` comes from the adequacy
+retry, likely `tstmd1`). **Fix = port the adequacy stage and wire it into automd
+after amdid.** Leaves: `mdlchk` DONE, `tstmd2` DONE; still need `testodf`
+(usdeaths), `tstmd1` (region), plus `bkdfmd`/`ssprep`/`sftest`. testodf deps:
+adrgef/regvar/rgarma/mdlchk (ported) + sftest + the outlier branches
+(amidot/clrotl, gated off for no-outlier specs). Both usdeaths and region are
+gated on identification only until the adequacy stage lands.
 
 ## 4. First corpus gate target
 
