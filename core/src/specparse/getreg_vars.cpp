@@ -14,6 +14,7 @@
 #include "notset.hpp"
 #include "srslen.hpp"
 #include "gen/model.hpp"
+#include "regarima/outlier.hpp"   // rdotlr (outlier title parser)
 
 #include <string>
 
@@ -212,8 +213,40 @@ void adrgef(X13Context& ctx, double initvl, std::string_view effttl,
 
     // Column placement within the group.
     if (vartyp == PRGTAA || vartyp == PRGTAL || vartyp == PRGTAT) {
-        not_ported(ctx, "automatically identified outlier ordering (rdotlr.f)");
-        return;
+        // Sort automatically identified outliers by date (adrgef.f). Grp is
+        // already updated for the new column, so scan to Grp(igrp)-2.
+        int otlidx = 0, begotl = 0, endotl = 0;
+        bool locok = true;
+        rdotlr(ctx, std::string(effttl), D.begspn.data(), M.sp, otlidx, begotl,
+               endotl, locok);
+        if (!locok) { abend(ctx); return; }
+        bool placed = false;
+        for (icol = M.grp(igrp - 1); icol <= M.grp(igrp) - 2; ++icol) {
+            std::string tmpttl;
+            int nchr;
+            getstr(ctx, M.colttl.data(), M.colptr.data(), M.nb, icol, tmpttl, nchr);
+            if (ctx.error.lfatal) return;
+            int otlid2 = 0, bgotl2 = 0, endot2 = 0;
+            rdotlr(ctx, tmpttl, D.begspn.data(), M.sp, otlid2, bgotl2, endot2,
+                   locok);
+            if (!locok) { abend(ctx); return; }
+            if (begotl == bgotl2) {
+                if (otlidx == otlid2) {
+                    errhdr(ctx);
+                    writln(ctx, std::string(" ERROR: ") + std::string(effttl) +
+                           " already exists.", stdio::STDERR, ctx.units.mt2, true);
+                    abend(ctx);
+                    return;
+                } else if (otlidx < otlid2) {
+                    placed = true;   // GO TO 10
+                    break;
+                }
+            } else if (begotl < bgotl2) {
+                placed = true;       // GO TO 10
+                break;
+            }
+        }
+        if (!placed) icol = M.grp(igrp) - 1;
     } else if (vartyp == PRGTTD || vartyp == PRGTST || vartyp == PRRTTD ||
                vartyp == PRRTST || vartyp == PRATTD || vartyp == PRATST) {
         int newreg = strinx(false, DAYDIC, dayptr, 1, PDAY, effttl.substr(0, 3));

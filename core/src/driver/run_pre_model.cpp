@@ -13,10 +13,14 @@
 #include "regarima/regvar.hpp"
 #include "regarima/estimate.hpp"
 #include "regarima/forecast.hpp"
+#include "regarima/outlier.hpp"     // idotlr, setcv
+#include "numeric/numeric.hpp"      // dpeq
 #include "gen/srslen.hpp"           // prm::PLEN (residual work-vector sizing)
 #include "gen/model.hpp"            // prm::PORDER
+#include "gen/notset.hpp"           // prm::DNOTST
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -174,8 +178,39 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
             rgarma(ctx, ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
                    /*lprtit=*/false, a.data(), na, nefobs, lauto);
             (void)na;
-            (void)nefobs;  // nefobs == Nspobs-Nintvl; the estimates live in mdldat
             if (ctx.error.lfatal) return false;
+
+            // Automatic outlier identification (arima.f:756 idotlr), when an
+            // outlier{} spec is present. Re-estimates the model in place with the
+            // identified AO/LS/TC regressors. Default the test span (model span),
+            // the TC decay, and the per-type critical value (setcv) as arima.f
+            // does before the call.
+            if (ctx.captured.has_outlier &&
+                (ctx.arima.ltstao || ctx.arima.ltstls || ctx.arima.ltsttc)) {
+                int begtst[2] = {begspn[0], begspn[1]};
+                int endtst[2];
+                addate(begspn, sp, nspobs - 1, endtst);
+                if (dpeq(ctx.model.tcalfa, prm::DNOTST))
+                    ctx.model.tcalfa = std::pow(0.7, 12.0 / sp);
+                int nobtst = 0;
+                dfdate(endtst, begtst, sp, nobtst);
+                nobtst += 1;
+                // Default (Ljung) critical value; the corrected (Cvtype) variant
+                // is deferred.
+                double cv = setcv(nobtst, ctx.arima.cvalfa);
+                for (int t = 1; t <= prm::POTLR; ++t)
+                    if (dpeq(ctx.arima.critvl(t), prm::DNOTST))
+                        ctx.arima.critvl(t) = cv;
+                double critvl[prm::POTLR] = {ctx.arima.critvl(1),
+                                             ctx.arima.critvl(2),
+                                             ctx.arima.critvl(3)};
+                idotlr(ctx, ctx.arima.ltstao, ctx.arima.ltstls, ctx.arima.ltsttc,
+                       ctx.arima.ladd1, critvl, ctx.arima.cvrduc, begtst, endtst,
+                       nefobs, ctx.arima.lestim, ctx.arima.mxiter,
+                       ctx.arima.mxnlit, /*lauto=*/false, a.data());
+                if (ctx.error.lfatal) return false;
+            }
+            (void)nefobs;  // nefobs == Nspobs-Nintvl; the estimates live in mdldat
 
             // Likelihood statistics (arima.f:742 prlkhd): the transform-Jacobian-
             // adjusted log likelihood + AIC/AICC/BIC/HQ into ctx.lkhd. Y is the

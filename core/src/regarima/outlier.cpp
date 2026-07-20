@@ -24,7 +24,137 @@ namespace x13 {
 namespace {
 const char* const CMO[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+constexpr double PI_ = 3.14159265358979;
+
+// ppnd.f (AS 111) -- normal deviate for lower-tail area p; ier=1 on p<=0/>=1.
+double ppnd(double p, int& ier) {
+    const double SPLIT = 0.42;
+    const double A0 = 2.50662823884, A1 = -18.61500062529, A2 = 41.39119773534,
+                 A3 = -25.44106049637;
+    const double B1 = -8.47351093090, B2 = 23.08336743743, B3 = -21.06224101826,
+                 B4 = 3.13082909833;
+    const double C0 = -2.78718931138, C1 = -2.29796479134, C2 = 4.85014127135,
+                 C3 = 2.32121276858;
+    const double D1 = 3.54388924762, D2 = 1.63706781897;
+    ier = 0;
+    double q = p - 0.5;
+    if (std::fabs(q) <= SPLIT) {
+        double r = q * q;
+        return q * (((A3 * r + A2) * r + A1) * r + A0) /
+               ((((B4 * r + B3) * r + B2) * r + B1) * r + 1.0);
+    }
+    double r = p;
+    if (q > 0.0) r = 1.0 - p;
+    if (r <= 0.0) {
+        ier = 1;
+        return 0.0;
+    }
+    r = std::sqrt(-std::log(r));
+    double v = (((C3 * r + C2) * r + C1) * r + C0) / ((D2 * r + D1) * r + 1.0);
+    if (q < 0.0) v = -v;
+    return v;
+}
+
+// setcvl.f -- large-sample (Ljung) critical value approximation.
+double setcvl(int nspobs, double cvalfa) {
+    if (nspobs == 1) return prm::DNOTST;   // undefined for a 1-point span
+    double pmod = 2.0 - std::sqrt(1.0 + cvalfa);
+    double dnobs = nspobs;
+    double acv = std::sqrt(2.0 * std::log(dnobs));
+    double bcv = acv - (std::log(std::log(dnobs)) + std::log(4.0 * PI_)) /
+                           (2.0 * acv);
+    double xcv = -std::log(-0.5 * std::log(pmod));
+    return (xcv / acv) + bcv;
+}
+
+// lassol.f -- solve AX=B (n<=3) by Gaussian elimination with partial pivoting
+// and row equilibration. a is column-major with leading dimension m. iflag=1 on
+// success, 2 if singular. The oracle's EQUIVALENCEd scalars are used in disjoint
+// scopes, so distinct locals are exact.
+void lassol(int n, const double* a, const double* b, int m, double* x,
+            int& iflag) {
+    const int np1 = n + 1;
+    double ab[3][4];
+    auto A = [&](int i, int j) { return a[(j - 1) * m + (i - 1)]; };
+    for (int i = 1; i <= n; ++i) {
+        double rowmax = 0.0;
+        for (int j = 1; j <= n; ++j) rowmax = std::max(rowmax, std::fabs(A(i, j)));
+        double scale = 1.0 / rowmax;
+        for (int j = 1; j <= n; ++j) ab[i - 1][j - 1] = A(i, j) * scale;
+        ab[i - 1][np1 - 1] = b[i - 1] * scale;
+    }
+    for (int k = 1; k <= n - 1; ++k) {
+        double big = 0.0;
+        int idxpiv = k;
+        for (int i = k; i <= n; ++i) {
+            double t = std::fabs(ab[i - 1][k - 1]);
+            if (big < t) {
+                big = t;
+                idxpiv = i;
+            }
+        }
+        if (dpeq(big, 0.0)) {
+            iflag = 2;
+            return;
+        }
+        if (idxpiv != k)
+            for (int i = k; i <= np1; ++i)
+                std::swap(ab[k - 1][i - 1], ab[idxpiv - 1][i - 1]);
+        for (int i = k + 1; i <= n; ++i) {
+            double quot = ab[i - 1][k - 1] / ab[k - 1][k - 1];
+            for (int j = k + 1; j <= np1; ++j)
+                ab[i - 1][j - 1] -= quot * ab[k - 1][j - 1];
+        }
+    }
+    if (!dpeq(ab[n - 1][n - 1], 0.0)) {
+        x[n - 1] = ab[n - 1][np1 - 1] / ab[n - 1][n - 1];
+        for (int ib = 2; ib <= n; ++ib) {
+            int i = np1 - ib;
+            double sum = 0.0;
+            for (int j = i + 1; j <= n; ++j) sum += ab[i - 1][j - 1] * x[j - 1];
+            x[i - 1] = (ab[i - 1][np1 - 1] - sum) / ab[i - 1][i - 1];
+        }
+        iflag = 1;
+        return;
+    }
+    iflag = 2;
+}
 }  // namespace
+
+// setcv.f -- default outlier critical value from the test-span length.
+double setcv(int nspobs, double cvalfa) {
+    const double x[3] = {2.0, 100.0, 200.0};
+    if (nspobs == 1) {
+        int iflag = 0;
+        double v = ppnd(1.0 - (cvalfa / 2.0), iflag);
+        return (iflag == 1) ? prm::DNOTST : v;
+    }
+    double dnobs = nspobs;
+    double xmat[9], y[3], beta[3];
+    for (int i = 1; i <= 3; ++i) {
+        if (i == 1) {
+            int iflag = 0;
+            y[0] = ppnd((1.0 + std::sqrt(1.0 - cvalfa)) / 2.0, iflag);
+            if (iflag == 1) return prm::DNOTST;
+        } else {
+            y[i - 1] = setcvl(static_cast<int>(x[i - 1]), cvalfa);
+        }
+        double xi = x[i - 1];
+        double col3 = std::sqrt(2.0 * std::log(xi));
+        // xmat column-major (i,j) -> xmat[(j-1)*3 + (i-1)].
+        xmat[0 * 3 + (i - 1)] = 1.0;                                    // (i,1)
+        xmat[2 * 3 + (i - 1)] = col3;                                   // (i,3)
+        xmat[1 * 3 + (i - 1)] =
+            (std::log(std::log(xi)) + std::log(4.0 * PI_)) / (2.0 * col3);  // (i,2)
+    }
+    int iflag = 0;
+    lassol(3, xmat, y, 3, beta, iflag);
+    if (iflag == 2) return prm::DNOTST;
+    double acv = std::sqrt(2.0 * std::log(dnobs));
+    double bcv = (std::log(std::log(dnobs)) + std::log(4.0 * PI_)) / (2.0 * acv);
+    return beta[0] + beta[1] * bcv + beta[2] * acv;
+}
 
 // wrtdat.f -- date to "yyyy[.mon]" per seasonal period.
 std::string wrtdat(const int* idate, int sp) {

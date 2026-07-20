@@ -11,6 +11,7 @@
 #include "numeric/numeric.hpp"   // dpmpar (machine precision for tol checks)
 #include "notset.hpp"
 #include "srslen.hpp"
+#include "model.hpp"   // prm::POTLR
 
 #include <string>
 #include <vector>
@@ -397,7 +398,58 @@ void gt_outlier(X13Context& ctx, bool& inptok) {
         "typesmethodcriticallsrunspanprintsavetcratecriticalalphadefault"
         "criticalalmostsavelog";
     static const int argptr[PARG + 1] = {1, 6, 12, 20, 25, 29, 34, 38, 44, 57, 72, 78, 85};
-    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+
+    // gtotlr.f defaults: identify AO+LS by ADDONE, critical value from the span.
+    ctx.arima.ltstao = true;
+    ctx.arima.ltstls = true;
+    ctx.arima.ltsttc = false;
+    ctx.arima.ladd1 = true;
+    ctx.captured.has_outlier = true;
+    const int sp = ctx.model.sp;
+
+    int arglog[2 * PARG];
+    for (auto& v : arglog) v = -32767;
+    int argidx;
+    while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
+        if (ctx.error.lfatal) return;
+        // Capture value tokens for the args we act on: 1 types, 2 method,
+        // 3 critical, 9 criticalalpha.
+        bool want = (argidx == 1 || argidx == 2 || argidx == 3 || argidx == 9);
+        std::vector<std::string> cap;
+        consume_value(ctx, want ? &cap : nullptr);
+        if (ctx.error.lfatal) return;
+        if (argidx == 1 && !cap.empty()) {           // types
+            ctx.arima.ltstao = false;
+            ctx.arima.ltstls = false;
+            ctx.arima.ltsttc = false;
+            for (auto& t : cap) {
+                if (t == "ao") ctx.arima.ltstao = true;
+                else if (t == "ls") ctx.arima.ltstls = true;
+                else if (t == "tc") ctx.arima.ltsttc = true;
+                else if (t == "all") {
+                    ctx.arima.ltstao = true;
+                    ctx.arima.ltstls = true;
+                    if (sp >= 4) ctx.arima.ltsttc = true;
+                }
+                // "none" leaves all false.
+            }
+        } else if (argidx == 2 && !cap.empty()) {    // method: addone|addall
+            ctx.arima.ladd1 = (cap[0] == "addone");
+        } else if (argidx == 3 && !cap.empty()) {    // critical value(s)
+            if (cap.size() == 1) {
+                double v = 0;
+                try { v = std::stod(cap[0]); } catch (...) { v = 0; }
+                for (int i = 1; i <= prm::POTLR; ++i) ctx.arima.critvl(i) = v;
+            } else {
+                for (std::size_t i = 0; i < cap.size() && i < prm::POTLR; ++i) {
+                    try { ctx.arima.critvl(static_cast<int>(i) + 1) = std::stod(cap[i]); }
+                    catch (...) {}
+                }
+            }
+        } else if (argidx == 9 && !cap.empty()) {    // criticalalpha
+            try { ctx.arima.cvalfa = std::stod(cap[0]); } catch (...) {}
+        }
+    }
 }
 
 // ---- seats{} (gtseat.f) ----------------------------------------------------

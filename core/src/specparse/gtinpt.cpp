@@ -89,6 +89,18 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.arima.fctdrp = 0;             // gtinpt.f: Fctdrp=0
     ctx.arima.ciprob = 0.95;          // gtinpt.f: Ciprob=.95D0
     ctx.arima.lognrm = false;         // gtinpt.f: Lognrm=F
+    // Outlier-identification defaults (gtinpt.f 304-421); gt_outlier overrides
+    // when an outlier{} spec is present.
+    ctx.arima.ltstao = false;
+    ctx.arima.ltstls = false;
+    ctx.arima.ltsttc = false;
+    ctx.arima.ladd1 = true;
+    ctx.arima.cvalfa = 0.05;          // gtinpt.f: Cvalfa=PT5 (PT5=0.05D0)
+    ctx.arima.cvtype = false;         // gtinpt.f: Cvtype=F (Ljung, not corrected)
+    ctx.arima.cvrduc = 0.5;           // gtinpt.f: Cvrduc=0.5D0
+    for (int i = 1; i <= prm::POTLR; ++i)
+        ctx.arima.critvl(i) = prm::DNOTST;   // setdp(DNOTST,...)
+    ctx.model.tcalfa = prm::DNOTST;   // gtinpt.f: Tcalfa=DNOTST
     ctx.picktd.tdzero = 0;
     ctx.picktd.lnzero = 0;
     setint(prm::NOTSET, 2, ctx.picktd.tddate.data());

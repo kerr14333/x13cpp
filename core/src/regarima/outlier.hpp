@@ -32,6 +32,12 @@ std::string wrtotl(int itype, int begotl, int endotl, const int* begdat, int sp)
 void rdotlr(X13Context& ctx, const std::string& otlttl, const int* begspn,
             int sp, int& otlind, int& begotl, int& endotl, bool& locok);
 
+// setcv.f: default outlier critical value from the outlier-test span length
+// nspobs and the alpha level cvalfa (Ljung-style approximation). For nspobs==1
+// it is the normal deviate; otherwise a 3-point (n=2,100,200) log-scale fit is
+// solved (lassol) and extrapolated. Returns prm::DNOTST on internal failure.
+double setcv(int nspobs, double cvalfa);
+
 // idotlr.f: automatic outlier identification driver. Forward-addition (add the
 // largest AO/LS/TC over the per-type critical value, re-estimate, repeat) then
 // backward-deletion (drop any auto-outlier whose non-robust t falls below the

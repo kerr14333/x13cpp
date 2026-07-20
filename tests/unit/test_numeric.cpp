@@ -2268,4 +2268,10 @@ TEST("coladd: open regression columns, shifting existing data right") {
     CHECK(xy2[2] == 7 && xy2[5] == 8 && xy2[8] == 9);  // each row's datum at col3
 }
 
+TEST("setcv: default outlier critical value from span length") {
+    // Golden from ref_setcv.f (setcv/setcvl/ppnd/lassol driven directly).
+    CHECK(rclose(setcv(132, 0.5), 3.1278891070172814, 1e-12));
+    CHECK(rclose(setcv(60, 0.5), 2.8814980658151446, 1e-12));
+}
+
 int main() { return mt::run_all(); }

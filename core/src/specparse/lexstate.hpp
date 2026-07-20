@@ -122,6 +122,7 @@ struct ParseSettings {
     std::string x11_mode;               // x11{ mode = ... }
     bool has_x11 = false;
     bool has_seats = false;
+    bool has_outlier = false;           // outlier{} spec present (auto outlier ID)
     std::vector<std::string> regression_vars;   // regression{ variables = ... }
     std::vector<std::string> aictest_vars;      // regression{ aictest = ... }
     std::vector<std::string> spec_order;        // spec names in order encountered

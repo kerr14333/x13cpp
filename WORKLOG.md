@@ -225,10 +225,31 @@ pip cmake when adding files.
   skipped / 11 xfailed. (The oracle's seats-driven forecast-count override — 3·sp
   vs the requested maxlead — is a later seats-phase concern; the gate compares the
   overlapping leads, which are count-independent.)
-- **Next — outlier detection** (idotlr/rdotlr AO/LS/TC scan; unblocks the many
-  corpus specs the estimation/forecast gates currently skip for auto-outliers),
-  the deferred M2 regressor branches, and the .out/.fct print engine (byte-exact
-  save-file emission). See `tools/m3_scouting.md` §5 Tier-6/7 and §7.
+- **Automatic outlier identification — LANDED (idotlr end-to-end).** The full
+  AO/LS/TC outlier scan wired into run_m2 behind `outlier{}`. Leaves ported +
+  oracle-verified: `shlsrt`/`medabs` (robust residual mse), `makotl` (AO/LS/TC
+  regressor construction), `ttest` (forward add-one proportional t via augmented
+  Cholesky), `dppdi`+`dscal` (backward-deletion se via packed inverse), `deltst`
+  (backward t-test), `coladd`/`addotl` (Xy column insert + reconstruction),
+  `rdotlr`/`wrtdat`/`wrtotl` (outlier title <-> type+date), and the default
+  critical-value chain `setcv`/`setcvl`/`ppnd`/`lassol` (Cvalfa=0.05 default ->
+  aocrit 3.890 for the 144-obs airline). The `idotlr` driver does forward
+  addition (scan every test point, add the largest over `Critvl*rbmse` via
+  adrgef/coladd/addotl, re-estimate, repeat) then backward deletion (deltst ->
+  dlrgef -> re-estimate). Also completed the two `adrgef` auto-outlier
+  date-ordering branches that were `not_ported` stubs (group + column insertion),
+  now that rdotlr exists. **End-to-end oracle parity:** airline+td+outlier
+  identifies `AO1951.May` and re-estimates to niter=12/nfev=85 EXACT, MA
+  0.068877/0.518092, variance 9.4073e-4, AO coef 0.115444506648419 -- all
+  bit-for-bit vs the oracle `.udg`. The M3 estimation gate now includes 5
+  outlier specs (4 series' fixed-airline-x11 + payems lsrun): **30 specs pass**
+  (was 25). `test_numeric` = 81. Deferred (as with fcstout): all iteration/table
+  printing + save files, the x11-regression (lxreg) path, and the diagnostic
+  "almost outlier" reduced-critical re-scan (never changes the model); the
+  corrected (Cvtype) critical-value variant.
+- **Next** — the deferred M2 regressor branches, the .out/.fct print engine
+  (byte-exact save-file emission), and automatic model identification (automdl).
+  See `tools/m3_scouting.md` §5 Tier-6/7 and §7.
 - **Packaging scaffolding (r-pkg/py-pkg) built by an agent, parked on branch
   `worktree-agent-ae1edc2bc3b17f4d4`** (NOT merged; merge after the main
   milestones). R CMD check / twine check clean; datasets bundled; result-object
