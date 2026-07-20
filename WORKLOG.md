@@ -398,5 +398,39 @@ pip cmake when adding files.
   API honors the no-auto-file-output rule. See second-brain
   `x13cpp-pending-pkg-merge`.
 
+## Session — M4 complete + M5 (X-11/SEATS) started (~14h active, 132 commits)
+
+Large multi-agent session. Landmarks (all bit-exact vs oracle unless noted):
+
+- **M4 automatic model selection — the identification engine is DONE + GATED.**
+  iddiff (differencing) + amdid (ARMA orders) + automd driver wired into run_m2 +
+  trnaic (transform=auto). Produces the oracle model + estimation end-to-end on
+  airline/expgs/payems/unrate/nottem/ukgas/co2. `aictest` family (tdaic/easaic)
+  ported + gated (all `aictest.diff.td/e` match). Adequacy routines
+  (mdlchk/tstmd2/testodf/bkdfmd/tstmd1) ported but BANKED — wiring needs the full
+  automd finalization as one unit (tstmd1 alone perturbs the 4 non-revert cases;
+  FABLE_REVIEW §1). usdeaths/region final model traced to tstmd1 revert.
+- **M5 seasonal adjustment — leaves STARTED (dirs were empty).** X-11 Tier 0–3:
+  mode arithmetic, Henderson trend chain, seasonal-MA (vsfa/vsfb/vsfc),
+  extreme-value (xtrm chain) — `core/src/x11/`, 27 unit tests. SEATS: poly
+  arithmetic + the **C02AEF root finder verified bit-exact** (the #1 SEATS parity
+  hinge) + RPQ — `core/src/seats/`, 12 unit tests. Driver spines (x11pt*, PARFRA/
+  MAK1) not yet ported.
+- **Bug fixed: user-specified outlier regressors** (`regression{variables=(ao…)}`
+  AO/LS/TC/RP) were FATAL, now bit-exact (getreg_vars wired to rdotlr/addotl;
+  user-TC defaults tcalfa). AOS/LSS still deferred (rdotls unported).
+- **Formal code coverage** (`tools/coverage.ps1`, gcov/gcovr): **73.1% lines,
+  89.6% functions** over core/src. `adqtst.cpp` 0% (banked, uncalled).
+- **~50 new parity specs**: diverse ARIMA orders, NSA seasonal series (R
+  datasets), regression/outlier effects, transforms, prior adjust, exact-ML,
+  span, forecast. Suite **244 → 365 passed**.
+- **Census bugs logged**: CB-7 (endsf double-divide), CB-8 (sdxtrm stale loop var).
+  **Found gaps**: labor/thank holiday regressors FATAL (adlabr/adthnk unported).
+- **Next**: wire the automd finalization (fixes usdeaths/region + 03-automdl full
+  estimation via aictest); the X-11 `x11pt*` decomposition spine (first gate
+  airline_x11-default D-tables); SEATS PARFRA/MAK1 decomposition; labor/thank +
+  AOS/LSS + lomaic/usraic follow-ups. See tools/{automdl,x11,seats}_scouting.md,
+  TEST_COVERAGE.md, FABLE_REVIEW.md.
+
 _Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
 timeline is the authority._
