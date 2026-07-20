@@ -81,6 +81,10 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
 
 ## Found gaps (features that FATAL / diverge — real bugs)
 
+- **`labor` / `thank` holiday regressors FATAL.** `regression{ variables=(labor[10]) }`
+  and `(thank[3])` → `OUTCOME: FATAL` while the oracle estimates them. Other
+  holidays work and are gated (Easter, sceaster, easterstock). Labor-Day and
+  Thanksgiving holiday-regressor construction is unported. (Found by sweep2.)
 - **User-specified outlier regressors FATAL.** `regression{ variables = (ao1950.jan) }`
   (and `ls<date>`, `tc<date>`, ramps) → `OUTCOME: FATAL` in x13run_m3, while the
   oracle estimates fine. Automatic outlier ID (`outlier{}`) works and is gated;
