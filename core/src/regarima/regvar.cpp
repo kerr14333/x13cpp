@@ -189,12 +189,20 @@ void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
         case 30:
             not_ported(ctx, "trigonometric seasonal regressors (adsncs.f)");
             return;
-        case 100:
-            not_ported(ctx, "Labor Day regressors (adlabr.f)");
-            return;
-        case 110:
-            not_ported(ctx, "Thanksgiving-Christmas regressors (adthnk.f)");
-            return;
+        case 100: {
+            // Labor Day holiday effect.
+            int ipos = nigrpc + 2;
+            int ndays = ctoi(std::string_view(igrptl).substr(0, static_cast<std::size_t>(nchr)), ipos);
+            adlabr(begxy, nrxy, M.ncxy, begcol, ndays, D.xy.data(), xmeans);
+            break;
+        }
+        case 110: {
+            // Thanksgiving-Christmas holiday effect.
+            int ipos = nigrpc + 2;
+            int ndays = ctoi(std::string_view(igrptl).substr(0, static_cast<std::size_t>(nchr)), ipos);
+            adthnk(begxy, nrxy, M.ncxy, begcol, ndays, D.xy.data(), xmeans);
+            break;
+        }
         case 120:   // AO/LS/MV/TC/SO/TL/ramp regressors
         case 130:   // automatically identified outliers
             addotl(ctx, begxy, nrxy, nbcst, begcol, endcol);

@@ -81,10 +81,11 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
 
 ## Found gaps (features that FATAL / diverge — real bugs)
 
-- **`labor` / `thank` holiday regressors FATAL.** `regression{ variables=(labor[10]) }`
-  and `(thank[3])` → `OUTCOME: FATAL` while the oracle estimates them. Other
-  holidays work and are gated (Easter, sceaster, easterstock). Labor-Day and
-  Thanksgiving holiday-regressor construction is unported. (Found by sweep2.)
+- **`labor` / `thank` holiday regressors — FIXED + gated.** Ported `adlabr.f`
+  (Labor Day) and `adthnk.f` (Thanksgiving-Christmas) column builders into
+  `core/src/regarima/adhol.cpp`, wired regvar cases 100/110 (single-column,
+  ndays from the group title via ctoi, case-70 pattern). `airline_reg-labor` /
+  `airline_reg-thank` gate BIT-EXACT vs oracle in test_m3_estimate.py.
 - **User-specified outlier regressors — FIXED** for AO/LS/TC/RP/MV/SO/TL/QI/QD.
   getreg_vars.cpp's outlier-variable case now parses the date (rdotlr), validates
   the window per type, and registers the group (regvar case 120 builds the column

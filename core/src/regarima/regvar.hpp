@@ -65,6 +65,14 @@ void adestr(const int* begdat, int nrxy, int ncxy, int isp, int icol, int ndays,
 void estrmu(const int* begdat, int nrxy, int sp, int ndays, bool hlong,
             double* hmean, bool hstock);
 
+// adlabr.f: Bell Labor-Day holiday regressor into Xy column icol (monthly only).
+void adlabr(const int* begdat, int nrxy, int ncxy, int icol, int ndays,
+            double* xy, bool xmeans);
+
+// adthnk.f: Bell Thanksgiving-Christmas holiday regressor into Xy column icol.
+void adthnk(const int* begdat, int nrxy, int ncxy, int icol, int ndays,
+            double* xy, bool xmeans);
+
 // regvar.f: build the [X:y] regression matrix (mdldat Xy) for the current
 // model state. Outputs Nrxy (rows), Begxy (start date incl. backcasts), and
 // Frstry (first element of Xy used in estimation).
