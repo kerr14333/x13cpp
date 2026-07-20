@@ -336,8 +336,23 @@ pip cmake when adding files.
   (3 2 1)(0 1 1)` is set by automd's later adequacy stage (tstmd1/2/odf), a
   separate unported feature. **Lesson for the automd wire: keep the transformed-
   series buffer distinct from ctx.series.tsrs.**
-- **Next — the automd driver + its prerequisites.** The identification CORE
-  (iddiff + amdid) is done and gated (modulo the exact-AR gap). A full end-to-end
+- **Reduced `automd` driver — LANDED. Automatic model selection works end to
+  end, bit-exact vs the oracle on 4 series.** `core/src/automdl/automd.cpp` ports
+  the automd.f spine for automdl specs with no auto-transform/aictest/outlier
+  preamble: default airline model → `chkmu` (mean test) → `iddiff` → `amdid` →
+  re-add the mean when significant → final estimate; reuses every ported piece
+  and keeps the transformed-series buffer distinct from `ctx.series.tsrs`. Gate
+  (`x13run_iddiff --automd`): reproduces the oracle `.udg` **full estimation** —
+  arimamdl + variance (rtol 1e-9) + loglikelihood — bit-for-bit on airline
+  `(0 1 1)(0 1 1)` (automean=no), expgs `(2 1 0)` (automean=yes), payems
+  `(0 1 2)`, unrate `(0 1 1)`: seasonal/nonseasonal, with/without a mean.
+  `test_automd_full_estimation` locks the four; suite **244 passed**.
+  span-modelspan (model span ≠ series span) and region_north (arimamdl from the
+  adequacy stage) are gated on identification only, pending those features.
+  Deferred in the reduced driver: the regressor AIC-test family, auto outlier ID,
+  pass0, and the tstmd1/tstmd2/tstodf adequacy retry.
+- **Next — the automd prerequisites + run_m2 wire.** The identification+estimation
+  spine is done and gated. A full end-to-end
   automdl estimation gate vs the oracle `.udg` still needs: (a) resolve the
   exact-AR gap; (b) `transform=auto` selection (autotrans/aictrans — 03-automdl
   uses it; independently gate-able via `aictest.trans.aicc.*`); (c) the regressor

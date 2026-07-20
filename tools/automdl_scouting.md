@@ -74,7 +74,8 @@ corpus gate, not microtests.
 | 4    | chkchi      | 74    | regressor chi-square test                   | todo   |
 | 5    | tstmd1/tstmd2/tstodf | | model-adequacy tests + retry loop       | todo   |
 | 6    | pass0/pass2 | ~     | TRAMO ACF pre-screen passes                 | todo   |
-| 7    | automd      | 1038  | the driver; wire into run_m2 behind automdl{} | todo |
+| 7    | automd (reduced) | 1038 | driver spine (default→chkmu→iddiff→amdid→mean→final) | **DONE** 5ca900e (4 series bit-exact est.) |
+| 7    | automd (full) | | AIC tests + outlier + pass0 + adequacy retry + run_m2 wire | todo |
 | —    | amdprt/prtamd/prtmsp/prtnfn | | print engines — DEFER (like fcstout) | defer |
 
 ### Landed (M4 substrate — the numeric + construction core)
