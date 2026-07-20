@@ -11,6 +11,7 @@
 #include "gen/model.hpp"
 
 #include <algorithm>
+#include <cstring>
 
 namespace x13 {
 
@@ -45,6 +46,28 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.savcmn.svprec = 15;
     ctx.x11msc.yr2000 = true;
     ctx.x11opt.divpwr = prm::NOTSET;
+    // gtinpt.f 323-336: x11 seasonal-adjustment option defaults (getx11 reads
+    // back over these; unset options keep the default). Only the scalars the
+    // ported X-11 spine consumes are set here -- title/taper/final args (Notc,
+    // Thtapr, Fin*) have no ported consumer yet. Ny=Sp and Kersa=0 are set by
+    // the editor-stage setup (editor.f:150,1486), mirrored in the run_x11 driver.
+    ctx.x11opt.muladd = prm::NOTSET;
+    ctx.x11opt.kfulsm = 0;
+    ctx.x11opt.sigml = 1.5;
+    ctx.x11opt.sigmu = 2.5;
+    ctx.x11opt.lterm = prm::NOTSET;
+    ctx.x11opt.ktcopt = 0;
+    ctx.x11opt.imad = 0;
+    ctx.x11opt.ishrnk = 0;
+    ctx.x11opt.tic = 0.0;
+    setint(0, 12, ctx.x11opt.lter.data());              // gtinpt.f:333 Lter=0
+    ctx.xtrm.ksdev = 1;                                  // gtinpt.f:329 (NOT 0)
+    setlg(false, 12, ctx.xtrm.csigvc.data());            // gtinpt.f:330 Csigvc(PSP)=F
+    ctx.x11msc.shrtsf = false;                           // gtinpt.f:353
+    ctx.x11msc.psuadd = false;                           // gtinpt.f:375
+    ctx.x11msc.noxfct = false;                           // gtinpt.f:380
+    ctx.x11msc.tru7hn = false;                           // gtinpt.f:381
+    ctx.x11msc.lcentr = false;                           // gtinpt.f:382
     ctx.model.isrflw = prm::NOTSET;
     ctx.missng.mvcode = -99999.0;
     ctx.missng.mvval = 1000000000.0;
@@ -147,8 +170,8 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     lx11 = false; lseats = false; lmodel = false;
     inptok = true;
 
-    // Local echo of x11/transform state for the muladd/fcntyp end block.
-    int muladd = prm::NOTSET;
+    // Local echo of transform state for the muladd/fcntyp end block; the real
+    // Muladd lives on ctx.x11opt (getx11.f mode arg -> resolved below).
 
     int spcidx;
     while (true) {
@@ -244,7 +267,6 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 gt_x11(ctx, inptok);
                 if (ctx.error.lfatal) return;
                 if (!lx11) lx11 = true;
-                if (!ctx.captured.x11_mode.empty()) muladd = 1;
                 ctx.captured.spec_order.push_back("x11");
                 break;
             case 14:  // composite
@@ -313,9 +335,25 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             return;
         }
 
-        // Muladd / Fcntyp resolution (only the Inptok-affecting branch matters here).
+        // getx11.f:180-198 -- translate the x11{ mode } token into Muladd
+        // (mult=0, add=1, logadd=2; pseudoadd=0 + Psuadd). The corpus uses full
+        // tokens; match by prefix like gtdcvc against MODDIC='multaddlogaddpseudoadd'.
+        if (!ctx.captured.x11_mode.empty()) {
+            const std::string& m = ctx.captured.x11_mode;
+            auto pre = [&](const char* s) {
+                return m.size() <= std::strlen(s) && std::strncmp(m.c_str(), s, m.size()) == 0;
+            };
+            if (pre("pseudoadd")) { ctx.x11opt.muladd = 0; ctx.x11msc.psuadd = true; }
+            else if (pre("logadd")) ctx.x11opt.muladd = 2;
+            else if (pre("mult"))   ctx.x11opt.muladd = 0;
+            else if (pre("add"))    ctx.x11opt.muladd = 1;
+        }
+
+        // Muladd / Fcntyp resolution (gtinpt.f:951-970). Only the Inptok-affecting
+        // branch matters for the parse outcome; Tmpma feeds the X-11 spine.
         int fcntyp = ctx.arima.fcntyp;
         double lam = ctx.arima.lam;
+        int muladd = ctx.x11opt.muladd;
         if (muladd == prm::NOTSET) {
             if (fcntyp == 0 || fcntyp == 4 || (fcntyp == 5 && dpeq(lam, 1.0))) {
                 muladd = 1;
@@ -335,6 +373,8 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             }
         }
         ctx.arima.fcntyp = fcntyp;
+        ctx.x11opt.muladd = muladd;
+        ctx.x11opt.tmpma = muladd;   // gtinpt.f:970 Tmpma=Muladd
 
         // --- gtinpt.f ~989-1067: td/lom prior-adjustment setup (Picktd) ---
         // With a log transform, the td (or td1coef) regressor's leap-year
