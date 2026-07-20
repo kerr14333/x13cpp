@@ -103,8 +103,14 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             if (ctx.error.lfatal) return;
         }
     }
-    // Model-adequacy retry (tstmd1/tstmd2/tstodf) deferred; the identified model
-    // is left estimated in ctx.
+    // Model-adequacy stage (tstmd1 revert + the redomd/testodf finalization +
+    // final re-estimate, automd.f:577-850) is DEFERRED. tstmd1/bkdfmd/testodf are
+    // ported (automdl/adqtst.cpp) and tstmd1 correctly reverts usdeaths/region to
+    // the airline default, but wiring only tstmd1 broke parity on the non-revert
+    // cases: the oracle re-estimates AFTER tstmd1, so tstmd1's intermediate fit
+    // must not be the reported one. Wire the whole finalization together (see
+    // automdl_scouting.md 3c / FABLE_REVIEW.md). The identified model is left
+    // estimated in ctx.
 }
 
 }  // namespace x13

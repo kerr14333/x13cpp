@@ -41,5 +41,28 @@ void testodf(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
              double* a, int& na, int& lpr, int& ldr, int& lqr, int& lps,
              int& lds, int& lqs, int kstep, bool& redomd, bool& argok);
 
+// bkdfmd.f (reduced): back up (backup=true) or restore (false) the fitted-model
+// state into ctx.ss2rv -- the ARIMA coefficients + covariance (arimap/b/var/
+// chlxpx/chlgpg/armacm/lndtcv/arimaf), the regression group structure
+// (grp/grpptr/colptr/titles/rgvrtp/regfx, nb/ncxy/ncoltl/ngrp/ngrptl/nrxy/
+// iregfx), the differencing extents (nintvl/nextvl/mxdflg/mxarlg/mxmalg,
+// lar/lma), and priadj. automd uses this to save the default model before
+// identification and restore it when tstmd1 reverts. Deferred (constant during
+// no-holiday/no-outlier model-ID, so their backup is a no-op): the holiday/TD/
+// outlier-adjustment fields (Adjtd/Adjhol/Fin*/Ltst*/Picktd/Ncusrx).
+void bkdfmd(X13Context& ctx, bool backup);
+
+// tstmd1.f (reduced): model-adequacy test comparing the identified model to the
+// default airline model. Reduces insignificant ARMA lags, then -- on any of five
+// adequacy conditions (near-unit AR, Ljung-Box comparison vs the default's
+// pdfm/rsddfm) -- reverts to the airline default (0 1 1)(0 1 1) via bkdfmd.
+// pdfm/rsddfm/rtval and tair are the DEFAULT model's mdlchk stats + MA t-stats,
+// captured before identification. Updates lpr..lds in place. Deferred: the
+// picktd/prior-restore branch (inactive without holiday/TD auto-selection).
+void tstmd1(X13Context& ctx, double* trnsrs, int& frstry, double* a, int& na,
+            int& nefobs, double pdfm, double rsddfm, double rtval, int& lpr,
+            int& lps, int& lqr, int& lqs, int& ldr, int& lds, bool& lmu,
+            const double* adj0, const double* trns0, const double* tair);
+
 }  // namespace x13
 #endif  // X13_AUTOMDL_ADQTST_HPP

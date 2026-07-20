@@ -7,11 +7,18 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
 
 ## Open
 
-1. **Banked adequacy routines are UNGATED** — `mdlchk`, `tstmd2`, `testodf`
-   (`core/src/automdl/adqtst.cpp`) are ported but have **no caller yet**, so
-   nothing exercises them. They must be verified against the oracle once the
-   adequacy stage is wired into `automd` (after `amdid`). Until then treat their
-   correctness as unproven.
+1. **Banked adequacy routines are UNGATED** — `mdlchk`, `tstmd2`, `testodf`,
+   `bkdfmd`, `tstmd1` (`core/src/automdl/adqtst.cpp`) are ported but NOT wired
+   into automd. `tstmd1` in isolation DOES correctly revert usdeaths to
+   `(0 1 1)(0 1 1)` (ichk=4, near-unit AR verified live). BUT wiring only tstmd1
+   broke parity on the 4 non-revert automd-estimation cases: the oracle
+   re-estimates AFTER tstmd1 (the redomd + testodf finalization + a final rgarma,
+   automd.f:580-850), so tstmd1's intermediate fit must NOT be the reported one,
+   and its unconditional initial rgarma perturbs the estimate at ~1e-8. **The
+   adequacy stage must be wired as ONE unit** — tstmd1 + the full finalization +
+   the final re-estimate — not tstmd1 alone. Also note: bkdfmd restores `Var` but
+   NOT `Lnlkhd`; the finalization's rgarma/prlkhd must recompute the likelihood.
+   Reverted the wire (293 passed); routines stay banked.
 
 2. **usdeaths / region final-model rewrite = `tstmd1` (TRACED, not yet ported).**
    Our `iddiff` (0,1) and `amdid` `(1 0 1)(0 1 1)` match the oracle exactly. The
