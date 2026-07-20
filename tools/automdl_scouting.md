@@ -75,7 +75,9 @@ corpus gate, not microtests.
 | 5    | tstmd1/tstmd2/tstodf | | model-adequacy tests + retry loop       | todo   |
 | 6    | pass0/pass2 | ~     | TRAMO ACF pre-screen passes                 | todo   |
 | 7    | automd (reduced) | 1038 | driver spine (default→chkmu→iddiff→amdid→mean→final) | **DONE** 5ca900e (4 series bit-exact est.) |
-| 7    | automd (full) | | AIC tests + outlier + pass0 + adequacy retry + run_m2 wire | todo |
+| 7    | automd run_m2 wire | | dispatch to automd when lautom (production path) | **DONE** 08059a8 |
+| 7    | automd (full) | | AIC tests + outlier + pass0 + adequacy retry | todo |
+| —    | trnaic      | 436   | transform=auto selection (aictrans) — unblocks 03-automdl | **NEXT** |
 | —    | amdprt/prtamd/prtmsp/prtnfn | | print engines — DEFER (like fcstout) | defer |
 
 ### Landed (M4 substrate — the numeric + construction core)

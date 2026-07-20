@@ -351,8 +351,22 @@ pip cmake when adding files.
   adequacy stage) are gated on identification only, pending those features.
   Deferred in the reduced driver: the regressor AIC-test family, auto outlier ID,
   pass0, and the tstmd1/tstmd2/tstodf adequacy retry.
-- **Next — the automd prerequisites + run_m2 wire.** The identification+estimation
-  spine is done and gated. A full end-to-end
+- **automd WIRED into run_m2 (production path).** run_pre_model dispatches to
+  automd when `ctx.arima.lautom`; the four supported series now produce the
+  oracle model + estimation through the standard x13run_m3 harness (converged +
+  variance rtol 1e-9 + loglikelihood), and `test_automd_full_estimation` gates
+  that real path. Safe for existing gates (M3 excludes automdl/function=auto/
+  aictest; M2/M1 don't estimate). A scan of every no-auto automdl corpus spec
+  confirms the achievable set is exactly airline/expgs/payems/unrate;
+  region_north/south need the adequacy retry (arimamdl (3 2 1)) and span-modelspan
+  needs model-span handling.
+- **Next — transform=auto (`trnaic`, 436 lines) then the remaining automd
+  features.** `trnaic` estimates the default airline model under no-transform and
+  log, compares AICC, and picks the transform — the unblocker for 03-automdl and
+  the many `function=auto` corpus specs (gate-able via `aictest.trans.aicc.*`).
+  Then the automd AIC-test family (tdaic/easaic/chkchi), auto outlier ID, pass0,
+  and the tstmd1/tstmd2/tstodf adequacy retry (region), plus model-span (span).
+  A full end-to-end
   automdl estimation gate vs the oracle `.udg` still needs: (a) resolve the
   exact-AR gap; (b) `transform=auto` selection (autotrans/aictrans — 03-automdl
   uses it; independently gate-able via `aictest.trans.aicc.*`); (c) the regressor
