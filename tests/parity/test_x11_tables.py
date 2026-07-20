@@ -87,8 +87,7 @@ def _discover() -> list[str]:
         gdir = os.path.join(_GOLDEN, base)
         if not all(os.path.exists(os.path.join(gdir, base + "." + t)) for t in _TAGS):
             continue
-        if _is_no_model(os.path.join(_CORPUS, fn)):
-            specs.append(base)
+        specs.append(base)
     return specs
 
 
@@ -99,6 +98,14 @@ CASES = _discover()
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
 def test_x11_table(base: str, tag: str) -> None:
+    if "fixed-airline" in base or "aictest" in base:
+        # These carry real regression effects (td / aictest-selected td/easter,
+        # + outlier detection). run_x11's model path currently passes zero
+        # regression factors to adjreg, so the td/holiday effects aren't removed
+        # from B1; and forecasting on a post-outlier model with td is not yet
+        # bit-exact ([[x13cpp-outlier-forecast-deferred]]). automdl-x11 (no
+        # regressors) is the clean model-path gate.
+        pytest.xfail("x11 model path: regression-effect factors in adjreg unported")
     spec = os.path.join(_CORPUS, base + ".spc")
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.returncode == 0, f"{base}: harness exit {r.returncode}\n{r.stderr}"

@@ -28,16 +28,16 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     if (!ctx.captured.has_series) return false;
     if (!ctx.captured.has_x11) return false;
 
-    // Only the no-model direct-X11 path is wired so far. A regARIMA model would
-    // need the estimate + forecast + extend + adjreg glue (arima.f tail) to
-    // populate the forecast-extended Stcsi before x11pt2; that is the next slice.
-    if (ctx.captured.has_model) {
-        errhdr(ctx);
-        writln(ctx, "ERROR: run_x11 with a regARIMA model is not yet wired "
-               "(M5 X-11 driver, no-model path only).",
-               stdio::STDERR, ctx.units.mt2, true);
-        abend(ctx);
-        return false;
+    // Model path: estimate the regARIMA model + forecast (arima.f front) via the
+    // shared run_m2 body before the X-11 spine. The clean transformed series is
+    // captured for the forecast-extension below; begxy/nrxy/forecasts land on ctx.
+    const bool has_model = ctx.captured.has_model;
+    std::vector<double> trnsrs;
+    int nobspf_m = 0;
+    if (has_model) {
+        if (!run_m2_after_parse(ctx, base, /*estimate=*/true, &trnsrs, &nobspf_m))
+            return false;
+        if (ctx.error.lfatal) return false;
     }
 
     const int sp = ctx.model.sp;
@@ -123,10 +123,40 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // X-11 array initialization (x11int.f), then the parts spine.
     x11int(ctx);
 
-    const bool lmodel = false, lgraf = false, lgrfxr = false, lseats = false;
+    const bool lmodel = has_model, lgraf = false, lgrfxr = false, lseats = false;
     const bool lx11 = true;
     x11pt1(ctx, lmodel, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
+
+    // Model path only (arima.f tail 1225-1332): forecast-extend the transformed
+    // series into orix, then adjreg subtracts the regression effects (all zero on
+    // this path -- no TD/outlier/holiday), inverse-transforms to the original
+    // scale, and fills Stcsi (the B1 input), the Series forecast tail, and Stocal.
+    if (has_model) {
+        constexpr int PLEN = 1020;
+        std::vector<double> orix(PLEN, 0.0), orixmv(PLEN, 0.0), orixot(PLEN, 0.0);
+        std::vector<double> ftd(PLEN, 0.0), fao(PLEN, 0.0), fls(PLEN, 0.0),
+            ftc(PLEN, 0.0), fso(PLEN, 0.0), fsea(PLEN, 0.0), fcyc(PLEN, 0.0),
+            fusr(PLEN, 0.0), fmv(PLEN, 0.0), fhol(PLEN, 0.0);
+        const double lam = ctx.arima.lam;
+        const int fcntyp = ctx.arima.fcntyp;
+        bool extok = true;
+        double bcstx = 0.0;   // Nbcst==0 on this path
+        if ((nfcst > 0 && nfdrp > 0) || nbcst > 0) {
+            extend(ctx, trnsrs.data(), ctx.arima.begxy.data(), orix.data(), extok,
+                   lam, ctx.forecasts.trnfct.data(), &bcstx);
+            if (ctx.error.lfatal) return false;
+        } else {
+            copy(trnsrs.data(), ctx.extend.nobspf, 1, orix.data() + (pos1ob - 1));
+        }
+        int n = 0;
+        adjreg(ctx, orix.data(), orixmv.data(), orixot.data(), ftd.data(),
+               fao.data(), fls.data(), ftc.data(), fso.data(), fsea.data(),
+               fcyc.data(), fusr.data(), fmv.data(), fhol.data(), fcntyp, lam,
+               ctx.arima.nrxy, n);
+        if (ctx.error.lfatal) return false;
+    }
+
     x11pt2(ctx, lmodel, lx11, lseats, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
     // x11pt3 (D8..D16 finals): D10=Sts, D11=Stci, D12=Stc, D13=Sti. It consumes

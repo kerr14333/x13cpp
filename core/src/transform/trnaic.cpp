@@ -175,6 +175,11 @@ void trnaic(X13Context& ctx, const double* y, int frstsy, int nspobs, int nobspf
         ar.fcntyp = 1;
         ar.lam = 0.0;
         ctx.adj.adjmod = 1;
+        // trnaic.f:301-302: with a log transform + X-11, the seasonal adjustment
+        // is multiplicative -- override the parse-time Muladd (which resolved to
+        // additive under the not-yet-decided Fcntyp==0) to Muladd=0/Tmpma=0.
+        ctx.x11opt.muladd = 0;
+        ctx.x11opt.tmpma = 0;
     } else {
         // No transformation: revert to Fcntyp=4/Lam=1, additive adjustment.
         ar.fcntyp = 4;
