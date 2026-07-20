@@ -313,18 +313,36 @@ pip cmake when adding files.
   `extra/airline_automdl.spc` (log airline, bare automdl{}) → iddiff (1,1) then
   amdid `arimamdl=(0 1 1)(0 1 1)` — the census 03-automdl oracle model.
   `test_amdid_full_model` locks it. Full suite **234 passed**.
+- **Multi-series identification GATE + genrtt/chkmu banked.** Gated iddiff+amdid
+  against six real automdl corpus specs with no auto-transform/aictest preamble
+  (airline/payems/unrate/expgs/span/region_north). **iddiff differencing matches
+  the oracle `.udg` on all six**; amdid's full model matches on airline
+  `(0 1 1)(0 1 1)`, payems `(0 1 2)`, unrate `(0 1 1)`, span `(0 1 2)` — and its
+  best-5 BIC matches the oracle **exactly** for airline (bic1..4 to 3 decimals),
+  validating the prlkhd/estimation engine. Ported `genrtt`/`chkmu` (the
+  Constant-term test, banked in `automdl/chkmu.cpp`) for the eventual driver.
+  `test_m4_iddiff.py` = 8 cases; full suite **240 passed**.
+- **KNOWN GAP (2/6, precisely diagnosed): amdid ARMA orders on expgs `(0 1 2)` vs
+  `(2 1 0)` and region_north.** Both are **D=0** (no seasonal difference).
+  `X13_AMDID_DEBUG=1` confirms `Nb=0` in the grid → NOT a mean/dnp issue. It is
+  the **exact-AR likelihood**: amdid forces exact ML (Lextar=T); airline's winner
+  is pure-MA (exact-MA, matches) while expgs/region are AR-heavy. Our amdid
+  scores expgs `(2 1 0)` at lnlkhd 523.4 vs the oracle's implied ~514.7 (and 517.5
+  conditional standalone). No pure-AR model carries an M3 golden, so the exact-AR
+  branch is under-tested — the first next-session task is to diff rgarma's
+  exact-AR likelihood for one expgs candidate against the oracle. Details in
+  `tools/automdl_scouting.md` §3b.
 - **Next — the automd driver + its prerequisites.** The identification CORE
-  (iddiff + amdid) is done and gated via the bespoke harness. To gate a full
-  end-to-end automdl estimation against the oracle `.udg` (niter/nfev/coeffs/BIC,
-  `automdl.best5.bic1..5`) still needs: (a) `transform=auto` selection
-  (autotrans/aictrans — 03-automdl uses it; independently gate-able via
-  `aictest.trans.aicc.*`), (b) the regressor AIC-test family (tdaic/easaic/
-  chkchi/chkmu) for `aictest=(td easter)`, (c) the model-adequacy tests
-  (tstmd1/tstmd2 via the ported chkurt / tstodf) + retry loop, and (d) the
-  `automd` driver (1038 lines) wiring it all into run_m2 behind `automdl{}`. Each
-  is its own unit; `transform=auto` is the cleanest unblocker for 03-automdl.
-  Also open: deferred M2 regressor branches and the .out/.fct print engine. See
-  `tools/automdl_scouting.md` (§2 status table).
+  (iddiff + amdid) is done and gated (modulo the exact-AR gap). A full end-to-end
+  automdl estimation gate vs the oracle `.udg` still needs: (a) resolve the
+  exact-AR gap; (b) `transform=auto` selection (autotrans/aictrans — 03-automdl
+  uses it; independently gate-able via `aictest.trans.aicc.*`); (c) the regressor
+  AIC-test family (tdaic/easaic/chkchi) for `aictest=(td easter)`; (d) the
+  model-adequacy tests (tstmd1/tstmd2 via the ported chkurt / tstodf) + retry
+  loop; (e) the `automd` driver (1038 lines) wiring it into run_m2 behind
+  `automdl{}` (default model → chkmu → iddiff → amdid → finalize; genrtt/chkmu
+  ready). Also open: deferred M2 regressor branches and the .out/.fct print
+  engine. See `tools/automdl_scouting.md` (§2 status table + §3b).
 - **Packaging scaffolding (r-pkg/py-pkg) built by an agent, parked on branch
   `worktree-agent-ae1edc2bc3b17f4d4`** (NOT merged; merge after the main
   milestones). R CMD check / twine check clean; datasets bundled; result-object
