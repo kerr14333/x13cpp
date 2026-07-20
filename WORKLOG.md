@@ -322,16 +322,20 @@ pip cmake when adding files.
   validating the prlkhd/estimation engine. Ported `genrtt`/`chkmu` (the
   Constant-term test, banked in `automdl/chkmu.cpp`) for the eventual driver.
   `test_m4_iddiff.py` = 8 cases; full suite **240 passed**.
-- **KNOWN GAP (2/6, precisely diagnosed): amdid ARMA orders on expgs `(0 1 2)` vs
-  `(2 1 0)` and region_north.** Both are **D=0** (no seasonal difference).
-  `X13_AMDID_DEBUG=1` confirms `Nb=0` in the grid → NOT a mean/dnp issue. It is
-  the **exact-AR likelihood**: amdid forces exact ML (Lextar=T); airline's winner
-  is pure-MA (exact-MA, matches) while expgs/region are AR-heavy. Our amdid
-  scores expgs `(2 1 0)` at lnlkhd 523.4 vs the oracle's implied ~514.7 (and 517.5
-  conditional standalone). No pure-AR model carries an M3 golden, so the exact-AR
-  branch is under-tested — the first next-session task is to diff rgarma's
-  exact-AR likelihood for one expgs candidate against the oracle. Details in
-  `tools/automdl_scouting.md` §3b.
+- **amdid matches the oracle on ALL SIX series (gap RESOLVED).** The earlier
+  expgs/region miss was a HARNESS bug, not amdid: the harness passed
+  `ctx.series.tsrs` as the `Trnsrs` input to iddiff AND amdid, but rgarma
+  overwrites Tsrs with residuals during estimation — so iddiff's internal rgarma
+  clobbered the series amdid then read, and amdid estimated candidates on
+  residuals (expgs `(2 1 0)` scored the residual-fit lnlkhd 526.3 vs the correct
+  517.5, flipping the ranking). `Trnsrs` and `Tsrs` are separate buffers in real
+  X-13; the harness now copies the series for the identification routines. amdid
+  now emits airline `(0 1 1)(0 1 1)`, expgs `(2 1 0)`, payems `(0 1 2)`, unrate
+  `(0 1 1)`, span `(0 1 2)`, region `(1 2 2)(0 1 1)` (== oracle `best5.mdl1`).
+  `test_m4_iddiff.py` asserts the model for all six. region's `arimamdl
+  (3 2 1)(0 1 1)` is set by automd's later adequacy stage (tstmd1/2/odf), a
+  separate unported feature. **Lesson for the automd wire: keep the transformed-
+  series buffer distinct from ctx.series.tsrs.**
 - **Next — the automd driver + its prerequisites.** The identification CORE
   (iddiff + amdid) is done and gated (modulo the exact-AR gap). A full end-to-end
   automdl estimation gate vs the oracle `.udg` still needs: (a) resolve the
