@@ -11,9 +11,13 @@
 #include "automdl/amdest.hpp"     // acf, cnvmdl
 #include "automdl/idmodel.hpp"    // chkurt
 #include "automdl/mdlset.hpp"     // mdlint, mdlset
-#include "regarima/estimate.hpp"  // armats
+#include "automdl/chkmu.hpp"      // chkmu
+#include "automdl/iddiff.hpp"     // prterr
+#include "regarima/estimate.hpp"  // armats, rgarma
+#include "regarima/regvar.hpp"    // regvar
+#include "specparse/specparse.hpp"// strinx, adrgef, abend
 #include "gen/srslen.hpp"         // prm::PLEN
-#include "gen/model.hpp"          // prm::PARIMA
+#include "gen/model.hpp"          // prm::PARIMA, PRGTCN
 #include "gen/notset.hpp"         // prm::DNOTST
 
 namespace x13 {
@@ -173,6 +177,92 @@ void tstmd2(X13Context& ctx, int& nnsig, int nz, int& ipr, int& iqr, int& ips,
         bool inptok = true;
         mdlint(ctx);
         mdlset(ctx, ipr, idr, iqr, ips, ids, iqs, inptok);
+    }
+}
+
+void testodf(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
+             double* a, int& na, int& lpr, int& ldr, int& lqr, int& lps,
+             int& lds, int& lqs, int kstep, bool& redomd, bool& argok) {
+    using namespace prm;
+    constexpr double MALIM = 0.001;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    auto& ar = ctx.arima;
+
+    redomd = false;
+    bool reredomd = false;
+
+    // ---- nonseasonal over-differencing: sum of regular MA coeffs ~ 1 ----
+    if (ldr > 0 && lqr > 0) {
+        int disp = lpr + ldr + lps + lds;
+        double summa = 0.0;
+        for (int i = disp + 1; i <= disp + lqr; ++i) summa += d.arimap(i);
+        if (std::abs(summa - 1.0) < MALIM) {
+            redomd = true;
+            ldr = ldr - 1;
+            lqr = lqr - 1;
+            int icol = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
+                              m.ngrptl, "Constant");
+            if (icol == 0 && ar.lchkmu) {
+                // Reduced differencing needs a mean; add a Constant (the non-
+                // Lchkmu NOTE-to-add-a-constant path is a deferred print).
+                adrgef(ctx, DNOTST, "Constant", "Constant", PRGTCN, false, false);
+                if (ctx.error.lfatal) return;
+            }
+        }
+    }
+
+    // ---- seasonal over-differencing (Lsovdf; adds seasonal regressors via
+    // sftest) -- DEFERRED: Lsovdf is off by default and sftest is not ported.
+    if (lds > 0 && lqs > 0 && ar.lsovdf) {
+        // Not reachable with the default Lsovdf=false; port sftest + the
+        // seasonal-regressor construction when Lsovdf support lands.
+    }
+
+    if (redomd) {
+        bool inptok = true;
+        mdlint(ctx);
+        mdlset(ctx, lpr, ldr, lqr, lps, lds, lqs, inptok);
+        if (!ctx.error.lfatal)
+            regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst, 0,
+                   ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
+                   ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+        if (ctx.error.lfatal) return;
+        // Automatic-outlier removal (Natotl>0 -> clrotl) deferred with the
+        // outlier-in-automd path.
+        rgarma(ctx, ar.lestim, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal) {
+            prterr(ctx, nefobs, true);
+            if (!d.convrg)
+                abend(ctx);
+            else if (!argok)
+                abend(ctx);
+        }
+        if (ctx.error.lfatal) return;
+        // Redo automatic outlier ID (Lidotl) deferred.
+
+        // Recheck the added mean; if the constant fell out, re-estimate.
+        if (ar.lchkmu) {
+            chkmu(ctx, trnsrs, a, nefobs, na, frstry, kstep, false);
+            if (ctx.error.lfatal) return;
+            int icol1 = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
+                               m.ngrptl, "Constant");
+            if (icol1 == 0) reredomd = true;
+        }
+        // Lsovdf seasonal-regressor significance (sftest) deferred.
+
+        if (reredomd) {
+            rgarma(ctx, ar.lestim, ar.mxiter, ar.mxnlit, false, a, na, nefobs,
+                   argok);
+            if (!ctx.error.lfatal) {
+                prterr(ctx, nefobs, true);
+                if (!d.convrg)
+                    abend(ctx);
+                else if (!argok)
+                    abend(ctx);
+            }
+            if (ctx.error.lfatal) return;
+        }
     }
 }
 

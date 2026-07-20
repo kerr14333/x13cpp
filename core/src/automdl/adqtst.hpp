@@ -29,5 +29,17 @@ void mdlchk(X13Context& ctx, const double* a, int na, int nefobs, double& blpct,
 void tstmd2(X13Context& ctx, int& nnsig, int nz, int& ipr, int& iqr, int& ips,
             int& iqs);
 
+// testodf.f: nonseasonal (and, when Lsovdf, seasonal) OVER-differencing test.
+// When the model carries regular differencing AND regular MA and the sum of the
+// regular MA coefficients is within MALIM (0.001) of 1 -- an MA unit root that
+// cancels a difference -- it drops one regular difference and one regular MA lag,
+// adds a Constant (when Lchkmu), rebuilds and re-estimates the model, then
+// rechecks the mean (chkmu). redomd reports whether the model was changed.
+// Deferred: the Lsovdf seasonal-regressor path (needs sftest) and the automatic-
+// outlier branches (amidot/clrotl), both inactive for the no-outlier default.
+void testodf(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
+             double* a, int& na, int& lpr, int& ldr, int& lqr, int& lps,
+             int& lds, int& lqs, int kstep, bool& redomd, bool& argok);
+
 }  // namespace x13
 #endif  // X13_AUTOMDL_ADQTST_HPP
