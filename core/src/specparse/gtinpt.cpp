@@ -106,6 +106,35 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     setint(prm::NOTSET, 2, ctx.picktd.tddate.data());
     setint(prm::NOTSET, 2, ctx.picktd.lndate.data());
 
+    // Automatic-model-selection defaults (gtinpt.f 221-267). gt_automdl / gtauto
+    // override these from an automdl{} spec; the automd driver reads them.
+    ctx.arima.lautom = false;
+    ctx.arima.lautod = false;
+    ctx.arima.exdiff = 2;
+    ctx.arima.hrinit = false;
+    ctx.arima.bstdsn = std::string_view("");
+    ctx.arima.bstdsn.data()[0] = prm::CNOTST;   // Bstdsn(1:1)=CNOTST
+    ctx.arima.nbstds = 0;
+    ctx.arima.ub1lim = 1.0 / 0.96;
+    ctx.arima.ub2lim = 0.88;
+    ctx.arima.ubfin = 1.05;
+    ctx.arima.tsig = 1.0;
+    ctx.arima.fct = 1.0 / (1.0 - 0.0125);
+    ctx.arima.predcv = 0.14286;
+    ctx.arima.cancel = 0.1;
+    ctx.arima.pcr = 0.95;
+    ctx.arima.lbalmd = false;
+    ctx.arima.laccdf = false;
+    ctx.arima.lotmod = true;
+    setint(0, 2, ctx.arima.maxord.data());
+    setint(prm::NOTSET, 2, ctx.arima.diffam.data());
+    ctx.arima.frstar = 2;
+    ctx.arima.lchkmu = true;
+    ctx.arima.lmixmd = true;
+    ctx.arima.lrejfc = false;
+    ctx.arima.fctlm2 = 15.0;
+    ctx.arima.lsovdf = false;
+
     // Control flags.
     bool havsrs = false, havesp = false, havotl = false, havreg = false, havtd = false;
     bool larma = false, hvfcst = false, hvspec = false, havmdl = false, havreq = false;
