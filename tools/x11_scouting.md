@@ -1,4 +1,18 @@
-# X-11 Scouting Report — Moving-Average Seasonal Adjustment (M?, unstarted)
+# X-11 Scouting Report — Moving-Average Seasonal Adjustment (M5, in progress)
+
+> **STATUS (2026-07-20): Tiers 0–3 leaves DONE + unit-tested.** Ported in
+> `core/src/x11/{x11filt,x11seas,x11xtrm}.cpp` (28 routines: divsub, addmul,
+> logar, antilg, setmv, change, chkzro, divgud, averag, hender, apply, ends,
+> endsf, hndend, hndtrn, fis, vsfa, vsfb, vsfc, xtrm, sdxtrm, wtxtrm, replac,
+> weight, vtest, entsch, trbias, rho2). Gated by test_x11 / test_x11b.
+> **NEXT increment = Tier 4 drivers:** `si` (106, SI-ratio→seasonal; calls the
+> ported vsfa/vsfb/xtrm/replac) + `vtc` (90, Henderson-length select; calls
+> ported hndtrn) + the MSR seasonal-filter trio `sfmsr`/`getsmat`/`gttrmo`
+> (needed by vsfb's Mtype auto-select). Still missing from Tier 0/3: `setdp`,
+> `tdxtrm`. Then Tier 5 (`setxpt`/`extend`/`forcst`/`x11int`/`x11ref`) and Tier 6
+> (`x11pt1`→B1, `x11pt2`→B1–D7, `x11pt3`→D8–D16, `x11pt4`, `x11ari`) wired behind
+> `x11{}`. First end-to-end gate: `airline_x11-default` D10/D11/D12/D13.
+
 
 Scouted 2026-07-20 against `oracle/fortran` (v1.1 b61). Scope: the classic
 X-11 seasonal decomposition (trend / seasonal / irregular) driven by
