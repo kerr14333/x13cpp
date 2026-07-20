@@ -83,8 +83,15 @@ def _corpus_specs():
     out = []
     for root, _dirs, files in os.walk(_CORPUS):
         for f in files:
-            if f.endswith(".spc"):
-                out.append(os.path.join(root, f))
+            if not f.endswith(".spc"):
+                continue
+            spc = os.path.join(root, f)
+            # The M1 gate compares against the Fortran oracle goldens; skip any
+            # spec that has no golden (e.g. synthetic fixtures for later-milestone
+            # harnesses like extra/airline_iddiff.spc, gated in their own tests).
+            if not os.path.exists(os.path.join(_golden_dir(spc), "manifest.json")):
+                continue
+            out.append(spc)
     return sorted(out)
 
 

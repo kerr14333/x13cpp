@@ -136,6 +136,14 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
                trnsrs.data());
         if (ctx.error.lfatal) return false;
         have_trn = true;
+        // Retain the transformed series on the context (Tsrs semantics).
+        // Estimation later overwrites Tsrs from Xy with the same content; keeping
+        // it here lets the automatic-model-ID path (iddiff/automd) read the series
+        // without re-transforming. Bounded by the Tsrs (PLEN) extent.
+        {
+            int ncp = nobspf < prm::PLEN ? nobspf : prm::PLEN;
+            copy(trnsrs.data(), ncp, 1, ctx.series.tsrs.data());
+        }
     }
     if (wants_save(ctx, "trn")) {
         savtbl(ctx, LTRNDT, begspn, 1, nspobs, sp, trnsrs.data(), base, base, nser);

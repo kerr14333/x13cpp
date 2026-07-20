@@ -79,6 +79,13 @@ add_executable(x13run_m3 tools/x13run_m3.cpp)
 target_link_libraries(x13run_m3 PRIVATE x13core)
 
 # ---------------------------------------------------------------------------
+# x13run_iddiff -- M4 harness: pre-model + drive iddiff (automatic differencing-
+# order identification), printing the identified (d,D) for the automdl gate.
+# ---------------------------------------------------------------------------
+add_executable(x13run_iddiff tools/x13run_iddiff.cpp)
+target_link_libraries(x13run_iddiff PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
 # Unit tests (self-contained microtest framework; no external dependencies).
 # ---------------------------------------------------------------------------
 option(X13_BUILD_TESTS "Build unit tests" ON)
