@@ -199,10 +199,15 @@ model statistics plumbed in: before iddiff, automd must estimate the default
 airline model and capture `Pdfm`/`Rsddfm` (mdlchk residual p-value + mse) and
 `Tair(1..2)` (armats t-stats of the default MA coeffs), then pass them to
 tstmd1. Leaves status: `mdlchk` DONE, `tstmd2` DONE, `testodf` DONE (banked).
-Still needed for tstmd1: `bkdfmd` (model backup/restore, ~137 lines + a new
-backup common), maybe `ssprep` (rgarma may self-prep — verify), and the automd
-default-stats capture + the tstmd1 call wiring. Both usdeaths and region gated on
-identification only until this lands.
+Still needed for tstmd1: `bkdfmd` (model backup/restore) — FEASIBLE and purely
+mechanical: the `ss2rv` backup struct + all source commons (model/mdldat/arima/
+picktd/x11adj/prior) already exist in ctx, so it is ~48 field copies (defer the
+holiday/outlier-adjustment fields — Adjtd/Adjhol/Fin*/Ltst* — which don't change
+during reduced model-ID, so their backup is a no-op for no-holiday/no-outlier
+specs). Also maybe `ssprep` (rgarma may self-prep — verify), plus the automd
+default-stats capture + the tstmd1 call wiring. **Do this as ONE unit (don't bank
+bkdfmd ungated).** Both usdeaths and region gated on identification only until it
+lands.
 
 ## 4. First corpus gate target
 
