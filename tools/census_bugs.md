@@ -168,6 +168,36 @@ that pins it.
 - **Modernize:** divide by `ixn` (or `xn`), the actual number of accumulated
   deviations, matching the intent of the tau estimator.
 
+## CB-9 — grRoots unit-root tolerance if/else has two identical branches (lost distinction)
+
+- **Where:** `oracle/fortran/ansub2.f:1920-1924` (subroutine `grRoots`, the
+  root-grouping stage of MAK1's spectral factorization):
+  ```fortran
+  if (abs(modul(i)-1.0d0).lt.xeps) then
+    xeps2=1.0D-30
+  else
+    xeps2=1.0D-30
+  end if
+  ```
+- **Severity:** `latent` — both arms assign the same `1.0D-30`, so grouping uses
+  the same equality tolerance for unit-modulus and interior roots. The near-zero
+  `xeps2` means `getRoot`/`getRootc` only ever match *bit-identical* roots, which
+  is what the C02AEF-produced conjugate pairs are, so current decompositions are
+  unaffected. But the structure (a modulus-1 test that then does nothing) is an
+  abandoned special-case: the author clearly intended a looser tolerance for
+  unit-circle roots (where two "equal" seasonal roots may differ by rounding) and
+  the value never got filled in. A model whose seasonal roots land *near* but not
+  *on* a shared point would fail to group and could mis-factor.
+- **Related no-op in the same routine (ansub2.f:1940-1942):** when the conjugate
+  of a complex root is not found, `if (ic.eq.0) then ic=ic` — a self-assignment
+  standing in for an unimplemented error path.
+- **Port:** `core/src/seats/factor.cpp` (`gr_roots`) — reproduced verbatim
+  (identical-branch `if/else` and the `ic==0` no-op as a comment). Pinned by
+  `tests/unit/test_seats.cpp` "mak1 C" (complex-root path exercises the grouping).
+- **Modernize:** either delete the dead `if` (documenting that a single tolerance
+  is intended) or supply the looser unit-circle tolerance the branch was meant to
+  carry, and implement the `ic==0` conjugate-not-found error path.
+
 ---
 
 _Append new entries as they are found while porting. Keep each pinned to a test._
