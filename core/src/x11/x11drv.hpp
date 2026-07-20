@@ -32,6 +32,18 @@ void vtc(X13Context& ctx, double* stc, double* stci);
 void sfmsr(X13Context& ctx, double* sts, double* stsi, int lfda, int llda,
            int lldaf);
 
+// si.f: Part-B seasonal-from-SI driver. Runs the seasonal-MA pass (vsfa/vsfb)
+// unless full-seasonal (Kfulsm==2), forms the irregular Sti (Stsi/Sts, or the
+// pseudo-additive Stsi-Sts+1 / full-sum copy special cases), auto-selects the
+// sigma limits (vtest/entsch when Ksect==1 & Ksdev<4), applies the extreme-value
+// pass (xtrm), re-weights SI (replac), and re-derives the seasonal (vsfb). Reads/
+// writes ctx.x11opt/x11srs/x11msc/xtrm/lzero. Series (Sts/Stsi/Sti) live on
+// ctx.x11srs; the args mirror the Fortran call order for x11pt2 wiring. All
+// table/punch output is deferred (dropped); Lfatal never trips here.
+void si(X13Context& ctx, int ksect, int kfda, int klda, int nyr, int iforc,
+        int nbcst, int kersa1, int ksdev1, int lfd1, int lld1, int kfulsm,
+        int kfdax, int kldax);
+
 }  // namespace x13
 
 #endif  // X13_X11_X11DRV_HPP

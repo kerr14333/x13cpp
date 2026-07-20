@@ -10,6 +10,8 @@
 #include "common/x13context.hpp"
 #include "x11/x11filt.hpp"       // hndtrn, divsub
 #include "x11/x11seas.hpp"       // vsfa, vsfb
+#include "x11/x11xtrm.hpp"       // xtrm, replac, vtest, entsch
+#include "specparse/specparse.hpp"  // copy
 #include "numeric/numeric.hpp"   // dpeq
 
 #include <cmath>
@@ -164,6 +166,77 @@ void sfmsr(X13Context& ctx, double* sts, double* stsi, int lfda, int llda,
     vsfa(stsi, lfda, llda, ny, muladd, psuadd, opt.rati.data(), opt.ratis);
     vsfb(sts, stsi, lfda, lldaf, ny, opt.lterm, opt.lter.data(), opt.ksect,
          shrtsf, temp, muladd);
+}
+
+// si.f -- calculates the seasonals from the SI estimates for Part B. Optional
+// seasonal-MA pass (vsfa/vsfb) unless full-seasonal (Kfulsm), forms the
+// irregular (Sti = Stsi/Sts, or the pseudo-additive / full-sum special cases),
+// runs the sigma-limit auto-select (vtest/entsch) + extreme-value pass (xtrm),
+// re-weights the SI (replac), and re-derives the seasonal (vsfb). All table/punch
+// print/save is deferred (dropped), so Lfatal never trips here.
+void si(X13Context& ctx, int ksect, int kfda, int klda, int nyr, int iforc,
+        int nbcst, int kersa1, int ksdev1, int lfd1, int lld1, int kfulsm,
+        int kfdax, int kldax) {
+    x11opt_cmn& opt = ctx.x11opt;
+    xtrm_cmn& xt = ctx.xtrm;
+    const int ny = opt.ny;
+    const int muladd = opt.muladd;
+    const bool psuadd = ctx.x11msc.psuadd;
+    const bool shrtsf = ctx.x11msc.shrtsf;
+
+    double* sts = ctx.x11srs.sts.data();
+    double* stsi = ctx.x11srs.stsi.data();
+    double* sti = ctx.x11srs.sti.data();
+
+    // 1-based views for the pseudo-additive irregular loop.
+    auto STS = [&](int i) -> double& { return sts[i - 1]; };
+    auto STSI = [&](int i) -> double& { return stsi[i - 1]; };
+    auto STI = [&](int i) -> double& { return sti[i - 1]; };
+
+    // lfd1/lld1/nbcst fed only the deferred table ranges; kept in the signature
+    // to match the Fortran caller (x11pt2) once the spine wires si.
+    (void)lfd1;
+    (void)lld1;
+    (void)nbcst;
+
+    int llda = klda;
+    if (iforc != 0 && ksect == 1) llda = klda - iforc;
+
+    double temp[PLEN];  // COMMON /work/ Temp -- vsfb scratch + replac output
+
+    if (kfulsm < 2) {
+        if (ksect == 2)
+            vsfa(stsi, kfda, llda, nyr, muladd, psuadd, opt.rati.data(),
+                 opt.ratis);
+        vsfb(sts, stsi, kfda, klda, nyr, opt.lterm, opt.lter.data(), opt.ksect,
+             shrtsf, temp, muladd);
+    }
+
+    // (deferred: table/punch of Stsi -- B3/B8)
+
+    if (kfulsm == 2) {
+        copy(stsi, klda, 1, sti);
+    } else if (psuadd) {
+        for (int i = kfda; i <= klda; ++i) STI(i) = STSI(i) - STS(i) + 1.0;
+    } else {
+        divsub(sti, stsi, sts, kfda, klda, muladd);
+    }
+
+    if (ksect == 1 && xt.ksdev < 4) {
+        int iv = 0;
+        vtest(sti, iv, kfdax, kldax, ny, muladd);
+        entsch(kersa1, ksdev1, xt.kersa, xt.ksdev, iv);
+    }
+    xtrm(sti, kfda, klda, kfdax, kldax, ny, muladd, xt.ksdev, opt.imad,
+         opt.sigmu, opt.sigml, ctx.lzero.lsp, xt.stwt.data(), xt.stdper.data(),
+         xt.stdev.data(), xt.csigvc.data());
+    replac(stsi, temp, xt.stwt.data(), kfda, klda, nyr);
+
+    // (deferred: table of Temp -- B4/B9)
+
+    if (kfulsm < 2)
+        vsfb(sts, stsi, kfda, klda, nyr, opt.lterm, opt.lter.data(), opt.ksect,
+             shrtsf, temp, muladd);
 }
 
 }  // namespace x13

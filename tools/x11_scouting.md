@@ -1,7 +1,7 @@
 # X-11 Scouting Report — Moving-Average Seasonal Adjustment (M5, in progress)
 
 > **STATUS (2026-07-20, updated): Tiers 0–3 leaves DONE + unit-tested; Tier 4
-> drivers `vtc`+`sfmsr`+`tdxtrm` now DONE.** Tier 0–3 (28 routines) in
+> drivers ALL DONE (`vtc`, `sfmsr`, `si`, `tdxtrm`).** Tier 0–3 (28 routines) in
 > `core/src/x11/{x11filt,x11seas,x11xtrm}.cpp`: divsub, addmul, logar, antilg,
 > setmv, change, chkzro, divgud, averag, hender, apply, ends, endsf, hndend,
 > hndtrn, fis, vsfa, vsfb, vsfc, xtrm, sdxtrm, wtxtrm, replac, weight, vtest,
@@ -10,9 +10,8 @@
 > in new `core/src/x11/x11drv.cpp` (ctx-first); `tdxtrm` (extreme-irregular
 > AO/calendar) landed in `x11xtrm.cpp`. All build clean; **not yet unit-gated**
 > (they need a live X13Context — gate arrives with the x11pt2 spine).
-> **NEXT increment:** `si` (106, SI-ratio→seasonal; the last Tier-4 driver) — its
-> `vsfa/vsfb` args are now unblocked by `sfmsr`. Then Tier 5
-> (`setxpt`/`extend`/`forcst`/`x11int`/`x11ref`) and Tier 6 (`x11pt1`→B1,
+> **NEXT increment:** Tier 5 span/forecast-window setup
+> (`setxpt`/`extend`/`forcst`/`x11int`/`x11ref`) then Tier 6 (`x11pt1`→B1,
 > `x11pt2`→B1–D7, `x11pt3`→D8–D16, `x11pt4`, `x11ari`) wired behind `x11{}`. First
 > end-to-end gate: `airline_x11-default` D10/D11/D12/D13.
 >
@@ -141,7 +140,7 @@ STATUS block. Only the "DONE"/"defer"-marked Tier 4+ rows track live status.
 | 3 | weight | 123 | extreme-value weight curve | new |
 | 3 | vtest / entsch | 64/? | sigma-limit (Ksdev) auto-selection | new |
 | 3 | trbias | 39 | trend constant-bias correction | new |
-| 4 | si | 106 | SI-ratio → seasonal driver (calls vsfa/vsfb/xtrm/replac) | new |
+| 4 | si | 106 | SI-ratio → seasonal driver (calls vsfa/vsfb/xtrm/replac) | **DONE** (x11drv) |
 | 4 | forcst / extend | 41/115 | forecast/backcast extension into the filter window | new |
 | 4 | tdlom / traday / makadj | 63/?/37 | TD & length-of-month prior adjustment inside B | new |
 | 5 | setxpt | ? | span/forecast pointer setup (Pos1bk/Posffc/Fctdrp) | new |
