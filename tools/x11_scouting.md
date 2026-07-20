@@ -105,6 +105,181 @@ X-11 sits directly on top of the already-ported regARIMA engine (estimate,
 regvar, forecast, outlier, automdl, transform) — it consumes the modeled +
 forecast-extended series and produces the seasonally-adjusted output.
 
+## x11pt4 port plan (E1->F4) — scouted 2026-07-20
+
+Target `oracle/fortran/x11pt4.f` (778 lines), the LAST X-11 spine chunk (PARTS
+E1->F4: modified-table percent-changes, annual totals, robust SA, final adj
+ratios, then PART F summary/quality measures + F2/F3 M-stats). Called from
+`x11ari.f:262` after x11pt3. **Key structural fact: x11pt4 does NOT compute the
+E1/E2/E3 modified series** — `Stome`(E1)/`Stcime`(E2)/`Stime`(E3) are already
+built in x11pt3; x11pt4 only *emits* them (deferred print) and *consumes* them.
+What x11pt4 genuinely computes into save-table state on the base path: the E5/E6/
+E7/E8 percent-changes (via ported `change`), E11 robust SA + E18 final adj ratios
+(inline loops), F1 MCD moving average (ported `averag`), and all the PART-F
+summary/variance/M-stat diagnostics that feed the `.udg`.
+
+### 1. Section-by-section flow (line ranges)
+
+- **Prologue / E0 plot (l.64-80):** `dvec(1)=0`; E0 chart `x11plt` gated
+  `Prttab(LX11E0)` — print, deferrable.
+- **E1/E2/E3 emit + residual-seasonality test (l.82-109):** `prtagr` of `Stome`
+  (E1), `Stcime` (E2), `Stime` (E3) — print/save of x11pt3-computed arrays;
+  `ftest(Stcime,...)` residual-seasonality F-test (l.99, Iagr<4 branch).
+- **E4 annual totals ratios (l.110-161):** `IF(Kfulsm.eq.0)` + `Prttab(fext)`;
+  builds `rd1/rd2` (orig/SA annual-total ratios) -> `table` (print). No golden.
+- **Zero/pseudo-add guards (l.162-176):** composite `divsub(O5..)` (Iagr==4) +
+  `chkzro` — both gated OFF base.
+- **E5 orig %-change (l.177-189):** `mfda=Pos1ob+1`; `change(Series,Temp,mfda,
+  Posfob)` -> `pragr2` E5 -> `svchsd` savelog `e5`.
+- **E6 SA %-change + E6.A/E6.R (l.190-236):** `IF(Kfulsm.eq.0)`: `change(Stci,
+  Temp)` -> E6; `Iyrt>0` -> E6.A (`change(Stci2)`); `Lrndsa` -> E6.R
+  (`change(Stcirn)`). Last two gated OFF base.
+- **E7 trend %-change (l.237-251):** picks `Stc2` vs `Stc` (base -> `Stc`);
+  `change` -> `pragr2` E7 -> `svchsd e7`.
+- **E8 calendar-adj orig %-change (l.252-264):** base `change(Stocal,Temp)` ->
+  E8. (Iagr==4 uses `O5`.)
+- **E11 robust SA (l.269-277):** `stcirb=Series-Stome+Stcime` -> `prtagr` E11.
+- **E18 final adj ratios A1/D11 (l.278-304):** loop `stcirb=thisob/Stci` (zero/
+  neg handling sets `pre18b`) -> `prtagr` E18.
+- **EB total adj factors (l.305-319):** `IF(pre18b.or.Savtab(LXEEEB))` -> `divsub`
+  + `prtagr`. Base airline: pre18b=F and `eb` not saved -> OFF.
+- **PART F header (l.320-336):** `Kpart=6`; `allgud` bookkeeping (base skip).
+- **Priors/TD variance (l.337-360):** `Kfmt!=0` -> `sumry(Sprior)`+`vars(Sprior)`
+  (Vp); Vtd block `sumry(Faccal)`+`vars(Faccal)`. Both gated OFF base.
+- **Irregular summary (l.361-362):** `sumry(Sti,...)` (Ibar/Isq) + `avedur(Sti,
+  Adri)`. **On base.**
+- **Stome/Stime/Sts/Stc summaries + issame notes (l.373-440):** `sumry(Stome)`,
+  `sumry(Stime)`+`vars(Stime)`->Vi, `sumry(Sts)`+`vars(Sts)`->Vs (Kfulsm!=2
+  branch), `sumry(Stc)`; `issame` guards drive "diagnostics cannot be generated"
+  notes and the `IF(lsame)RETURN` at l.546.
+- **Linear-trend removal from C (l.441-477):** `logar(Stc)` (Muladd!=1),
+  least-squares slope -> `trend[]`, `antilg`, `divsub(Temp,Stc,trend)`,
+  `avedur(Stc,Adrc)`, `vars(Temp)`->Vc. All ported leaves + inline.
+- **Orig variance (l.478-517):** outlier re-adj (OFF base) + `sumry(Series,Obar)`.
+- **vo / lsame gate (l.527-546):** `divsub(Temp,Stome,trend)`, `vars(Temp)`->vo;
+  `IF(lsame)RETURN` (base proceeds).
+- **Variance decomposition + I/C (l.547-581):** normalize Vp/Vtd/Vc/Vs/Vi by vo,
+  `Rv` sum, `Osq2` relative contributions, `Smic=Ibar/Cbar` I/C ratios. Pure.
+- **Stci/Stcime summaries (l.582-654):** outlier re-adj (OFF base) +
+  `sumry(Stci,Cibar)`+`avedur(Stci,Adrci)`, `sumry(Stcime,Cimbar)`.
+- **MCD + F1 (l.664-696):** derive `Mcd` from `Smic`, `m,n`; `averag(Stci,Stmcd,
+  Pos1bk,Posffc,m,n)` MCD MA; `sumry(Stmcd,Smbar)`+`avedur(Stmcd,Adrmcd)`;
+  `prtagr` F1; restore Stmcd from Temp.
+- **Autocorr + F3 calc (l.697-713):** `varian(Sti)`, `setdp`, `Autoc[]` loop;
+  `f3cal(Sts,ifail)` computes M1-M11/Q/Q2.
+- **F2/F3 emit (l.714-727):** `fgen` (print, Prttab-gated) + `svf2f3` (savelog).
+- **Tail plots (l.728-778):** TD table `prtdtb`, ratio plots R1/R2 `x11plt` — all
+  print-gated, deferrable.
+
+### 2. Every CALL: PORTED vs UNPORTED
+
+| CALL (lines) | status | maps to / role |
+|---|---|---|
+| `change` (182,194,219,230,244,246,257,259) | **PORTED** | `x11filt.cpp:58` (has muladd+Gudval) |
+| `divsub` (168,312,314,467,480-3,528,585-91,622,628) | **PORTED** | `x11filt.cpp` |
+| `addmul` (410-1,520-3,609-15,645-51) | **PORTED** | `x11filt.cpp` |
+| `divgud` (378-9,486-9,595-601,632-8) | **PORTED** | `x11filt.cpp:72` |
+| `chkzro` (171,173) | **PORTED** | `x11filt.cpp:82` (OFF base) |
+| `averag` (680) | **PORTED** | `x11filt.cpp:104` (MCD MA) |
+| `logar`/`antilg` (451,464,465) | **PORTED** | `x11filt.cpp:44/48` |
+| `copy` (377,413,485,525,593,617,630,653) | **PORTED** | x11 core copy |
+| `setdp` (705) / `setlg` (267,334) | **PORTED** | `specparse.hpp:84/85` |
+| `copylg` (266,334) | **PORTED** | `strvec.cpp:96` |
+| `sumry` (339,358,361,382,393,425,428,517,604,641,685) | **UNPORTED** | `sumry.f` (84) — per-period summary measures (Xbar/Xbar2/Xsq/Xsd), uses Gudval+Muladd |
+| `avedur` (362,476,605,686) | **UNPORTED** | `avedur.f` (51) — average duration of run |
+| `vars` (fn; 340,359,394,426,477,529) | **UNPORTED** | `vars.f` (14) — dispatch: Muladd!=1 -> `varlog`, else `varian` |
+| `varlog` (via vars, base) | **UNPORTED** | `varlog.f` (44) — log-variance |
+| `varian` (fn; 703 + via vars add-mode) | **UNPORTED** | `varian.f` (27) — plain variance |
+| `issame` (fn; 383,429,492 + Sti/Stc/Series) | **UNPORTED** | `issame.f` (29) — constant-series predicate (drives lsame/RETURN) |
+| `isfals` (fn; 335) | **UNPORTED** | `isfals.f` (18) — all-false Gudval predicate (OFF base) |
+| `f3cal` (713) | **UNPORTED** | `f3cal.f` (142) — F3 M1-M11/Q/Q2; needs `sdev.f` (46) |
+| `ftest` (99,101) | **UNPORTED** | `ftest.f` (294) — residual-seasonality F-test (diagnostic) |
+| `x11plt` (75,77,752,754,771,773) | **UNPORTED (print)** | `x11plt.f` — E0/R1/R2 charts, DEFER |
+| `prtagr` (85,92,107,275,302,316) | **UNPORTED (print/save)** | table emitter, DEFER |
+| `pragr2` (186,198,220,231,248,261) | **UNPORTED (print/save)** | E5-E8 emitter, DEFER |
+| `table` (156) | **UNPORTED (print)** | E4 emitter, DEFER |
+| `svchsd` (189,201,223,234,251,264) | **UNPORTED (savelog)** | %-change std-dev -> `.pe5/.pe6/.pe7/.pe8`, Lsumm-gated, DEFER |
+| `fgen` (719,724) | **UNPORTED (print)** | F2/F3 table printer (`prtf2`/`f3gen`), DEFER |
+| `svf2f3` (720,725) | **UNPORTED (savelog)** | writes `f2.*`/`f3.*` -> `.udg`; reads computed COMMON state |
+| `prtdtb` (733) | **UNPORTED (print)** | TD-type table, DEFER |
+| `writln` (many) | **UNPORTED (print)** | stderr notes, DEFER |
+
+### 3. Base-path (airline_x11-default: mult, no priadj/x11reg/ss/composite) reachability
+
+Confirmed flag values for the base case (Muladd=0 mult per `x11opt.cmn:13`;
+Iagr<4 non-composite; Cnstnt=DNOTST; Kfulsm=0; Psuadd=F; no outliers/TD/holiday/
+priors -> Adjls=Adjao=Adjtc=Adjusr=0, Adjtd<=0, Kswv=0, Axrgtd=Axrghl=F,
+Adjhol!=1, Khol!=2, Ixreg<=0, Kfmt=0, Iyrt=0, Lrndsa=F):
+
+**GATED OFF base (do NOT port / stub):**
+- `chkzro` (l.169) — guard `Muladd.ne.1.and.(Psuadd.or.(.not.dpeq(Cnstnt,DNOTST)))`
+  = T.and.(F.or.F) -> **F**.
+- E4 composite `divsub(O5..)` (l.168) and all `Iagr.eq.4`/`Iagr.ge.4` branches — OFF.
+- `copylg`/`setlg` Gudval save (l.266-7,334-5) — guard `.not.dpeq(Cnstnt,DNOTST)`
+  -> **F**; so `allgud` stays T, every `IF(allgud)` takes the T-branch (which with
+  Adj*=0 is a no-op) and the `divgud`/`copy`-restore ELSE arms never run. `isfals`
+  never called.
+- `sumry(Sprior)`/`vars(Sprior)` (l.339-40) — `Kfmt.ne.0` -> **F** (Vp=0 path).
+- `sumry(Faccal)`/`vars(Faccal)` Vtd (l.358-9) — the l.349 guard is **T** for base
+  -> Vtd=0 branch (Faccal summary skipped).
+- E6.A (`Iyrt>0`, l.209), E6.R (`Lrndsa`, l.228), EB (`pre18b/Savtab(LXEEEB)`,
+  l.309) — all OFF.
+- All `Adj*`/`Fin*` outlier re-adjustment `divsub`/`addmul`/`divgud` pairs — no-ops
+  (flags 0).
+
+**ON base, compute-bearing (save-table state):**
+- `change` (E5/E6/E7/E8) -> `.e5/.e6/.e7/.e8` goldens — **ported leaf, no blocker**.
+- E11 (`stcirb=Series-Stome+Stcime`) -> `.e11`; E18 (`thisob/Stci`) -> `.e18` —
+  inline, no leaf.
+- `averag` F1 (MCD MA) -> `.f1` — ported leaf.
+- `sumry`/`avedur`/`vars`(+`varlog`)/`varian`/`issame` (l.361-712) — **on base**,
+  feed the PART-F variance decomposition, `Smic`->`Mcd` (which F1's m,n depend on),
+  `Autoc`, and the `.udg` `f2.*` fields.
+- `f3cal` (l.713) -> `.udg` `f3.m01..m11`,`f3.q` — on base.
+- `ftest` (l.99) residual-seasonality — on base but **diagnostic/savelog only**
+  (feeds `f2.idseasonal`/`fsb1`-type fields); no numeric table golden.
+
+**Print-gated / deferrable (numeric core not affected):** `x11plt`, `prtagr`,
+`pragr2`, `table`, `svchsd`, `fgen`/`prtf2`/`f3gen`, `svf2f3`, `prtdtb`, `writln`.
+Same DEFER policy as the rest of the spine — compute into ctx, diff via harness.
+
+**Dependencies from x11pt3 (must already be populated):** `Stome`(E1),
+`Stcime`(E2), `Stime`(E3), `Stocal`(E8; = Series when no calendar adj), plus the
+usual `Series/Stci/Stc/Sts/Sti` and pointers `Pos1bk/Pos1ob/Posfob/Posffc`. Also
+consumes x11pt2/pt3 scalars for f3cal: `Ratic`,`Ratis`,`Test1`,`Test2`,`L3x5`,
+`Lstabl`,`Vp`,`Vi`. Wire these before expecting `.f1`/`.udg` parity.
+
+### 4. Recommended base-path port order + first blocker leaf(s)
+
+1. **Transcribe x11pt4 l.64-319 (E-tables through E18)**, stubbing all print/save
+   CALLs and the gated-OFF branches. Uses ONLY already-ported leaves (`change`,
+   `divsub`). **First real blocker leaf: NONE** — this gate needs zero new leaves,
+   only the spine transcription + x11pt3 arrays. Gate `.e5/.e6/.e7/.e8/.e11/.e18`.
+2. **Port the summary-measures cluster** `sumry`(84) + `avedur`(51) +
+   `vars`(14)/`varlog`(44)/`varian`(27) + `issame`(29)/`isfals`(18), then
+   transcribe PART F l.320-712 (variance decomposition, `Smic`/`Mcd`, `Autoc`,
+   MCD `averag`). Gate `.f1`. **First real blocker leaf here: `sumry`** — every
+   PART-F path funnels through it (11 call sites), and `Mcd` (hence F1's filter
+   length) depends on `Smic` from `sumry(Sti)`/`sumry(Stc)`.
+3. **Port `f3cal`(142) + `sdev`(46)**; transcribe l.713. Then the F-test
+   diagnostic cluster `ftest`(294) + `kwtest`(99) + `mstest`(158) for the
+   `f2.fsb1/fsd8/kw/msf` fields. Gate the `.udg` `f2.*`/`f3.*` savelog. Emitters
+   (`fgen`/`prtf2`/`f3gen`/`svf2f3`) stay deferred-print, but `svf2f3`'s VALUES
+   must be produced into ctx/udg for the harness to diff.
+
+### 5. E/F save-table goldens in the corpus
+
+`airline_x11-default/` ships: **`.e1 .e2 .e3 .e5 .e6 .e7 .e8 .e11 .e18 .f1`** table
+goldens (15-digit) + **`.udg`** carrying the full F2/F3 block (`f2.a01..a12`,
+`f2.b*`, `f2.c*`, `f2.d/e/f/g`, `f2.ic`, `f2.is`, `f2.mcd`, `f2.fsb1`, `f2.fsd8`,
+`f2.kw`, `f2.msf`, `f2.idseasonal`, `f3.m01..m11`, `f3.q`, `d11.f`). Also
+`.pe5/.pe6/.pe7/.pe8` (svchsd savelog) and `.paf/.tad` present. **No `.e4`
+golden** (E4 print-gated, not save-blessed) despite `e4` in the save list — not a
+gate target. The same E/F set exists for the additive/logadd and the
+expgs/payems/unrate x11 variants (24 x11 golden dirs total). **Base numeric E/F
+gate (`.e5..e18`,`.f1`) needs no new leaf; the `.udg` f2/f3 gate is the driver
+for porting the sumry/vars/avedur/f3cal/ftest diagnostic cluster.**
+
 ## 1. Entry point & algorithm
 
 ```
@@ -315,3 +490,189 @@ Additive/logadd coverage: `airline_x11-additive`, `airline_x11-logadd`.
   print/plumbing (`prt*`, `table`, `punch`, `x11plt`) or belong to the deferred
   sub-milestones (sliding-spans `ss*`, revisions `rev*`, aggregate/composite
   `agr*`, spectrum `spc*`/`genqs`, x11regression `x11mdl`/`x11aic`/`regx11`).
+
+## x11pt3 port plan (D8->D16 finals) — scouted 2026-07-20
+
+`x11pt3.f` is **1292 lines** but almost entirely PRINT/SAVE + gated-off feature
+branches. The base-path *compute* is a short spine of already-ported leaves plus
+the same `chktrn` that x11pt2 is porting. **On the airline_x11-default base path
+there is effectively ONE new leaf to write: nothing** — every numeric call is
+ported or shared with x11pt2. The bulk of the file is `table`/`punch`/`x11plt`/
+`prt*` (deferred) and `Iyrt`/`Issap`/`Irev`/`Adj*`/`Priadj`/`Cnstnt` branches
+that are all off for the base case.
+
+Signature: `SUBROUTINE x11pt3(Lgraf,Lttc)`. Reached from `x11ari.f:257`.
+
+### 1. Section-by-section flow (line ranges)
+
+- **Setup (l.67-76):** `ifac`, `nadj2=Nadj if Kfmt>0`, `copy(Sprior->sp2)`,
+  `Nfcst=Posffc-Posfob`, `oktrn=oktrf=T`, `chkfct=Nfcst>0 .and. Prttab(LXETRF)`,
+  `gudrun=Issap<2 .and. Irev<4 .and. Khol!=1`. **All base path.**
+- **D8 unmodified SI + MSR filter (l.78-108):** `sfmsr` (re-select D10 seasonal
+  filter under calendarsigma) gated `Kfulsm<2 .and. Ksdev<=1`; `addmul` builds
+  unmodified SI `Stsie=Stsi*Stex`; then D8 `table`/`punch` (deferred print).
+- **D8 F/M seasonality tests (l.109-134):** `ftest`+`kwtest`+`mstest`+`COMBFT`
+  under `IF((.not.Lhiddn).and.Khol.ne.1)` — **this block RUNS on base path** but
+  is pure diagnostic (D8 F-stat / moving-seasonality / combined-test savelog).
+  Note the `addmul(Stsie,...)` at l.119/131 *rebuilds* Stsie after ftest's
+  internal use. `Issap==2` alt branch (l.128) is sliding-spans-only.
+- **Ksdev>1 extreme re-replace (l.135-144):** `copy`+`replac`+`sfmsr`, gated
+  `Ksdev.gt.1` — **off for base** (default single-sigma Ksdev==1).
+- **D8B / D9 replacement (l.145-185):** `prtd8b` (deferred); inline DO
+  (l.155-162) builds `Temp` = modified SI where `Stex!=ebar` else `DNOTST`, and
+  **sets `stc2(i)=ebar` for all i** (load-bearing later at Part E). D9 `table`/
+  `punch`/`prtd9a` deferred.
+- **Year-ahead seasonal + modified SA (l.186-377):** `forcst(Sts,0,Posffc,klda,
+  Ny,1,PT5,ONE)` extends seasonal one year (gated `Kfulsm<2`). Big
+  `IF(Kfulsm.eq.2)` (summary) ... **ELSE (base, Kfulsm==0)** at l.244:
+  `divsub(Stci,Stcsi,Sts)` = modified SA; `Muladd==2` antilg block (logadd
+  only); `Adjsea/Adjso` regARIMA-seasonal combine (off); `Ishrnk` shrink (off);
+  D10 `table`/`punch`/`x11plt` deferred; `ssrit`/`getrev` (off); `Psuadd` D10b
+  (off); restore `Muladd=Tmpma`.
+- **Final trend via vtc (l.378-467):** `copy(Stci->Ckhs)`; `klda/k2` setup;
+  `IF(Kfulsm.eq.0.or.2)` (base) → `vtc(Stc,Stci)` final trend cycle;
+  `finaltrendma` WRITE (deferred); `Muladd==2` antilg+`trbias` (logadd only);
+  `IF(Muladd.eq.0)` → **`chktrn(Stc,Kpart,12,trnchr,chkfct,oktrn)`**; `Adj*`
+  addmul into sp2 (off); `divsub(Stci,Series,Sts)` = **final SA (D11 core)**;
+  `copy(Sts->ststd)`. `Kfulsm==1` summary-only ELSE (l.468-523) off for base.
+- **Calendar/TD combine (l.524-566):** holiday `Faccal` rebuild (`Khol==2`/
+  x11reg/`Adjhol`) and TD `divsub(Stci,Faccal)`+`addmul(ststd,Faccal)` — all
+  gated on `Adjtd/Kswv/Axrgtd/Axrghl/Adjhol` (**off for airline-no-TD base**);
+  `Priadj>1` prior-lom fold-in (off), uses `dfdate`.
+- **rmpadj + final irregular (l.567-603):** `rmpadj` gated `Nuspad>0 .or.
+  Priadj>1` (off); **`divsub(Sti,Stci,Stc)` = final irregular (D13 core)**;
+  `Fin*`/`Adj*` outlier divsubs (off, no outliers); `Nustad` user-temp-adj (off).
+- **D11 write + residual-seasonality (l.604-672):** `IF(dpeq(Cnstnt,DNOTST))`
+  (**base, no constant**) → D11 `table`/`punch` (deferred) + `ftest(Stci,...,1,
+  ...)` residual-seasonality diagnostic. ELSE = remove-constant branch (off).
+- **Store for SS/rev (l.673-695):** `ssrit`/`getrev` (off); D11 forecast portion
+  `table`/`punch` (deferred, `Nfcst>0`).
+- **Force yearly totals (l.696-876):** `x11plt` (deferred); big `IF(Iyrt.gt.0)`
+  → `qmap`/`qmap2`/`rndsa` + `ftest`/`getrev`/`ssrit`. **Entire block off for
+  base (Iyrt==0)** → ELSE l.869 `copy(Stci->Stci2)`.
+- **rndsa (l.877-919):** gated `Lrndsa` — off for base.
+- **D12 final trend write (l.920-1066):** LS/tc/temp-adj fold-in
+  `IF(((.not.Finls).and.Adjls==1).or...)` off for base → ELSE l.1011: constant
+  removal (off) + D12 `table`/`prttrn`/`punch` (deferred; `oktrn` from chktrn
+  picks `table` vs `prttrn`).
+- **rev / logadd bias (l.1067-1085):** `getrev` (off); `Tmpma==2` biasfc
+  (logadd only).
+- **D13 final irregular write (l.1086-1122):** `Adjao/Adjtc` AO/tc-restore branch
+  (off) → ELSE l.1110 D13 `table`/`punch` of `Sti` (deferred).
+- **D16 combined + D18 (l.1123-1189):** `Khol==1` early RETURN (base continues);
+  D16 `table`/`punch` of `ststd` (deferred); `Psuadd` D16b (off); `Adjtd` D18
+  (off).
+- **Part E modified series (l.1190-1291):** `Kpart=5`; inline DO (l.1199-1258)
+  builds `Stome`/`Stime`/`Stcime` (E1/E2/E3 modified orig/irr/SA) from `Stwt`
+  extreme weights + `ebar`/`Sprior`/`Facls`; `Adjao/Adjtc` divsubs (off);
+  constant removal (off); `Adj*` → restore `Sprior` (off). RETURN.
+
+### 2. Every CALL, tagged
+
+**PORTED (all confirmed by symbol grep in `core/src/x11/` + `specparse`):**
+- `copy` → `specparse.hpp:124` (l.71,208,215,273,285,379,448,466,473,516,517,
+  522,627,875,928,951,1016,1090,1285)
+- `setdp` → `specparse.hpp:84` (l.209,464,529,531)
+- `addmul` → `x11filt.hpp:34` (l.94,119,131,216,217,274,275,534,536,549,930,
+  932,941,943,1091,1093)
+- `divsub` → `x11filt.hpp:29` (l.251,264,456,539,548,574,576,577,578,581,583,
+  585,587,721,850,1266,1267,1271,1272)
+- `antilg` → `x11filt.hpp:41` (l.258,259,260,265,416,483)
+- `forcst` → `x11drv.hpp:41` (l.190)
+- `vtc` → `x11drv.hpp:51` (l.406,477)
+- `sfmsr` → `x11drv.hpp:62` (l.88,142)
+- `replac` → `x11xtrm.hpp:60` (l.140)
+- `trbias` → `x11xtrm.hpp:84` (l.420,487) — logadd only
+- `vsfc` → `x11seas.hpp:32` (l.222,280) — `Lcentr` only, off for base
+- `dpeq` → `numeric.hpp` (inline, l.156,609,754,950,998,1015,1054,1204,1218,1228,
+  1275) — helper, available
+
+**UNPORTED — SHARED with x11pt2 (being ported now):**
+- `chktrn` (chktrn.f, **139 lines**) — l.429,496. Negative-trend check; sets
+  `oktrn`/`trnchr`. **On base path** but a *no-op for positive multiplicative
+  trend*: `chktrn.f:27` sets `prtmsg=.not.ispos(Stc,Pos1bk,Posffc)`; if all
+  positive it early-RETURNs (l.30) WITHOUT touching `Stc`, leaving caller's
+  `oktrn=T`. It only mutates `Stc` (replaces negatives) when trend actually goes
+  ≤0 — never for airline. Depends on leaf `ispos` (small; ported alongside).
+
+**UNPORTED — diagnostics (run on base path, but only produce savelog/print
+stats; do NOT feed D10/D11/D12/D13 numerics — defer past first gate):**
+- `ftest` (ftest.f, **294 lines**) — l.117,620,661,813,897. Seasonality /
+  residual-seasonality F-test. Same routine x11pt2 flagged deferrable. Read-only
+  on the series (the `addmul` at l.119/131 re-forms Stsie around it, i.e. the
+  caller treats Stsie as scratch, not ftest).
+- `kwtest` (kwtest.f, **99 lines**) — l.118,130. Kruskal-Wallis nonparametric.
+- `mstest` (mstest.f, **158 lines**) — l.123,132. Moving-seasonality F-test.
+- `COMBFT` (combft.f, **72 lines**) — l.127,133. Combined identifiable-
+  seasonality test (reads the three above's stored stats).
+
+**UNPORTED — print/save engines (DEFER, project-wide policy):**
+- `table` (many), `punch` (many), `x11plt` (l.304,697,984,1049,1103,1120),
+  `prttrn` (l.961,975,989,1003,1026,1040,1059), `prtd8b` (366), `prtd9a` (112),
+  `writln` (l.648...).
+
+**UNPORTED — gated OFF for base (stub with flag guards like x11pt1/pt2):**
+- `ssrit` (ssrit.f, 138) — `Issap==2` sliding spans. l.311,678,821,904.
+- `getrev` (getrev.f, 149) — `Irev==4` revisions. l.313,685,829,916,1069,1071.
+- `shrink` (shrink.f, 79) — `Ishrnk>0` seasonal shrinkage. l.286.
+- `qmap` (qmap.f, 116) / `qmap2` (qmap2.f, 328) — `Iyrt>0` force yearly totals.
+  l.725,747,771.
+- `rndsa` (rndsa.f, 129) — `Lrndsa` rounded SA. l.882.
+- `rmpadj` (rmpadj.f, 55) — `Nuspad>0 .or. Priadj>1` prior-adj removal. l.569.
+- `dfdate` (17) / `addate` (40) — date arithmetic inside Priadj/rev branches
+  (off); trivial when needed.
+
+### 3. Base-path reachability verdict (airline_x11-default)
+
+Base flags: `Muladd==0` (mult), `Psuadd==F`, `Kfulsm==0` (full adj), `Ksdev==1`,
+`Priadj<=1`, `Issap<2`, `Irev<4`, `Ixreg!=2`, `Khol!=1`, `Iyrt==0`, `Lrndsa==F`,
+`Ishrnk==0`, `Adjsea/Adjso/Adjtd/Adjhol/Adj*==0`, `Cnstnt==DNOTST`, no outliers.
+
+The **entire numeric decomposition** on this path uses only PORTED leaves:
+```
+sfmsr → addmul(Stsie) → forcst(Sts) → divsub(Stci,Stcsi,Sts)   [modified SA]
+      → vtc(Stc,Stci) → chktrn(Stc)  [no-op] → divsub(Stci,Series,Sts) [D11]
+      → divsub(Sti,Stci,Stc) [D13]   + inline stc2=ebar, Part-E Stome/Stime loop
+```
+Final tables land directly in ctx arrays: **D10=`Sts`, D11=`Stci`, D12=`Stc`,
+D13=`Sti`, D16=`ststd`** (= copy of `Sts` when no TD). D8=`Stsie`, D9=`Temp`.
+
+**There is NO unported base-path *compute* leaf unique to x11pt3.** The only
+unported call that executes and could touch numerics is `chktrn` — and it is a
+verified no-op for the positive multiplicative airline trend, and is already on
+the x11pt2 port docket. The F/M tests (`ftest`/`kwtest`/`mstest`/`COMBFT`) run
+but are diagnostics that don't feed D10–D13; defer them (they gate the `.udg`
+f2/f3 and D8-F savelog fields, needed only for full-summary parity later).
+
+### 4. Recommended port order (base path)
+
+1. **Wait on / consume `chktrn`** from the x11pt2 landing (shared blocker; port
+   `ispos` with it). If x11pt3 is wired before x11pt2's chktrn merges, stub
+   chktrn as `oktrn=ispos(Stc,Pos1ob,last); trnchr=' '` (exact no-op for
+   positive trend) — safe for airline.
+2. **Port x11pt3 straight through as `x11pt3(ctx, Lgraf, Lttc)`** in
+   `core/src/x11/x11parts.cpp` (next to x11pt1/pt2), transcribing section by
+   section, wiring the PORTED leaves, and `not_ported`-guarding every gated-off
+   feature branch (Kfulsm==2/1, Psuadd, Adjsea/Adjso, Ishrnk, holiday/TD combine,
+   rmpadj, Iyrt qmap/qmap2/rndsa, ssrit, getrev, constant, logadd antilg/trbias).
+   Drop ALL `table`/`punch`/`x11plt`/`prttrn`/`prtd8b`/`prtd9a`/`writln`.
+3. **Stub the diagnostics** `ftest`/`kwtest`/`mstest`/`COMBFT` as no-ops
+   (confirm each is read-only on its series arg first — quick check of ftest.f /
+   mstest.f return-arg list) and move on; they don't affect the D-table gate.
+4. Gate `airline_x11-default` **D8 → D9 → D10 → D11 → D12 → D13 → D16** against
+   the goldens. First real blocker if any surfaces: it will be a filter-length
+   mismatch inherited from x11pt2 (seasonalma/finaltrendma), not new x11pt3 code.
+
+**First real blocker leaf: none unique to x11pt3.** The shared prerequisite is
+`chktrn` (+`ispos`), already owned by x11pt2.
+
+### 5. Goldens in the parity corpus
+
+All present at 15-digit precision, **24 goldens each** across the x11 corpus
+(airline/expgs × default/additive/logadd/automdl/fixed-airline/aictest variants):
+`.d8 .d9 .d10 .d11 .d12 .d13 .d16` — every x11pt3 output table has a golden.
+For `airline_x11-default` specifically:
+`tests/golden/generated/airline_x11-default/airline_x11-default.{d8,d9,d10,d11,
+d12,d13,d16}`. (`airline_x11-additive` ships d8/d10/d11/d12/d13; `-logadd` too.)
+So D8, D10, D11, D12, D13 (and D9, D16) are all directly gateable — no missing
+save-table coverage for the finals.
