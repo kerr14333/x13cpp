@@ -62,5 +62,15 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
    internally consistent), but if higher precision matters, regenerate both. When
    the user drops real FRED NSA data (PAYNSA/UNRATENSA), regenerate goldens.
 
+## Found gaps (features that FATAL / diverge — real bugs)
+
+- **User-specified outlier regressors FATAL.** `regression{ variables = (ao1950.jan) }`
+  (and `ls<date>`, `tc<date>`, ramps) → `OUTCOME: FATAL` in x13run_m3, while the
+  oracle estimates fine. Automatic outlier ID (`outlier{}`) works and is gated;
+  the gap is parsing/building USER-specified point-outlier regressors in the
+  regression-variable list (getreg/adpdrg doesn't recognize the `ao/ls/tc<date>`
+  variable syntax, or regvar can't build the column). A common X-13 feature —
+  worth fixing. Excluded from the reg/outlier gate; found by the sweep.
+
 ## Verified / closed
 (none yet)
