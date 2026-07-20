@@ -136,29 +136,39 @@ oracle `.udg`). Suggested order:
 Gate incrementally: iddiff's chosen (d,D) is a discrete decision — check it
 exactly against the oracle before wiring amdid.
 
-## 3b. amdid BIC parity — expgs/region gap DIAGNOSED (mean/dnp bookkeeping)
+## 3b. amdid BIC parity — expgs/region gap DIAGNOSED (D=0 candidate estimation)
 
 iddiff differencing matches the oracle on all six no-preamble corpus series;
 amdid's full model + best-5 BIC match the oracle **exactly** for airline
 (`automdl.best5.bic1..4` identical to 3 decimals). Two series still miss the
 ARMA orders — expgs `(0 1 2)` vs `(2 1 0)`, region_north `(1 2 2)(0 1 1)` vs
-`(3 2 1)(0 1 1)` — cause pinned:
+`(3 2 1)(0 1 1)`. Both are **D=0** (no seasonal differencing); airline (D=1)
+matches. Findings:
 
-- Both are `checkmu: yes`, **D=0** (no seasonal differencing) cases. Airline
-  (D=1) matches; the divergence is specific to the mean-significant /
-  non-seasonal-differenced path.
-- Worked example (expgs, quarterly, nefobs=316): the oracle best-5 `(2 1 0)`
-  BIC −3.221 back-solves to lnlkhd≈517.5 (== our standalone no-mean `(2 1 0)`
-  estimate) with **dnp=3** (mean counted). Our amdid `(2 1 0)` gives −3.276 =
-  lnlkhd≈526.3 (the WITH-mean fit) with dnp=3. So the oracle scores each
-  candidate on the **no-mean likelihood but counts the mean in the BIC
-  penalty**, whereas ours estimates the candidate carrying the constant.
-- `chkmu`/`genrtt` are ported (`automdl/chkmu.cpp`) but a harness chkmu preamble
-  did NOT change the result: the constant is removed before the amdid grid in
-  the oracle too (iddiff's mean test `dlrgef`s it; automd re-adds it only AFTER
-  amdid, automd.f:479). Fix is in how amdid/amdid2 count dnp vs estimate the
-  mean for D=0 candidates — resolve when the real `automd` driver is assembled
-  with the exact mean/constant sequencing. `X13_AMDID_DEBUG=1` dumps best-5.
+- **NOT the mean.** `X13_AMDID_DEBUG=1` shows `Nb=0, Ngrp=0` in the amdid grid
+  for BOTH expgs and airline — no constant is present when candidates are
+  estimated (the oracle likewise removes it before the grid; automd re-adds it
+  only AFTER amdid, automd.f:479). `chkmu`/`genrtt` are ported
+  (`automdl/chkmu.cpp`) but a chkmu preamble did not change the result.
+- **The candidate ARMA estimation itself differs for D=0.** For expgs (quarterly,
+  nefobs=316) our amdid scores `(2 1 0)` at BIC −3.276 → lnlkhd≈523.4 (dnp=2),
+  while the oracle's best-5 `(2 1 0)` is −3.221 → lnlkhd≈514.7, and a *standalone*
+  x13run_m3 estimate of `(2 1 0)` gives 517.5 — three different likelihoods for
+  the same model/series. So rgarma is producing a different exact-ML optimum
+  inside the amdid path (Lextar/Lextma=T, Nintvl=Mxdflg, Tol loosened to 1e-3)
+  than the oracle for the no-seasonal-difference case. Airline's exact-ML path
+  matches, so the divergence is specific to D=0/quarterly setup — likely the
+  Nintvl/Nextvl or starting-value state amdid inherits. Resolve by diffing
+  rgarma's exact-ML state for a single expgs candidate against the oracle when
+  the full `automd` driver is assembled. `X13_AMDID_DEBUG=1` dumps best-5 + grid
+  Nb/Ngrp/id/Sp.
+- **Lead: the exact-AR likelihood path.** amdid forces `Lextar=Lextma=T` (exact
+  ML). Airline's winner is pure-MA `(0 1 1)(0 1 1)` — exercises exact-**MA** and
+  matches. expgs `(2 1 0)` and region `(3 2 1)…` are AR-heavy — exercise
+  exact-**AR**. First debugging step next session: estimate a single expgs
+  `(2 1 0)` candidate with `Lextar=T` and diff rgarma's exact-AR likelihood
+  against the oracle (check whether the M3 corpus already covers any pure-AR
+  exact-ML model; if not, the exact-AR branch may be under-tested).
 
 ## 4. First corpus gate target
 

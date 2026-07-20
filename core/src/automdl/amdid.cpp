@@ -186,6 +186,10 @@ void amdid(X13Context& ctx, int& irar, int irdf, int& irma, int& isar, int isdf,
            ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, ar.nrxy,
            ar.begxy.data(), frstry, true, false);
 
+    if (std::getenv("X13_AMDID_DEBUG"))
+        std::fprintf(stderr, "amdid grid: Nb=%d Ngrp=%d id=%d Sp=%d\n", m.nb,
+                     m.ngrp, id, m.sp);
+
     bool inptok;
     int psar;
 
