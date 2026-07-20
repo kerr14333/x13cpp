@@ -1,0 +1,31 @@
+Package: x13cpp
+Title: Seasonal Adjustment with the X13cpp Engine
+Version: 0.0.0.9000
+Authors@R: c(
+    person("Chris", role = c("aut", "cre"), email = "cyg5005@gmail.com"))
+Description: An R interface to X13cpp, a from-scratch C++17 port of the U.S.
+    Census Bureau's X-13ARIMA-SEATS seasonal adjustment program. The package
+    provides a 'seasonal_adjust()' entry point returning a structured result
+    object with accessor functions for diagnostics, forecasts, and save
+    tables, plus example economic time series bundled for experimentation.
+    No output files are ever written automatically; call 'write_outputs()'
+    explicitly to persist results to disk. The underlying C++ estimation
+    engine is still under development (see the parent repository), so the
+    computational path currently stubs out with an informative error;
+    this package establishes the public API and data bundling ahead of
+    that wiring.
+License: CC0
+URL: https://github.com/kerr14333/x13cpp
+BugReports: https://github.com/kerr14333/x13cpp/issues
+Depends:
+    R (>= 4.3.0)
+Imports:
+    stats,
+    utils
+Suggests:
+    testthat (>= 3.0.0)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 8.0.0
+Config/testthat/edition: 3
+LazyData: true
