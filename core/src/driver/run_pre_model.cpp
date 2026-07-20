@@ -44,6 +44,16 @@ bool wants_save(const X13Context& ctx, const std::string& ext) {
 bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base,
             bool estimate) {
     if (!parse_spec(ctx, spec_text, base)) return false;
+    return run_m2_after_parse(ctx, base, estimate, nullptr, nullptr);
+}
+
+// Post-parse pre-model + (optional) estimate/forecast body. Split out of run_m2
+// so the X-11 driver (run_x11) can reuse the estimate/forecast machinery on an
+// already-parsed context without re-parsing. When out_trnsrs is non-null it
+// receives the clean transformed series (before estimation clobbers Tsrs with
+// residuals) and *out_nobspf its length -- the inputs the X-11 extend stage needs.
+bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
+                        std::vector<double>* out_trnsrs, int* out_nobspf) {
     if (!ctx.captured.has_series) return false;
 
     // Save-format setup (gtinpt.f): default precision 15 -> field width 22,
@@ -156,6 +166,11 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
                trnsrs.data());
         if (ctx.error.lfatal) return false;
         have_trn = true;
+        // Hand the clean transformed series (+ its length) back to the caller
+        // before rgarma overwrites Tsrs with residuals; run_x11's extend stage
+        // consumes exactly this as the observed span to forecast-extend.
+        if (out_trnsrs) *out_trnsrs = trnsrs;
+        if (out_nobspf) *out_nobspf = nobspf;
         // Retain the transformed series on the context (Tsrs semantics).
         // Estimation later overwrites Tsrs from Xy with the same content; keeping
         // it here lets the automatic-model-ID path (iddiff/automd) read the series

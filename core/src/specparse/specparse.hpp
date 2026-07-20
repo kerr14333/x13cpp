@@ -297,6 +297,12 @@ bool parse_spec(X13Context& ctx, const std::string& spec_text,
 bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base,
             bool estimate = false);
 
+// Post-parse body of run_m2 (pre-model saves + optional estimate/forecast) on an
+// already-parsed context. out_trnsrs/out_nobspf, when non-null, return the clean
+// transformed series and its length for the X-11 extend stage. See run_x11.
+bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
+                        std::vector<double>* out_trnsrs, int* out_nobspf);
+
 // M5 X-11 phase (core/src/driver/run_x11.cpp): parse, then assemble the classic
 // X-11 decomposition spine (setxpt -> x11int -> x11pt1 -> x11pt2) producing the
 // B/C/D tables (B1..D7) in the ctx x11srs arrays. Wired for the no-model direct-
