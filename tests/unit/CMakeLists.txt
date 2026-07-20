@@ -38,6 +38,16 @@ target_include_directories(test_x11 PRIVATE
 target_link_libraries(test_x11 PRIVATE x13core x13_fp_flags)
 add_test(NAME test_x11 COMMAND test_x11)
 
+# test_seats links the core library (SEATS poly/root leaves live in
+# core/src/seats) and needs core/src on the include path for seats/seatspoly.hpp.
+add_executable(test_seats test_seats.cpp)
+target_include_directories(test_seats PRIVATE
+  "${CMAKE_SOURCE_DIR}/core/include"
+  "${CMAKE_SOURCE_DIR}/core/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(test_seats PRIVATE x13core x13_fp_flags)
+add_test(NAME test_seats COMMAND test_seats)
+
 # The fformat test validates against gfortran when available. Point it at the
 # gfortran the build already knows about (Fortran optional), and give it a
 # writable scratch directory. If gfortran cannot be found the test self-skips.

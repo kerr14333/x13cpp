@@ -7,6 +7,23 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
 
 ## Open
 
+0. **SEATS poly + root leaves (CONV/CONJ/MULTFN/DIVFCN, C02AEF/C02AEZ, RPQ) —
+   `core/src/seats/{poly,roots}.cpp`.** VERIFIED bit-exact: `C02AEF` (the #1 SEATS
+   parity hinge) was cross-checked against a standalone oracle driver built from
+   the real `ansub2.f` C02AEF/C02AEZ (gfortran -O2 -ffp-contract=off, linking the
+   oracle dpmpar/dpeq). All roots matched to the LAST BIT on three iterative cases
+   (cubic 2/3/4, mixed real+conjugate `(z^2+4)(z-1)`, quintic 2..6) — those exact
+   bit-patterns are now the golden values in `test_seats.cpp`. Two small residuals
+   to keep an eye on when SEATS pushes more diverse polynomials through it:
+   (a) `tol2 = pow(tol, 1.5)` ports Fortran `tol**1.5` via `std::pow`; it produced
+   bit-identical roots on all tested cases, but `pow` vs gfortran's `**` could
+   differ at last ULP for some `tol` — `tol2` only gates the convergence test, so
+   at most it shifts an iteration boundary. (b) `scale = 2**(-k)` uses `ldexp`
+   (exact power of two, guaranteed identical). RPQ's post-classification
+   (modulus/arg/period) is checked for correctness, not oracle bit-capture, since
+   it is plain arithmetic downstream of the (bit-exact) roots. Re-confirm once the
+   canonical decomposition (SECOND/PARFRA/MAK1) actually consumes these roots.
+
 1. **Banked adequacy routines are UNGATED** — `mdlchk`, `tstmd2`, `testodf`,
    `bkdfmd`, `tstmd1` (`core/src/automdl/adqtst.cpp`) are ported but NOT wired
    into automd. `tstmd1` in isolation DOES correctly revert usdeaths to
