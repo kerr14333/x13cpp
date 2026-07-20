@@ -72,7 +72,9 @@ corpus gate, not microtests.
 | 4    | tdaic/lomaic/easaic/usraic | | regressor-AIC-test family (rgarma) | todo |
 | 4    | genrtt/chkmu | 76+117| regressor t-stats / mean (Constant) test    | **DONE** (banked; automdl/chkmu.cpp) |
 | 4    | chkchi      | 74    | regressor chi-square test                   | todo   |
-| 5    | tstmd1/tstmd2/tstodf | | model-adequacy tests + retry loop       | todo   |
+| 5    | mdlchk      | 74    | Ljung-Box + residual-mean stat (shared)     | **DONE** d3aa598 (banked, automdl/adqtst.cpp) |
+| 5    | tstmd2      | 147   | unit-root-nearness parameter reduction      | **DONE** a371c74 (banked, automdl/adqtst.cpp) |
+| 5    | tstmd1/testodf | 268+297 | LB adequacy / over-diff -- need bkdfmd, ssprep, sftest, amidot/clrotl + the automd nloop retry wire | todo |
 | 6    | pass0/pass2 | ~     | TRAMO ACF pre-screen passes                 | todo   |
 | 7    | automd (reduced) | 1038 | driver spine (default→chkmu→iddiff→amdid→mean→final) | **DONE** 5ca900e (4 series bit-exact est.) |
 | 7    | automd run_m2 wire | | dispatch to automd when lautom (production path) | **DONE** 08059a8 |
