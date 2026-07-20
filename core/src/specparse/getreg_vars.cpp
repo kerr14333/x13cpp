@@ -15,6 +15,8 @@
 #include "srslen.hpp"
 #include "gen/model.hpp"
 #include "regarima/outlier.hpp"   // rdotlr (outlier title parser)
+#include "numeric/numeric.hpp"    // dpeq (tcalfa default check)
+#include <cmath>                  // std::pow (TC decay rate)
 
 #include <string>
 
@@ -1013,10 +1015,72 @@ void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
                             std::string_view(rgname).substr(0, 2));
         if (x11reg && typidx > 1) typidx = 0;
         if (typidx > 0) {
-            // AO/LS/RP/MV/TC/SO/TL/QI/QD/AOS/LSS outlier regressors need the
-            // rdotlr.f date parser (outlier milestone).
-            not_ported(ctx, "outlier regression variables (rdotlr.f)");
-            return;
+            // AOS/LSS (typidx 10/11) need rdotls.f (not ported); the rest are
+            // user-specified point/level/ramp outliers -- parse the date with
+            // rdotlr, validate the window, and register the group (regvar case
+            // 120 builds the column via addotl). adpdrg.f:90-360.
+            if (typidx >= 10) {
+                not_ported(ctx, "AOS/LSS outlier regressors (rdotls.f)");
+                return;
+            }
+            int otlind = typidx, begotl = 0, endotl = 0;
+            bool argok = true;
+            rdotlr(ctx, rgname.substr(0, static_cast<std::size_t>(nrgchr)), begsrs,
+                   M.sp, otlind, begotl, endotl, argok);
+            if (ctx.error.lfatal) return;
+            if (!argok) {
+                inpter(ctx, PERROR, L.lstpos.data() + 1,
+                       "See the above AO, LS, RP, SO, TL, TC, QI, or QD error.");
+                locok = false;
+                lex(ctx);
+                break;
+            }
+            // Per-type window validation + the type prefix / vartyp.
+            const char* pfx;
+            int vartyp;
+            bool bad = false;
+            const char* msg = "Not within series";
+            switch (typidx) {
+            case 1: pfx = "AO"; vartyp = PRGTAO; bad = begotl > nobs || begotl < 1; break;
+            case 4: pfx = "MV"; vartyp = PRGTMV; bad = begotl > nobs || begotl < 1; break;
+            case 2: pfx = "LS"; vartyp = PRGTLS; bad = begotl > nobs - 1 || begotl < 2; break;
+            case 5: pfx = "TC"; vartyp = PRGTTC; bad = begotl > nobs || begotl < 1; break;
+            case 6: pfx = "SO"; vartyp = PRGTSO; bad = begotl > nobs || begotl < 1; break;
+            case 8: pfx = "QI"; vartyp = PRGTQI; bad = begotl > nobs || begotl < 1; break;
+            case 9: pfx = "QD"; vartyp = PRGTQD; bad = begotl > nobs || begotl < 1; break;
+            case 3:  // ramp: endpoint within series, ordered
+                pfx = "RP"; vartyp = PRGTRP;
+                if (endotl > nobs) { bad = true; msg = "End of ramp not within series"; }
+                else if (begotl < 1) { bad = true; msg = "Beginning of ramp not within series"; }
+                else if (endotl <= begotl) { bad = true; msg = "Beginning and end of ramp reversed"; }
+                break;
+            default:  // 7 = TL (temporary level shift)
+                pfx = "TL"; vartyp = PRGTTL;
+                if (endotl > nobs) { bad = true; msg = "End of temporary LS not within series"; }
+                else if (begotl < 1) { bad = true; msg = "Beginning of temporary LS not within series"; }
+                else if (endotl <= begotl) { bad = true; msg = "Beginning and end of temporary LS reversed"; }
+                break;
+            }
+            if (bad) {
+                inpter(ctx, PERROR, L.lstpos.data() + 1, msg);
+                locok = false;
+                lex(ctx);
+                break;
+            }
+            // A user TC needs the temporary-change decay rate; default it as the
+            // outlier{} path does (0.7^(12/sp)) when not set, so addotl builds the
+            // geometric-decay column instead of a degenerate one.
+            if (vartyp == PRGTTC && dpeq(M.tcalfa, prm::DNOTST))
+                M.tcalfa = std::pow(0.7, 12.0 / M.sp);
+            // Normalize the two-char type prefix (adpdrg.f Rgname(1:2)=pfx).
+            rgname[0] = pfx[0];
+            rgname[1] = pfx[1];
+            std::string_view rttl =
+                std::string_view(rgname).substr(0, static_cast<std::size_t>(nrgchr));
+            adrgef(ctx, prm::DNOTST, rttl, rttl, vartyp, false, true);
+            if (ctx.error.lfatal) return;
+            lex(ctx);   // 210: consume the outlier token (caller loop re-tests)
+            break;
         }
         // Not an ao, ls, or rp.
         if (x11reg)

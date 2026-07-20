@@ -85,13 +85,13 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
   and `(thank[3])` → `OUTCOME: FATAL` while the oracle estimates them. Other
   holidays work and are gated (Easter, sceaster, easterstock). Labor-Day and
   Thanksgiving holiday-regressor construction is unported. (Found by sweep2.)
-- **User-specified outlier regressors FATAL.** `regression{ variables = (ao1950.jan) }`
-  (and `ls<date>`, `tc<date>`, ramps) → `OUTCOME: FATAL` in x13run_m3, while the
-  oracle estimates fine. Automatic outlier ID (`outlier{}`) works and is gated;
-  the gap is parsing/building USER-specified point-outlier regressors in the
-  regression-variable list (getreg/adpdrg doesn't recognize the `ao/ls/tc<date>`
-  variable syntax, or regvar can't build the column). A common X-13 feature —
-  worth fixing. Excluded from the reg/outlier gate; found by the sweep.
+- **User-specified outlier regressors — FIXED** for AO/LS/TC/RP/MV/SO/TL/QI/QD.
+  getreg_vars.cpp's outlier-variable case now parses the date (rdotlr), validates
+  the window per type, and registers the group (regvar case 120 builds the column
+  via addotl); user TC defaults tcalfa (0.7^(12/sp)) as the outlier{} path does.
+  All four common types (AO/LS/TC/RP) gated bit-exact vs oracle
+  (`airline_out-ao1950-jan` etc.). STILL DEFERRED: AOS/LSS (typidx 10/11) need
+  `rdotls.f` (not ported) — they abend loudly.
 
 ## Verified / closed
 (none yet)
