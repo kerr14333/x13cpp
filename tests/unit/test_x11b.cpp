@@ -17,6 +17,7 @@
 #include "microtest.hpp"
 #include "x11/x11seas.hpp"
 #include "x11/x11xtrm.hpp"
+#include "x11/x11drv.hpp"  // forcst (Tier-4/5 driver, pure-numeric leaf)
 #include "gen/notset.hpp"  // prm::DNOTST
 
 #include <cmath>
@@ -283,6 +284,47 @@ TEST("trbias: log-additive trend bias correction") {
         CHECK(close(bias[i], 2.010025041718802, 1e-9));
         CHECK(close(stc[i], 2.010025041718802, 1e-9));
     }
+}
+
+// ===========================================================================
+// Tier 4/5 driver -- forcst (pure-numeric seasonal forecast/backcast)
+// ===========================================================================
+
+TEST("forcst: Iorder=1, R=1 -- linear per-season extrapolation (hand values)") {
+    // nyr=2, observed sts[5..8] (1-based) = 1,2,3,5. p1=idx5,7 ; p2=idx6,8.
+    // Iorder=1, Wt=1, R=1 (dpeq -> w=Wt=1). Forecast [9,10], backcast [4,3].
+    double s[16] = {0};
+    s[5 - 1] = 1.0; s[6 - 1] = 2.0; s[7 - 1] = 3.0; s[8 - 1] = 5.0;
+    forcst(s, /*ib=*/5, /*ie=*/8, /*ke=*/10, /*nyr=*/2, /*iorder=*/1,
+           /*wt=*/1.0, /*r=*/1.0);
+    // fc: s9 = s7+(s7-s5)=5 ; s10 = s8+(s8-s6)=8
+    CHECK(close(s[9 - 1], 5.0, 1e-12));
+    CHECK(close(s[10 - 1], 8.0, 1e-12));
+    // bc: s4 = s6+(s6-s8)=-1 ; s3 = s5+(s5-s7)=-1
+    CHECK(close(s[4 - 1], -1.0, 1e-12));
+    CHECK(close(s[3 - 1], -1.0, 1e-12));
+}
+
+TEST("forcst: Iorder=1 collapses w to Wt regardless of R") {
+    // Iorder=1 -> w = Wt*(R-1)/(R^1-1) = Wt. With Wt=0.5, R=3:
+    // s9 = s7 + 0.5*(s7-s5) = 3 + 0.5*(3-1) = 4.
+    double s[12] = {0};
+    s[5 - 1] = 1.0; s[6 - 1] = 2.0; s[7 - 1] = 3.0; s[8 - 1] = 5.0;
+    forcst(s, 5, 8, 9, /*nyr=*/2, /*iorder=*/1, /*wt=*/0.5, /*r=*/3.0);
+    CHECK(close(s[9 - 1], 4.0, 1e-12));
+}
+
+TEST("forcst: Iorder=2, R=2 -- exercises dpow_ri + the difference k-loop") {
+    // nyr=1 (annual), observed s[4..7]=0,1,4,9. Iorder=2, Wt=1, R=2 ->
+    // w = 1*(2-1)/(2^2-1) = 1/3. dpow_ri(2,1)=2, dpow_ri(2,0)=1.
+    // fc s8 = s7 + (1/3)[2*(s7-s6) + (s6-s5)] = 9 + (1/3)(10+3) = 40/3.
+    // bc s3 = s4 + (1/3)[2*(s4-s5) + (s5-s6)] = 0 + (1/3)(-2-3) = -5/3.
+    double s[12] = {0};
+    s[4 - 1] = 0.0; s[5 - 1] = 1.0; s[6 - 1] = 4.0; s[7 - 1] = 9.0;
+    forcst(s, /*ib=*/4, /*ie=*/7, /*ke=*/8, /*nyr=*/1, /*iorder=*/2,
+           /*wt=*/1.0, /*r=*/2.0);
+    CHECK(close(s[8 - 1], 40.0 / 3.0, 1e-12));
+    CHECK(close(s[3 - 1], -5.0 / 3.0, 1e-12));
 }
 
 int main() { return mt::run_all(); }
