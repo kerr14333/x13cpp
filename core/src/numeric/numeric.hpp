@@ -37,6 +37,14 @@ void cumnor(double arg, double& result, double& ccum);
 // convergence. Used by prtfct for the CI critical value dinvnr((Ciprob+1)/2).
 double dinvnr(double p, double q);
 
+// chsppf.f: chi-squared percent-point (inverse CDF) for probability p in [0,1)
+// and integer degrees of freedom nu>=1 (DATAPAC/Filliben). Reduces to the gamma
+// PPF, computed by bracketing then bisection to 1e-10; the gamma normalizer G
+// uses the Stirling-series log-gamma of the oracle verbatim. Used by the automdl
+// AIC-test family to turn a pvaictest probability + df into a critical value.
+// Returns 0.0 on the oracle's error paths (p out of range, nu<1, no convergence).
+double chsppf(double p, int nu);
+
 // dscal.f: BLAS scale dx <- da*dx over n strided elements (no-op if n<=0).
 // Scaling has no accumulation, so the mod-5 unrolling of the oracle is dropped;
 // the result is bit-identical.

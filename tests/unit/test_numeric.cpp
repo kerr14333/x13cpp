@@ -2155,6 +2155,31 @@ TEST("dinvnr: inverse normal CDF (CI critical values)") {
     CHECK(std::fabs(dinvnr(0.5, 0.5)) < 1e-14);
 }
 
+// ---- chsppf (chi-squared PPF for the automdl AIC-test family). ---------------
+// Golden values from ref_chsppf.f (oracle chsppf.f driven directly). Bisection
+// stops at 1e-10, so a 1e-9 tolerance is the meaningful budget.
+TEST("chsppf: chi-squared percent-point function") {
+    // P=0.90 across df 1/2/6/7.
+    CHECK(rclose(chsppf(0.90, 1), 2.7055434551940660e+00, 1e-9));
+    CHECK(rclose(chsppf(0.90, 2), 4.6051701871329049e+00, 1e-9));
+    CHECK(rclose(chsppf(0.90, 6), 1.0644640676292067e+01, 1e-9));
+    CHECK(rclose(chsppf(0.90, 7), 1.2017036624602387e+01, 1e-9));
+    // P=0.95 (the classic table column).
+    CHECK(rclose(chsppf(0.95, 1), 3.8414588210417624e+00, 1e-9));
+    CHECK(rclose(chsppf(0.95, 2), 5.9914645503216963e+00, 1e-9));
+    CHECK(rclose(chsppf(0.95, 6), 1.2591587245946918e+01, 1e-9));
+    CHECK(rclose(chsppf(0.95, 7), 1.4067140452336819e+01, 1e-9));
+    // P=0.99.
+    CHECK(rclose(chsppf(0.99, 1), 6.6348966058495371e+00, 1e-9));
+    CHECK(rclose(chsppf(0.99, 2), 9.2103403780271869e+00, 1e-9));
+    CHECK(rclose(chsppf(0.99, 6), 1.6811893836705174e+01, 1e-9));
+    CHECK(rclose(chsppf(0.99, 7), 1.8475306917046829e+01, 1e-9));
+    // Error paths return 0.0 (p out of range, nu<1).
+    CHECK(chsppf(1.0, 3) == 0.0);
+    CHECK(chsppf(-0.1, 3) == 0.0);
+    CHECK(chsppf(0.95, 0) == 0.0);
+}
+
 // ---- outlier-identification leaves (shlsrt/medabs/makotl/dppdi/ttest). -------
 // Numeric leaves of idotlr.f's automatic outlier scan. Golden values from
 // ref_outlier.f (leaves driven directly on small fixed inputs).

@@ -722,4 +722,102 @@ double dinvnr(double p, double q) {
     return qporq ? strtx : -strtx;
 }
 
+double chsppf(double p, int nu) {
+    // Input-argument error paths (chsppf.f labels 50/55): return 0.0 as the
+    // oracle sets PPF before its diagnostic WRITE.
+    if (p < 0.0 || p >= 1.0) return 0.0;
+    if (nu < 1) return 0.0;
+
+    const int MAXIT = 10000;
+    const double C = 0.918938533204672741;
+    const double D[10] = {
+        +0.833333333333333333e-1, -0.277777777777777778e-2,
+        +0.793650793650793651e-3, -0.595238095238095238e-3,
+        +0.841750841750841751e-3, -0.191752691752691753e-2,
+        +0.641025641025641025e-2, -0.295506535947712418e-1,
+        +0.179644372368830573e0,  -0.139243221690590111e1};
+
+    double anu = static_cast<double>(nu);
+    double dgamma = anu / 2.0;
+    double dp = p;
+
+    // Gamma normalizer G via the NBS Stirling log-gamma series (computed once).
+    double z = dgamma;
+    double den = 1.0;
+    while (z < 10.0) {
+        den = den * z;
+        z = z + 1.0;
+    }
+    double z2 = z * z;
+    double z3 = z * z2;
+    double z4 = z2 * z2;
+    double z5 = z2 * z3;
+    double a = (z - 0.5) * std::log(z) - z + C;
+    double b = D[0] / z + D[1] / z3 + D[2] / z5 + D[3] / (z2 * z5) +
+               D[4] / (z4 * z5) + D[5] / (z * z5 * z5) +
+               D[6] / (z3 * z5 * z5) + D[7] / (z5 * z5 * z5) +
+               D[8] / (z2 * z5 * z5 * z5);
+    double g = std::exp(a + b) / den;
+
+    // CDF at a tentative percent point dx (chsppf.f label 1000). Returns false
+    // if the gamma-series sum fails to converge within MAXIT (oracle label 705).
+    auto cdf = [&](double dx, double& pcalc) -> bool {
+        double sum = 1.0 / dgamma;
+        double term = 1.0 / dgamma;
+        double cut1 = dx - dgamma;
+        double cut2 = dx * 10000000000.0;
+        bool converged = false;
+        for (int j = 1; j <= MAXIT; ++j) {
+            double aj = static_cast<double>(j);
+            term = dx * term / (dgamma + aj);
+            sum = sum + term;
+            double cutoff = cut1 + (cut2 * term / sum);
+            if (aj > cutoff) {
+                converged = true;
+                break;
+            }
+        }
+        if (!converged) return false;
+        pcalc = std::pow(dx, dgamma) * std::exp(-dx) * sum / g;
+        return true;
+    };
+
+    // Bracket the 100p percent point: grow xmax = icount*xmin0 until CDF>=p.
+    double xmin0 = std::pow(dp * dgamma * g, 1.0 / dgamma);
+    double xmin = xmin0;
+    double xmax = xmin0;
+    int icount = 1;
+    double pcalc;
+    while (true) {
+        xmax = static_cast<double>(icount) * xmin0;
+        if (!cdf(xmax, pcalc)) return 0.0;
+        if (pcalc >= dp) break;
+        xmin = xmax;
+        ++icount;
+        if (icount > 30000) break;
+    }
+
+    // Bisect to 1e-10 (or 100 iterations).
+    double xmid = (xmin + xmax) / 2.0;
+    double xlower = xmin;
+    double xupper = xmax;
+    icount = 0;
+    while (true) {
+        if (!cdf(xmid, pcalc)) return 0.0;
+        if (pcalc == dp) break;
+        if (pcalc > dp) {
+            xupper = xmid;
+            xmid = (xmid + xlower) / 2.0;
+        } else {
+            xlower = xmid;
+            xmid = (xmid + xupper) / 2.0;
+        }
+        double xdel = xmid - xlower;
+        if (xdel < 0.0) xdel = -xdel;
+        ++icount;
+        if (xdel < 0.0000000001 || icount > 100) break;
+    }
+    return 2.0 * xmid;
+}
+
 }  // namespace x13
