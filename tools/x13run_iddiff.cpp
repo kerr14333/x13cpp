@@ -131,8 +131,13 @@ int main(int argc, char** argv) {
             std::printf("OUTCOME: FATAL (amdid)\n");
             return 1;
         }
-        std::printf("arimamdl: (%d %d %d)(%d %d %d)\n", irar, idr, irma, isar, ids,
-                    isma);
+        // Match the oracle .udg format: omit the seasonal group when it is all
+        // zero (the (P D Q) block is only printed when present).
+        if (isar == 0 && ids == 0 && isma == 0)
+            std::printf("arimamdl: (%d %d %d)\n", irar, idr, irma);
+        else
+            std::printf("arimamdl: (%d %d %d)(%d %d %d)\n", irar, idr, irma, isar,
+                        ids, isma);
     }
     return 0;
 }
