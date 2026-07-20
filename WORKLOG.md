@@ -300,19 +300,31 @@ pip cmake when adding files.
   locks it; full suite **233 passed / 9 skipped / 11 xfailed**. (Enabling change:
   run_pre_model now stashes the transformed series into ctx.series.tsrs, its
   Tsrs semantics, which estimation later overwrites with the same content.)
-- **Next — `amdid` (the BIC ARMA-order grid) + the automd wire.** `amdid` loops
-  candidate (p,q)(P,Q) orders, estimates each via `amdid2` (mdlint/mdlset +
-  optional HR init + rgarma + prlkhd-BIC — all reused/landed) and tracks the
-  best five via `bestmd`, then a BIC-closeness/model-balance selection. New
-  leaves needed: `amdid2`, `bestmd`, `mdlmch` (best-5 dedup). **Blocker to note:**
-  the default `maxorder` is still (0,0) from gtinpt — automdl's real default is
-  **(2,1)** (the .udg best5 reaches (0 1 2) regular / (0 1 1) seasonal); wire the
-  gtauto/automd maxorder default before amdid can enumerate. Then a minimal
-  `automd` into run_m2 behind `automdl{}`, gated on 03-automdl's
-  `automdl.best5.mdl1..5` + `arimamdl: (0 1 1)(0 1 1)` (needs transform=auto and
-  the aictest preamble too, both still unported). Also open: deferred M2
-  regressor branches and the .out/.fct print engine. See
-  `tools/automdl_scouting.md` (§2 status table + GATING NOTE).
+- **`amdid` (ARMA-order grid) — LANDED & GATED. Automatic model identification
+  now works end to end.** Ported amdid.f/amdid2.f/bestmd.f/mdlmch.f: `amdid2`
+  estimates one candidate (mdlint/mdlset + optional HR init + rgarma + prlkhd
+  BIC — all reused), `bestmd`/`mdlmch` keep the best-five BIC ranking, and
+  `amdid` runs the seasonal(AR3)→regular→seasonal grid over maxorder then the
+  BIC-closeness/model-balance tie-break and a final rgarma of the winner. Wired
+  the gtauto.f no-arg tail defaults into `gt_automdl` (maxorder=(2,1),
+  maxdiff=(2,1), Lautom/Lautod=T; arg VALUES still gt_generic-stubbed), and
+  stashed the prior factors into ctx.adj.adj so amdid2's prlkhd reads
+  Adj(Adj1st) faithfully. **Gate:** `x13run_iddiff --amdid` on
+  `extra/airline_automdl.spc` (log airline, bare automdl{}) → iddiff (1,1) then
+  amdid `arimamdl=(0 1 1)(0 1 1)` — the census 03-automdl oracle model.
+  `test_amdid_full_model` locks it. Full suite **234 passed**.
+- **Next — the automd driver + its prerequisites.** The identification CORE
+  (iddiff + amdid) is done and gated via the bespoke harness. To gate a full
+  end-to-end automdl estimation against the oracle `.udg` (niter/nfev/coeffs/BIC,
+  `automdl.best5.bic1..5`) still needs: (a) `transform=auto` selection
+  (autotrans/aictrans — 03-automdl uses it; independently gate-able via
+  `aictest.trans.aicc.*`), (b) the regressor AIC-test family (tdaic/easaic/
+  chkchi/chkmu) for `aictest=(td easter)`, (c) the model-adequacy tests
+  (tstmd1/tstmd2 via the ported chkurt / tstodf) + retry loop, and (d) the
+  `automd` driver (1038 lines) wiring it all into run_m2 behind `automdl{}`. Each
+  is its own unit; `transform=auto` is the cleanest unblocker for 03-automdl.
+  Also open: deferred M2 regressor branches and the .out/.fct print engine. See
+  `tools/automdl_scouting.md` (§2 status table).
 - **Packaging scaffolding (r-pkg/py-pkg) built by an agent, parked on branch
   `worktree-agent-ae1edc2bc3b17f4d4`** (NOT merged; merge after the main
   milestones). R CMD check / twine check clean; datasets bundled; result-object

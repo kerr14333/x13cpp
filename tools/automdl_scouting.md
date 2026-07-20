@@ -65,8 +65,10 @@ corpus gate, not microtests.
 | —    | gtinpt automdl defaults | | Ub1lim/Ub2lim/Cancel/Frstar/Exdiff/... | **DONE** 7cdb252 |
 | 3    | iddiff      | 576   | differencing-order identification driver    | **DONE** 322af67 (gated (1,1) on log-airline) |
 | 3    | prterr      | 335   | estimation-error report (non-print core)    | **DONE** 322af67 |
-| 3    | amdid+amdid2| 411+104| ARMA-order identification driver           | **NEXT** |
-| 3.5  | gtauto      | ~450  | real automdl{} arg parser (replaces gt_generic stub) | todo |
+| 3    | amdid+amdid2| 411+104| ARMA-order identification driver           | **DONE** c4461b7 (full model (0 1 1)(0 1 1) gated) |
+| 2    | bestmd/mdlmch | 46+30 | best-5 BIC ranking + dedup                | **DONE** c4461b7 |
+| 3.5  | gtauto tail defaults | | maxorder/maxdiff/lautom (no-arg)         | **DONE** c4461b7 (arg VALUES still stubbed) |
+| 3.5  | gtauto args | ~450  | real automdl{} arg parser (replaces gt_generic stub) | todo |
 | 4    | tdaic/lomaic/easaic/usraic | | regressor-AIC-test family (rgarma) | todo |
 | 4    | chkchi/chkmu | 74+?  | regressor chi-square / mean tests           | todo   |
 | 5    | tstmd1/tstmd2/tstodf | | model-adequacy tests + retry loop       | todo   |
