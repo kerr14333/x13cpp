@@ -456,7 +456,8 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     const int posfob = ptr.posfob;
     const int posffc = ptr.posffc;
     const int ny = opt.ny;
-    const int muladd = opt.muladd;   // 0 (mult) on the base path
+    int muladd = opt.muladd;   // 0 mult / 1 add / 2 logadd; toggles 2->0 at the
+                               // D10/D12 antilog steps (kept in sync with opt.muladd)
     const bool psuadd = ctx.x11msc.psuadd;
 
     double* sts = srs.sts.data();
@@ -479,6 +480,7 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     double stime[PLEN];   // /mq5a/  Stime  (E3 modified irregular)
     double ckhs[PLEN];    // /kcser/ Ckhs   (SA snapshot; dead on the base path)
     double ststd[PLEN];   // ststd          (D16 combined factors)
+    double biasfc[PLEN];  // biasfc         (logadd trend bias-correction factors)
     double sp2[PLEN];     // sp2            (Sprior snapshot; dead on the base path)
 
     // Snapshot the prior factors (used only by the off-base Adj* Sprior restore).
@@ -538,8 +540,16 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     }
     divsub(stci, stcsi, sts, pos1bk, posffc, muladd);  // modified SA
     if (muladd == 2) {
-        x11_not_ported(ctx, "x11pt3 log-additive antilog of seasonal factors");
-        return;
+        // Log-additive: the components are on the log scale; antilog the seasonal
+        // family back to the original scale and switch to multiplicative
+        // arithmetic (x11pt3.f:252-266). klda == Posffc+Ny here.
+        muladd = 0;
+        opt.muladd = 0;
+        antilg(sts, pos1bk, klda);
+        antilg(stsi, pos1bk, posffc);
+        antilg(stsie, pos1bk, posffc);
+        divsub(stex, stsie, stsi, pos1bk, posffc, muladd);
+        antilg(stcsi, pos1bk, posffc);
     }
     if (adj.adjsea == 1 || adj.adjso == 1) {
         x11_not_ported(ctx, "x11pt3 regARIMA-seasonal combine (Adjsea/Adjso)");
@@ -558,7 +568,8 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         x11_not_ported(ctx, "x11pt3 revisions seasonal store (getrev)");
         return;
     }
-    opt.muladd = opt.tmpma;  // restore the model's adjustment mode
+    opt.muladd = opt.tmpma;  // restore the model's adjustment mode (x11pt3.f:376)
+    muladd = opt.tmpma;      // keep the local in sync (logadd: back to 2 for vtc)
 
     // Snapshot the modified SA for the summary-only path (dead on the base path).
     copy(stci + (pos1bk - 1), ext.nbfpob, 1, ckhs + (pos1bk - 1));
@@ -578,8 +589,14 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     vtc(ctx, stc, stci);
     // (deferred: finaltrendma savelog.)
     if (muladd == 2) {
-        x11_not_ported(ctx, "x11pt3 log-additive trend antilog/bias (trbias)");
-        return;
+        // Log-additive: antilog the trend, then bias-correct it (x11pt3.f:411-424).
+        // biasfc is trbias's output, used only for a deferred print. tru7hn from
+        // x11msc. After this the components are original-scale -> Muladd=0.
+        antilg(stc, pos1bk, posffc);
+        trbias(stc, sts, sti, pos1bk, posffc, biasfc, ny, ctx.x11msc.tru7hn);
+        ebar = 1.0;
+        muladd = 0;
+        opt.muladd = 0;
     }
     if (muladd == 0) {
         bool chkfct = false;  // Nfcst>0 & Prttab(LXETRF): deferred print -> false.

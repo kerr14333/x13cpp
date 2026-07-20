@@ -99,11 +99,6 @@ CASES = _discover()
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
 def test_x11_table(base: str, tag: str) -> None:
-    if "logadd" in base:
-        # x11pt3's log-additive path (Muladd==2) is unported: it must antilog the
-        # seasonal/trend components mid-routine and transition Muladd 2->0, a
-        # refactor across x11pt3's divsub/addmul call sites. mult + additive gate.
-        pytest.xfail("x11pt3 log-additive antilog / Muladd transition unported")
     spec = os.path.join(_CORPUS, base + ".spc")
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.returncode == 0, f"{base}: harness exit {r.returncode}\n{r.stderr}"
