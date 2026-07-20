@@ -25,6 +25,53 @@ namespace {
 constexpr int PLEN = 1020;
 }  // namespace
 
+// x11int.f -- initialize the X-11 factor/series/weight arrays before a run:
+// unit-value (or 0 additive) for the multiplicative factors, 0 for trend/weight
+// buffers, and copy any prior adjustment into Sprior.
+void x11int(X13Context& ctx) {
+    x11opt_cmn& opt = ctx.x11opt;
+    x11srs_cmn& srs = ctx.x11srs;
+    x11fac_cmn& fac = ctx.x11fac;
+    xtrm_cmn& xt = ctx.xtrm;
+    adj_cmn& adj = ctx.adj;
+    // srslen.prm: PY1 = PYRS+1 = 86 (PYRS = PYR1+20 = 85). Matches Stdev's size.
+    constexpr int PY1 = 86;
+
+    double rinit = 1.0;
+    if (opt.muladd == 1) rinit = 0.0;
+
+    // Multiplicative factor / seasonal-input arrays -> rinit (the identity).
+    setdp(rinit, PLEN, srs.sts.data());
+    setdp(rinit, PLEN, srs.stsi.data());
+    setdp(rinit, PLEN, srs.sti.data());
+    setdp(rinit, PLEN, fac.stptd.data());
+    // (Fortran also zeroes /work/ Temp here; that is per-routine scratch in this
+    // port -- no shared COMMON -- so its init is the callee's concern, skipped.)
+    setdp(rinit, PLEN, fac.factd.data());
+    setdp(rinit, PLEN, fac.facao.data());
+    setdp(rinit, PLEN, fac.facls.data());
+    setdp(rinit, PLEN, fac.factc.data());
+    setdp(rinit, PLEN, fac.facso.data());
+    setdp(rinit, PLEN, fac.facsea.data());
+    setdp(rinit, PLEN, fac.facusr.data());
+    setdp(rinit, PLEN, fac.fachol.data());
+    setdp(rinit, PLEN, fac.facxhl.data());
+    setdp(rinit, PLEN, fac.x11hol.data());
+    setdp(rinit, PLEN, fac.faccal.data());
+
+    // Trend / weight buffers -> 0 (and Stdev over PY1). /mq10/ Stex is likewise
+    // per-routine scratch here, skipped.
+    setdp(0.0, PLEN, srs.stc.data());
+    setdp(0.0, PLEN, xt.stwt.data());
+    setdp(0.0, PLEN, srs.stci.data());
+    setdp(0.0, PY1, xt.stdev.data());
+
+    // Copy adjustment factors into Sprior (reverse copy, inc=-1).
+    if (adj.nadj > 0)
+        copy(adj.adj.data(), PLEN - adj.setpri + 1, -1,
+             ctx.inpt.sprior.data() + (adj.setpri - 1));
+}
+
 // setxpt.f -- set the X-11 span "pointers" (Pos1bk/Pos1ob/Posfob/Posffc) that
 // bracket backcasts / data / forecasts inside the padded buffer.
 void setxpt(X13Context& ctx, int nf2, bool lsadj, int fctdrp) {

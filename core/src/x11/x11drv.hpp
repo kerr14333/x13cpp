@@ -11,6 +11,13 @@ namespace x13 {
 
 struct X13Context;
 
+// x11int.f: initialize the X-11 arrays for a run. Sets the multiplicative factor
+// / seasonal-input buffers (Sts/Stsi/Sti/Stptd + Fac* + X11hol/Faccal) to the
+// mode identity (1 mult / 0 additive), the trend/weight buffers (Stc/Stci/Stwt/
+// Stdev) to 0, and copies any prior adjustment (Adj) into Sprior. Touches
+// ctx.x11opt/x11srs/x11fac/xtrm/adj/inpt.
+void x11int(X13Context& ctx);
+
 // setxpt.f: set the X-11 span pointers Pos1bk/Pos1ob/Posfob/Posffc (in
 // ctx.x11ptr) that mark where backcasts / observed data / forecasts begin and
 // end in the padded buffer, from ctx.extend (Nofpob/Nbcst2/Nbcst/Nfcst) and
