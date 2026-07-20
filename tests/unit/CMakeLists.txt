@@ -38,6 +38,20 @@ target_include_directories(test_x11 PRIVATE
 target_link_libraries(test_x11 PRIVATE x13core x13_fp_flags)
 add_test(NAME test_x11 COMMAND test_x11)
 
+# test_x11b links the core library (X-11 Tier-2 seasonal-MA leaves live in
+# core/src/x11/x11seas.*, Tier-3 extreme-value leaves in core/src/x11/x11xtrm.*);
+# they reuse totals/dpeq/shlsrt from core/src/numeric. Needs core/src on the
+# include path for x11/x11seas.hpp, x11/x11xtrm.hpp and numeric/numeric.hpp.
+add_executable(test_x11b test_x11b.cpp)
+target_include_directories(test_x11b PRIVATE
+  "${CMAKE_SOURCE_DIR}/core/include"
+  "${CMAKE_SOURCE_DIR}/core/src"
+  "${CMAKE_SOURCE_DIR}/core/prm"
+  "${CMAKE_SOURCE_DIR}/core/prm/gen"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(test_x11b PRIVATE x13core x13_fp_flags)
+add_test(NAME test_x11b COMMAND test_x11b)
+
 # test_seats links the core library (SEATS poly/root leaves live in
 # core/src/seats) and needs core/src on the include path for seats/seatspoly.hpp.
 add_executable(test_seats test_seats.cpp)

@@ -145,6 +145,29 @@ that pins it.
   `j1!=j2`); revisit when the D10 seasonal end-filter gate lands.
 - **Modernize:** guard the second division with `IF(j2.ne.j1)`.
 
+## CB-8 — sdxtrm tau-MAD scale divides by the stale DO-loop index, not the count
+
+- **Where:** `oracle/fortran/sdxtrm.f:75` — `sdxtrm=sqrt(sdxtrm*sdxtrm*stau/n)`
+  in the `Imad>=3` (rho2 tau-adjusted MAD) branch.
+- **Severity:** `latent` — only reached for the tau-adjusted MAD scale options
+  (`Imad` 3/4, the robust `calendarsigma`/heteroskedastic variants); the default
+  extreme-value path is `Imad==0` (RMS), so real X-13 default runs never hit it.
+- **Symptom:** the tau scale estimate `s^2 * (Σ rho2(r_i)) / N` must divide by the
+  **observation count** `N` (the routine's own `ixn`/`int(xn)`). Instead it divides
+  by `n`, the `DO n=L,M,Nsp` loop variable, whose value **after** the range loop is
+  the Fortran terminal `L + ceil((M-L+1)/Nsp)*Nsp` — i.e. the first index past `M`,
+  not a count. For a stride `Nsp>1` (per-month grouping) `n ≈ M` while the true
+  count is `≈ (M-L)/Nsp`, so the scale is understated by roughly `Nsp`; even for
+  `Nsp==1` it is off by the omitted-extreme count plus one. The result is a
+  too-small sigma → over-flagging of extremes.
+- **Port:** `core/src/x11/x11xtrm.cpp` (sdxtrm) — reproduced verbatim (`sdx =
+  std::sqrt(sdx * sdx * stau / n)`, where `n` holds the C++ for-loop's post-exit
+  value, identical to the Fortran terminal index) with a code comment. Not yet
+  pinned by a failing case (the x11xtrm leaf tests exercise `Imad` 0/1, where the
+  branch is dormant); revisit when a tau-MAD `calendarsigma` gate lands.
+- **Modernize:** divide by `ixn` (or `xn`), the actual number of accumulated
+  deviations, matching the intent of the tau estimator.
+
 ---
 
 _Append new entries as they are found while porting. Keep each pinned to a test._
