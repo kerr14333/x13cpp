@@ -6,6 +6,7 @@
 #include "automdl/amdid.hpp"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <vector>
 
@@ -363,6 +364,14 @@ void amdid(X13Context& ctx, int& irar, int irdf, int& irma, int& isar, int isdf,
         irma = bstrma[icon];
         isar = bstsar[icon];
         isma = bstsma[icon];
+    }
+
+    if (std::getenv("X13_AMDID_DEBUG")) {
+        for (int k = 0; k < NMOD; ++k)
+            std::fprintf(stderr,
+                         "best5 %d: (%d %d %d)(%d %d %d) bic=%.4f\n", k + 1,
+                         bstrar[k], bstrdf[k], bstrma[k], bstsar[k], bstsdf[k],
+                         bstsma[k], bstbic[k]);
     }
 
     m.lextar = lxar;

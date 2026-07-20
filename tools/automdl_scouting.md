@@ -70,7 +70,8 @@ corpus gate, not microtests.
 | 3.5  | gtauto tail defaults | | maxorder/maxdiff/lautom (no-arg)         | **DONE** c4461b7 (arg VALUES still stubbed) |
 | 3.5  | gtauto args | ~450  | real automdl{} arg parser (replaces gt_generic stub) | todo |
 | 4    | tdaic/lomaic/easaic/usraic | | regressor-AIC-test family (rgarma) | todo |
-| 4    | chkchi/chkmu | 74+?  | regressor chi-square / mean tests           | todo   |
+| 4    | genrtt/chkmu | 76+117| regressor t-stats / mean (Constant) test    | **DONE** (banked; automdl/chkmu.cpp) |
+| 4    | chkchi      | 74    | regressor chi-square test                   | todo   |
 | 5    | tstmd1/tstmd2/tstodf | | model-adequacy tests + retry loop       | todo   |
 | 6    | pass0/pass2 | ~     | TRAMO ACF pre-screen passes                 | todo   |
 | 7    | automd      | 1038  | the driver; wire into run_m2 behind automdl{} | todo |
@@ -134,6 +135,30 @@ oracle `.udg`). Suggested order:
 5. amdid + amdid2 — the BIC ARMA-order grid.
 Gate incrementally: iddiff's chosen (d,D) is a discrete decision — check it
 exactly against the oracle before wiring amdid.
+
+## 3b. amdid BIC parity — expgs/region gap DIAGNOSED (mean/dnp bookkeeping)
+
+iddiff differencing matches the oracle on all six no-preamble corpus series;
+amdid's full model + best-5 BIC match the oracle **exactly** for airline
+(`automdl.best5.bic1..4` identical to 3 decimals). Two series still miss the
+ARMA orders — expgs `(0 1 2)` vs `(2 1 0)`, region_north `(1 2 2)(0 1 1)` vs
+`(3 2 1)(0 1 1)` — cause pinned:
+
+- Both are `checkmu: yes`, **D=0** (no seasonal differencing) cases. Airline
+  (D=1) matches; the divergence is specific to the mean-significant /
+  non-seasonal-differenced path.
+- Worked example (expgs, quarterly, nefobs=316): the oracle best-5 `(2 1 0)`
+  BIC −3.221 back-solves to lnlkhd≈517.5 (== our standalone no-mean `(2 1 0)`
+  estimate) with **dnp=3** (mean counted). Our amdid `(2 1 0)` gives −3.276 =
+  lnlkhd≈526.3 (the WITH-mean fit) with dnp=3. So the oracle scores each
+  candidate on the **no-mean likelihood but counts the mean in the BIC
+  penalty**, whereas ours estimates the candidate carrying the constant.
+- `chkmu`/`genrtt` are ported (`automdl/chkmu.cpp`) but a harness chkmu preamble
+  did NOT change the result: the constant is removed before the amdid grid in
+  the oracle too (iddiff's mean test `dlrgef`s it; automd re-adds it only AFTER
+  amdid, automd.f:479). Fix is in how amdid/amdid2 count dnp vs estimate the
+  mean for D=0 candidates — resolve when the real `automd` driver is assembled
+  with the exact mean/constant sequencing. `X13_AMDID_DEBUG=1` dumps best-5.
 
 ## 4. First corpus gate target
 

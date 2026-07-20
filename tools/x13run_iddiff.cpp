@@ -90,10 +90,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    bool do_amdid = false;
+    for (int i = 2; i < argc; ++i)
+        if (std::string(argv[i]) == "--amdid") do_amdid = true;
+
     constexpr int PA = x13::prm::PLEN + 2 * x13::prm::PORDER;
     std::vector<double> a(static_cast<std::size_t>(PA), 0.0);
     int idr = maxdr, ids = maxds, nefobs = 0, frstry = 0, na = 0;
     bool lmu = false;
+
     try {
         x13::iddiff(ctx, idr, ids, ctx.series.tsrs.data(), nefobs, frstry, a.data(),
                     na, /*imu=*/0, lmu, /*svldif=*/false, /*lsumm=*/0);
@@ -113,9 +118,6 @@ int main(int argc, char** argv) {
 
     // Optional: continue into ARMA-order identification (amdid) on the chosen
     // differencing. Requires an automdl{} spec (maxorder/maxdiff defaults).
-    bool do_amdid = false;
-    for (int i = 2; i < argc; ++i)
-        if (std::string(argv[i]) == "--amdid") do_amdid = true;
     if (do_amdid) {
         int irar = 0, irma = 0, isar = 0, isma = 0;
         bool locok = true;
