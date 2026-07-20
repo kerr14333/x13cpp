@@ -50,6 +50,15 @@ double chsppf(double p, int nu);
 // the result is bit-identical.
 void dscal(int n, double da, double* dx, int incx);
 
+// gauss.f: central normal probability P(-x < N(0,1) < x) via the Statistics
+// Canada rational approximation (three regimes on |x|/2). Symmetric in x.
+double gauss(double x);
+
+// chisq.f: chi-squared upper-tail probability P(chi2_n > x) (Statistics Canada).
+// Series in x for x<90 split by even/odd df; 1.0 for x<=0, 0.0 for x>=90. Used
+// by chitst for the regressor-group chi-square test p-value.
+double chisq(double x, int n);
+
 // sumf.f: left-to-right sum of x over the 1-based inclusive range [n1,n2]
 // (x[0]==X(1)). Accumulation order is preserved for bit-parity.
 double sumf(const double* x, int n1, int n2);

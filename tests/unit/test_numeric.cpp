@@ -2180,6 +2180,33 @@ TEST("chsppf: chi-squared percent-point function") {
     CHECK(chsppf(0.95, 0) == 0.0);
 }
 
+// ---- gauss / chisq (normal + chi-square probabilities for chitst). ----------
+// Golden values from ref_chisq.f (oracle chisq.f/gauss.f driven directly).
+// Rational approximations; 1e-12 covers any -O3 FMA-contraction drift.
+TEST("gauss: central normal probability P(-x<Z<x)") {
+    CHECK(rclose(gauss(0.5), 3.8292492256209865e-01, 1e-12));
+    CHECK(rclose(gauss(1.0), 6.8268949232752585e-01, 1e-12));   // <1 regime
+    CHECK(rclose(gauss(1.959964), 9.5000000149752517e-01, 1e-12));  // [1,3)
+    CHECK(rclose(gauss(3.5), 9.9953474128079023e-01, 1e-12));
+    CHECK(gauss(6.5) == 1.0);      // y>=3 saturates
+    CHECK(gauss(0.0) == 0.0);      // dpeq(x,0) branch
+    CHECK(gauss(-1.0) == gauss(1.0));  // symmetric
+}
+
+TEST("chisq: chi-squared upper-tail probability P(chi2_n > x)") {
+    CHECK(rclose(chisq(0.5, 1), 4.7950012232846217e-01, 1e-12));
+    CHECK(rclose(chisq(0.5, 2), 7.7880078307140488e-01, 1e-12));   // even df
+    CHECK(rclose(chisq(2.0, 6), 9.1969860292860584e-01, 1e-12));
+    CHECK(rclose(chisq(2.0, 7), 9.5984036873759759e-01, 1e-12));   // odd df
+    CHECK(rclose(chisq(3.841459, 1), 4.9999994962786065e-02, 1e-12));  // ~0.05
+    CHECK(rclose(chisq(10.0, 6), 1.2465201948308113e-01, 1e-12));
+    CHECK(rclose(chisq(25.0, 7), 7.5880052556476815e-04, 1e-11));
+    CHECK(chisq(0.0, 3) == 1.0);   // x<=0
+    CHECK(chisq(-5.0, 3) == 1.0);
+    CHECK(chisq(90.0, 4) == 0.0);  // x>=90
+    CHECK(chisq(88.0, 1) == 0.0);  // underflow to exact 0
+}
+
 // ---- sumf / smeadl (series sum + mean-deletion for iddiff/amdid). ------------
 // Exact by construction (integer-valued inputs; left-to-right accumulation).
 TEST("sumf: 1-based inclusive range sum") {

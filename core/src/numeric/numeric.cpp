@@ -416,6 +416,68 @@ void dscal(int n, double da, double* dx, int incx) {
     }
 }
 
+double gauss(double x) {
+    if (!dpeq(x, 0.0)) {
+        double y = std::fabs(x) / 2.0;
+        double z;
+        if (y >= 3.0) {
+            return 1.0;
+        } else if (y >= 1.0) {
+            y = y - 2.0;
+            z = (((((((((((((-0.000045255659 * y + 0.000152529290) * y -
+                            0.000019538132) * y - 0.000676904986) * y +
+                          0.001390604284) * y - 0.000794620820) * y -
+                        0.002034254874) * y + 0.006549791214) * y -
+                      0.010557625006) * y + 0.011630447319) * y -
+                    0.009279453341) * y + 0.005353579108) * y -
+                  0.002141268741) * y + 0.000535310849) * y +
+                0.999936657524;
+        } else {
+            double w = y * y;
+            z = ((((((((0.000124818987 * w - 0.001075204047) * w +
+                       0.005198775019) * w - 0.019198292004) * w +
+                     0.059054035642) * w - 0.151968751364) * w +
+                   0.319152932694) * w - 0.531923007300) * w +
+                 0.797884560593) * y * 2.0;
+        }
+        return z;
+    }
+    return 0.0;
+}
+
+double chisq(double x, int n) {
+    const double C = 0.797884560802864;
+    if (x <= 0.0) return 1.0;
+    if (x >= 90.0) return 0.0;
+    double c1 = 1.0;
+    double c2 = c1;
+    double c3 = 0.0;
+    double y = x;
+    int m = n / 2;
+    int i = m * 2 - n;
+    if (i == 0) {  // even degrees of freedom
+        y = y / 2.0;
+        if (m != 1) {
+            m = m - 1;
+            for (i = 1; i <= m; ++i) {
+                c2 = c2 * y / i;
+                c1 = c1 + c2;
+            }
+        }
+        return c1 * std::exp(-y);
+    }
+    // odd degrees of freedom
+    if (m != 0) {
+        for (i = 1; i <= m; ++i) {
+            c1 = c1 * y / c2;
+            c3 = c3 + c1;
+            c2 = c2 + 2.0;
+        }
+    }
+    c2 = std::sqrt(y);
+    return 1.0 - gauss(c2) + C * c3 * std::exp(-y / 2.0) / c2;
+}
+
 double sumf(const double* x, int n1, int n2) {
     double s = 0.0;
     for (int i = n1; i <= n2; ++i) s += x[i - 1];  // x[0]==X(1)
