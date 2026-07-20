@@ -2180,6 +2180,31 @@ TEST("chsppf: chi-squared percent-point function") {
     CHECK(chsppf(0.95, 0) == 0.0);
 }
 
+// ---- sumf / smeadl (series sum + mean-deletion for iddiff/amdid). ------------
+// Exact by construction (integer-valued inputs; left-to-right accumulation).
+TEST("sumf: 1-based inclusive range sum") {
+    const double x[5] = {2.0, 4.0, 6.0, 8.0, 10.0};
+    CHECK(sumf(x, 1, 5) == 30.0);
+    CHECK(sumf(x, 2, 4) == 18.0);
+    CHECK(sumf(x, 3, 3) == 6.0);
+}
+
+TEST("smeadl: mean-deletion over a range") {
+    double x[5] = {2.0, 4.0, 6.0, 8.0, 10.0};
+    double xmean = 0.0;
+    smeadl(x, 1, 5, 5, xmean);
+    CHECK(xmean == 6.0);
+    CHECK(x[0] == -4.0 && x[1] == -2.0 && x[2] == 0.0 && x[3] == 2.0 &&
+          x[4] == 4.0);
+    // Sub-range with the oracle's separately-supplied divisor (n != count).
+    double y[5] = {1.0, 3.0, 5.0, 7.0, 9.0};
+    double ym = 0.0;
+    smeadl(y, 2, 4, 3, ym);          // sum 3+5+7=15, /3 = 5
+    CHECK(ym == 5.0);
+    CHECK(y[1] == -2.0 && y[2] == 0.0 && y[3] == 2.0);
+    CHECK(y[0] == 1.0 && y[4] == 9.0);   // outside range untouched
+}
+
 // ---- outlier-identification leaves (shlsrt/medabs/makotl/dppdi/ttest). -------
 // Numeric leaves of idotlr.f's automatic outlier scan. Golden values from
 // ref_outlier.f (leaves driven directly on small fixed inputs).

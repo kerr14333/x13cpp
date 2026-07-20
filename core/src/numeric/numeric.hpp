@@ -50,6 +50,16 @@ double chsppf(double p, int nu);
 // the result is bit-identical.
 void dscal(int n, double da, double* dx, int incx);
 
+// sumf.f: left-to-right sum of x over the 1-based inclusive range [n1,n2]
+// (x[0]==X(1)). Accumulation order is preserved for bit-parity.
+double sumf(const double* x, int n1, int n2);
+
+// smeadl.f: mean-deletion. Subtracts the mean of x over [n1,n2] from every
+// element in that range; the divisor is the caller-supplied count n (the oracle
+// passes n separately, not necessarily n2-n1+1). Used by iddiff/amdid to center
+// the differenced series before ACF/regression work. x is 1-based (x[0]==X(1)).
+void smeadl(double* x, int n1, int n2, int n, double& xmean);
+
 // shlsrt.f: in-place ascending shell sort of vecx[0..nr-1] (gap = nr/2, halved).
 void shlsrt(int nr, double* vecx);
 

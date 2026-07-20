@@ -416,6 +416,18 @@ void dscal(int n, double da, double* dx, int incx) {
     }
 }
 
+double sumf(const double* x, int n1, int n2) {
+    double s = 0.0;
+    for (int i = n1; i <= n2; ++i) s += x[i - 1];  // x[0]==X(1)
+    return s;
+}
+
+void smeadl(double* x, int n1, int n2, int n, double& xmean) {
+    double an = static_cast<double>(n);
+    xmean = sumf(x, n1, n2) / an;
+    for (int i = n1; i <= n2; ++i) x[i - 1] -= xmean;
+}
+
 // shlsrt.f -- ascending shell sort, in place (1-based logic preserved via the
 // -1 offsets). gap starts at nr, is halved each outer pass; within a pass,
 // gap-separated pairs are bubbled down until ordered.
