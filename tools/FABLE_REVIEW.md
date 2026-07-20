@@ -7,6 +7,31 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
 
 ## Open
 
+S. **SEATS canonical-decomposition leaves PARFRA + MAK1 —
+   `core/src/seats/factor.cpp`.** VERIFIED bit-exact against a standalone oracle
+   driver built from the real `ansub2.f` (PARFRA/MAK1 + their helpers CONVM/CONJM/
+   MLTSOL/SYMPOLY/ROOTC/SQROOTC/MPBC/grRoots/HalfRoots, extracted verbatim by
+   `tools/extract_seatsfact.py` into `tools/ref_seatsfact_snip.f`, linked with the
+   ported-from oracle dpeq/dpmpar; gfortran -O2 -ffp-contract=off, ES24.16).
+   Golden bits in `test_seats.cpp` (parfra + mak1 A/B/C) matched to the LAST BIT,
+   including the tiny `toterr=5.24e-32` residual of case B. MAK1 has **no explicit
+   convergence loop** — the "iterative, tolerance-gated" risk (seats_scouting §3
+   #2) is really RPQ/C02AEF's Newton iteration plus the modulus/argument
+   classification; those reproduce bit-exact, so the invertible-half selection and
+   the MPBC polynomial rebuild are stable on the tested cases.
+   **`**` power ULP watch items** (none caused a gap on the tested inputs, but
+   flag for diverse SEATS inputs):
+   (a) `MLTSOL` threshold `min1 = 10.d0**(-15.d0)` ports via `std::pow(10.0,-15.0)`
+       (a *fractional-looking* real exponent; gfortran evaluates it as `pow` too,
+       and it only gates the near-zero pivot/round-to-zero test, so at most it
+       flips a value already within 1e-15 of 0). Not the literal `1e-15`.
+   (b) All other powers in these routines are integer `x**2` (SQROOTC/ROOTC/MAK1
+       variance+toterr), ported as `x*x` — exact, matches gfortran's `**2`. No new
+       fractional `**` on the numeric path (CubicRoot's `m**(1/6)` is NOT reached:
+       MAK1 uses ROOTC, not CubicRoot).
+   (c) Inherits C02AEF's existing `tol2 = pow(tol,1.5)` note from entry 0 (RPQ is
+       called inside MAK1). Not yet gated by a corpus `.mdc`; that lands with SECOND.
+
 A. **[FIXED] Codegen mis-sized `xtrm_cmn.Stdev` (PYRS collision).** `cmn2hpp.py`
    merged `srslen.prm` (PYRS=PYR1+20=**85**) and the stale duplicate `srslen.i`
    (PYRS=PYR1+10=**75**) into one symbol table; "first definition wins" +

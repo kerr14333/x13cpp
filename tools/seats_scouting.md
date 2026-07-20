@@ -76,18 +76,21 @@ inline print — real numeric core is a fraction.
 | Tier | routine | file:line | lines | role | ported? |
 |------|---------|-----------|-------|------|---------|
 | **A pure-numeric leaves (unit-testable, portable-first)** ||||||
-| A | CONV / CONJ / MULTFN / DIVFCN / CONVM / CONJM | ansub2.f:341… | 60ea | polynomial ×, conj-×, ÷ — SEATS's own (NOT uconv) | new |
+| A | CONV / CONJ / MULTFN / DIVFCN | ansub2.f:341… | 60ea | polynomial ×, conj-×, ÷ — SEATS's own (NOT uconv) | poly.cpp✓ |
+| A | CONVM / CONJM | ansub2.f:1567,2211 | 30ea | harmonic-product coeff-matrix builders (PARFRA) | factor.cpp✓ |
 | A | C02AEF / C02AEZ | ansub2.f:2900 | 339+62 | NAG-style complex polynomial root finder (RPQ's engine) | new |
-| A | Tartaglia / ROOTC / SQROOTC / CubicRoot / MulCompl / DivCompl | ansub2.f | 20-70ea | closed-form quad/cubic + complex arithmetic | new |
-| A | SYMPOLY / MLTSOL | ansub2.f:2309,2565 | 82+114 | symmetric-poly build, linear solve | new |
+| A | ROOTC / SQROOTC / MPBC | ansub2.f:2522,2391,2258 | 20-40ea | roots of x²+(a+bi)x+1, complex sqrt, complex poly × | factor.cpp✓ |
+| A | Tartaglia / CubicRoot / MulCompl / DivCompl | ansub2.f | 20-70ea | closed-form cubic + complex arithmetic (not on MAK1 path) | new |
+| A | SYMPOLY / MLTSOL | ansub2.f:2309,2565 | 82+114 | symmetric-poly build, linear solve | factor.cpp✓ |
+| B | grRoots / getRoot / getRootc / closestRoot / JoinRoot / halfRoots | ansub2.f:1896… | 20-90ea | group roots by multiplicity/conjugacy, keep invertible half (MAK1) | factor.cpp✓ |
 | A | DPSI / CHBJB / BFAC / MPB/MPBF/MPBBJ / INPOL | ansub3.f | 42-125ea | psi-weights, autocovariance (BFAC), poly helpers | new |
 | A | SPC / SPCEST / getSpectrum / getAR / truncaSpectra | ansub5.f:125… | 55-66ea | pseudo-spectrum evaluation | new |
 | A | Parzen / KENDALLS / getVar / FFT / FFTr / sFourier | ansub11.f | 20-120ea | window, FFT, variance (spectrum diagnostics) | new |
 | A | DVAR / DVARMS / DMED / DMEAN / DMU / RAIZ / DIVIDECHECK | ansub1/2/3/4.f | 15-60ea | scalar stat/util leaves | new |
 | **B numeric mid-tier (need A)** ||||||
 | B | RPQ | ansub2.f:16 | 169 | root-find AR/MA poly → rez,imz,modul,ar,pr (calls C02AEF) | new |
-| B | PARFRA | ansub2.f:1495 | 72 | partial-fraction pseudo-spectrum → component numerators | new |
-| B | MAK1 | ansub2.f:1615 | 281 | spectral factorization: autocovariances → canonical MA | new |
+| B | PARFRA | ansub2.f:1495 | 72 | partial-fraction pseudo-spectrum → component numerators | unit✓ (factor.cpp) |
+| B | MAK1 | ansub2.f:1615 | 281 | spectral factorization: autocovariances → canonical MA | unit✓ (factor.cpp) |
 | B | F1RST | sigsub.f:29 | 228 | allocate AR roots (non-seas/seas/cyclical) to components | new |
 | B | getPSIE / SeparaBF / DECFB | ansub3.f | 68-89 | WK psi-weights, backward/forward filter split | new |
 | B | CHECKADM / CHKSPCT | ansub7.f:139,292 | 153+286 | spectrum-admissibility (non-negativity) tests | new |

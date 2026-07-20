@@ -7,6 +7,7 @@
 // checkable. The exactly-representable cases use CHECK_EQ; the iterative
 // root-finder path is checked to full double precision via a tight tolerance.
 #include "microtest.hpp"
+#include "seats/seatsfact.hpp"
 #include "seats/seatspoly.hpp"
 
 #include <cmath>
@@ -208,4 +209,77 @@ TEST("rpq: complex pair (1 +/- i*sqrt3)/2 -> modulus 1, arg +/-60 deg") {
     CHECK(std::fabs(ar[0] + ar[1]) <= 1.0e-9);        // opposite signs
     CHECK(std::fabs(std::fabs(p[0]) - 6.0) <= 1.0e-9);
     CHECK(std::fabs(std::fabs(p[1]) - 6.0) <= 1.0e-9);
+}
+
+// --------------------------------------------------------------------------
+// PARFRA + MAK1 (canonical-decomposition leaves)
+//
+// Golden bits below are the EXACT doubles emitted by the vendored oracle
+// Fortran, captured via tools/ref_seatsfact.f (built by tools/extract_seatsfact.py,
+// linked against the oracle PARFRA/MAK1 + helpers extracted verbatim from
+// ansub2.f, plus dpeq.f/dpmpar.f; gfortran -O2 -ffp-contract=off, ES24.16).
+// Bit-identity is the SEATS parity contract: MAK1's factorization is driven by
+// C02AEF roots + modulus comparisons, so a last-ULP root difference would move
+// theta/var. MAK1 has no explicit convergence loop -- the tolerance gating lives
+// in RPQ's Newton iteration and the root classification, and it reproduces
+// bit-exact here.
+// --------------------------------------------------------------------------
+
+TEST("parfra: RT/(T*S)=U/T+V/S -> BIT-EXACT vs oracle") {
+    // t,s harmonic funcs (powers of cos w); rt arbitrary. See ref_seatsfact.f.
+    double t[3] = {2.0, -1.0, 0.5};
+    double s[3] = {3.0, 0.4, -0.2};
+    double rt[4] = {1.0, 2.0, 3.0, 4.0};
+    double u[8] = {0}, v[8] = {0};
+    int nu = 0, nv = 0;
+    parfra(rt, 4, t, 3, s, 3, u, nu, v, nv);
+    CHECK_EQ(nu, 2);
+    CHECK_EQ(nv, 2);
+    CHECK_EQ(u[0], -9.2105263157894726e0);
+    CHECK_EQ(u[1], -3.1578947368421053e0);
+    CHECK_EQ(v[0], 1.8315789473684212e1);
+    CHECK_EQ(v[1], 1.4736842105263158e1);
+}
+
+TEST("mak1 A: ACF of MA(1) 1-0.5B -> theta exact (nufin<=2 path)") {
+    // gam0=1.25, 2*gam1=-1.0. Degenerate n<=2 branch (no SYMPOLY/RPQ).
+    double ufin[2] = {1.25, -1.0};
+    double theta[8] = {0}, var = 0.0, toterr = -1.0;
+    int nt = 0;
+    mak1(ufin, 2, theta, nt, var, /*nnio=*/0, /*xl=*/0.99, toterr);
+    CHECK_EQ(nt, 2);
+    CHECK_EQ(theta[0], 1.0);
+    CHECK_EQ(theta[1], -5.0000000000000000e-1);
+    CHECK_EQ(var, 1.0);
+    CHECK_EQ(toterr, 0.0);
+}
+
+TEST("mak1 B: ACF of MA(2) (1,-0.5,0.2) -> BIT-EXACT (real-root SYMPOLY/RPQ path)") {
+    // gam0=1.29, 2*gam1=-1.2, 2*gam2=0.4. Exercises SYMPOLY -> RPQ -> C02AEF ->
+    // grRoots -> halfRoots -> MPBC. toterr is a tiny FP residual (not 0).
+    double ufin[3] = {1.29, -1.2, 0.4};
+    double theta[8] = {0}, var = 0.0, toterr = -1.0;
+    int nt = 0;
+    mak1(ufin, 3, theta, nt, var, /*nnio=*/0, /*xl=*/0.99, toterr);
+    CHECK_EQ(nt, 3);
+    CHECK_EQ(theta[0], 1.0);
+    CHECK_EQ(theta[1], -5.0000000000000000e-1);
+    CHECK_EQ(theta[2], 2.0000000000000004e-1);
+    CHECK_EQ(var, 1.0);
+    CHECK_EQ(toterr, 5.2385294487332815e-32);
+}
+
+TEST("mak1 C: ACF of MA(2) (1,0,0.25) -> BIT-EXACT (complex-root path)") {
+    // gam0=1.0625, 2*gam1=0, 2*gam2=0.5. Roots +-2i -> exercises the ROOTC
+    // complex branch + conjugate grouping in grRoots/halfRoots.
+    double ufin[3] = {1.0625, 0.0, 0.5};
+    double theta[8] = {0}, var = 0.0, toterr = -1.0;
+    int nt = 0;
+    mak1(ufin, 3, theta, nt, var, /*nnio=*/0, /*xl=*/0.99, toterr);
+    CHECK_EQ(nt, 3);
+    CHECK_EQ(theta[0], 1.0);
+    CHECK_EQ(theta[1], 0.0);
+    CHECK_EQ(theta[2], 2.5000000000000000e-1);
+    CHECK_EQ(var, 1.0);
+    CHECK_EQ(toterr, 0.0);
 }
