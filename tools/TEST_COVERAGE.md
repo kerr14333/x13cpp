@@ -1,0 +1,67 @@
+# Test-coverage roadmap — inputs & interactions
+
+What the parity corpus covers, what's testable NOW (features ported), and what's
+blocked on unported subsystems. Gate everything against the oracle
+(`oracle/fortran/x13as_ascii_O2.exe` via `oracle/run_oracle.py -s`), the pattern
+used for the 30+ model specs and the reg/outlier sweep.
+
+## Covered + gated (bit-exact vs oracle)
+- **ARIMA estimation** across model TYPES: pure-AR `(2 0 0)/(3 1 0)/(3 1 1)`,
+  MA `(0 1 2)`, mixed `(2 1 2)`, seasonal `(1 1 1)(1 1 1)`, on 7 series.
+- **Series**: airline + FRED expgs/payems/unrate (SA) + R NSA nottem/ukgas/co2/
+  usdeaths (seasonal). Monthly + quarterly.
+- **Transforms**: log, none, and `function=auto` (trnaic AICC selection).
+- **Regression**: trading day (td), Easter, td+easter, constant/mean.
+- **Automatic outlier ID**: `outlier{}`, `types=(ao ls tc)`.
+- **Automatic model selection**: iddiff + amdid + automd (identification +
+  estimation) on SA and NSA series.
+
+## Testable NOW (features ported — just need specs + goldens)
+Priorities for the next sweep, each an oracle-vs-x13run_m3 diff like sweep_reg.py:
+- **More holidays/calendar regressors**: `tdstock`, `td1coef`, `tdnolpyear`,
+  `easterstock`, `labor`, `thank`, `sceaster`, `sincos` trig seasonal, fixed
+  `seasonal` dummies. (regvar/td6var/td7var/adestr are ported.)
+- **Prior adjustment**: `transform{ adjust = lom | loq | lpyear }` (length-of-
+  month / leap-year priors — the priadj path is ported, exercised by m2_* specs
+  but not broadly swept).
+- **More transforms**: `sqrt`, Box-Cox `power=`, `logistic`, `inverse`.
+- **Fixed / partially-fixed ARIMA coefficients**: `arima{ model=(0 1 1) ma=(0.5f) }`
+  (the fixed-coef path — CB-6/armats fixed-lag handling is worth stressing here).
+- **Estimation options**: `exact = ma | none` (conditional vs exact ML — note
+  the default is exact=arma), `tol`/`maxiter` extremes.
+- **Span / modelspan**: `series{ span=(a,b) }`, `modelspan` subsets, start/end
+  trims (span-modelspan already flagged the model-span estimation gap).
+- **Outlier options**: `outlier{ critical=3.5 }`, `lsrun`, `span`, `method`.
+- **Forecast / backcast**: `forecast{ maxlead maxback }` prediction intervals on
+  NON-outlier models (post-outlier forecasting is a known deferred non-parity).
+- **Edge series**: near the min-obs limit, the 780-obs cap (edge/long780), very
+  long series, quarterly vs monthly boundary cases.
+- **automdl variations**: `maxorder`, `maxdiff`, `acceptdefault`, `checkmu=no`.
+
+## Known gaps found by testing (real bugs — fix, don't just gate around)
+- **User-specified outlier regressors FATAL** — `regression{ variables=(ao1950.jan) }`
+  / `ls<date>` / `tc<date>` / ramps. Automatic outlier ID works; the regression-
+  spec point-outlier syntax doesn't. (FABLE_REVIEW "Found gaps".)
+- **03-automdl full estimation** — right model + transform, wrong variance until
+  the `aictest=(td easter)` regressor selection lands (in progress).
+- **usdeaths / region automdl model** — needs the automd adequacy finalization
+  (tstmd1 wired as one unit); routines banked. (automdl_scouting.md §3c.)
+
+## Blocked on unported subsystems
+- **X-11 tables** (B/C/D ladder, D10/D11/D12/D13) — leaves in progress
+  (`core/src/x11`); gate on `airline_x11-default` save-table goldens once the
+  `x11pt*` spine lands. 50/76 corpus specs need this.
+- **SEATS components** (s10/s11/s12/s13, .mdc models) — leaves in progress
+  (`core/src/seats`); gate on `04-seats` / `airline_seats`.
+- **pickmdl** (X-11-ARIMA model selection) — not started (5 specs).
+- **Diagnostics** — `check{}` (Ljung-Box/normality), `spectrum{}`,
+  `history{}`/revisions, `slidingspans{}`, F2/F3 & M/Q stats. Not started.
+- **Composite / indirect adjustment** (`composite{}`) — the census-examples/
+  composite series are parsed but the aggregate SA is unported.
+
+## Interaction matrix worth building (once the pieces land)
+automdl × outlier × aictest (the 03-automdl class) · transform=auto × regression ·
+outlier × forecast · fixed-model × td × Easter · X-11 modes (mult/add/logadd/
+pseudo-add) × seasonalma variants · SEATS × automdl-identified model · span ×
+outlier × forecast. Plus error/edge specs (malformed args, out-of-span outliers,
+conflicting options) checked for oracle-matching ABEND behavior.
