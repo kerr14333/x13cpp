@@ -83,13 +83,21 @@ Structure = the classic B/C/D iteration; **most CALLs are already-ported leaves*
 - **Part C/D refine (l.627-end):** `si` -> `vsfa`/`vsfb` -> preliminary SA,
   iterating to D7.
 
-**Blockers to port first:** `makadj` (37), `tdlom` (63), `chktrn` (?), `ftest`
-(294, but Prttab-gated — may stub as deferred if it feeds no compute state).
-Verify each's base-case reachability: for `airline_x11-default` (no TD, no
-sliding-spans) makadj/tdlom/ssrit should be skippable; `chktrn` (trend check) and
-the `ftest` seasonality test need a reachability check — chktrn likely runs.
-**Port order:** makadj + tdlom + chktrn, confirm ftest is deferrable, THEN x11pt2
-section by section, gating airline_x11-default B1..D7 as each section lands.
+**Base-case reachability (CHECKED 2026-07-20):** the TD/lom block
+(`makadj`+`tdlom`) is gated `IF(Ixreg.ne.2 .AND. Priadj.gt.1 .and. goodlm)`
+(x11pt2.f:115) — i.e. only when length-of-month / leap-year / model-TD prior
+adjustment is active. For `airline_x11-default` (Priadj<=1) it is **SKIPPED**.
+`ssrit` is `Issap==2` (sliding spans) — off. So **makadj/tdlom/ssrit are NOT on
+the airline base path** — stub them with `not_ported` guards keyed to those flags
+(as x11pt1 does for prior-TD), don't port yet.
+**The only real base-path blocker is `chktrn`** (trend-cycle constraint check,
+x11pt2.f:605, sets `oktrn`) — verify it runs for airline and port it. `ftest`
+(seasonality F-test, l.437) is `Prttab(LXEB1F)`-gated diagnostic — confirm it
+feeds no compute state, then drop as deferred.
+**Port order:** (1) `chktrn`; (2) confirm `ftest` deferrable; (3) x11pt2 base
+path section by section (Part B -> B/C/D seasonal -> Section-2 trend -> C/D
+refine), stubbing makadj/tdlom/ssrit; gate `airline_x11-default` B1..D7 as
+sections land.
 
 Corpus payoff: **50 / 76 specs use `x11{}`**, and **24 of them ship full B/C/D
 save-table goldens** (`.b1 .d1 … .d10 .d11 .d12 .d13` at 15-digit precision).
