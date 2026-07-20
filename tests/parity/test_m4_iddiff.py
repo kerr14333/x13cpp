@@ -95,6 +95,14 @@ _AUTOMD_EST_CASES = [
     ("generated/expgs_seats.spc", "(2 1 0)"),
     ("generated/payems_seats.spc", "(0 1 2)"),
     ("generated/unrate_seats.spc", "(0 1 1)"),
+    # Genuinely NSA seasonal series (R datasets) -- exercise the SEASONAL automdl
+    # path (D=1 differencing + seasonal ARMA), which the SA series above cannot.
+    ("generated/nottem_automdl.spc", "(1 0 0)(1 1 1)"),
+    ("generated/ukgas_automdl.spc", "(1 0 2)(0 1 0)"),
+    ("generated/co2_automdl.spc", "(0 1 1)(0 1 1)"),
+    # usdeaths omitted: automd finds (1 0 1)(0 1 1) vs oracle (0 1 1)(0 1 1) -- a
+    # real iddiff regular-differencing discrepancy (d=0 vs d=1) exposed by NSA
+    # data; tracked in tools/automdl_scouting.md.
 ]
 
 

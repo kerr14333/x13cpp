@@ -167,6 +167,21 @@ harness now hands iddiff/amdid their own copy. Misleading intermediate readings
 - Lesson for the run_m2 automd wire: keep the transformed-series buffer distinct
   from ctx.series.tsrs (rgarma owns Tsrs).
 
+## 3c. iddiff regular-differencing discrepancy on usdeaths (NSA) — OPEN
+
+NSA seasonal testing (R `datasets`, dropped into the corpus) validates the
+seasonal automdl path bit-for-bit on nottem `(1 0 0)(1 1 1)`, ukgas
+`(1 0 2)(0 1 0)`, co2 `(0 1 1)(0 1 1)` — arimamdl + variance + loglikelihood all
+match the oracle. **usdeaths** (US monthly accidental deaths, 72 obs) is the one
+miss: automd picks `(1 0 1)(0 1 1)` where the oracle picks `(0 1 1)(0 1 1)` —
+iddiff chooses **d=0** where the oracle chooses **d=1** (seasonal D=1 agrees).
+So the regular unit-root decision in iddiff differs for this short, strongly
+seasonal series. First debugging step: dump iddiff's per-round idr/rmaxr and the
+AR-root moduli (chkrt1) for usdeaths vs the oracle's unit-root test trace; the
+likely suspects are the round-2 cancellation (`Cancel`/`Ub2lim`) thresholds or
+the `Frstar`-seeded first model on a 72-obs series. Gated on identification only
+(excluded from the automd estimation gate) until resolved.
+
 ## 4. First corpus gate target
 
 `tests/corpus/census-examples/03-automdl.spc` — the canonical automdl example.
