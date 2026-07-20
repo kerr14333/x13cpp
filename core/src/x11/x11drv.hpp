@@ -11,6 +11,15 @@ namespace x13 {
 
 struct X13Context;
 
+// extend.f: append model forecasts (after Posfob) and reversed backcasts (at
+// Pos1bk) to the observed series in the padded buffer orix, copying the
+// transformed series at Pos1ob. For multiplicative/log SA a non-positive
+// forecast/backcast clears extok and cancels the extension (the observed copy
+// still happens). begxy is updated to the backcast start date. Warning WRITEs
+// are deferred (dropped). fcst/bcst are length ext.nfcst/nbcst (<= PFCST).
+void extend(X13Context& ctx, double* trnsrs, int* begxy, double* orix,
+            bool& extok, double lam, const double* fcst, const double* bcst);
+
 // x11int.f: initialize the X-11 arrays for a run. Sets the multiplicative factor
 // / seasonal-input buffers (Sts/Stsi/Sti/Stptd + Fac* + X11hol/Faccal) to the
 // mode identity (1 mult / 0 additive), the trend/weight buffers (Stc/Stci/Stwt/

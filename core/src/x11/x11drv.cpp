@@ -25,6 +25,69 @@ namespace {
 constexpr int PLEN = 1020;
 }  // namespace
 
+// extend.f -- append the model forecasts/backcasts to the observed series in the
+// padded X-11 buffer (Orix). For multiplicative/log-additive SA the forecast and
+// backcast values must be positive; a non-positive value cancels the extension
+// (Extok=false) -- the Fortran warning WRITEs are deferred (dropped), the Extok
+// side effect is preserved. The observed series is copied at Pos1ob regardless.
+void extend(X13Context& ctx, double* trnsrs, int* begxy, double* orix,
+            bool& extok, double lam, const double* fcst, const double* bcst) {
+    extend_cmn& ext = ctx.extend;
+    x11ptr_cmn& ptr = ctx.x11ptr;
+    const int muladd = ctx.x11opt.muladd;
+    const bool psuadd = ctx.x11msc.psuadd;
+    const int nspobs = ctx.mdldat.nspobs;
+    constexpr int PFCST = 120;  // srslen.prm: 10*PSP
+
+    extok = true;
+
+    // Multiplicative/log SA + non-log transform: a non-positive forecast blocks
+    // the forecast extension (deferred warning dropped).
+    if (ext.nfcst > 0) {
+        if ((!dpeq(lam, 0.0)) && muladd != 1) {
+            int i = 1;
+            while (i <= ext.nfcst && extok) {
+                if (psuadd && fcst[i - 1] < 0.0) {
+                    extok = false;
+                } else if (fcst[i - 1] <= 0.0) {
+                    extok = false;
+                }
+                i = i + 1;
+            }
+        }
+    }
+    // Same guard for the backcasts.
+    if (ext.nbcst > 0 && extok) {
+        if ((!dpeq(lam, 0.0)) && muladd != 1) {
+            int i = 1;
+            while (i <= ext.nbcst && extok) {
+                if (psuadd && bcst[i - 1] < 0.0) {
+                    extok = false;
+                } else if (bcst[i - 1] <= 0.0) {
+                    extok = false;
+                }
+                i = i + 1;
+            }
+        }
+    }
+
+    // Copy the transformed series into the original vector at Pos1ob.
+    copy(trnsrs, nspobs, 1, orix + (ptr.pos1ob - 1));
+
+    if (!extok) return;
+    // Append forecasts after Posfob.
+    if (ext.nfcst > 0) copy(fcst, ext.nfcst, 1, orix + ptr.posfob);
+
+    // Append (reversed) backcasts at Pos1bk, adjusting the Xy start date.
+    if (ext.nbcst > 0) {
+        begxy[0] = ext.begbak(1);  // YR
+        begxy[1] = ext.begbak(2);  // MO
+        double bcst2[PFCST];
+        revrse(bcst, ext.nbcst, 1, bcst2);
+        copy(bcst2, ext.nbcst, 1, orix + (ptr.pos1bk - 1));
+    }
+}
+
 // x11int.f -- initialize the X-11 factor/series/weight arrays before a run:
 // unit-value (or 0 additive) for the multiplicative factors, 0 for trend/weight
 // buffers, and copy any prior adjustment into Sprior.
