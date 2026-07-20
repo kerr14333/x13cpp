@@ -21,6 +21,17 @@ struct X13Context;
 // needs the unported pritd/ssrit and fatals if reached.
 void x11pt1(X13Context& ctx, bool lmodel, bool lgraf, bool lgrfxr);
 
+// x11pt2.f: X-11 PARTS B1->D7 -- the iterated B/C/D moving-average decomposition.
+// Consumes the B1 input Stcsi (from x11pt1) and runs Kpart = 2/B, 3/C, 4/D of the
+// classic X-11 kernel, returning at D7. Base decomposition path only: the model-
+// based prior-adjustment / factor preamble (makadj/tdlom/ssrit + the x11-
+// regression option) stays not_ported and fatals cleanly if a spec activates it;
+// all table/punch/x11plt/ftest output is deferred. lx11 gates the early return
+// when no X-11 options are requested; lmodel/lseats/lgraf/lgrfxr feed only
+// deferred branches.
+void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats, bool lgraf,
+            bool lgrfxr);
+
 // chktrn.f: multiplicative-mode trend-positivity check/repair, called from x11pt2
 // (Muladd==0). Replaces any non-positive value in the trend-cycle stc in place
 // (mean of nearest positive neighbours, or the nearest positive value at a series
