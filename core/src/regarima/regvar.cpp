@@ -9,6 +9,7 @@
 // trigonometric-seasonal, Labor/Thanksgiving, and change-of-regime branches
 // abend loudly -- their group builders are not yet ported.
 #include "regarima/regvar.hpp"
+#include "regarima/outlier.hpp"   // addotl (outlier column reconstruction)
 #include "specparse/specparse.hpp"
 #include "notset.hpp"
 #include "srslen.hpp"
@@ -194,10 +195,11 @@ void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
         case 110:
             not_ported(ctx, "Thanksgiving-Christmas regressors (adthnk.f)");
             return;
-        case 120:
-        case 130:
-            not_ported(ctx, "outlier regressors (addotl.f)");
-            return;
+        case 120:   // AO/LS/MV/TC/SO/TL/ramp regressors
+        case 130:   // automatically identified outliers
+            addotl(ctx, begxy, nrxy, nbcst, begcol, endcol);
+            if (ctx.error.lfatal) return;
+            break;   // GO TO 160
         case 140:
             not_ported(ctx, "user-defined regressors");
             return;

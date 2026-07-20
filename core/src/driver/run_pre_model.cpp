@@ -220,6 +220,16 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
                    ctx.arima.lam);
             if (ctx.error.lfatal) return false;
 
+            // NOTE (deferred): forecasting on a post-outlier model with other
+            // regressors (TD) is not yet exact. idotlr's coladd/addotl fill only
+            // the span rows, so the forecast-period design rows of the inserted
+            // outlier column (and the columns coladd shifts) are stale. arima.f
+            // rebuilds the full Nobspf-row design via regvar before prtfct
+            // (arima.f:1148); a first attempt at that here got close but not
+            // bit-exact (and perturbed the previously-exact airline case), so the
+            // exact rebuild is left for the outlier-forecast follow-up. Forecasts
+            // without identified outliers (e.g. fixed-airline-seats) are exact.
+
             // Forecasting (arima.f:1164 prtfct, when Nfcst>0). Produces the
             // original-scale point forecast + confidence band on ctx.forecasts.
             // The prior-adjustment/holiday branches of prtfct are out of this
