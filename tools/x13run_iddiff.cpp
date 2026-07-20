@@ -24,6 +24,7 @@
 #endif
 
 #include "automdl/iddiff.hpp"
+#include "automdl/amdid.hpp"
 #include "specparse/specparse.hpp"
 #include "gen/srslen.hpp"   // prm::PLEN
 #include "gen/model.hpp"    // prm::PORDER
@@ -45,8 +46,17 @@ int main(int argc, char** argv) {
         return 2;
     }
     std::string path = argv[1];
-    int maxdr = (argc > 2) ? std::atoi(argv[2]) : 2;
-    int maxds = (argc > 3) ? std::atoi(argv[3]) : 1;
+    int maxdr = 2, maxds = 1;
+    {
+        int pos = 0;  // positional numeric args, skipping --flags
+        for (int i = 2; i < argc; ++i) {
+            std::string s = argv[i];
+            if (s.rfind("--", 0) == 0) continue;
+            if (pos == 0) maxdr = std::atoi(s.c_str());
+            else if (pos == 1) maxds = std::atoi(s.c_str());
+            ++pos;
+        }
+    }
 
     std::string dir = dirname_of(path);
     std::string full = basename_of(path);
@@ -100,5 +110,29 @@ int main(int argc, char** argv) {
     std::printf("idnonseasonaldiff.first: %d\n", idr);
     std::printf("idseasonaldiff.first: %d\n", ids);
     std::printf("checkmu: %s\n", lmu ? "yes" : "no");
+
+    // Optional: continue into ARMA-order identification (amdid) on the chosen
+    // differencing. Requires an automdl{} spec (maxorder/maxdiff defaults).
+    bool do_amdid = false;
+    for (int i = 2; i < argc; ++i)
+        if (std::string(argv[i]) == "--amdid") do_amdid = true;
+    if (do_amdid) {
+        int irar = 0, irma = 0, isar = 0, isma = 0;
+        bool locok = true;
+        try {
+            x13::amdid(ctx, irar, idr, irma, isar, ids, isma,
+                       ctx.series.tsrs.data(), frstry, nefobs, a.data(), na, lmu,
+                       /*lsumm=*/0, locok);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "x13run_iddiff: amdid exception: %s\n", e.what());
+            return 3;
+        }
+        if (ctx.error.lfatal) {
+            std::printf("OUTCOME: FATAL (amdid)\n");
+            return 1;
+        }
+        std::printf("arimamdl: (%d %d %d)(%d %d %d)\n", irar, idr, irma, isar, ids,
+                    isma);
+    }
     return 0;
 }

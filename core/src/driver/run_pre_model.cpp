@@ -143,6 +143,10 @@ bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& ba
         {
             int ncp = nobspf < prm::PLEN ? nobspf : prm::PLEN;
             copy(trnsrs.data(), ncp, 1, ctx.series.tsrs.data());
+            // Prior factors span-aligned into Adj (Adj1st=1), so the automatic-
+            // model path's prlkhd sees Adj(Adj1st)==fac[0], matching arima.f.
+            copy(fac.data(), ncp, 1, ctx.adj.adj.data());
+            ctx.adj.adj1st = 1;
         }
     }
     if (wants_save(ctx, "trn")) {

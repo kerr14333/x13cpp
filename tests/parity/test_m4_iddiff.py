@@ -31,8 +31,8 @@ _CASES = [
 ]
 
 
-def _run(spc_abs):
-    proc = subprocess.run([BIN, spc_abs], capture_output=True, text=True)
+def _run(spc_abs, *extra):
+    proc = subprocess.run([BIN, spc_abs, *extra], capture_output=True, text=True)
     assert proc.returncode == 0, f"x13run_iddiff failed: {proc.stderr}\n{proc.stdout}"
     vals = {}
     for line in proc.stdout.splitlines():
@@ -50,3 +50,15 @@ def test_iddiff_orders(rel, idr, ids):
     assert vals.get("OUTCOME") == "OK", vals
     assert int(vals["idnonseasonaldiff.first"]) == idr, vals
     assert int(vals["idseasonaldiff.first"]) == ids, vals
+
+
+def test_amdid_full_model():
+    """iddiff + amdid on the log-airline automdl spec must identify the canonical
+    (0 1 1)(0 1 1) -- the census 03-automdl oracle .udg ``arimamdl``. Exercises
+    the full ARMA-order grid (amdid2/bestmd/mdlmch) on top of iddiff."""
+    spc = os.path.join(_CORPUS, "extra", "airline_automdl.spc")
+    vals = _run(spc, "--amdid")
+    assert vals.get("OUTCOME") == "OK", vals
+    assert vals["idnonseasonaldiff.first"] == "1", vals
+    assert vals["idseasonaldiff.first"] == "1", vals
+    assert vals["arimamdl"] == "(0 1 1)(0 1 1)", vals

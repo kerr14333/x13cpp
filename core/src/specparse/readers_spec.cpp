@@ -260,6 +260,23 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
     static const int argptr[PARG + 1] = {1, 8, 11, 14, 20, 28, 32, 37, 44, 52, 61,
         70, 79, 89, 97, 110, 123, 136, 143, 150, 157, 162, 172, 179, 195};
     gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+
+    // gtauto.f tail defaults (gtauto.f 491-510). The maxorder/maxdiff/ub/... arg
+    // VALUES are still token-consumed by gt_generic without application; here we
+    // apply the no-argument defaults the automatic-model driver needs. Maxord and
+    // Diffam are left at their gtinpt sentinels (0,0)/(NOTSET) until an arg sets
+    // them, so "still sentinel" == "unspecified".
+    auto& ar = ctx.arima;
+    ar.lautom = true;                       // automatic model selection on
+    ar.lautod = true;                       // and automatic differencing (no diff arg)
+    if (ar.maxord(1) == 0 && ar.maxord(2) == 0) {
+        ar.maxord(1) = 2;
+        ar.maxord(2) = 1;
+    }
+    if (ar.diffam(1) == prm::NOTSET) {
+        ar.diffam(1) = 2;
+        ar.diffam(2) = 1;
+    }
 }
 
 // ---- estimate{} (gtestm.f) -------------------------------------------------
