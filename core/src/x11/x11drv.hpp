@@ -74,6 +74,19 @@ void si(X13Context& ctx, int ksect, int kfda, int klda, int nyr, int iforc,
         int nbcst, int kersa1, int ksdev1, int lfd1, int lld1, int kfulsm,
         int kfdax, int kldax);
 
+// adjreg.f: build the X-11 input buffers from the forecast/backcast-extended,
+// transformed model series orix. Subtracts each regression effect, inverse-
+// transforms to the original scale, and routes the results into Stcsi (the B1
+// input), the Series forecast/backcast tails, Stocal, and the active Fac* factor
+// buffers. orixmv/orixot (missing-value / outlier-adjusted extended series) are
+// returned for later stages; n is an output (Nrxy, or Nrxy+Sp with no forecasts).
+// Factor arrays ftd..fhol are 1-based length nrxy. Base airline path: all factors
+// zero, Kfmt==0 -> reduces to invfcn + the Stcsi/Series/Stocal copies.
+void adjreg(X13Context& ctx, double* orix, double* orixmv, double* orixot,
+            double* ftd, double* fao, double* fls, double* ftc, double* fso,
+            double* fsea, double* fcyc, double* fusr, double* fmv, double* fhol,
+            int fcntyp, double lam, int nrxy, int& n);
+
 }  // namespace x13
 
 #endif  // X13_X11_X11DRV_HPP

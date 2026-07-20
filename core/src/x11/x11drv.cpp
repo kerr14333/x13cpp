@@ -11,7 +11,8 @@
 #include "x11/x11filt.hpp"       // hndtrn, divsub
 #include "x11/x11seas.hpp"       // vsfa, vsfb
 #include "x11/x11xtrm.hpp"       // xtrm, replac, vtest, entsch
-#include "specparse/specparse.hpp"  // copy
+#include "transform/transform.hpp"  // invfcn (inverse Box-Cox)
+#include "specparse/specparse.hpp"  // copy, setdp
 #include "numeric/numeric.hpp"   // dpeq, dpow_ri
 
 #include <algorithm>
@@ -396,6 +397,130 @@ void si(X13Context& ctx, int ksect, int kfda, int klda, int nyr, int iforc,
     if (kfulsm < 2)
         vsfb(sts, stsi, kfda, klda, nyr, opt.lterm, opt.lter.data(), opt.ksect,
              shrtsf, temp, muladd);
+}
+
+// adjreg.f -- build the X-11 input buffers from the forecast/backcast-extended,
+// transformed model series orix. Subtracts each regression effect (TD/holiday/
+// outlier/user/seasonal/cycle) from the extended series, inverse-transforms every
+// component back to the original scale, then routes the results into the X-11-
+// indexed buffers: orixa -> Stcsi (the B1 decomposition input), the forecast/
+// backcast tails -> Series, the calendar-adjusted series -> Stocal, and each
+// active adjustment factor -> its Fac* buffer. orixmv/orixot are returned (missing-
+// value- and outlier-adjusted extended series) for later X-11 stages. n is an
+// output (Nrxy, or Nrxy+Sp when there are no forecasts). On the airline base path
+// every factor array is zero and Kfmt==0, so orixa==orixmv==orixot==orixcl==orix
+// and this reduces to invfcn + the Stcsi/Series/Stocal copies.
+void adjreg(X13Context& ctx, double* orix, double* orixmv, double* orixot,
+            double* ftd, double* fao, double* fls, double* ftc, double* fso,
+            double* fsea, double* fcyc, double* fusr, double* fmv, double* fhol,
+            int fcntyp, double lam, int nrxy, int& n) {
+    const x11ptr_cmn& ptr = ctx.x11ptr;
+    const extend_cmn& ext = ctx.extend;
+    const x11adj_cmn& adj = ctx.x11adj;
+    const x11log_cmn& xl = ctx.x11log;
+    x11fac_cmn& fac = ctx.x11fac;
+    orisrs_cmn& os = ctx.orisrs;
+    const int pos1bk = ptr.pos1bk;
+    const int posfob = ptr.posfob;
+    const int posffc = ptr.posffc;
+    const int kfmt = ctx.prior.kfmt;
+    const int muladd = ctx.x11opt.muladd;  // Kfmt>0 addmul mode (off for airline)
+
+    double orixa[PLEN];
+    double orixcl[PLEN];
+    setdp(0.0, PLEN, orixa);
+    setdp(0.0, PLEN, orixmv);
+    setdp(0.0, PLEN, orixot);
+    setdp(0.0, PLEN, orixcl);
+
+    // Factor arrays Ftd..Fhol are indexed 1..Nrxy; the extended series is offset
+    // to the padded buffer by Pos1bk-1.
+    for (int i = 1; i <= nrxy; ++i) {
+        const int j = i + pos1bk - 1;
+        orixa[j - 1] = orix[j - 1] - ftd[i - 1] - fls[i - 1] - fhol[i - 1] -
+                       fao[i - 1] - ftc[i - 1] - fusr[i - 1] - fmv[i - 1] -
+                       fsea[i - 1] - fso[i - 1] - fcyc[i - 1];
+        orixmv[j - 1] = orix[j - 1] - fmv[i - 1];
+        orixot[j - 1] =
+            orixmv[j - 1] - fao[i - 1] - fls[i - 1] - ftc[i - 1] - fso[i - 1];
+        orixcl[j - 1] = orixmv[j - 1] - ftd[i - 1] - fhol[i - 1];
+    }
+
+    // Inverse-transform the extended series/components back to the original scale.
+    invfcn(ctx, orix + (pos1bk - 1), nrxy, fcntyp, lam, orix + (pos1bk - 1));
+    invfcn(ctx, orixa + (pos1bk - 1), nrxy, fcntyp, lam, orixa + (pos1bk - 1));
+    invfcn(ctx, orixmv + (pos1bk - 1), nrxy, fcntyp, lam, orixmv + (pos1bk - 1));
+    invfcn(ctx, orixot + (pos1bk - 1), nrxy, fcntyp, lam, orixot + (pos1bk - 1));
+    invfcn(ctx, orixcl + (pos1bk - 1), nrxy, fcntyp, lam, orixcl + (pos1bk - 1));
+
+    n = (posfob == posffc) ? nrxy + ctx.model.sp : nrxy;
+    const bool goodlm = dpeq(lam, 0.0) || dpeq(lam, 1.0);
+    if (goodlm) {
+        invfcn(ctx, ftd, n, fcntyp, lam, ftd);
+        invfcn(ctx, fhol, n, fcntyp, lam, fhol);
+        invfcn(ctx, fls, n, fcntyp, lam, fls);
+        invfcn(ctx, ftc, n, fcntyp, lam, ftc);
+        invfcn(ctx, fao, n, fcntyp, lam, fao);
+        invfcn(ctx, fso, n, fcntyp, lam, fso);
+        invfcn(ctx, fsea, n, fcntyp, lam, fsea);
+        invfcn(ctx, fusr, n, fcntyp, lam, fusr);
+        invfcn(ctx, fcyc, n, fcntyp, lam, fcyc);
+    }
+
+    // Route the adjusted series + factors into the X-11-indexed buffers.
+    double* stcsi = os.stcsi.data();
+    double* stocal = os.stocal.data();
+    double* series = ctx.inpt.series.data();
+    double* sprior = ctx.inpt.sprior.data();
+
+    copy(orixa + (pos1bk - 1), nrxy, 1, stcsi + (pos1bk - 1));
+    if (ext.nbcst > 0) {
+        copy(orix + (pos1bk - 1), ext.nbcst, 1, series + (pos1bk - 1));
+        if (kfmt > 0)
+            addmul(series, series, sprior, pos1bk, pos1bk + ext.nbcst - 1, muladd);
+    }
+    if (ext.nfcst > 0) {
+        copy(orix + posfob, ext.nfcst, 1, series + posfob);  // orix(Posfob+1)->Series
+        if (kfmt > 0) addmul(series, series, sprior, posfob + 1, posffc, muladd);
+    }
+    if (goodlm) {
+        if (!xl.axrgtd && adj.adjtd == 1)
+            copy(ftd, n, 1, fac.factd.data() + (pos1bk - 1));
+        if (adj.adjhol == 1) copy(fhol, n, 1, fac.fachol.data() + (pos1bk - 1));
+        if (adj.adjao == 1) copy(fao, n, 1, fac.facao.data() + (pos1bk - 1));
+        if (adj.adjls == 1) copy(fls, n, 1, fac.facls.data() + (pos1bk - 1));
+        if (adj.adjtc == 1) copy(ftc, n, 1, fac.factc.data() + (pos1bk - 1));
+        if (adj.adjso == 1) copy(fso, n, 1, fac.facso.data() + (pos1bk - 1));
+        if (adj.adjsea == 1) copy(fsea, n, 1, fac.facsea.data() + (pos1bk - 1));
+        if (adj.adjusr == 1) copy(fusr, n, 1, fac.facusr.data() + (pos1bk - 1));
+        if (adj.adjcyc == 1) copy(fcyc, n, 1, fac.faccyc.data() + (pos1bk - 1));
+    }
+
+    // 'Extra' backcast factors (Nbcst2 beyond Nbcst) -> the mode identity.
+    if (ext.nbcst2 > ext.nbcst) {
+        const double idv = (fcntyp == 1) ? 1.0 : 0.0;
+        for (int i = 1; i <= pos1bk - 1; ++i) {
+            if (!xl.axrgtd && adj.adjtd == 1) fac.factd(i) = idv;
+            if (!xl.axrghl && adj.adjhol == 1) fac.fachol(i) = idv;
+            if (adj.adjao == 1) fac.facao(i) = idv;
+            if (adj.adjls == 1) fac.facls(i) = idv;
+            if (adj.adjtc == 1) fac.factc(i) = idv;
+            if (adj.adjso == 1) fac.facso(i) = idv;
+            if (adj.adjsea == 1) fac.facsea(i) = idv;
+            if (adj.adjusr == 1) fac.facusr(i) = idv;
+            if (adj.adjcyc == 1) fac.faccyc(i) = idv;
+        }
+    }
+
+    // Outlier / missing-value / calendar series back to the original scale.
+    if (kfmt > 0) {
+        addmul(orixmv, orixmv, sprior, pos1bk, posffc, muladd);
+        addmul(orixot, orixot, sprior, pos1bk, posffc, muladd);
+        addmul(orixcl, orixcl, sprior, pos1bk, posffc, muladd);
+    }
+
+    // Calendar-adjusted series (with forecasts) -> Stocal.
+    copy(orixcl + (pos1bk - 1), nrxy, 1, stocal + (pos1bk - 1));
 }
 
 }  // namespace x13
