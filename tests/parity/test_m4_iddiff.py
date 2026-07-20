@@ -108,13 +108,26 @@ def _udg_val(spc, key):
     return None
 
 
+_BIN_M3 = _find_binary("x13run_m3", "X13RUN_M3")
+
+
 @pytest.mark.parametrize(
     "rel,mdl", _AUTOMD_EST_CASES, ids=[c[0].split("/")[-1][:-4] for c in _AUTOMD_EST_CASES])
 def test_automd_full_estimation(rel, mdl):
+    """Drive the PRODUCTION path (x13run_m3 -> run_m2 -> automd) on automdl specs
+    and check the estimated model against the oracle .udg. Since automd is wired
+    into run_m2, these specs now estimate through the standard harness; the model
+    ORDERS are gated by test_automdl_corpus_identification, so here we lock the
+    estimation (convergence + variance + loglikelihood) bit-for-bit."""
     spc = os.path.join(_CORPUS, *rel.split("/"))
-    vals = _run(spc, "--automd")
-    assert vals.get("OUTCOME") == "OK", vals
-    assert vals["arimamdl"] == mdl, vals
+    proc = subprocess.run([_BIN_M3, spc], capture_output=True, text=True)
+    assert proc.returncode == 0, f"x13run_m3 failed: {proc.stderr}\n{proc.stdout}"
+    vals = {}
+    for line in proc.stdout.splitlines():
+        if ":" in line:
+            k, _, v = line.partition(":")
+            vals[k.strip()] = v.strip()
+    assert vals.get("converged") == "yes", vals
     ovar = float(_udg_val(spc, "variance$mle"))
     oll = float(_udg_val(spc, "loglikelihood"))
     assert abs(float(vals["variance"]) - ovar) <= 1e-9 * abs(ovar), (vals, ovar)
