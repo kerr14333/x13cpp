@@ -16,6 +16,48 @@ python tools/worklog.py --gap 60  # tune the idle-break threshold (minutes)
   `--gap` threshold (default 45 min) as a break, so long idle periods (agent runs
   the user stepped away from, overnight) don't inflate the figure.
 
+## Session — M5 X-11 Tier 4/5 drivers + spine start (~15h44m active, 148 commits)
+
+Snapshot 2026-07-20 10:21 EDT: span 44h14m, active 15h44m, 148 commits, 3 days.
+
+**All work builds clean (unit 8/8, parity 337 passed / 9 skipped / 11 xfailed).**
+X-11 progress, all in `core/src/x11/`:
+
+- **Tier 4 drivers DONE** (`x11drv.cpp`, ctx-first): `vtc` (variable trend-cycle
+  Henderson-length select), `sfmsr` (MSR global seasonal-filter selection + the
+  vsfa/vsfb pass), `si` (Part-B SI-ratio → seasonal driver), plus `tdxtrm`
+  (extreme-irregular AO/calendar, in `x11xtrm.cpp`, via subagent).
+- **Tier 5 core DONE** (`x11drv.cpp`): `setxpt` (span pointers), `forcst`
+  (seasonal forecast/backcast, **unit-gated** in test_x11b), `x11int` (array
+  init), `extend` (forecast/backcast series extension). `dpow_ri` (gfortran
+  real**int) promoted to `numeric.hpp` for `forcst`.
+- **Tier 6 spine STARTED** (`x11parts.cpp`): `x11pt1` (Part-A prior adjustments →
+  B1 input). Base + prior-adj + holiday paths ported; prior-TD/x11reg-TD branch
+  fatals via local not_ported (needs unported pritd/ssrit; off for airline).
+- **Codegen bug fixed**: `cmn2hpp.py` merged `srslen.prm` (PYRS=85) with stale
+  `srslen.i` (PYRS=75); wrong value won → `xtrm_cmn.Stdev` sized 76 not 86 (latent
+  overflow). Fixed precedence (.prm before .i); guarded the generator against
+  clobbering hand-maintained `x13context.hpp` (writes a `.generated` sidecar now).
+  See FABLE_REVIEW item A. NOT a Census bug.
+- **Scouting corrected + kept current** (`tools/x11_scouting.md`): killed the
+  bogus "MSR trio" (getsmat=matrix util, gttrmo=file I/O — neither is MSR),
+  `setdp` already inlined, `x11ref` reclassified as x11regression-scope (deferred).
+
+**NEXT (handoff — see `tools/x11_scouting.md` §"x11pt2 port plan"):** the base
+`x11pt2` (B1→D7, 954 lines) path is almost all already-ported leaves. Only real
+base-path blocker is **`chktrn`** (139-line trend-constraint check w/ negative-
+trend replacement) — port it first. `makadj`/`tdlom`/`ssrit` are Priadj/Issap-
+gated (off for airline) → stub via not_ported. `ftest` is print-gated → confirm
+deferrable + drop. Then port x11pt2 section by section (Part B → B/C/D seasonal →
+Section-2 trend → C/D refine), gating `airline_x11-default` B1..D7 as sections
+land. After x11pt2: `x11pt3` (D8–D16 finals), `x11pt4` (E/F), `x11ari` driver +
+ctx population from the estimate/forecast stage to run end-to-end. Tier-4/5/6
+drivers are built but **not yet unit-gated** (need a live X13Context; gate arrives
+with the running spine) — `forcst` is the one exception (unit-gated now).
+
+_Update this snapshot by pasting fresh `python tools/worklog.py` output; the git
+timeline is the authority._
+
 ## Snapshot — 2026-07-19 18:40 EDT
 
 | metric | value |
