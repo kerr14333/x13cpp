@@ -10,8 +10,15 @@
 > in new `core/src/x11/x11drv.cpp` (ctx-first); `tdxtrm` (extreme-irregular
 > AO/calendar) landed in `x11xtrm.cpp`. All build clean; **not yet unit-gated**
 > (they need a live X13Context — gate arrives with the x11pt2 spine).
-> **NEXT increment:** Tier 5 span/forecast-window setup
-> (`setxpt`/`extend`/`forcst`/`x11int`/`x11ref`) then Tier 6 (`x11pt1`→B1,
+> **Tier 5 CORE now DONE (`setxpt`, `forcst`, `x11int`, `extend`)** in
+> `x11drv.cpp`; `dpow_ri` (gfortran real**int) exported via numeric.hpp for
+> `forcst`. NOTE `x11ref` (162) is NOT base-decomposition — it computes X-11
+> **regression** factors (TD/holiday from the Xy/B matrix by Rtype) and belongs
+> with the deferred x11regression sub-milestone (`x11mdl`/`x11aic`); not needed
+> for `airline_x11-default`. Also landed a codegen fix: `xtrm_cmn.Stdev` was
+> mis-sized 76 (should be 86) from a `PYRS` collision between `srslen.prm` (85)
+> and stale `srslen.i` (75) -- see FABLE_REVIEW item A.
+> **NEXT increment:** the Tier 6 spine (`x11pt1`→B1,
 > `x11pt2`→B1–D7, `x11pt3`→D8–D16, `x11pt4`, `x11ari`) wired behind `x11{}`. First
 > end-to-end gate: `airline_x11-default` D10/D11/D12/D13.
 >
@@ -104,10 +111,10 @@ subsystem is 1-based pointer arithmetic over a forecast/backcast-padded array.
 
 ## 2. Call graph + leaf-tier port order
 
-Nothing in `core/src/x11/` exists yet. The `divsub` hit in
-`run_pre_model.cpp:112` is an **inlined comment** (prior-adjust logic), not a
-ported routine; `xtrm` in `common/gen/xtrm_cmn.hpp` is only the generated
-COMMON-block header. **Every routine below is NEW.**
+(Historical — at first scout nothing in `core/src/x11/` existed and every routine
+below was NEW. As of 2026-07-20 Tiers 0–4 + Tier-5 core are ported into
+`core/src/x11/{x11filt,x11seas,x11xtrm,x11drv}.cpp`; the "ported?" column tracks
+what remains. The Tier 6 `x11pt*`/`x11ari` spine is the live frontier.)
 
 Recommended **leaf-first** order (each tier unit-testable before the next).
 **NOTE (2026-07-20): every Tier 0–3 row below is DONE** (see STATUS header) — the
@@ -141,10 +148,11 @@ STATUS block. Only the "DONE"/"defer"-marked Tier 4+ rows track live status.
 | 3 | vtest / entsch | 64/? | sigma-limit (Ksdev) auto-selection | new |
 | 3 | trbias | 39 | trend constant-bias correction | new |
 | 4 | si | 106 | SI-ratio → seasonal driver (calls vsfa/vsfb/xtrm/replac) | **DONE** (x11drv) |
-| 4 | forcst / extend | 41/115 | forecast/backcast extension into the filter window | new |
+| 5 | forcst / extend | 41/115 | forecast/backcast extension into the filter window | **DONE** (x11drv) |
 | 4 | tdlom / traday / makadj | 63/?/37 | TD & length-of-month prior adjustment inside B | new |
-| 5 | setxpt | ? | span/forecast pointer setup (Pos1bk/Posffc/Fctdrp) | new |
-| 5 | x11int / x11ref | 56/162 | X-11 option init / refresh | new |
+| 5 | setxpt | 25 | span/forecast pointer setup (Pos1bk/Posffc/Fctdrp) | **DONE** (x11drv) |
+| 5 | x11int | 56 | X-11 array initialization | **DONE** (x11drv) |
+| xr | x11ref | 162 | X-11 **regression** factors (TD/holiday) | defer (x11regression sub-milestone) |
 | 5 | getx11 / gtx11d | 576/161 | x11{} arg parser + defaults | new (gt_generic stub today) |
 | 6 | x11pt1 | 327 | PART B1: prior adj + forecast-extended input | new |
 | 6 | x11pt2 | 954 | PARTS B1→D7: main iterated decomposition **spine** | new |
