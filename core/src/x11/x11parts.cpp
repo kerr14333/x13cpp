@@ -12,6 +12,7 @@
 #include "x11/x11filt.hpp"          // divsub, addmul, setmv
 #include "specparse/specparse.hpp"  // copy, setlg, abend, errhdr, writln, stdio
 #include "numeric/numeric.hpp"      // dpeq
+#include "gen/notset.hpp"           // prm::NOTSET
 
 #include <string>
 
@@ -19,6 +20,13 @@ namespace x13 {
 
 namespace {
 constexpr int PLEN = 1020;  // srslen.prm: POBS + 2*PFCST
+
+// ispos.f: are all values of a 1-based array over [l1,l2] strictly positive?
+bool ispos(const double* s, int l1, int l2) {
+    for (int i = l1; i <= l2; ++i)
+        if (s[i - 1] <= 0.0) return false;
+    return true;
+}
 
 // Signal a feature branch that depends on a still-unported routine (mirrors
 // regvar.cpp's local not_ported; the X-11 spine reaches this only for prior-TD /
@@ -30,6 +38,66 @@ void x11_not_ported(X13Context& ctx, const char* what) {
     abend(ctx);
 }
 }  // namespace
+
+// chktrn.f -- multiplicative-mode trend-positivity check/repair (called from
+// x11pt2 when Muladd==0). Scans the trend-cycle Stc over the padded span; any
+// non-positive value is replaced in place by the mean of its two nearest positive
+// neighbours, or by the nearest positive value when it sits at a series end.
+// Returns oktrn = "all positive over the [Pos1ob,last] core span" (the caller
+// seeds oktrn=true, so the all-positive early return keeps it true). tstfct is
+// in/out: reset to false when nothing needs repair. The Fortran Kpart/Ktabl/Trnchr
+// args are print-only (a warning message + the '*' markers consumed by prttrn) and
+// are dropped under the deferred-print convention.
+bool chktrn(X13Context& ctx, double* stc, bool& tstfct) {
+    const x11ptr_cmn& ptr = ctx.x11ptr;
+    const extend_cmn& ext = ctx.extend;
+    const int pos1bk = ptr.pos1bk;
+    const int pos1ob = ptr.pos1ob;
+    const int posfob = ptr.posfob;
+    const int posffc = ptr.posffc;
+
+    int last = posfob;
+    if (tstfct && ext.nfcst > 0) last = posffc;
+
+    // No non-positive value anywhere in the padded span: nothing to repair.
+    const bool prtmsg = !ispos(stc, pos1bk, posffc);
+    if (!prtmsg) {
+        if (tstfct) tstfct = false;
+        return true;
+    }
+
+    const bool oktrn = ispos(stc, pos1ob, last);
+
+    for (int i = pos1bk; i <= posffc; ++i) {
+        if (stc[i - 1] <= 0.0) {
+            // Walk outward to the nearest positive neighbour on each side; NOTSET
+            // marks "ran off that end of the observed span".
+            int i2 = 1;
+            int before = 0;
+            int after = 0;
+            while (before == 0 || after == 0) {
+                if (before == 0) {
+                    const int i3 = i - i2;
+                    if (i3 < pos1ob) before = prm::NOTSET;
+                    else if (stc[i3 - 1] > 0.0) before = i3;
+                }
+                if (after == 0) {
+                    const int i3 = i + i2;
+                    if (i3 > posfob) after = prm::NOTSET;
+                    else if (stc[i3 - 1] > 0.0) after = i3;
+                }
+                ++i2;
+            }
+            if (before == prm::NOTSET)
+                stc[i - 1] = stc[after - 1];
+            else if (after == prm::NOTSET)
+                stc[i - 1] = stc[before - 1];
+            else
+                stc[i - 1] = (stc[after - 1] + stc[before - 1]) / 2.0;
+        }
+    }
+    return oktrn;
+}
 
 // x11pt1.f -- prior adjustments (holiday / prior factors / prior trading day) and
 // setup of the X-11 working buffers before the B/C/D decomposition.

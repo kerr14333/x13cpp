@@ -17,10 +17,13 @@
 #include "microtest.hpp"
 #include "x11/x11seas.hpp"
 #include "x11/x11xtrm.hpp"
-#include "x11/x11drv.hpp"  // forcst (Tier-4/5 driver, pure-numeric leaf)
+#include "x11/x11drv.hpp"     // forcst (Tier-4/5 driver, pure-numeric leaf)
+#include "x11/x11parts.hpp"   // chktrn (Tier-6 spine leaf)
+#include "common/x13context.hpp"
 #include "gen/notset.hpp"  // prm::DNOTST
 
 #include <cmath>
+#include <memory>
 
 using namespace x13;
 
@@ -325,6 +328,75 @@ TEST("forcst: Iorder=2, R=2 -- exercises dpow_ri + the difference k-loop") {
            /*wt=*/1.0, /*r=*/2.0);
     CHECK(close(s[8 - 1], 40.0 / 3.0, 1e-12));
     CHECK(close(s[3 - 1], -5.0 / 3.0, 1e-12));
+}
+
+// ===========================================================================
+// Tier 6 spine leaf -- chktrn (multiplicative trend-positivity check/repair)
+// ===========================================================================
+
+namespace {
+// Minimal context for chktrn: it reads only x11ptr (span pointers) and
+// extend.nfcst. Layout used below: backcasts 1..2, observed 3..8, forecasts 9..10.
+// Heap-allocated -- X13Context carries large farray members (stack would overflow).
+std::unique_ptr<X13Context> make_chktrn_ctx(int nfcst) {
+    auto ctx = std::make_unique<X13Context>();
+    ctx->x11ptr.pos1bk = 1;
+    ctx->x11ptr.pos1ob = 3;
+    ctx->x11ptr.posfob = 8;
+    ctx->x11ptr.posffc = 10;
+    ctx->extend.nfcst = nfcst;
+    return ctx;
+}
+}  // namespace
+
+TEST("chktrn: negatives replaced by neighbour mean / nearest end value; oktrn false") {
+    auto ctx = make_chktrn_ctx(2);
+    // 1-based; negatives at 3 (first obs -> nearest after), 5 (interior -> mean),
+    // 8 (last obs -> nearest before).
+    double stc[10] = {10, 10, -1, 20, -5, 40, 30, -2, 10, 10};
+    bool tstfct = false;
+    bool oktrn = chktrn(*ctx, stc, tstfct);
+    CHECK_EQ(oktrn, false);          // negatives over [pos1ob,last=posfob]
+    CHECK_EQ(stc[3 - 1], 20.0);      // first obs: before ran off -> Stc(after)=20
+    CHECK_EQ(stc[5 - 1], 30.0);      // interior: (Stc(4)+Stc(6))/2=(20+40)/2
+    CHECK_EQ(stc[8 - 1], 30.0);      // last obs: after ran off -> Stc(before)=30
+    // Positive values untouched.
+    CHECK_EQ(stc[4 - 1], 20.0);
+    CHECK_EQ(stc[6 - 1], 40.0);
+}
+
+TEST("chktrn: all-positive trend is a no-op that resets tstfct; oktrn true") {
+    auto ctx = make_chktrn_ctx(2);
+    double stc[10] = {10, 10, 20, 20, 30, 40, 30, 25, 10, 10};
+    double before[10];
+    for (int i = 0; i < 10; ++i) before[i] = stc[i];
+    bool tstfct = true;
+    bool oktrn = chktrn(*ctx, stc, tstfct);
+    CHECK_EQ(oktrn, true);
+    CHECK_EQ(tstfct, false);         // reset on the all-positive early return
+    for (int i = 0; i < 10; ++i) CHECK_EQ(stc[i], before[i]);  // unchanged
+}
+
+TEST("chktrn: tstfct+nfcst extends the oktrn span to the forecasts") {
+    // Observed span clean, one negative in the forecast tail (index 9). With
+    // tstfct=false the span is [pos1ob,posfob] -> oktrn stays true; with tstfct
+    // and nfcst>0 the span reaches posffc so the forecast negative flips it false.
+    // Either way the negative is repaired (nearest positive = last obs, index 8).
+    double base[10] = {10, 10, 20, 20, 30, 40, 30, 30, -1, 10};
+
+    auto c0 = make_chktrn_ctx(2);
+    double s0[10];
+    for (int i = 0; i < 10; ++i) s0[i] = base[i];
+    bool t0 = false;
+    CHECK_EQ(chktrn(*c0, s0, t0), true);   // span excludes forecasts
+    CHECK_EQ(s0[9 - 1], 30.0);             // repaired from Stc(before)=Stc(8)
+
+    auto c1 = make_chktrn_ctx(2);
+    double s1[10];
+    for (int i = 0; i < 10; ++i) s1[i] = base[i];
+    bool t1 = true;
+    CHECK_EQ(chktrn(*c1, s1, t1), false);  // span reaches posffc -> negative seen
+    CHECK_EQ(s1[9 - 1], 30.0);
 }
 
 int main() { return mt::run_all(); }

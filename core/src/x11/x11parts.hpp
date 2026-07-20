@@ -21,6 +21,14 @@ struct X13Context;
 // needs the unported pritd/ssrit and fatals if reached.
 void x11pt1(X13Context& ctx, bool lmodel, bool lgraf, bool lgrfxr);
 
+// chktrn.f: multiplicative-mode trend-positivity check/repair, called from x11pt2
+// (Muladd==0). Replaces any non-positive value in the trend-cycle stc in place
+// (mean of nearest positive neighbours, or the nearest positive value at a series
+// end) and returns oktrn (all values positive over the [Pos1ob,last] core span).
+// tstfct is in/out (reset to false when no repair is needed). The Fortran
+// Kpart/Ktabl/Trnchr args were print-only and are dropped (deferred-print).
+bool chktrn(X13Context& ctx, double* stc, bool& tstfct);
+
 }  // namespace x13
 
 #endif  // X13_X11_X11PARTS_HPP
