@@ -95,3 +95,55 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
 
 ## Verified / closed
 (none yet)
+
+## M4 aictest family (tdaic / easaic / addtd / addeas) -- 2026-07-20
+
+Ported the automatic-model-selection AIC-test regressors into
+`core/src/automdl/aictst.{cpp,hpp}` and gated them oracle-exact
+(`tests/parity/test_m4_aictest.py`, 9 cases, rtol 1e-6). All nine
+`aictest.diff.td` / `aictest.diff.e` values across airline, 03-automdl, expgs,
+payems, unrate reproduce the oracle `.udg` BIT-EXACTLY.
+
+Notes / deferred:
+
+- **xrlkhd** was NOT re-ported: it already lives in
+  `core/src/regarima/estimate.cpp` and belongs to the x11regression AIC path.
+  tdaic/easaic call **prlkhd** (also ported); its `ctx.lkhd.aicc` is the AICC the
+  tests compare. The task brief conflated the two.
+
+- **chkchi.f DEFERRED** (blocker): its callees `chitst` (only a doc comment
+  exists in numeric.hpp -- NOT implemented), `dlusrg`, and `savchi` are unported,
+  and no corpus spec exercises the user-defined-holiday chi-square path. Port
+  chitst + dlusrg when a `regression{ user=... usertype=holiday }` + `aictest`
+  spec enters the corpus.
+
+- **lomaic / usraic**: not ported (out of the requested TD/Easter scope; siblings
+  of tdaic/easaic for length-of-month and user regressors). Straightforward
+  follow-ups on the same pattern.
+
+- **The harness (`x13run_iddiff --aictest`) supplies two pieces of state the
+  ported pre-model phase does not set**, because the eventual wiring lives in
+  automd (main thread), not here:
+  1. The aictest argument state (`Tdayvc/Ntdvec/Easvec/Neasvc/Itdtst/Eastst/...`).
+     The getreg/editor.f aictest parser is unported; the harness installs the
+     `aictest=(td easter)` defaults (editor.f:1151-1442) for the no-regime,
+     no-stock, no-existing-regressor case. Port that editor.f slice when wiring.
+  2. The prior-adjustment span `Begadj/Nadj/Adj1st` (adjsrs.f:20-21,89-90).
+     `run_pre_model.cpp` does the prior adjustment inline (via `lpfac`) and never
+     sets these, so tdaic's LOG-transform leap-year PREADJUSTMENT (td7var over the
+     adjustment span) produced an all-ones factor => wrong `aictest.diff.td` on
+     log data (off by ~7.5 AICC) until the harness set them. **When wiring aictest
+     into automd, ensure Begadj/Nadj/Adj1st are populated** (adjsrs runs in editor
+     before automd in the oracle) or the log leap-year TD test will be wrong.
+
+- **automd round-1 vs round-2 sequencing.** The oracle runs the AIC tests TWICE
+  (automd.f:220-240 on the default airline model, then automd.f:513-524 on the
+  identified model) and the `.udg` saves the LAST run. So the harness picks a mode
+  per case: `--aictest` (identified == default airline: airline / 03-automdl),
+  `--afterauto` (identify first: expgs diff.td, payems/unrate diff.e), and
+  `--afterauto --preeas` (also install Easter before the TD test, matching the
+  round-2 model state: payems/unrate diff.td). A single unified run reproducing
+  BOTH diff.td and diff.e of a differing-model series in one pass needs the full
+  round-1 -> chkmu -> iddiff/amdid -> round-2 interleave carrying round-1's exact
+  regressor state through identification -- i.e. the real automd wire. Each value
+  is individually bit-exact; only the single-pass unification is deferred.

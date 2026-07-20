@@ -1,0 +1,717 @@
+// aictst.cpp -- tdaic.f / easaic.f / addtd.f / addeas.f (see aictst.hpp).
+//
+// Faithful translations of the automdl trading-day and Easter AIC tests. All
+// WRITE/savelog/summary output and the mktdlb/mkealb label builders are deferred
+// (Lprt=false, Lsavlg=false, Lsumm=0 on the automd call sites). Group titles the
+// tests search on with strinx are written by addtd/addeas (built here with
+// std::to_string, byte-identical to the oracle's itoc output).
+#include "automdl/aictst.hpp"
+
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "numeric/numeric.hpp"       // dpeq, chsppf
+#include "regarima/estimate.hpp"     // rgarma, prlkhd
+#include "regarima/regvar.hpp"       // regvar, td7var, gtrgpt
+#include "transform/transform.hpp"   // trnfcn
+#include "automdl/iddiff.hpp"        // prterr
+#include "regarima/outlier.hpp"      // wrtdat (regime-date title, addtd)
+#include "specparse/specparse.hpp"   // strinx, adrgef, dlrgef, copy, abend
+#include "gen/srslen.hpp"            // prm::PLEN
+#include "gen/model.hpp"             // prm PRG* type codes, error codes, PTDAIC
+#include "gen/notset.hpp"            // prm::DNOTST, prm::NOTSET
+
+namespace x13 {
+
+namespace {
+using namespace prm;
+
+// eltfcn operation selectors (tdaic uses DIV / MULT) and Priadj codes.
+constexpr int DIV = 4, MULT = 3, PLOM = 2, PLOQ = 3;
+
+// A hard estimation error discontinues the AIC test (tdaic.f:358 / easaic.f:152).
+bool armaer_is_fatal(int e) {
+    return e == PMXIER || e == PSNGER || e == PISNER || e == PNIFER ||
+           e == PNIMER || e == PCNTER || e == POBFN0 || e < 0;
+}
+
+// True when Rgvrtp(begcol) names a trading-day / length-of-month regressor that
+// the trading-day AIC test manages (tdaic.f:149-161). lomtst gates the
+// length-of-month/quarter/leap-year family (kept when a separate lomaic test
+// owns them).
+bool is_td_rgvr(int rt, int lomtst) {
+    bool base = rt == PRGTST || rt == PRGTTD || rt == PRRTST || rt == PRRTTD ||
+                rt == PRATST || rt == PRATTD;
+    bool lom = lomtst == 0 &&
+               (rt == PRGTLM || rt == PRGTLQ || rt == PRGTLY || rt == PRGTSL ||
+                rt == PRRTLM || rt == PRRTLQ || rt == PRRTLY || rt == PRRTSL ||
+                rt == PRATLM || rt == PRATLQ || rt == PRATLY);
+    bool one = rt == PRATSL || rt == PRG1TD || rt == PRR1TD || rt == PRA1TD ||
+               rt == PRG1ST || rt == PRR1ST || rt == PRA1ST;
+    return base || lom || one;
+}
+
+// The narrower list used at the "remove trading day" epilogue when a specific
+// TD model was chosen (tdaic.f:569-575) -- no length-of-month family.
+bool is_td_rgvr_narrow(int rt) {
+    return rt == PRGTST || rt == PRGTTD || rt == PRRTST || rt == PRRTTD ||
+           rt == PRATST || rt == PRATTD || rt == PRATSL || rt == PRG1TD ||
+           rt == PRR1TD || rt == PRA1TD || rt == PRG1ST || rt == PRR1ST ||
+           rt == PRA1ST;
+}
+
+// strinx over the four trading-day group titles (tdaic.f:133-141).
+int find_td_group(model_cmn& m) {
+    int g = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                   "Trading Day");
+    if (g == 0)
+        g = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                   "Stock Trading Day");
+    if (g == 0)
+        g = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                   "1-Coefficient Trading Day");
+    if (g == 0)
+        g = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                   "1-Coefficient Stock Trading Day");
+    return g;
+}
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// addtd.f
+// ---------------------------------------------------------------------------
+void addtd(X13Context& ctx, int aicstk, const int* aicrgm, int aictd0, int sp,
+           int tdindx) {
+    if (tdindx == 0) return;
+
+    std::string datstr;
+    bool hasrgm = aicrgm[0] != NOTSET;
+    if (hasrgm) datstr = wrtdat(aicrgm, sp);
+    if (ctx.error.lfatal) return;
+
+    static const char* day[6] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+
+    std::string tgrptl;
+    int vartd, vartd1, vartd2, nvar;
+    if (tdindx == 3 || tdindx == 6) {
+        tgrptl = "Stock Trading Day[" + std::to_string(aicstk) + "]";
+        if (tdindx == 6) {
+            vartd = PRG1ST; vartd1 = PRR1ST; vartd2 = PRA1ST; nvar = 1;
+        } else {
+            vartd = PRGTST; vartd1 = PRRTST; vartd2 = PRATST; nvar = 6;
+        }
+    } else {
+        tgrptl = "Trading Day";
+        if (tdindx == 4 || tdindx == 5) {
+            vartd = PRG1TD; vartd1 = PRR1TD; vartd2 = PRA1TD; nvar = 1;
+        } else {
+            vartd = PRGTTD; vartd1 = PRRTTD; vartd2 = PRATTD; nvar = 6;
+        }
+    }
+
+    // Group-title prefix for the one-coefficient families (addtd.f:76,97,110).
+    auto onepfx = [](const std::string& s) { return "1-Coefficient " + s; };
+
+    if (aictd0 == 0) {
+        std::string gttl = tgrptl;
+        if (hasrgm) gttl = tgrptl + " (after " + datstr + ")";
+        for (int i = 1; i <= nvar; ++i) {
+            if (nvar == 1)
+                adrgef(ctx, DNOTST, "Weekday", onepfx(gttl), vartd, false, false);
+            else
+                adrgef(ctx, DNOTST, day[i - 1], gttl, vartd, false, false);
+            if (ctx.error.lfatal) return;
+        }
+    }
+    if (hasrgm) {
+        if (aictd0 >= 0) {
+            std::string gttl;
+            if (aictd0 == 0)
+                gttl = tgrptl + " (change for before " + datstr + ")";
+            else
+                gttl = tgrptl + " (before " + datstr + ")";
+            if (nvar == 1) {
+                adrgef(ctx, DNOTST, "Weekday I", onepfx(gttl), vartd1, false, false);
+                if (ctx.error.lfatal) return;
+            } else {
+                for (int i = 1; i <= nvar; ++i) {
+                    adrgef(ctx, DNOTST, std::string(day[i - 1]) + " I", gttl,
+                           vartd1, false, false);
+                    if (ctx.error.lfatal) return;
+                }
+            }
+        } else {
+            std::string gttl = tgrptl + " (starting " + datstr + ")";
+            if (nvar == 1) {
+                adrgef(ctx, DNOTST, "Weekday II", onepfx(gttl), vartd2, false,
+                       false);
+                if (ctx.error.lfatal) return;
+            } else {
+                for (int i = 1; i <= nvar; ++i) {
+                    adrgef(ctx, DNOTST, std::string(day[i - 1]) + " II", gttl,
+                           vartd2, false, false);
+                    if (ctx.error.lfatal) return;
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// addeas.f
+// ---------------------------------------------------------------------------
+void addeas(X13Context& ctx, int keastr, int easidx, int eastst) {
+    std::string tgrptl;
+    int etype;
+    if (easidx == 0) {
+        if (eastst == 1) {
+            tgrptl = "Easter[";
+            etype = PRGTEA;
+        } else {
+            tgrptl = "StockEaster[";
+            etype = PRGTES;
+        }
+        tgrptl += std::to_string(keastr);
+    } else {
+        tgrptl = "StatCanEaster[";
+        tgrptl += std::to_string(keastr - easidx);
+        etype = PRGTEC;
+    }
+    if (ctx.error.lfatal) return;
+    tgrptl += "]";
+    adrgef(ctx, DNOTST, tgrptl, tgrptl, etype, false, false);
+}
+
+// ---------------------------------------------------------------------------
+// tdaic.f
+// ---------------------------------------------------------------------------
+void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
+           int& frstry, int& tdmdl1, bool ltdlom, bool& lester) {
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    auto& ar = ctx.arima;
+    auto& pk = ctx.picktd;
+    auto& pr = ctx.prior;
+    auto& aj = ctx.adj;
+    auto& ext = ctx.extend;
+    auto& pu = ctx.priusr;
+    auto& pad = ctx.priadj;
+    auto& ip = ctx.inpt;
+
+    constexpr double ONE = 1.0;
+
+    // ---- store initial model values (tdaic.f:61-72) ----
+    std::vector<double> lomeff(PLEN, ONE);
+    std::vector<double> a2(PLEN);
+    copy(aj.adj.data(), PLEN, 1, a2.data());
+    int irgfx = m.iregfx;
+    bool pktd = pk.picktd;
+    int kf2 = pr.kfmt;
+    int ilom = pr.priadj;
+    double aictd = DNOTST;
+
+    std::vector<double> tsrs(PLEN);
+    copy(trnsrs, PLEN, 1, tsrs.data());
+
+    // Indicator: is a trading-day effect already in the default model?
+    tdmdl1 = find_td_group(m);
+
+    // Length-of-month effect for possible later use (tdaic.f:119-124).
+    std::unique_ptr<bool[]> begrgm_buf(new bool[PLEN]);
+    bool* begrgm = begrgm_buf.get();
+    if (pk.lrgmtd && (pk.tdzero % 2) != 0)
+        gtrgpt(ctx, aj.begadj.data(), pk.tddate.data(), pk.tdzero, begrgm, aj.nadj);
+    else
+        for (int i = 0; i < PLEN; ++i) begrgm[i] = true;
+    bool lom = (pr.priadj == PLOM || pr.priadj == PLOQ);
+    td7var(aj.begadj.data(), m.sp, aj.nadj, 1, 1, lom, false, true,
+           lomeff.data(), begrgm);
+
+    double aicno = DNOTST;
+    int nbno = 0, nbtd = 0;
+
+    // ---- loop through the TD model choices ----
+    for (int i = 1; i <= ar.ntdvec; ++i) {
+        int thisTD = ar.tdayvc(i);
+
+        // Delete any TD regressor already present (tdaic.f:133-166).
+        int tdgrp = find_td_group(m);
+        if (tdgrp > 0) {
+            for (int igrp = m.ngrp; igrp >= 1; --igrp) {
+                int begcol = m.grp(igrp - 1);
+                int ncol = m.grp(igrp) - begcol;
+                if (is_td_rgvr(m.rgvrtp(begcol), ar.lomtst)) {
+                    dlrgef(ctx, begcol, ar.nrxy, ncol);
+                    if (ctx.error.lfatal) return;
+                }
+            }
+        }
+
+        if (i == 1) {
+            // If Picktd, put length of month back in the series (log only).
+            if (pktd) {
+                pk.picktd = false;
+                pr.priadj = 1;
+                if (dpeq(ar.lam, 0.0)) {
+                    if (pu.nustad > 0) {
+                        eltfcn(DIV, &ar.y(ar.frstsy), &pad.usrtad(pu.frstat),
+                               ext.nobspf, trnsrs);
+                        copy(&pad.usrtad(pu.frstat), aj.nadj, 1, &aj.adj(1));
+                    } else {
+                        copy(&ar.y(ar.frstsy), ext.nobspf, -1, trnsrs);
+                    }
+                    if (pu.nuspad > 0) {
+                        eltfcn(DIV, &ar.y(ar.frstsy), &pad.usrpad(pu.frstap),
+                               ext.nobspf, trnsrs);
+                        if (pu.nustad > 0)
+                            eltfcn(MULT, &aj.adj(1), &pad.usrpad(pu.frstap),
+                                   aj.nadj, &aj.adj(1));
+                        else
+                            copy(&pad.usrpad(pu.frstap), aj.nadj, 1, &aj.adj(1));
+                    } else {
+                        setdp(1.0, PLEN, aj.adj.data());
+                    }
+                    int ntrn = (m.lmvaft || m.ln0aft) ? d.nspobs : ext.nobspf;
+                    trnfcn(ctx, trnsrs, ntrn, ar.fcntyp, ar.lam, trnsrs);
+                    if (ctx.error.lfatal) return;
+                }
+            }
+        } else if (i == 2) {
+            if (tdmdl1 == 0) {
+                if (thisTD == 1 || thisTD == 4) {
+                    pk.picktd = true;
+                    if (ar.fcntyp == 4 || dpeq(ar.lam, 1.0)) {
+                        if (ltdlom) {
+                            if (m.sp == 12)
+                                adrgef(ctx, DNOTST, "Length-of-Month",
+                                       "Length-of-Month", PRGTLM, false, false);
+                            else if (m.sp == 4)
+                                adrgef(ctx, DNOTST, "Length-of-Quarter",
+                                       "Length-of-Quarter", PRGTLQ, false, false);
+                        } else {
+                            adrgef(ctx, DNOTST, "Leap Year", "Leap Year", PRGTLY,
+                                   false, false);
+                        }
+                        if (ctx.error.lfatal) return;
+                    } else {
+                        if (ltdlom) {
+                            if (m.sp == 12) pr.priadj = PLOM;
+                            else if (m.sp == 4) pr.priadj = PLOQ;
+                        } else {
+                            pr.priadj = 4;
+                        }
+                    }
+                }
+                m.iregfx = 0;
+
+                // Length-of-month adjust the original series (power transform).
+                if ((ilom <= 1 && pk.picktd) &&
+                    !(ar.fcntyp == 4 || dpeq(ar.lam, 1.0))) {
+                    int ntrn = (m.lmvaft || m.ln0aft) ? d.nspobs : ext.nobspf;
+                    if (kf2 == 0) {
+                        eltfcn(DIV, &ar.y(ar.frstsy), (lomeff.data() + (aj.adj1st - 1)),
+                               ext.nobspf, trnsrs);
+                        trnfcn(ctx, trnsrs, ntrn, ar.fcntyp, ar.lam, trnsrs);
+                        if (ctx.error.lfatal) return;
+                        copy(lomeff.data(), PLEN, 1, aj.adj.data());
+                        pr.kfmt = 1;
+                    } else {
+                        eltfcn(DIV, &ar.y(ar.frstsy), (lomeff.data() + (aj.adj1st - 1)),
+                               ext.nobspf, trnsrs);
+                        eltfcn(DIV, trnsrs, &aj.adj(aj.adj1st), ext.nobspf,
+                               trnsrs);
+                        trnfcn(ctx, trnsrs, ntrn, ar.fcntyp, ar.lam, trnsrs);
+                        if (ctx.error.lfatal) return;
+                        eltfcn(MULT, (lomeff.data() + (aj.adj1st - 1)), &aj.adj(aj.adj1st),
+                               ext.nobspf, &aj.adj(aj.adj1st));
+                    }
+                }
+            } else {
+                // Restore variables from the original model (tdaic.f:277-305).
+                copy(a2.data(), PLEN, 1, aj.adj.data());
+                pk.picktd = pktd;
+                pr.kfmt = kf2;
+                pr.priadj = ilom;
+                copy(tsrs.data(), PLEN, 1, trnsrs);
+                if ((thisTD == 1 || thisTD == 4) && pk.picktd) {
+                    if (ar.fcntyp == 4 || dpeq(ar.lam, 1.0)) {
+                        if (ltdlom) {
+                            if (m.sp == 12)
+                                adrgef(ctx, DNOTST, "Length-of-Month",
+                                       "Length-of-Month", PRGTLM, false, false);
+                            else if (m.sp == 4)
+                                adrgef(ctx, DNOTST, "Length-of-Quarter",
+                                       "Length-of-Quarter", PRGTLQ, false, false);
+                        } else {
+                            adrgef(ctx, DNOTST, "Leap Year", "Leap Year", PRGTLY,
+                                   false, false);
+                        }
+                        if (ctx.error.lfatal) return;
+                    }
+                }
+            }
+        } else if (i == 3) {
+            if (thisTD == 4) {
+                if (ar.fcntyp == 4 || dpeq(ar.lam, 1.0)) {
+                    if (ltdlom) {
+                        if (m.sp == 12)
+                            adrgef(ctx, DNOTST, "Length-of-Month",
+                                   "Length-of-Month", PRGTLM, false, false);
+                        else if (m.sp == 4)
+                            adrgef(ctx, DNOTST, "Length-of-Quarter",
+                                   "Length-of-Quarter", PRGTLQ, false, false);
+                    } else {
+                        adrgef(ctx, DNOTST, "Leap Year", "Leap Year", PRGTLY,
+                               false, false);
+                    }
+                    if (ctx.error.lfatal) return;
+                }
+            }
+        }
+
+        // Add the new trading-day regressor (tdaic.f:327-336).
+        if (i > 1 || tdgrp > 0) {
+            if (i > 1) {
+                addtd(ctx, ar.aicstk, pk.tddate.data(), pk.tdzero, m.sp, thisTD);
+                if (ctx.error.lfatal) return;
+            }
+            regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0,
+                   ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, pr.priadj,
+                   ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+            if (ctx.error.lfatal) return;
+        }
+
+        // Reset user-seeded ARMA initial values (tdaic.f:341-346).
+        if (m.nopr > 0) {
+            int endlag = m.opr(m.nopr) - 1;
+            for (int ilag = 1; ilag <= endlag; ++ilag)
+                if (!m.arimaf(ilag)) d.arimap(ilag) = m.ap1(ilag);
+        }
+
+        // Estimate the model.
+        bool argok = ar.lautom || ar.lautox;
+        rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) lester = true;
+        if (ctx.error.lfatal) return;
+        if (armaer_is_fatal(d.armaer) ||
+            ((ar.lautom || ar.lautox) && !argok)) {
+            lester = true;
+            return;
+        }
+        if (d.armaer != 0) d.armaer = 0;
+
+        // Likelihood statistics -> Aicc (ctx.lkhd.aicc).
+        prlkhd(ctx, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), aj.adjmod, ar.fcntyp,
+               ar.lam);
+        if (ctx.error.lfatal) return;
+        double aicc = ctx.lkhd.aicc;
+        if (std::getenv("X13_AICDBG"))
+            std::fprintf(stderr,
+                         "[tdaic] i=%d thisTD=%d nb=%d convrg=%d aicc=%.10f\n", i,
+                         thisTD, m.nb, (int)d.convrg, aicc);
+
+        if (i == 1) {
+            aicno = aicc;
+            nbno = m.nb;
+        } else {
+            if (i == 2) {
+                ar.aicint = thisTD;
+                aictd = aicc;
+                if (!dpeq(ar.pvaic, DNOTST)) nbtd = m.nb;
+            } else {
+                if (!dpeq(ar.pvaic, DNOTST)) {
+                    int aicdf = nbtd - m.nb;
+                    double thiscv = chsppf(ar.pvaic, aicdf);
+                    ar.rgaicd(PTDAIC) = thiscv - 2.0 * static_cast<double>(aicdf);
+                }
+                ar.dfaict = aicc - aictd;
+                if (!(ar.dfaict > ar.rgaicd(PTDAIC))) {
+                    ar.aicint = thisTD;
+                    aictd = aicc;
+                    if (!dpeq(ar.pvaic, DNOTST)) nbtd = m.nb;
+                }
+            }
+        }
+    }
+
+    // ---- decide TD vs no-TD (tdaic.f:432-443) ----
+    ar.dfaict = aicno - aictd;
+    if (!dpeq(ar.pvaic, DNOTST)) {
+        int aicdf = nbtd - nbno;
+        double thiscv = chsppf(ar.pvaic, aicdf);
+        ar.rgaicd(PTDAIC) = thiscv - 2.0 * static_cast<double>(aicdf);
+    }
+    if (ar.dfaict > ar.rgaicd(PTDAIC)) {
+        // keep the best TD model
+    } else {
+        ar.aicint = 0;
+    }
+
+    // ---- rebuild the chosen model (tdaic.f:475-598) ----
+    bool argok = ar.lautom || ar.lautox;
+    if (ar.aicint == 0) {
+        if (pktd) {
+            pk.picktd = false;
+            pr.priadj = 1;
+            if (dpeq(ar.lam, 0.0)) {
+                if (pu.nustad > 0) {
+                    eltfcn(DIV, &ar.y(ar.frstsy), &pad.usrtad(pu.frstat),
+                           ext.nobspf, trnsrs);
+                    copy(&pad.usrtad(pu.frstat), aj.nadj, 1, &aj.adj(1));
+                } else {
+                    copy(&ar.y(ar.frstsy), ext.nobspf, -1, trnsrs);
+                }
+                if (pu.nuspad > 0) {
+                    eltfcn(DIV, &ar.y(ar.frstsy), &pad.usrpad(pu.frstap),
+                           ext.nobspf, trnsrs);
+                    if (pu.nustad > 0)
+                        eltfcn(MULT, &aj.adj(1), &pad.usrpad(pu.frstap), aj.nadj,
+                               &aj.adj(1));
+                    else
+                        copy(&pad.usrpad(pu.frstap), aj.nadj, 1, &aj.adj(1));
+                } else {
+                    setdp(1.0, PLEN, aj.adj.data());
+                }
+                int ntrn = (m.lmvaft || m.ln0aft) ? d.nspobs : ext.nobspf;
+                trnfcn(ctx, trnsrs, ntrn, ar.fcntyp, ar.lam, trnsrs);
+                if (ctx.error.lfatal) return;
+            }
+        } else {
+            copy(a2.data(), PLEN, 1, aj.adj.data());
+            pr.kfmt = kf2;
+            pk.picktd = pktd;
+            m.iregfx = irgfx;
+            if (ilom <= 1) {
+                pr.priadj = ilom;
+                copy(tsrs.data(), PLEN, 1, trnsrs);
+            }
+        }
+        // Remove trading-day variables.
+        for (int igrp = m.ngrp; igrp >= 1; --igrp) {
+            int begcol = m.grp(igrp - 1);
+            int ncol = m.grp(igrp) - begcol;
+            if (is_td_rgvr(m.rgvrtp(begcol), ar.lomtst)) {
+                dlrgef(ctx, begcol, ar.nrxy, ncol);
+                if (ctx.error.lfatal) return;
+            }
+        }
+        if (m.nopr > 0) {
+            int endlag = m.opr(m.nopr) - 1;
+            for (int ilag = 1; ilag <= endlag; ++ilag)
+                if (!m.arimaf(ilag)) d.arimap(ilag) = m.ap1(ilag);
+        }
+        regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0,
+               ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, pr.priadj,
+               ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+        rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) abend(ctx);
+        if (ctx.error.lfatal) return;
+    } else if (ar.aicint != ar.tdayvc(ar.ntdvec)) {
+        for (int igrp = m.ngrp; igrp >= 1; --igrp) {
+            int begcol = m.grp(igrp - 1);
+            int ncol = m.grp(igrp) - begcol;
+            if (is_td_rgvr_narrow(m.rgvrtp(begcol))) {
+                dlrgef(ctx, begcol, ar.nrxy, ncol);
+                if (ctx.error.lfatal) return;
+            }
+        }
+        addtd(ctx, ar.aicstk, pk.tddate.data(), pk.tdzero, m.sp, ar.aicint);
+        if (m.nopr > 0) {
+            int endlag = m.opr(m.nopr) - 1;
+            for (int ilag = 1; ilag <= endlag; ++ilag)
+                if (!m.arimaf(ilag)) d.arimap(ilag) = m.ap1(ilag);
+        }
+        regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0,
+               ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, pr.priadj,
+               ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+        rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) abend(ctx);
+        if (ctx.error.lfatal) return;
+    }
+
+    // ---- prior-factor bookkeeping (tdaic.f:600-623) ----
+    if (!pr.lpradj && pr.kfmt == 1) pr.lpradj = true;
+    if (ar.aicint == 0) {
+        if (pktd && !pk.picktd) {
+            if (aj.setpri >= 1)  // deferred prior-series bookkeeping
+                copy(aj.adj.data(), aj.nadj, -1, &ip.sprior(aj.setpri));
+            if ((pu.nustad == 0 || pu.nuspad == 0) && pr.kfmt > 0) pr.kfmt = 0;
+        }
+        if (tdmdl1 > 0) tdmdl1 = 1;
+    } else {
+        if (!pktd && pk.picktd) {
+            if (aj.setpri >= 1)  // deferred prior-series bookkeeping
+                copy(aj.adj.data(), aj.nadj, -1, &ip.sprior(aj.setpri));
+            if (pr.kfmt == 0) pr.kfmt = 1;
+            if (pu.nuspad == 0 || pu.npser == 0) {
+                pu.prmser.assign("LPY");
+                pu.npser = 3;
+            }
+        }
+        if (ar.ntdvec == 2)
+            tdmdl1 = 0;
+        else if (ar.aicint == ar.tdayvc(ar.ntdvec))
+            tdmdl1 = 2;
+        else
+            tdmdl1 = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// easaic.f
+// ---------------------------------------------------------------------------
+void easaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
+            int& frstry, bool& lester) {
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    auto& ar = ctx.arima;
+    auto& pr = ctx.prior;
+    auto& aj = ctx.adj;
+    auto& ext = ctx.extend;
+    auto& x11 = ctx.x11adj;
+
+    auto find_eas_group = [&]() {
+        int g = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                       "Easter");
+        if (g == 0)
+            g = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                       "StatCanEaster");
+        if (g == 0)
+            g = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                       "StockEaster");
+        return g;
+    };
+
+    double aiceas = DNOTST;
+    double aicno = DNOTST;
+    bool lmanyE = false;
+    int nbnoe = 0, nbe = 0;
+    int easgrp = 0;
+
+    for (int i = 1; i <= ar.neasvc; ++i) {
+        // Delete any Easter regressors already present (easaic.f:80-98).
+        if (x11.neas > 0) {
+            for (int j = 1; j <= x11.neas; ++j) {
+                easgrp = find_eas_group();
+                if (easgrp > 0) {
+                    int begcol = m.grp(easgrp - 1);
+                    int ncol = m.grp(easgrp) - begcol;
+                    dlrgef(ctx, begcol, ar.nrxy, ncol);
+                    if (ctx.error.lfatal) return;
+                }
+            }
+            x11.neas = 0;
+        }
+
+        // Add the new Easter regressor (easaic.f:102-130).
+        if (i > 1 || easgrp > 0) {
+            lmanyE = (i == ar.neasvc && ar.easvec(ar.neasvc) == 99);
+            if (lmanyE) {
+                for (int j = 2; j <= ar.neasvc - 1; ++j) {
+                    addeas(ctx, ar.easvec(j) + m.easidx, m.easidx, ar.eastst);
+                    if (ctx.error.lfatal) return;
+                }
+                x11.neas = ar.neasvc - 2;
+            } else if (i > 1) {
+                addeas(ctx, ar.easvec(i) + m.easidx, m.easidx, ar.eastst);
+                if (ctx.error.lfatal) return;
+                x11.neas = 1;
+            }
+            regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0,
+                   ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, pr.priadj,
+                   ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+            if (ctx.error.lfatal) return;
+        }
+
+        if (m.nopr > 0) {
+            int endlag = m.opr(m.nopr) - 1;
+            for (int ilag = 1; ilag <= endlag; ++ilag)
+                if (!m.arimaf(ilag)) d.arimap(ilag) = m.ap1(ilag);
+        }
+
+        bool argok = ar.lautom || ar.lautox;
+        rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) abend(ctx);
+        if (ctx.error.lfatal) return;
+        if (armaer_is_fatal(d.armaer) ||
+            ((ar.lautom || ar.lautox) && !argok)) {
+            lester = true;
+            return;
+        }
+        if (d.armaer != 0) d.armaer = 0;
+
+        prlkhd(ctx, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), aj.adjmod, ar.fcntyp,
+               ar.lam);
+        if (ctx.error.lfatal) return;
+        double aicc = ctx.lkhd.aicc;
+
+        if (i == 1) {
+            aicno = aicc;
+            nbnoe = m.nb;
+        } else {
+            if (i == 2) {
+                aiceas = aicc;
+                ar.aicind = ar.easvec(i);
+                nbe = m.nb;
+            } else if (lmanyE) {
+                if (!dpeq(ar.pvaic, DNOTST)) {
+                    int aicdf = m.nb - nbe;
+                    double thiscv = chsppf(ar.pvaic, aicdf);
+                    ar.rgaicd(PEAIC) = thiscv - 2.0 * static_cast<double>(aicdf);
+                }
+            }
+            ar.dfaice = aiceas - aicc;
+            if (ar.dfaice > ar.rgaicd(PEAIC)) {
+                ar.aicind = ar.easvec(i);
+                aiceas = aicc;
+                if (!dpeq(ar.pvaic, DNOTST)) nbe = m.nb;
+            }
+        }
+    }
+
+    // ---- decide Easter vs no-Easter (easaic.f:220-231) ----
+    ar.dfaice = aicno - aiceas;
+    if (!dpeq(ar.pvaic, DNOTST)) {
+        int aicdf = nbe - nbnoe;
+        double thiscv = chsppf(ar.pvaic, aicdf);
+        (void)thiscv;
+        ar.rgaicd(PEAIC) = thiscv - 2.0;  // easaic.f:224 (note: NOT thiscv-2*df)
+    }
+    if (ar.dfaice > ar.rgaicd(PEAIC)) {
+        // keep the best Easter model
+    } else {
+        ar.aicind = -1;
+    }
+
+    // ---- re-estimate the best model if it was not the last one (easaic.f:295) ----
+    if (ar.aicind < ar.easvec(ar.neasvc)) {
+        for (int j = 1; j <= x11.neas; ++j) {
+            easgrp = find_eas_group();
+            int begcol = m.grp(easgrp - 1);
+            int ncol = m.grp(easgrp) - begcol;
+            dlrgef(ctx, begcol, ar.nrxy, ncol);
+            if (ctx.error.lfatal) return;
+        }
+        if (!ctx.error.lfatal && ar.aicind >= 0)
+            addeas(ctx, ar.aicind + m.easidx, m.easidx, ar.eastst);
+        if (m.nopr > 0) {
+            int endlag = m.opr(m.nopr) - 1;
+            for (int ilag = 1; ilag <= endlag; ++ilag)
+                if (!m.arimaf(ilag)) d.arimap(ilag) = m.ap1(ilag);
+        }
+        bool argok = ar.lautom || ar.lautox;
+        if (!ctx.error.lfatal)
+            regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0,
+                   ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, pr.priadj,
+                   ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+        if (!ctx.error.lfatal)
+            rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) lester = true;
+    }
+}
+
+}  // namespace x13
