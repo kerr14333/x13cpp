@@ -13,15 +13,14 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
    adequacy stage is wired into `automd` (after `amdid`). Until then treat their
    correctness as unproven.
 
-2. **usdeaths / region final-model transformation is NOT yet explained.** Our
-   `iddiff` (0,1) and `amdid` `(1 0 1)(0 1 1)` match the oracle's "Automatic model
-   choice" EXACTLY (verified). The oracle then rewrites it to `(0 1 1)(0 1 1)`.
-   I first guessed `testodf`, but testodf's regular branch needs `ldr>0` and the
-   amdid model has `ldr=0` — so testodf does NOT do it. **The actual routine
-   (likely `tstmd1` Ljung-Box re-identification, or a differencing recheck in
-   automd's finalization loop) is unconfirmed.** Trace `automd.f` lines ~500-850
-   for the `(1 0 1)(0 1 1) -> (0 1 1)(0 1 1)` step before porting the "fix".
-   Gated on identification only; see automdl_scouting.md §3c.
+2. **usdeaths / region final-model rewrite = `tstmd1` (TRACED, not yet ported).**
+   Our `iddiff` (0,1) and `amdid` `(1 0 1)(0 1 1)` match the oracle exactly. The
+   rewrite to `(0 1 1)(0 1 1)` is `tstmd1` reverting to the airline default when
+   the identified model's AR(1) is near-unit (ichk=4/5, Arimap(2)>=0.82;
+   tstmd1.f:167-174). Fix = port tstmd1 + bkdfmd (+maybe ssprep) and plumb the
+   default-model stats (Pdfm/Rsddfm/Tair) through automd. Verify the exact ichk
+   thresholds + the default-stats capture match the oracle when ported. See
+   automdl_scouting.md §3c.
 
 3. **testodf deferred branches** — the `Lsovdf` seasonal-regressor path (needs
    `sftest`, not ported) and the outlier branches (`amidot`/`clrotl`) are stubbed

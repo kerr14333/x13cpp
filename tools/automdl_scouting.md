@@ -184,15 +184,25 @@ Checking for nonseasonal overdifferencing.              <- testodf
 Final automatic model choice : (0 1 1)(0 1 1)           <- testodf REWRITES the model
 ```
 
-So `testodf` (over-differencing test) converts the near-unit AR(1) of
-`(1 0 1)(0 1 1)` into a regular difference → `(0 1 1)(0 1 1)`. region_north is the
-same class (its `(1 2 2)(0 1 1)` → `(3 2 1)(0 1 1)` comes from the adequacy
-retry, likely `tstmd1`). **Fix = port the adequacy stage and wire it into automd
-after amdid.** Leaves: `mdlchk` DONE, `tstmd2` DONE; still need `testodf`
-(usdeaths), `tstmd1` (region), plus `bkdfmd`/`ssprep`/`sftest`. testodf deps:
-adrgef/regvar/rgarma/mdlchk (ported) + sftest + the outlier branches
-(amidot/clrotl, gated off for no-outlier specs). Both usdeaths and region are
-gated on identification only until the adequacy stage lands.
+The rewrite is **`tstmd1`** (NOT testodf — testodf's regular branch needs ldr>0
+and the amdid model has ldr=0). tstmd1 compares the identified model to the
+DEFAULT airline model and, on any of five adequacy conditions (`ichk=1..5`),
+**reverts to the airline default** `(0 1 1)(0 1 1)` (idr=ids=iqr=iqs=1,
+ipr=ips=0; ids=iqs=0 for Sp=1). usdeaths hits **`ichk=5`/`ichk=4`**: the model is
+`(1 0 1)(0 1 1)` (idr=0,ids=1,ipr=1,ips=0,iqr=1,iqs=1) and its AR(1)
+`Arimap(2)` is near-unit (>=0.82, tstmd1.f:167-174) → revert to airline default.
+So it is a near-unit AR root being recognized as the airline model. region_north
+is the same routine (a different ichk / insignificant-lag reduction).
+
+**Fix = port `tstmd1` and wire it into automd after amdid**, with the default-
+model statistics plumbed in: before iddiff, automd must estimate the default
+airline model and capture `Pdfm`/`Rsddfm` (mdlchk residual p-value + mse) and
+`Tair(1..2)` (armats t-stats of the default MA coeffs), then pass them to
+tstmd1. Leaves status: `mdlchk` DONE, `tstmd2` DONE, `testodf` DONE (banked).
+Still needed for tstmd1: `bkdfmd` (model backup/restore, ~137 lines + a new
+backup common), maybe `ssprep` (rgarma may self-prep — verify), and the automd
+default-stats capture + the tstmd1 call wiring. Both usdeaths and region gated on
+identification only until this lands.
 
 ## 4. First corpus gate target
 
