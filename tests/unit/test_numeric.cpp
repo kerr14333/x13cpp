@@ -2232,6 +2232,26 @@ TEST("smeadl: mean-deletion over a range") {
     CHECK(y[0] == 1.0 && y[4] == 9.0);   // outside range untouched
 }
 
+// ---- totals / sdev (strided sum-average / std-dev for iddiff's mean test). ---
+// Exact by construction; DNOTST (-999) obs are skipped.
+TEST("totals: iopt total/average/absavg/count") {
+    const double x[5] = {2.0, -4.0, 6.0, -999.0, 10.0};  // one flagged obs
+    CHECK(totals(x, 1, 5, 1, 0) == 14.0);   // total, DNOTST skipped
+    CHECK(totals(x, 1, 5, 1, 1) == 14.0 / 4.0);   // average over 4 good obs
+    CHECK(totals(x, 1, 5, 1, 2) == 22.0 / 4.0);   // absolute average
+    CHECK(totals(x, 1, 5, 1, 3) == 4.0);    // good-obs count
+    const double z[3] = {-999.0, -999.0, -999.0};
+    CHECK(totals(z, 1, 3, 1, 1) == -999.0);   // no good obs -> DNOTST
+}
+
+TEST("sdev: iopt mean-modes over a strided range") {
+    const double x[5] = {2.0, 4.0, 6.0, 8.0, 10.0};   // mean 6, var 8
+    CHECK(std::abs(sdev(x, 1, 5, 1, 0) - std::sqrt(8.0)) < 1e-12);  // series mean
+    CHECK(std::abs(sdev(x, 1, 5, 1, 1) - std::sqrt(44.0)) < 1e-12); // mean 0
+    // Strided: obs 1,3,5 = {2,6,10}, mean 6, var (16+0+16)/3
+    CHECK(std::abs(sdev(x, 1, 5, 2, 0) - std::sqrt(32.0 / 3.0)) < 1e-12);
+}
+
 // ---- outlier-identification leaves (shlsrt/medabs/makotl/dppdi/ttest). -------
 // Numeric leaves of idotlr.f's automatic outlier scan. Golden values from
 // ref_outlier.f (leaves driven directly on small fixed inputs).

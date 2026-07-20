@@ -69,6 +69,14 @@ double sumf(const double* x, int n1, int n2);
 // the differenced series before ACF/regression work. x is 1-based (x[0]==X(1)).
 void smeadl(double* x, int n1, int n2, int n, double& xmean);
 
+// totals.f: sum/average over the strided 1-based range [i,j] step k, skipping
+// DNOTST obs. iopt 0=total, 1=average, 2=abs average, 3=good-obs count.
+double totals(const double* x, int i, int j, int k, int iopt);
+
+// sdev.f: standard deviation over the strided range [i,j] step k. iopt<1 uses
+// the series mean, ==1 assumes mean 0, else assumes mean 1.
+double sdev(const double* x, int i, int j, int k, int iopt);
+
 // shlsrt.f: in-place ascending shell sort of vecx[0..nr-1] (gap = nr/2, halved).
 void shlsrt(int nr, double* vecx);
 

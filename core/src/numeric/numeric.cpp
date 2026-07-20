@@ -2,6 +2,7 @@
 // vendored oracle Fortran: dpmpar.f, dpeq.f, scrmlt.f, maxvec.f, dcopy.f,
 // daxpy.f, ddot.f (+ its UNDERFLOW helper), revrse.f, enorm.f.
 #include "numeric/numeric.hpp"
+#include "gen/notset.hpp"  // prm::DNOTST
 
 #include <cmath>
 #include <limits>
@@ -488,6 +489,46 @@ void smeadl(double* x, int n1, int n2, int n, double& xmean) {
     double an = static_cast<double>(n);
     xmean = sumf(x, n1, n2) / an;
     for (int i = n1; i <= n2; ++i) x[i - 1] -= xmean;
+}
+
+// totals.f -- sum/average over the strided 1-based range [i,j] step k, skipping
+// DNOTST-flagged obs. iopt: 0=total, 1=average, 2=absolute average, 3=count of
+// good obs. Average with no good obs returns DNOTST.
+double totals(const double* x, int i, int j, int k, int iopt) {
+    double tot = 0.0, fn = 0.0;
+    for (int l = i; l <= j; l += k) {
+        if (!dpeq(x[l - 1], prm::DNOTST)) {
+            if (iopt == 2)
+                tot += std::abs(x[l - 1]);
+            else if (iopt < 3)
+                tot += x[l - 1];
+            if (iopt != 0) fn += 1.0;
+        }
+    }
+    if (iopt == 3) return fn;
+    if (iopt != 0) return fn > 0.0 ? tot / fn : prm::DNOTST;
+    return tot;
+}
+
+// sdev.f -- standard deviation over the strided range [i,j] step k (DNOTST
+// skipped). iopt<1 subtracts the series mean (totals iopt=1); iopt==1 assumes
+// mean 0; else mean 1. No good obs returns DNOTST.
+double sdev(const double* x, int i, int j, int k, int iopt) {
+    double ave;
+    if (iopt < 1)
+        ave = totals(x, i, j, k, 1);
+    else if (iopt == 1)
+        ave = 0.0;
+    else
+        ave = 1.0;
+    double s = 0.0, fn = 0.0;
+    for (int l = i; l <= j; l += k) {
+        if (!dpeq(x[l - 1], prm::DNOTST)) {
+            s += (x[l - 1] - ave) * (x[l - 1] - ave);
+            fn += 1.0;
+        }
+    }
+    return fn > 0.0 ? std::sqrt(s / fn) : prm::DNOTST;
 }
 
 // shlsrt.f -- ascending shell sort, in place (1-based logic preserved via the
