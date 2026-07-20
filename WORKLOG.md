@@ -247,9 +247,25 @@ pip cmake when adding files.
   printing + save files, the x11-regression (lxreg) path, and the diagnostic
   "almost outlier" reduced-critical re-scan (never changes the model); the
   corrected (Cvtype) critical-value variant.
-- **Next** — the deferred M2 regressor branches, the .out/.fct print engine
-  (byte-exact save-file emission), and automatic model identification (automdl).
-  See `tools/m3_scouting.md` §5 Tier-6/7 and §7.
+- **M4 (automatic model selection / `automdl`) STARTED.** Scouted the
+  `automd.f` TRAMO flow (`tools/automdl_scouting.md`): call graph, leaf tiers,
+  parity risks, first gate = `census-examples/03-automdl.spc`. **24/76 corpus
+  specs use automdl** — the biggest single remaining feature. Everything funnels
+  through the already-ported rgarma + regvar. Pure-numeric leaf tier landed and
+  unit-verified: `chsppf` (chi-square PPF for the AIC-test critical value),
+  `gauss`+`chisq` (central-normal / chi-square-upper-tail probs for the
+  regressor chi-square test), `sumf`+`smeadl` (span sum + mean-deletion for
+  iddiff/amdid). Golden values from `ref_chsppf.f`/`ref_chisq.f` (oracle driven
+  directly); `test_numeric` = 86. Remaining automdl leaves
+  (chkrt1/chkurt/genrtt/chitst/amdest/iddiff/amdid) are **stateful** (need a
+  built ctx.model) — verified through the corpus gate, not microtests; port
+  order + approach recorded in the scouting doc §2. (chkrt1/chkurt just mirror
+  the verified estimate.cpp:290-370 root-iteration loop.)
+- **Next** — the stateful iddiff/amdid subtree (differencing + ARMA-order
+  identification, gate on 03-automdl), then the AIC-test family + adequacy tests
+  (tstmd1/2/odf) + the automd driver. Also still open: deferred M2 regressor
+  branches and the .out/.fct print engine. See `tools/automdl_scouting.md` and
+  `tools/m3_scouting.md` §5 Tier-6/7.
 - **Packaging scaffolding (r-pkg/py-pkg) built by an agent, parked on branch
   `worktree-agent-ae1edc2bc3b17f4d4`** (NOT merged; merge after the main
   milestones). R CMD check / twine check clean; datasets bundled; result-object
