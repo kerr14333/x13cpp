@@ -128,6 +128,23 @@ that pins it.
 - **Modernize:** gate the `itv` increment on `.not.Arimaf(ilag)` (and skip
   emitting a t-stat for fixed lags), matching `armacr`'s correct indexing.
 
+## CB-7 — endsf `Savg(j1)/Sumwt` divides the seasonal-MA centre point twice
+
+- **Where:** `oracle/fortran/endsf.f` — the two unconditional
+  `Savg(j1)=Savg(j1)/Sumwt` / `Savg(j2)=Savg(j2)/Sumwt` normalizations in the
+  seasonal-MA end-weight application (the `jk<=K` branch).
+- **Severity:** `latent` — `j1` and `j2` are a symmetric pair of end positions;
+  for odd `K` at the centre span they collapse to `j1==j2`, so the single centre
+  element is normalized by `Sumwt` **twice** (i.e. divided by `Sumwt²`).
+- **Symptom:** the centre seasonal-MA end value is under-weighted by a factor of
+  `Sumwt` whenever the odd-K centre case is hit. Does not trigger for the common
+  3x3/3x5/3x9/3x15 filters at the params exercised so far, but is a real
+  off-by-a-division at that boundary.
+- **Port:** `core/src/x11/x11filt.cpp` (endsf) — reproduced verbatim with a code
+  comment. Not yet pinned by a failing case (the X-11 leaf tests use params where
+  `j1!=j2`); revisit when the D10 seasonal end-filter gate lands.
+- **Modernize:** guard the second division with `IF(j2.ne.j1)`.
+
 ---
 
 _Append new entries as they are found while porting. Keep each pinned to a test._
