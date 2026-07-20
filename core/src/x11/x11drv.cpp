@@ -12,8 +12,9 @@
 #include "x11/x11seas.hpp"       // vsfa, vsfb
 #include "x11/x11xtrm.hpp"       // xtrm, replac, vtest, entsch
 #include "specparse/specparse.hpp"  // copy
-#include "numeric/numeric.hpp"   // dpeq
+#include "numeric/numeric.hpp"   // dpeq, dpow_ri
 
+#include <algorithm>
 #include <cmath>
 
 namespace x13 {
@@ -23,6 +24,54 @@ namespace {
 // vtc's /work/ Temp scratch is dimensioned PLEN in the Fortran.
 constexpr int PLEN = 1020;
 }  // namespace
+
+// setxpt.f -- set the X-11 span "pointers" (Pos1bk/Pos1ob/Posfob/Posffc) that
+// bracket backcasts / data / forecasts inside the padded buffer.
+void setxpt(X13Context& ctx, int nf2, bool lsadj, int fctdrp) {
+    extend_cmn& ext = ctx.extend;
+    x11ptr_cmn& ptr = ctx.x11ptr;
+    const int lsp = ctx.lzero.lsp;
+
+    int nspobs = ext.nofpob - nf2;
+    ptr.pos1bk = ext.nbcst2 - ext.nbcst + lsp;
+    ptr.pos1ob = ext.nbcst2 + lsp;
+    ptr.posfob = ext.nbcst2 + nspobs + lsp - 1;
+    ptr.posffc = ext.nbcst2 + nspobs + ext.nfcst + lsp - 1;
+    if ((!lsadj) && fctdrp > 0)
+        ptr.posffc = std::max(ptr.posfob, ptr.posffc - fctdrp);
+}
+
+// forcst.f -- forecast/backcast the seasonals from Ie+1..Ke (and Ib-1..Ib-l),
+// Iorder-order differences, weight Wt, inter-difference ratio R. Pure numeric.
+void forcst(double* sts, int ib, int ie, int ke, int nyr, int iorder, double wt,
+            double r) {
+    auto STS = [&](int i) -> double& { return sts[i - 1]; };
+
+    double w;
+    if (!dpeq(r, 1.0)) {
+        w = wt * (r - 1.0) / (dpow_ri(r, iorder) - 1.0);
+    } else {
+        w = wt;
+    }
+    int l = ke - ie;
+    for (int i = 1; i <= l; ++i) {
+        int j = ie + i;
+        STS(j) = STS(j - nyr);
+        for (int k = 1; k <= iorder; ++k)
+            STS(j) = STS(j) + w * dpow_ri(r, iorder - k) *
+                                  (STS(j - k * nyr) - STS(j - (k + 1) * nyr));
+    }
+    // Backcast from Ib-1 to Ib-l.
+    if (ib > 1) {
+        for (int i = 1; i <= l; ++i) {
+            int j = ib - i;
+            STS(j) = STS(j + nyr);
+            for (int k = 1; k <= iorder; ++k)
+                STS(j) = STS(j) + w * dpow_ri(r, iorder - k) *
+                                      (STS(j + k * nyr) - STS(j + (k + 1) * nyr));
+        }
+    }
+}
 
 // vtc.f -- variable trend cycle. Selects the Henderson trend-filter length from
 // the measured I/C ratio (Ratic) after a first (Ny+1)-term pass, then re-filters.

@@ -11,6 +11,20 @@ namespace x13 {
 
 struct X13Context;
 
+// setxpt.f: set the X-11 span pointers Pos1bk/Pos1ob/Posfob/Posffc (in
+// ctx.x11ptr) that mark where backcasts / observed data / forecasts begin and
+// end in the padded buffer, from ctx.extend (Nofpob/Nbcst2/Nbcst/Nfcst) and
+// ctx.lzero (Lsp). nf2 drops trailing obs; when !lsadj and fctdrp>0 the forecast
+// end is pulled back by fctdrp (not below Posfob).
+void setxpt(X13Context& ctx, int nf2, bool lsadj, int fctdrp);
+
+// forcst.f: forecast the seasonals from Ie+1..Ke and backcast Ib-1..Ib-l using
+// Iorder-order seasonal differences (period Nyr), forecast weight Wt, and ratio R
+// between successive differences. Operates in place on the 1-based sts buffer.
+// Pure numeric (no ctx); uses dpow_ri for the R**k terms (oracle-exact).
+void forcst(double* sts, int ib, int ie, int ke, int nyr, int iorder, double wt,
+            double r);
+
 // vtc.f: VARIABLE TREND CYCLE. Applies a first-pass (Ny+1)-term Henderson to
 // stci->stc, forms the irregular (stci/stc), measures the I-bar/C-bar ratio
 // (Ratic, written to ctx.x11opt), and from it selects the final Henderson length

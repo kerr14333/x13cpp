@@ -14,22 +14,11 @@
 #include "numeric/numeric.hpp"  // dpeq
 
 namespace x13 {
-namespace {
-
-constexpr int PORDER = 36;  // model.prm: 3*PSP, PSP=12
-constexpr int PARR = PORDER + 2;  // 1-based arrays, indices 1..PORDER+1
-
-// RPOLY shared scratch (Fortran global.cmn). Private to this translation unit.
-struct RpolyState {
-    double P0[PARR], Qp[PARR], K[PARR], Qk[PARR], Svk[PARR];
-    double Snr, Sni, U, V0, A0, B0, C, D0, A1, A3, A7, E, F, G, H;
-    double Szr, Szi, Lzr, Lzi, Eta, Are, Mre;
-    int N, N0;
-};
 
 // gfortran real(8)**int(4): square-and-multiply, reciprocal for n<0. Used for
 // the RPOLY machine constant and the coefficient scale factor so both match the
-// oracle exactly (std::pow would differ in the last bit).
+// oracle exactly (std::pow would differ in the last bit). Exported via
+// numeric.hpp (forcst and other x11 leaves reuse it for R**k terms).
 double dpow_ri(double base, int n) {
     if (n == 0) return 1.0;
     bool neg = n < 0;
@@ -45,6 +34,19 @@ double dpow_ri(double base, int n) {
     }
     return neg ? 1.0 / pow : pow;
 }
+
+namespace {
+
+constexpr int PORDER = 36;  // model.prm: 3*PSP, PSP=12
+constexpr int PARR = PORDER + 2;  // 1-based arrays, indices 1..PORDER+1
+
+// RPOLY shared scratch (Fortran global.cmn). Private to this translation unit.
+struct RpolyState {
+    double P0[PARR], Qp[PARR], K[PARR], Qk[PARR], Svk[PARR];
+    double Snr, Sni, U, V0, A0, B0, C, D0, A1, A3, A7, E, F, G, H;
+    double Szr, Szi, Lzr, Lzi, Eta, Are, Mre;
+    int N, N0;
+};
 
 // quadsd.f -- divide p by the quadratic (1,u,v); quotient in q, remainder in a,b.
 void quadsd(int nn, double u, double v, const double* p, double* q, double& a,

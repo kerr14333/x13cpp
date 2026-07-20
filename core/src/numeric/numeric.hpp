@@ -101,6 +101,11 @@ double dpmpar(int i);
 // lmdif/qrfac/lmpar/enorm as the exact ==-style test; port before its callers.
 bool dpeq(double x, double dtargt);
 
+// gfortran real(8)**int(4): square-and-multiply (reciprocal for n<0). Matches
+// the oracle's `x**n` bit for bit where std::pow would differ in the last ULP.
+// (Defined in rpoly.cpp.)
+double dpow_ri(double base, int n);
+
 // scrmlt.f: scale x[0..n-1] by scalar c in place.
 void scrmlt(double c, int n, double* x);
 
