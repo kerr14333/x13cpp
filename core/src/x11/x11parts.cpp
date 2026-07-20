@@ -419,4 +419,295 @@ void x11pt2(X13Context& ctx, bool /*lmodel*/, bool lx11, bool lseats,
     }
 }
 
+// x11pt3.f -- X-11 PARTS D8->D16: the finals. Consumes the D7 trend/seasonal
+// left by x11pt2 and lands the final seasonal (D10=Sts), final SA (D11=Stci),
+// final trend (D12=Stc), final irregular (D13=Sti), and combined factors
+// (D16=ststd) in the ctx table arrays; also builds the unmodified/modified SI
+// (D8=Stsie / D9=Temp) and the Part-E modified series (E1=Stome / E3=Stime /
+// E2=Stcime). Base decomposition path only (see the header) -- gated-off feature
+// branches fatal cleanly via x11_not_ported keyed to their activating flag, the
+// D8 F/M diagnostics and the residual-seasonality ftest are deferred no-ops, and
+// every table/punch/x11plt/prttrn/prtd8b/prtd9a/writln call is dropped.
+//
+// The transient COMMON scratch /work/ Temp, /work3/ Stsie, /mq10/ Stex, /mq5a/
+// Stime, /kcser/ Ckhs are function-local PLEN buffers here (as in x11pt2). Stex
+// in particular carries the last-iteration extreme component out of x11pt2's
+// /mq10/; the driver wiring x11pt2 -> x11pt3 must persist it (D8/D9 depend on
+// it). The finals D10-D13/D16 do not.
+void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
+    x11opt_cmn& opt = ctx.x11opt;
+    x11ptr_cmn& ptr = ctx.x11ptr;
+    orisrs_cmn& os = ctx.orisrs;
+    x11srs_cmn& srs = ctx.x11srs;
+    xtrm_cmn& xt = ctx.xtrm;
+    extend_cmn& ext = ctx.extend;
+    inpt_cmn& in = ctx.inpt;
+    adxser_cmn& ax = ctx.adxser;
+    const x11adj_cmn& adj = ctx.x11adj;
+    const adj_cmn& adjc = ctx.adj;       // Cnstnt
+    const prior_cmn& pri = ctx.prior;    // Kfmt, Priadj, Lprntr
+    const priusr_cmn& pu = ctx.priusr;   // Nustad, Nuspad
+    const hiddn_cmn& hid = ctx.hiddn;    // Lhiddn, Issap, Irev, Ixreg
+    const force_cmn& frc = ctx.force;    // Iyrt, Lrndsa
+    const x11log_cmn& xl = ctx.x11log;   // Axrgtd, Axrghl
+
+    const int pos1bk = ptr.pos1bk;
+    const int pos1ob = ptr.pos1ob;
+    const int posfob = ptr.posfob;
+    const int posffc = ptr.posffc;
+    const int ny = opt.ny;
+    const int muladd = opt.muladd;   // 0 (mult) on the base path
+    const bool psuadd = ctx.x11msc.psuadd;
+
+    double* sts = srs.sts.data();
+    double* stsi = srs.stsi.data();
+    double* stc = srs.stc.data();
+    double* stc2 = srs.stc2.data();
+    double* stci = srs.stci.data();
+    double* sti = srs.sti.data();
+    double* stcsi = os.stcsi.data();
+    double* stwt = xt.stwt.data();
+    double* series = in.series.data();
+    double* stome = ax.stome.data();
+    double* stcime = ax.stcime.data();
+    double* stci2 = ax.stci2.data();
+
+    // Transient COMMON scratch (function-local PLEN, as in x11pt2).
+    double temp[PLEN];    // /work/  Temp   (D9 replacement buffer)
+    double stsie[PLEN];   // /work3/ Stsie  (D8 unmodified SI)
+    double stex[PLEN];    // /mq10/  Stex   (extreme component; carries from x11pt2)
+    double stime[PLEN];   // /mq5a/  Stime  (E3 modified irregular)
+    double ckhs[PLEN];    // /kcser/ Ckhs   (SA snapshot; dead on the base path)
+    double ststd[PLEN];   // ststd          (D16 combined factors)
+    double sp2[PLEN];     // sp2            (Sprior snapshot; dead on the base path)
+
+    // Snapshot the prior factors (used only by the off-base Adj* Sprior restore).
+    copy(in.sprior.data(), PLEN, 1, sp2);
+    ext.nfcst = posffc - posfob;
+    const int nfcst = ext.nfcst;
+
+    // --- D8: MSR seasonal-filter (re)selection + unmodified SI ---
+    if (opt.kfulsm < 2 && xt.ksdev <= 1)
+        sfmsr(ctx, sts, stsi, pos1bk, posfob, posffc);
+    addmul(stsie, stsi, stex, pos1bk, posffc, muladd);
+    // (deferred: D8 table/punch.)
+
+    // D8 analysis of variance on the unmodified SI ratios.
+    if (!hid.lhiddn && opt.khol != 1) {
+        // deferred diagnostics: ftest/kwtest/mstest/COMBFT (D8 F/moving-seasonality
+        // tests). ftest/mstest are read-only on the series; kwtest sorts Stsie in
+        // place but Stsie is dead downstream on the base path (only deferred prints
+        // read it) and is rebuilt by the addmul below; COMBFT takes no series arg.
+        // All stubbed no-ops.
+        addmul(stsie, stsi, stex, pos1bk, posffc, muladd);  // rebuild Stsie post-kwtest
+    }
+    // (Issap==2 sliding-spans alt diagnostic branch: off base.)
+
+    double ebar = 0.0;
+    if (muladd == 0) ebar = 1.0;
+
+    // Ksdev>1 (calendarsigma / override) extreme re-replacement -- ported leaves,
+    // off the single-sigma base path.
+    if (xt.ksdev > 1) {
+        copy(stsie, posfob, 1, stsi);
+        replac(stsi, temp, stwt, pos1bk, posfob, ny);
+        if (opt.kfulsm < 2) sfmsr(ctx, sts, stsi, pos1bk, posfob, posffc);
+    }
+    // (deferred: D8B prtd8b.)
+
+    // D9: identify which SI ratios are modified (extreme); mark stc2 = ebar.
+    for (int i = pos1bk; i <= posffc; ++i) {
+        if (!dpeq(stex[i - 1], ebar)) temp[i - 1] = stsi[i - 1];
+        else temp[i - 1] = prm::DNOTST;
+        stc2[i - 1] = ebar;
+    }
+    // (deferred: D9 table/punch/prtd9a.)
+
+    // Year-ahead seasonal factors.
+    int klda = posffc + ny;
+    if (opt.kfulsm < 2) forcst(sts, 0, posffc, klda, ny, 1, 0.5, 1.0);
+
+    // --- D10: modified seasonally adjusted series (Kfulsm==0 base path) ---
+    if (opt.kfulsm == 2) {
+        x11_not_ported(ctx, "x11pt3 Kfulsm==2 full-seasonal D10 branch");
+        return;
+    }
+    if (psuadd) {
+        x11_not_ported(ctx, "x11pt3 pseudo-additive D10/D11 (Psuadd)");
+        return;
+    }
+    divsub(stci, stcsi, sts, pos1bk, posffc, muladd);  // modified SA
+    if (muladd == 2) {
+        x11_not_ported(ctx, "x11pt3 log-additive antilog of seasonal factors");
+        return;
+    }
+    if (adj.adjsea == 1 || adj.adjso == 1) {
+        x11_not_ported(ctx, "x11pt3 regARIMA-seasonal combine (Adjsea/Adjso)");
+        return;
+    }
+    if (opt.ishrnk > 0) {
+        x11_not_ported(ctx, "x11pt3 seasonal shrinkage (Ishrnk)");
+        return;
+    }
+    // (deferred: D10 table/punch/x11plt, D10b/EARS/SNS emits.)
+    if (hid.issap == 2) {
+        x11_not_ported(ctx, "x11pt3 sliding-spans seasonal store (ssrit)");
+        return;
+    }
+    if (hid.irev == 4) {
+        x11_not_ported(ctx, "x11pt3 revisions seasonal store (getrev)");
+        return;
+    }
+    opt.muladd = opt.tmpma;  // restore the model's adjustment mode
+
+    // Snapshot the modified SA for the summary-only path (dead on the base path).
+    copy(stci + (pos1bk - 1), ext.nbfpob, 1, ckhs + (pos1bk - 1));
+
+    klda = posfob + ny;
+    if (nfcst > 0) klda = posfob + nfcst;
+    const int k2 = klda - pos1bk + 1;
+
+    if (opt.kfulsm != 0) {
+        // Kfulsm==1 (summary measures) replaces D11 with D1 and re-runs vtc; the
+        // full body is unported (base gate is Kfulsm==0).
+        x11_not_ported(ctx, "x11pt3 Kfulsm==1 summary-measures branch");
+        return;
+    }
+
+    // --- D12: final trend cycle via the variable trend-cycle filter ---
+    vtc(ctx, stc, stci);
+    // (deferred: finaltrendma savelog.)
+    if (muladd == 2) {
+        x11_not_ported(ctx, "x11pt3 log-additive trend antilog/bias (trbias)");
+        return;
+    }
+    if (muladd == 0) {
+        bool chkfct = false;  // Nfcst>0 & Prttab(LXETRF): deferred print -> false.
+        chktrn(ctx, stc, chkfct);  // oktrn/oktrf only gated deferred prints.
+    }
+    if (adj.adjls == 1 || adj.adjao == 1 || adj.adjtc == 1 || adj.adjusr == 1) {
+        x11_not_ported(ctx, "x11pt3 outlier/user factor fold-in (Adj*)");
+        return;
+    }
+
+    // --- D11: final seasonally adjusted series ---
+    divsub(stci, series, sts, pos1bk, posffc, muladd);
+    // Combined factors = seasonal factors (no trading-day component on base).
+    copy(sts + (pos1bk - 1), k2, 1, ststd + (pos1bk - 1));
+
+    // Calendar / trading-day / prior-length-of-month combine (all off base).
+    if (!adj.finhol && (opt.khol == 2 || (hid.ixreg > 0 && xl.axrghl) ||
+                        adj.adjhol == 1)) {
+        x11_not_ported(ctx, "x11pt3 holiday factor rebuild (Faccal)");
+        return;
+    }
+    if ((adj.adjtd == 1 || (hid.ixreg > 0 && xl.axrgtd)) ||
+        ((adj.finhol && (hid.ixreg > 0 && xl.axrghl)) || adj.adjhol == 1) ||
+        opt.kswv > 0) {
+        x11_not_ported(ctx, "x11pt3 trading-day/holiday combine into D11/D16");
+        return;
+    }
+    if ((adj.adjtd == 0 || opt.kswv == 0) && pri.priadj > 1) {
+        x11_not_ported(ctx, "x11pt3 prior length-of-month fold-in (Priadj>1)");
+        return;
+    }
+    if (pu.nuspad > 0 || pri.priadj > 1) {
+        x11_not_ported(ctx, "x11pt3 prior-adjustment removal (rmpadj)");
+        return;
+    }
+
+    // --- D13: final irregular ---
+    divsub(sti, stci, stc, pos1bk, posffc, muladd);
+    if ((adj.finao && adj.nao > 0) || (adj.finls && adj.nls > 0) ||
+        (adj.fintc && adj.ntc > 0) || adj.finusr ||
+        (adj.adjls == 1 && adj.nls > 0) || (adj.adjao == 1 && adj.nao > 0) ||
+        (adj.adjtc == 1 && adj.ntc > 0) || adj.adjusr == 1) {
+        x11_not_ported(ctx, "x11pt3 final outlier/user re-adjustment of Stci/Sti");
+        return;
+    }
+    if (pu.nustad > 0) {
+        x11_not_ported(ctx, "x11pt3 user temporary-adjustment removal (Nustad)");
+        return;
+    }
+
+    // D11 write + residual-seasonality test. Base path: no temporary constant.
+    if (!dpeq(adjc.cnstnt, prm::DNOTST)) {
+        x11_not_ported(ctx, "x11pt3 constant removal from D11/original");
+        return;
+    }
+    // (deferred: D11 table/punch; residual-seasonality ftest(Stci) -- read-only.)
+
+    // Store SA for sliding-spans / revisions (off base).
+    if (hid.issap == 2 && frc.iyrt == 0 && !frc.lrndsa) {
+        x11_not_ported(ctx, "x11pt3 sliding-spans SA store (ssrit)");
+        return;
+    }
+    if (hid.irev == 4 && frc.iyrt == 0) {
+        x11_not_ported(ctx, "x11pt3 revisions SA store (getrev)");
+        return;
+    }
+    // (deferred: D11 forecast-portion table/x11plt.)
+
+    // Force yearly totals (Iyrt>0) is off base -> ELSE copies Stci into Stci2.
+    if (frc.iyrt > 0) {
+        x11_not_ported(ctx, "x11pt3 force yearly totals (qmap/qmap2)");
+        return;
+    }
+    copy(stci, posffc, 1, stci2);
+
+    if (frc.lrndsa) {
+        x11_not_ported(ctx, "x11pt3 rounded seasonally adjusted series (rndsa)");
+        return;
+    }
+
+    // --- D12 write: level-shift/temporary-change fold-in is off base; the ELSE
+    // is all deferred print (Cnstnt==DNOTST here). ---
+    if (((!adj.finls) && adj.adjls == 1) || (pu.nustad > 0 && pri.lprntr) ||
+        ((!adj.fintc) && lttc && adj.adjtc == 1)) {
+        x11_not_ported(ctx, "x11pt3 final-trend LS/TC fold-in (D12)");
+        return;
+    }
+    // (deferred: D12 table/prttrn/punch/x11plt of Stc.)
+    if (hid.irev == 4) {
+        x11_not_ported(ctx, "x11pt3 revisions trend store (getrev)");
+        return;
+    }
+    // (deferred: logadd trend bias-correction table -- Tmpma==2 only.)
+
+    // --- D13 write (all deferred): AO/TC restore branch is off base. ---
+    if (adj.adjao == 1 || (adj.adjtc == 1 && !lttc)) {
+        x11_not_ported(ctx, "x11pt3 D13 AO/TC restore (sti2)");
+        return;
+    }
+    // (deferred: D13 table/punch/x11plt of Sti.)
+
+    if (opt.khol == 1) return;
+    // (deferred: D16 table/punch of ststd; D16b Psuadd; D18 TD table -- all off
+    // base or pure deferred print.)
+
+    // --- PART E: modified original / SA / irregular series ---
+    opt.kpart = 5;
+    for (int i = pos1bk; i <= posffc; ++i) {
+        if (stwt[i - 1] > 0.0) {
+            stome[i - 1] = series[i - 1];
+            stime[i - 1] = sti[i - 1];
+            stcime[i - 1] = stci[i - 1];
+        } else {
+            stcime[i - 1] = stc[i - 1];   // base: not LS/Nustad -> final trend
+            stime[i - 1] = ebar;          // expected irregular
+            stome[i - 1] = series[i - 1] / sti[i - 1];  // muladd==0
+            // (nadj2==0 base: no Sprior fold; Finls==F: no Facls divide.)
+        }
+    }
+    if (adj.adjao == 1 || adj.adjtc == 1) {
+        x11_not_ported(ctx, "x11pt3 Part-E AO/TC removal from modified series");
+        return;
+    }
+    // (Cnstnt==DNOTST base: no constant subtract.)
+    if (adj.adjls == 1 || adj.adjusr == 1 || adj.adjao == 1 || adj.adjtc == 1) {
+        x11_not_ported(ctx, "x11pt3 Part-E Sprior restore (Adj*)");
+        return;
+    }
+}
+
 }  // namespace x13
