@@ -31,6 +31,18 @@ elseif(MSVC)
     /fp:except-)
 endif()
 
+# Optional gcov/gcovr code-coverage instrumentation (-DX13_COVERAGE=ON). Applied
+# to x13core PUBLIC so every executable/test linking it is instrumented too.
+option(X13_COVERAGE "Instrument for gcov coverage" OFF)
+add_library(x13_coverage INTERFACE)
+if(X13_COVERAGE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+  # Keep -O2 (via the RelWithDebInfo build type): the SEATS/root bit-exact goldens
+  # are last-ULP-sensitive to optimization level, so -O0 diverges. --coverage adds
+  # the gcov instrumentation without changing FP results at a fixed -O2.
+  target_compile_options(x13_coverage INTERFACE --coverage)
+  target_link_options(x13_coverage INTERFACE --coverage)
+endif()
+
 # Optional strict warnings (off by default; enable with -DX13_WARNINGS=ON).
 option(X13_WARNINGS "Enable strict warnings" OFF)
 add_library(x13_warnings INTERFACE)
@@ -56,7 +68,7 @@ target_include_directories(x13core PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/core/src"
   "${CMAKE_CURRENT_SOURCE_DIR}/core/prm"
   "${CMAKE_CURRENT_SOURCE_DIR}/core/prm/gen")
-target_link_libraries(x13core PUBLIC x13_fp_flags x13_warnings)
+target_link_libraries(x13core PUBLIC x13_fp_flags x13_warnings x13_coverage)
 
 # ---------------------------------------------------------------------------
 # x13parse -- M1 CLI harness: parse a spec file and print the .err channel,

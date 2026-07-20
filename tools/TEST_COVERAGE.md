@@ -1,5 +1,27 @@
 # Test-coverage roadmap — inputs & interactions
 
+## Formal code coverage (gcov / gcovr)
+
+Run `powershell -ExecutionPolicy Bypass -File tools/coverage.ps1` — builds an
+instrumented tree in `build-cov` (--coverage at -O2; -O0 breaks the last-ULP
+root-finder goldens), runs the unit (ctest) + parity (pytest, driving the
+instrumented harness exes via `X13_BIN_DIR`) suites, and writes
+`coverage/summary.txt` + browsable `coverage/index.html`. gcovr needs `-j 1` on
+Windows (parallel workers CreateProcess-fail). Both `build-cov/` and `coverage/`
+are gitignored.
+
+**Baseline (this commit):** lines **72.7%** (6756/9288), functions **88.7%**
+(244/275), branches 47.2%, over `core/src/` (generated `gen/` headers excluded).
+The uncovered lines are mostly: deferred print/error branches, and —
+- **`adqtst.cpp` 0%**: the banked adequacy routines (mdlchk/tstmd2/testodf/
+  bkdfmd/tstmd1) have NO caller yet (wire pending the automd finalization).
+- **`getreg_vars.cpp` 45% / `readers_val.cpp` 43%**: untested regression-variable
+  TYPES and value-reader branches — directly raised by the "more calendar/holiday
+  regressors" sweep below.
+Coverage is the objective driver for which specs to add next.
+
+
+
 What the parity corpus covers, what's testable NOW (features ported), and what's
 blocked on unported subsystems. Gate everything against the oracle
 (`oracle/fortran/x13as_ascii_O2.exe` via `oracle/run_oracle.py -s`), the pattern

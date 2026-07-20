@@ -32,7 +32,12 @@ RTOL = 1e-6
 
 
 def _find_binary(name: str, env_var: str, required: bool = True):
-    cands = [
+    # X13_BIN_DIR overrides the search (used by the coverage build-cov run).
+    bindir = os.environ.get("X13_BIN_DIR")
+    cands = []
+    if bindir:
+        cands += [os.path.join(bindir, name + ".exe"), os.path.join(bindir, name)]
+    cands += [
         os.path.join(_REPO, "build", name + ".exe"),
         os.path.join(_REPO, "build", name),
         os.path.join(_REPO, "build", "Release", name + ".exe"),

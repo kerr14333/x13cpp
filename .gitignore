@@ -43,3 +43,5 @@ Thumbs.db
 
 # Stray root CTest artifacts (ctest run from repo root)
 /Testing/
+build-cov/
+coverage/
