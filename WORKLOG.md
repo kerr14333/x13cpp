@@ -261,10 +261,40 @@ pip cmake when adding files.
   built ctx.model) — verified through the corpus gate, not microtests; port
   order + approach recorded in the scouting doc §2. (chkrt1/chkurt just mirror
   the verified estimate.cpp:290-370 root-iteration loop.)
-- **Next** — the stateful iddiff/amdid subtree (differencing + ARMA-order
-  identification, gate on 03-automdl), then the AIC-test family + adequacy tests
-  (tstmd1/2/odf) + the automd driver. Also still open: deferred M2 regressor
-  branches and the .out/.fct print engine. See `tools/automdl_scouting.md` and
+- **M4 substrate LANDED — the numeric + model-construction core of automdl**
+  (~10h 12m active dev to date). Everything below `automd`'s driver logic is
+  now ported and compiling, reusing the M3 roots/olsreg/regvar/rgarma engine:
+  - `automdl/idmodel.cpp` — `chkrt1`/`chkurt` (AR/MA root-modulus checkers for
+    the unit-root and over-differencing screens), mirroring estimate.cpp's
+    setmdl root loop.
+  - `automdl/mdlset.cpp` — `mdlint`/`mkmdsn`/`setopr`/`mdlset`: build a trial
+    ARIMA model from six explicit order counts (the no-lexer analogue of the
+    spec-driven getmdl path), reusing insopr/iscrfn/mkoprt/maxlag/polyml.
+  - `automdl/amdest.cpp` — the **Hannan-Rissen initial-estimate engine**:
+    `cnvmdl` (model → flat TRAMO orders), `acf` (sample ACF + Bartlett SEs +
+    Ljung-Box/Box-Pierce Q into ctx.autoq), `acfar` (AR-filtered autocovs),
+    `hrest` (Levinson-Durbin innovations + HR design-matrix OLS via the ported
+    olsreg; third-stage HR left disabled per the vendored source), and `amdest`
+    (drive one candidate; mixed AR+MA adds an AR-filter + MA-only pass).
+  - `totals`/`sdev` numeric leaves (strided sum-avg / std-dev for iddiff's
+    mean-significance test) — unit-verified, `test_numeric` = 88.
+  - `specparse/gtinpt.cpp` — the automdl parameter defaults (Ub1lim=1/0.96,
+    Ub2lim=0.88, Cancel=0.1, Frstar=2, Exdiff=2, Lchkmu/Lmixmd/Lotmod=T, …),
+    ported from gtinpt.f 221-267 (were unset while automdl was deferred).
+  The stateful routines have no lightweight microtest — they gate through the
+  corpus (per the scouting plan). `prterr` is ~all deferred print (only the
+  unknown-error branch has a non-print effect).
+- **Next — the automd driver chain, gated as a unit on 03-automdl.** The
+  remaining pieces are drivers that can only be verified together: `iddiff`
+  (differencing ID, +the 3-line `prterr`), the real `gtauto` automdl{} arg
+  parser (currently a `gt_generic` stub), `amdid`+`amdid2` (the BIC ARMA-order
+  grid using the landed `amdest`), then a minimal `automd` wired into run_m2
+  behind `automdl{}`. **iddiff cannot be unit-gated in isolation** (03-automdl
+  feeds it through a transform=auto + aictest preamble); gate the whole chain
+  against the oracle `.udg` — `idnonseasonaldiff.first:1`/`idseasonaldiff.first:1`,
+  `automdl.best5.mdl1..5`, `arimamdl: (0 1 1)(0 1 1)`. Also still open: deferred
+  M2 regressor branches and the .out/.fct print engine. See
+  `tools/automdl_scouting.md` (§2 status table + GATING NOTE) and
   `tools/m3_scouting.md` §5 Tier-6/7.
 - **Packaging scaffolding (r-pkg/py-pkg) built by an agent, parked on branch
   `worktree-agent-ae1edc2bc3b17f4d4`** (NOT merged; merge after the main
