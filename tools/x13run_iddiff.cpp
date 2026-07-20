@@ -25,6 +25,8 @@
 
 #include "automdl/iddiff.hpp"
 #include "automdl/amdid.hpp"
+#include "automdl/automd.hpp"
+#include "automdl/amdest.hpp"   // cnvmdl (read identified orders)
 #include "specparse/specparse.hpp"
 #include "gen/srslen.hpp"   // prm::PLEN
 #include "gen/model.hpp"    // prm::PORDER
@@ -90,9 +92,43 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    bool do_amdid = false;
-    for (int i = 2; i < argc; ++i)
+    bool do_amdid = false, do_automd = false;
+    for (int i = 2; i < argc; ++i) {
         if (std::string(argv[i]) == "--amdid") do_amdid = true;
+        if (std::string(argv[i]) == "--automd") do_automd = true;
+    }
+
+    // --automd: run the unified (reduced) driver end to end, then read back the
+    // identified orders and estimation results.
+    if (do_automd) {
+        constexpr int PAd = x13::prm::PLEN + 2 * x13::prm::PORDER;
+        std::vector<double> ad(static_cast<std::size_t>(PAd), 0.0);
+        std::vector<double> trn(static_cast<std::size_t>(x13::prm::PLEN));
+        x13::copy(ctx.series.tsrs.data(), x13::prm::PLEN, 1, trn.data());
+        int fr = 0, nef = 0, nad = 0;
+        try {
+            x13::automd(ctx, trn.data(), fr, nef, ad.data(), nad);
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "x13run_iddiff: automd exception: %s\n", e.what());
+            return 3;
+        }
+        if (ctx.error.lfatal) {
+            std::printf("OUTCOME: FATAL (automd)\n");
+            return 1;
+        }
+        int ipr, ips, idr2, ids2, iqr, iqs, id, ip, iq, iprs, iqrs, n;
+        x13::cnvmdl(ctx, ipr, ips, idr2, ids2, iqr, iqs, id, ip, iq, iprs, iqrs, n);
+        std::printf("OUTCOME: OK\n");
+        if (ips == 0 && ids2 == 0 && iqs == 0)
+            std::printf("arimamdl: (%d %d %d)\n", ipr, idr2, iqr);
+        else
+            std::printf("arimamdl: (%d %d %d)(%d %d %d)\n", ipr, idr2, iqr, ips,
+                        ids2, iqs);
+        std::printf("variance: %.10E\n", ctx.mdldat.var);
+        std::printf("loglikelihood: %.10E\n", ctx.mdldat.lnlkhd);
+        std::printf("checkmu: %s\n", ctx.model.nb > 0 ? "yes" : "no");
+        return 0;
+    }
 
     constexpr int PA = x13::prm::PLEN + 2 * x13::prm::PORDER;
     std::vector<double> a(static_cast<std::size_t>(PA), 0.0);

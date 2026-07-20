@@ -82,6 +82,46 @@ def test_amdid_full_model():
     assert vals["arimamdl"] == "(0 1 1)(0 1 1)", vals
 
 
+# Reduced automd driver (default -> chkmu -> iddiff -> amdid -> mean re-add ->
+# final estimate) vs the oracle .udg -- the FULL identified-model estimation
+# (arimamdl + variance + loglikelihood), not just the discrete orders. These four
+# series need none of the deferred automd features (auto-transform, aictest,
+# outlier, model-span, adequacy retry), so the reduced driver reproduces the
+# oracle end to end. span-modelspan (model span != series span) and region_north
+# (arimamdl set by the adequacy stage) are covered by the identification test
+# above but excluded here until those features land.
+_AUTOMD_EST_CASES = [
+    ("generated/airline_seats.spc", "(0 1 1)(0 1 1)"),
+    ("generated/expgs_seats.spc", "(2 1 0)"),
+    ("generated/payems_seats.spc", "(0 1 2)"),
+    ("generated/unrate_seats.spc", "(0 1 1)"),
+]
+
+
+def _udg_val(spc, key):
+    base = os.path.basename(spc)[:-4]
+    rel = os.path.relpath(spc, _CORPUS)
+    udg = os.path.join(_REPO, "tests", "golden", rel[:-4], base + ".udg")
+    for line in open(udg, encoding="utf-8", errors="replace"):
+        if line.startswith(key):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
+@pytest.mark.parametrize(
+    "rel,mdl", _AUTOMD_EST_CASES, ids=[c[0].split("/")[-1][:-4] for c in _AUTOMD_EST_CASES])
+def test_automd_full_estimation(rel, mdl):
+    spc = os.path.join(_CORPUS, *rel.split("/"))
+    vals = _run(spc, "--automd")
+    assert vals.get("OUTCOME") == "OK", vals
+    assert vals["arimamdl"] == mdl, vals
+    ovar = float(_udg_val(spc, "variance$mle"))
+    oll = float(_udg_val(spc, "loglikelihood"))
+    assert abs(float(vals["variance"]) - ovar) <= 1e-9 * abs(ovar), (vals, ovar)
+    # .udg loglikelihood is printed to 4 decimals; match at that precision.
+    assert abs(float(vals["loglikelihood"]) - oll) <= 5e-4 * max(1.0, abs(oll)), (vals, oll)
+
+
 @pytest.mark.parametrize(
     "rel,idr,ids,mdl", _AUTOMDL_CASES,
     ids=[c[0].split("/")[-1][:-4] for c in _AUTOMDL_CASES])
