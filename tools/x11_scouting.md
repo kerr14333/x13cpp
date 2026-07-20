@@ -18,9 +18,17 @@
 > for `airline_x11-default`. Also landed a codegen fix: `xtrm_cmn.Stdev` was
 > mis-sized 76 (should be 86) from a `PYRS` collision between `srslen.prm` (85)
 > and stale `srslen.i` (75) -- see FABLE_REVIEW item A.
-> **NEXT increment:** the Tier 6 spine (`x11pt1`→B1,
-> `x11pt2`→B1–D7, `x11pt3`→D8–D16, `x11pt4`, `x11ari`) wired behind `x11{}`. First
-> end-to-end gate: `airline_x11-default` D10/D11/D12/D13.
+> **Tier 6 spine STARTED: `x11pt1` DONE** (→ B1 input) in new
+> `core/src/x11/x11parts.cpp`. Base + prior-adj (Sprior) + prior calendar/holiday
+> (Faccal/X11hol) paths ported with ported leaves (copy/divsub/addmul/setmv); the
+> prior-TD / x11-regression-TD branch (Kswv/Axrgtd) fatals via a local
+> not_ported (needs unported `pritd`/`ssrit`; off for airline). Prints dropped.
+> **NEXT: `x11pt2` (954 lines) — the B1→D7 iterated MA decomposition heart**,
+> where si/vtc/sfmsr/vsf*/xtrm/replac get wired into the B/C/D passes. Port in
+> sections (B pass → C pass → D pass). Then `x11pt3` (D8–D16 finals), `x11pt4`
+> (E/F), and the `x11ari` driver + ctx population from the estimate/forecast stage
+> to run end-to-end. First gate: `airline_x11-default` B1 (after x11pt1 wiring),
+> then D10/D11/D12/D13 (after the full spine).
 >
 > **STALE-CLAIM CORRECTION (2026-07-20): there is no "MSR trio."** An earlier
 > revision grouped `sfmsr`/`getsmat`/`gttrmo` as the "MSR seasonal-filter trio."
@@ -56,6 +64,32 @@ scout; Tiers 0–3 + drivers vtc/sfmsr/tdxtrm are now ported — see STATUS head
 SEATS (`seats*.f`), sliding-spans (`ss*.f`), revisions
 (`rev*.f`), aggregate/composite (`agr*.f`), and x11regression (`x11mdl/x11aic`)
 are separate, later sub-milestones and are NOT in scope here.
+
+## x11pt2 port plan (the B1->D7 heart, 954 lines) — scouted 2026-07-20
+
+Structure = the classic B/C/D iteration; **most CALLs are already-ported leaves**
+(averag, divsub, addmul, setdp, si, vsfa, vsfb, vtc, forcst, logar, copy). Flow:
+- **Part A-of-B TD prep** (l.116-205): `makadj` + `tdlom` (TD & length-of-month
+  prior adj into Factd/Stocal) — **UNPORTED**; gated by `Adjtd`. `ssrit` (sliding
+  spans) UNPORTED, off for base. Builds Faccal from Factd/Fachol/Facao/... via
+  addmul.
+- **Part B (l.353-460):** logadd `logar(Stcsi)`; B1 -> `averag(Stcsi,Stc,2,Ny)`
+  centered 2xNy MA -> `divsub` SI ratios (Stsi) -> `ftest` seasonality F-test
+  (**UNPORTED**, diagnostic/print-gated) -> trend B2.
+- **Part B/C/D seasonal (l.465-560):** `si` (extreme SI replace) -> `vsfb`
+  seasonal MA -> `forcst` end-fill -> `divsub` preliminary SA (Stci).
+- **Section 2 trend (l.563-627):** `vtc` variable trend-cycle -> `chktrn` trend
+  constraint check (**UNPORTED**, sets oktrn) -> D7 trend -> `divsub` SI ratios.
+- **Part C/D refine (l.627-end):** `si` -> `vsfa`/`vsfb` -> preliminary SA,
+  iterating to D7.
+
+**Blockers to port first:** `makadj` (37), `tdlom` (63), `chktrn` (?), `ftest`
+(294, but Prttab-gated — may stub as deferred if it feeds no compute state).
+Verify each's base-case reachability: for `airline_x11-default` (no TD, no
+sliding-spans) makadj/tdlom/ssrit should be skippable; `chktrn` (trend check) and
+the `ftest` seasonality test need a reachability check — chktrn likely runs.
+**Port order:** makadj + tdlom + chktrn, confirm ftest is deferrable, THEN x11pt2
+section by section, gating airline_x11-default B1..D7 as each section lands.
 
 Corpus payoff: **50 / 76 specs use `x11{}`**, and **24 of them ship full B/C/D
 save-table goldens** (`.b1 .d1 … .d10 .d11 .d12 .d13` at 15-digit precision).
