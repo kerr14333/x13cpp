@@ -1,41 +1,53 @@
 # X-11 Scouting Report — Moving-Average Seasonal Adjustment (M5, in progress)
 
-> **STATUS (2026-07-20): Tiers 0–3 leaves DONE + unit-tested.** Ported in
-> `core/src/x11/{x11filt,x11seas,x11xtrm}.cpp` (28 routines: divsub, addmul,
-> logar, antilg, setmv, change, chkzro, divgud, averag, hender, apply, ends,
-> endsf, hndend, hndtrn, fis, vsfa, vsfb, vsfc, xtrm, sdxtrm, wtxtrm, replac,
-> weight, vtest, entsch, trbias, rho2). Gated by test_x11 / test_x11b.
-> **NEXT increment = Tier 4 drivers:** `si` (106, SI-ratio→seasonal; calls the
-> ported vsfa/vsfb/xtrm/replac) + `vtc` (90, Henderson-length select; calls
-> ported hndtrn) + the MSR seasonal-filter trio `sfmsr`/`getsmat`/`gttrmo`
-> (needed by vsfb's Mtype auto-select). Still missing from Tier 0/3: `setdp`,
-> `tdxtrm`. Then Tier 5 (`setxpt`/`extend`/`forcst`/`x11int`/`x11ref`) and Tier 6
-> (`x11pt1`→B1, `x11pt2`→B1–D7, `x11pt3`→D8–D16, `x11pt4`, `x11ari`) wired behind
-> `x11{}`. First end-to-end gate: `airline_x11-default` D10/D11/D12/D13.
+> **STATUS (2026-07-20, updated): Tiers 0–3 leaves DONE + unit-tested; Tier 4
+> drivers `vtc`+`sfmsr`+`tdxtrm` now DONE.** Tier 0–3 (28 routines) in
+> `core/src/x11/{x11filt,x11seas,x11xtrm}.cpp`: divsub, addmul, logar, antilg,
+> setmv, change, chkzro, divgud, averag, hender, apply, ends, endsf, hndend,
+> hndtrn, fis, vsfa, vsfb, vsfc, xtrm, sdxtrm, wtxtrm, replac, weight, vtest,
+> entsch, trbias, rho2 — gated by test_x11 / test_x11b. Tier 4 drivers `vtc`
+> (Henderson-length select) + `sfmsr` (MSR global seasonal-filter selection) live
+> in new `core/src/x11/x11drv.cpp` (ctx-first); `tdxtrm` (extreme-irregular
+> AO/calendar) landed in `x11xtrm.cpp`. All build clean; **not yet unit-gated**
+> (they need a live X13Context — gate arrives with the x11pt2 spine).
+> **NEXT increment:** `si` (106, SI-ratio→seasonal; the last Tier-4 driver) — its
+> `vsfa/vsfb` args are now unblocked by `sfmsr`. Then Tier 5
+> (`setxpt`/`extend`/`forcst`/`x11int`/`x11ref`) and Tier 6 (`x11pt1`→B1,
+> `x11pt2`→B1–D7, `x11pt3`→D8–D16, `x11pt4`, `x11ari`) wired behind `x11{}`. First
+> end-to-end gate: `airline_x11-default` D10/D11/D12/D13.
 >
-> **Tier-4 dependency correction (found 2026-07-20 while starting si/vtc):**
-> The ported `vsfb` takes `lterm, lter[], ksect, shrtsf` as EXPLICIT args (they
-> were COMMON in the Fortran). Those come from the MSR seasonal-filter selection
-> (`sfmsr`/`getsmat`/`gttrmo`), which is UNPORTED, so `si` cannot be wired until
-> the MSR trio lands. **Corrected port order: (1) MSR trio → (2) `vtc` → (3) `si`
-> → (4) `setxpt`/`extend`/`forcst` → (5) `x11pt1`.**
-> - `vtc` (90) is READY NOW: pure compute, calls only ported `hndtrn`+`divsub`,
->   no print/save. Reads ctx.x11ptr (Pos1bk/Posffc/Posfob), ctx.x11opt
->   (Muladd/Ktcopt/Kpart/Ny/Nterm/Tic). NOTE the ported `hndtrn` sig is
->   `hndtrn(stc, stci, lfda, lldaf, nterm, tic&, lend, lsame, tru7hn)` (9 args) —
->   supply `tru7hn` from ctx.x11opt.
-> - `si` (106) also calls deferred print/save (`table`/`punch`) — stub like the
->   other deferred output engines. Pseudo-additive (`Sti=Stsi-Sts+1`) and
->   `Kfulsm==2` (copy SI through) bypass divsub.
-> - Stateful convention: si/vtc take `X13Context& ctx` FIRST; pass ctx table
->   fields via `.data()` to leaves. Gate each with a `ref_*.f` oracle driver
->   (test_x11b pattern) building the x11ptr/x11opt COMMON + Stc/Stci.
+> **STALE-CLAIM CORRECTION (2026-07-20): there is no "MSR trio."** An earlier
+> revision grouped `sfmsr`/`getsmat`/`gttrmo` as the "MSR seasonal-filter trio."
+> That was wrong — reading the sources:
+> - `sfmsr.f` (101) — the actual MSR global seasonal-filter selector. **DONE**
+>   (`x11drv.cpp`). Sources `vsfa`/`vsfb`'s explicit `muladd/psuadd/rati/ratis`
+>   and `lterm/lter/ksect/shrtsf` args from `ctx.x11opt`+`ctx.x11msc`+`ctx.work2`;
+>   this alone unblocks `si` (no other routine needed).
+> - `getsmat.f` — a **generic submatrix extractor** (`getSMat`/`getSRMat`); a
+>   linear-algebra utility, NOT part of X-11 seasonal-filter selection. Unported;
+>   pull in only if/when an actual caller needs it.
+> - `gttrmo.f` — an **Edit-format series file reader** (I/O); unrelated to MSR and
+>   in the deferred file-I/O bucket. Do not port for X-11 decomposition.
+> - Also corrected: `setdp` was listed as "missing from Tier 0/3" but is **already
+>   ported** (inlined `specparse.hpp:84`, alongside setint/setlg/cpyint).
+>
+> **Conventions confirmed while porting (vtc/sfmsr/tdxtrm):**
+> - Tier-4 drivers take `X13Context& ctx` FIRST, alias the COMMON structs
+>   (`ctx.x11opt`/`x11ptr`/`x11msc`/`work2`/`xclude`), and thread ctx table fields
+>   into leaves via `.data()`. 1-based lambda views keep the arithmetic diffable.
+> - `hndtrn` sig is `hndtrn(stc, stci, lfda, lldaf, nterm, tic&, lend, lsame,
+>   tru7hn)` (9 args); `tru7hn` comes from `ctx.x11msc`, NOT x11opt.
+> - `si` also calls deferred print/save (`table`/`punch`) — drop those (deferred).
+>   Pseudo-additive (`Sti=Stsi-Sts+1`) and `Kfulsm==2` (copy SI through) bypass
+>   divsub. Its `xtrm` call must source the richer ported sig's extra args
+>   (imad/sigmu/sigml/lsp/stdper/csigvc) from x11opt + xtrm COMMON.
 
 
 Scouted 2026-07-20 against `oracle/fortran` (v1.1 b61). Scope: the classic
 X-11 seasonal decomposition (trend / seasonal / irregular) driven by
-`x11ari.f` → `x11pt1/2/3/4`. `core/src/x11/` is **empty** — this is the biggest
-unstarted milestone. SEATS (`seats*.f`), sliding-spans (`ss*.f`), revisions
+`x11ari.f` → `x11pt1/2/3/4`. (Historical note: `core/src/x11/` was empty at first
+scout; Tiers 0–3 + drivers vtc/sfmsr/tdxtrm are now ported — see STATUS header.)
+SEATS (`seats*.f`), sliding-spans (`ss*.f`), revisions
 (`rev*.f`), aggregate/composite (`agr*.f`), and x11regression (`x11mdl/x11aic`)
 are separate, later sub-milestones and are NOT in scope here.
 
@@ -98,7 +110,10 @@ Nothing in `core/src/x11/` exists yet. The `divsub` hit in
 ported routine; `xtrm` in `common/gen/xtrm_cmn.hpp` is only the generated
 COMMON-block header. **Every routine below is NEW.**
 
-Recommended **leaf-first** order (each tier unit-testable before the next):
+Recommended **leaf-first** order (each tier unit-testable before the next).
+**NOTE (2026-07-20): every Tier 0–3 row below is DONE** (see STATUS header) — the
+per-row "new" in those rows is the original scouting state, superseded by the
+STATUS block. Only the "DONE"/"defer"-marked Tier 4+ rows track live status.
 
 | Tier | routine(s) | lines | role | ported? |
 |------|-----------|-------|------|---------|
@@ -113,13 +128,15 @@ Recommended **leaf-first** order (each tier unit-testable before the next):
 | 1 | ends | 50 | trend end-weight application driver | new |
 | 1 | endsf | 39 | seasonal-MA end weights (3x9 / 3x15 tables) | new |
 | 1 | hndtrn | 55 | Henderson trend driver (symmetric + ends + 7-term reduce) | new |
-| 1 | vtc | 90 | variable trend cycle: I/C ratio → Henderson length select | new |
+| 4 | vtc | 90 | variable trend cycle: I/C ratio → Henderson length select | **DONE** (x11drv) |
 | 2 | vsfc | 54 | 2×Nyr MA over the seasonals | new |
 | 2 | vsfa | 101 | preliminary seasonal MA pass | new |
 | 2 | vsfb | 174 | seasonal MA: 3x3 / 3x5 / 3x9 / 3x15 / stable / 3-term | new |
-| 2 | sfmsr / getsmat / gttrmo | 101/102/91 | MSR global seasonal-filter (Lter) selection | new |
+| 4 | sfmsr | 101 | MSR global seasonal-filter (Lter) selection + vsfa/vsfb pass | **DONE** (x11drv) |
+| — | getsmat | 102 | generic submatrix extractor (getSMat/getSRMat) — NOT MSR; linear-algebra util | defer (no caller yet) |
+| — | gttrmo | 91 | Edit-format series **file reader** (I/O) — NOT MSR | defer (file-I/O bucket) |
 | 3 | xtrm | 185 | extreme-value detection/adjustment (sigma limits) | new |
-| 3 | sdxtrm / tdxtrm / wtxtrm | 80/126/40 | sigma computation / TD-in-irregular / extreme weights | new |
+| 3 | sdxtrm / tdxtrm / wtxtrm | 80/126/40 | sigma computation / TD-in-irregular / extreme weights | **DONE** (tdxtrm in x11xtrm) |
 | 3 | replac | 110 | replace extreme SI values with reweighted MA | new |
 | 3 | weight | 123 | extreme-value weight curve | new |
 | 3 | vtest / entsch | 64/? | sigma-limit (Ksdev) auto-selection | new |
@@ -156,6 +173,9 @@ Recommended **leaf-first** order (each tier unit-testable before the next):
 
 Then `si` + `vtc` (the per-pass drivers), then `x11pt1/2/3/4` + `x11ari` wired
 behind `x11{}` and gated end-to-end.
+
+> **This §2.1 "first 3–5 to port" list is historical** — items 1–5 and `vtc` are
+> DONE. Live next step is `si`, then Tier 5/6 (see STATUS header).
 
 ## 3. Parity risks (X-11-specific)
 

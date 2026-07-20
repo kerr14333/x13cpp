@@ -1,13 +1,15 @@
 // x11xtrm.cpp -- X-11 Tier 3 extreme-value adjustment leaves (see x11xtrm.hpp).
 // Faithful ports of the vendored oracle Fortran: rho2.f, wtxtrm.f, sdxtrm.f,
-// xtrm.f, replac.f, weight.f, vtest.f, entsch.f, trbias.f (istrue.f/setdp.f
-// inlined at their call sites).
+// xtrm.f, replac.f, weight.f, vtest.f, entsch.f, trbias.f, tdxtrm.f (istrue.f/
+// setdp.f inlined at their call sites).
 //
 // Index convention: 0-based C pointers, Fortran index i -> element [i-1]; span
 // args stay Fortran 1-based. Loop/float op order preserved verbatim (sigma
 // limits and MAD medians are parity-sensitive). COMMON state passed explicitly.
 #include "x11/x11xtrm.hpp"
 
+#include "common/x13context.hpp"  // X13Context (x11ptr / xclude)
+#include "specparse/specparse.hpp"  // setlg, cpyint, setdp
 #include "x11/x11filt.hpp"       // hndtrn
 #include "numeric/numeric.hpp"   // totals, dpeq, shlsrt
 #include "gen/notset.hpp"        // prm::DNOTST
@@ -470,6 +472,114 @@ void trbias(double* stc, const double* sts, const double* sti, int l1, int l2,
         biasfc[i - 1] = sig * hs[i - 1];
         stc[i - 1] = stc[i - 1] * biasfc[i - 1];
     }
+}
+
+// tdxtrm.f -- flag extreme irregulars for the calendar/trading-day pass.
+void tdxtrm(X13Context& ctx, double* sti, double* faccal, const int* tday,
+            double sigm, int kpart, int muladd, int fext, int irridx,
+            int irrend) {
+    (void)fext;  // deferred: only used by the dropped table/punch tail.
+    const double ONE = 1.0, ZERO = 0.0;
+    const int PLEN = 1020;  // srslen.prm
+
+    const int posfob = ctx.x11ptr.posfob;
+
+    double ex[1020];
+    int karray[1020];
+    double tmean[28], tcc[28], dvec[1];
+    double tsd, tdiff, tk, tirr, tkon;
+    int i, m, kstd, k;
+
+    // 1-based views to keep the index arithmetic diffable against the Fortran.
+    auto STI = [&](int j) -> double& { return sti[j - 1]; };
+    auto FACCAL = [&](int j) -> double& { return faccal[j - 1]; };
+    auto KARR = [&](int j) -> int& { return karray[j - 1]; };
+    auto EX = [&](int j) -> double& { return ex[j - 1]; };
+    auto TMEAN = [&](int j) -> double& { return tmean[j - 1]; };
+    auto TCC = [&](int j) -> double& { return tcc[j - 1]; };
+    auto RGXCLD = [&](int j) -> bool& { return ctx.xclude.rgxcld(j); };
+
+    // Set up logical vector of observations to exclude from regression.
+    dvec[0] = ZERO;
+    setlg(false, PLEN, ctx.xclude.rgxcld.data());
+    ctx.xclude.nxcld = 0;
+
+    cpyint(tday, posfob, 1, karray);
+    setdp(prm::DNOTST, PLEN, ex);
+
+    kstd = 0;
+    while (kstd < 2) {
+        tsd = 0;
+        tk = 0;
+        if (kpart == 2) {
+            // Initialize mean variables.
+            tkon = ONE;
+            if (muladd == 1) tkon = ZERO;
+            for (i = 1; i <= 28; ++i) {
+                TCC(i) = ZERO;
+                if (i <= 21) {
+                    TMEAN(i) = ZERO;
+                } else {
+                    TMEAN(i) = tkon;
+                }
+            }
+            for (i = irridx; i <= irrend; ++i) {
+                m = KARR(i);
+                if (m < 15) {
+                    TMEAN(m) = TMEAN(m) + STI(i);
+                    TCC(m) = TCC(m) + ONE;
+                    tk = tk + ONE;
+                } else if (m <= 21) {
+                    for (k = 15; k <= 21; ++k) {
+                        TMEAN(k) = TMEAN(k) + STI(i);
+                        TCC(k) = TCC(k) + ONE;
+                    }
+                    tk = tk + ONE;
+                }
+            }
+            for (i = 1; i <= 21; ++i) {
+                if (TCC(i) > ZERO) TMEAN(i) = TMEAN(i) / TCC(i);
+            }
+            for (i = irridx; i <= irrend; ++i) {
+                m = KARR(i);
+                if (m <= 21) {
+                    tdiff = STI(i) - TMEAN(m);
+                    tsd = tsd + (tdiff * tdiff);
+                }
+            }
+        } else {
+            // Compute sq.dev. of Irregular from Calendar effects.
+            for (i = irridx; i <= irrend; ++i) {
+                m = KARR(i);
+                if (m <= 28) {
+                    tdiff = STI(i) - FACCAL(i);
+                    tsd = tsd + (tdiff * tdiff);
+                    tk = tk + ONE;
+                }
+            }
+        }
+        tsd = std::sqrt(tsd / tk) * sigm;
+        kstd = kstd + 1;
+        // Identify extreme irregulars by adding 28 to type code.
+        for (i = irridx; i <= irrend; ++i) {
+            m = KARR(i);
+            if (m <= 28) {
+                if (kpart == 2) {
+                    tirr = TMEAN(m);
+                } else {
+                    tirr = FACCAL(i);
+                }
+                if (std::fabs(STI(i) - tirr) > tsd) {
+                    KARR(i) = KARR(i) + 28;
+                    EX(i) = STI(i);
+                    RGXCLD(i - irridx + 1) = true;
+                    ctx.xclude.nxcld = ctx.xclude.nxcld + 1;
+                }
+            }
+        }
+    }
+    // deferred: table/punch (extreme-value print/save)
+    (void)dvec;
 }
 
 }  // namespace x13

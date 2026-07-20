@@ -17,6 +17,8 @@
 
 namespace x13 {
 
+struct X13Context;
+
 // rho2.f: Tukey-biweight rho influence function used by the MAD tau adjustment
 // (Imad>=3). Saturates to 6.502 for |u|>2.798. Exposed for unit testing.
 double rho2(double u);
@@ -81,6 +83,18 @@ void entsch(int ken, int ker, int& ken1, int& ker1, int iv);
 // over [l1,l2]. tru7hn threads into the Henderson end chain.
 void trbias(double* stc, const double* sts, const double* sti, int l1, int l2,
             double* biasfc, int ny, bool tru7hn);
+
+// tdxtrm.f: flag extreme irregulars for the calendar/trading-day extreme-value
+// pass. Runs two sigma-limit passes over sti[irridx..irrend]: each pass forms
+// tsd (Sigm-scaled RMS of the irregular about its per-type-code mean when
+// kpart==2, else about the calendar factor faccal), then marks any value whose
+// deviation exceeds tsd by adding 28 to its type code (karray), stashing it in
+// the ex scratch, setting ctx.xclude.rgxcld at 1-based (i-irridx+1), and bumping
+// ctx.xclude.nxcld. karray is seeded from tday via cpyint. table/punch output is
+// deferred. Reads Posfob (ctx.x11ptr); writes Nxcld/Rgxcld (ctx.xclude).
+void tdxtrm(X13Context& ctx, double* sti, double* faccal, const int* tday,
+            double sigm, int kpart, int muladd, int fext, int irridx,
+            int irrend);
 
 }  // namespace x13
 
