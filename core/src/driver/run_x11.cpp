@@ -75,6 +75,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // editor.f:150 Ny=Sp ; editor.f:1486 Kersa=0 (set under IF(Lx11)).
     ctx.x11opt.ny = sp;
     ctx.xtrm.kersa = 0;
+    // gtinpt.f: Cnstnt defaults to DNOTST (no user constant). x11pt3 keys its
+    // constant-removal branch on Cnstnt != DNOTST, so the zero-init default must
+    // be corrected or the base path wrongly enters that (unported) branch.
+    ctx.adj.cnstnt = prm::DNOTST;
 
     // editor.f 2042-2103: X-11 seasonal-filter default resolution (the post-parse
     // setup getx11 leaves to the editor). Base (type!=trend): an unset Lterm ->
@@ -124,6 +128,12 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     x11pt1(ctx, lmodel, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
     x11pt2(ctx, lmodel, lx11, lseats, lgraf, lgrfxr);
+    if (ctx.error.lfatal) return false;
+    // x11pt3 (D8..D16 finals): D10=Sts, D11=Stci, D12=Stc, D13=Sti. It consumes
+    // the D7-return state x11pt2 leaves. (D8/D9 read x11pt2's /mq10/ Stex, which
+    // is function-local in this port and does not persist -- the D10..D13/D16
+    // finals do not depend on it, so they gate correctly regardless.)
+    x11pt3(ctx, lgraf, /*lttc=*/false);
     if (ctx.error.lfatal) return false;
 
     return !ctx.error.lfatal;

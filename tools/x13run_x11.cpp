@@ -94,12 +94,17 @@ int main(int argc, char** argv) {
     const int pos1ob = ctx.x11ptr.pos1ob;
     const int posfob = ctx.x11ptr.posfob;
 
-    // Gate targets produced by the x11pt1 + x11pt2 spine:
-    //   b1 -- prior-adjusted B1 input. x11pt2 rewrites Stcsi in place for the
-    //         C/D passes, so B1 is read from the input Series (== B1 on the
-    //         no-prior path; a dedicated snapshot follows once priors wire in).
-    //   d7 -- final X-11 trend-cycle (Stc) at the D7 return point of x11pt2.
-    dump("b1", begspn, sp, pos1ob, posfob, ctx.inpt.series.data());
-    dump("d7", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
+    // Gate targets produced by the x11pt1 + x11pt2 + x11pt3 spine:
+    //   b1  -- prior-adjusted B1 input. x11pt2 rewrites Stcsi in place for the
+    //          C/D passes, so B1 is read from the input Series (== B1 on the
+    //          no-prior path; a dedicated snapshot follows once priors wire in).
+    //   d10 -- final seasonal (Sts)     d11 -- final SA (Stci)
+    //   d12 -- final trend-cycle (Stc)  d13 -- final irregular (Sti)
+    // (D12 supersedes the earlier D7 trend gate -- x11pt3 recomputes Stc into D12.)
+    dump("b1",  begspn, sp, pos1ob, posfob, ctx.inpt.series.data());
+    dump("d10", begspn, sp, pos1ob, posfob, ctx.x11srs.sts.data());
+    dump("d11", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data());
+    dump("d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
+    dump("d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
     return 0;
 }
