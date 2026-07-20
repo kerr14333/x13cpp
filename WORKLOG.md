@@ -284,18 +284,35 @@ pip cmake when adding files.
   The stateful routines have no lightweight microtest — they gate through the
   corpus (per the scouting plan). `prterr` is ~all deferred print (only the
   unknown-error branch has a non-print effect).
-- **Next — the automd driver chain, gated as a unit on 03-automdl.** The
-  remaining pieces are drivers that can only be verified together: `iddiff`
-  (differencing ID, +the 3-line `prterr`), the real `gtauto` automdl{} arg
-  parser (currently a `gt_generic` stub), `amdid`+`amdid2` (the BIC ARMA-order
-  grid using the landed `amdest`), then a minimal `automd` wired into run_m2
-  behind `automdl{}`. **iddiff cannot be unit-gated in isolation** (03-automdl
-  feeds it through a transform=auto + aictest preamble); gate the whole chain
-  against the oracle `.udg` — `idnonseasonaldiff.first:1`/`idseasonaldiff.first:1`,
-  `automdl.best5.mdl1..5`, `arimamdl: (0 1 1)(0 1 1)`. Also still open: deferred
-  M2 regressor branches and the .out/.fct print engine. See
-  `tools/automdl_scouting.md` (§2 status table + GATING NOTE) and
-  `tools/m3_scouting.md` §5 Tier-6/7.
+- **`iddiff` (differencing-order identification) + `prterr` — LANDED & GATED.**
+  The first automd driver: the TRAMO/Gomez-Maravall DO WHILE loop that builds
+  trial (p 0 0)(P 0 0) models, HR-estimates them (the landed amdest/hrest),
+  inspects the AR roots (chkrt1), re-estimates by exact MLE (rgarma) and
+  accumulates d/D until the roots leave the unit circle, then the mean-
+  significance test. Control flow (GO TO 10/20/30) mapped to a continue-flag +
+  break; the Cancel/tolerance/Lextar/Mxiter mutations preserved verbatim. All
+  WRITE/Prttab output deferred; `prterr`'s only non-print effect (unknown-error
+  → Convrg=F, Var=0) is kept. **Gate:** the new `x13run_iddiff` harness drives
+  pre-model + iddiff on `extra/airline_iddiff.spc` (log airline, no regression)
+  and returns `idnonseasonaldiff.first=1`/`idseasonaldiff.first=1` — exactly the
+  census 03-automdl oracle `.udg`. Exercised end-to-end: mdlint/mdlset →
+  amdest/hrest → chkrt1 → rgarma → the differencing loop. `test_m4_iddiff.py`
+  locks it; full suite **233 passed / 9 skipped / 11 xfailed**. (Enabling change:
+  run_pre_model now stashes the transformed series into ctx.series.tsrs, its
+  Tsrs semantics, which estimation later overwrites with the same content.)
+- **Next — `amdid` (the BIC ARMA-order grid) + the automd wire.** `amdid` loops
+  candidate (p,q)(P,Q) orders, estimates each via `amdid2` (mdlint/mdlset +
+  optional HR init + rgarma + prlkhd-BIC — all reused/landed) and tracks the
+  best five via `bestmd`, then a BIC-closeness/model-balance selection. New
+  leaves needed: `amdid2`, `bestmd`, `mdlmch` (best-5 dedup). **Blocker to note:**
+  the default `maxorder` is still (0,0) from gtinpt — automdl's real default is
+  **(2,1)** (the .udg best5 reaches (0 1 2) regular / (0 1 1) seasonal); wire the
+  gtauto/automd maxorder default before amdid can enumerate. Then a minimal
+  `automd` into run_m2 behind `automdl{}`, gated on 03-automdl's
+  `automdl.best5.mdl1..5` + `arimamdl: (0 1 1)(0 1 1)` (needs transform=auto and
+  the aictest preamble too, both still unported). Also open: deferred M2
+  regressor branches and the .out/.fct print engine. See
+  `tools/automdl_scouting.md` (§2 status table + GATING NOTE).
 - **Packaging scaffolding (r-pkg/py-pkg) built by an agent, parked on branch
   `worktree-agent-ae1edc2bc3b17f4d4`** (NOT merged; merge after the main
   milestones). R CMD check / twine check clean; datasets bundled; result-object

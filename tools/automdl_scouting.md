@@ -63,8 +63,9 @@ corpus gate, not microtests.
 | 2    | amdest      | 102   | estimate-one-candidate wrapper (HR)         | **DONE** c35bd48 (automdl/amdest.cpp) |
 | 2    | bkdfmd      | ~     | back up / restore default model             | todo   |
 | —    | gtinpt automdl defaults | | Ub1lim/Ub2lim/Cancel/Frstar/Exdiff/... | **DONE** 7cdb252 |
-| 3    | iddiff      | 576   | differencing-order identification driver    | **NEXT** |
-| 3    | amdid+amdid2| 411+104| ARMA-order identification driver           | todo   |
+| 3    | iddiff      | 576   | differencing-order identification driver    | **DONE** 322af67 (gated (1,1) on log-airline) |
+| 3    | prterr      | 335   | estimation-error report (non-print core)    | **DONE** 322af67 |
+| 3    | amdid+amdid2| 411+104| ARMA-order identification driver           | **NEXT** |
 | 3.5  | gtauto      | ~450  | real automdl{} arg parser (replaces gt_generic stub) | todo |
 | 4    | tdaic/lomaic/easaic/usraic | | regressor-AIC-test family (rgarma) | todo |
 | 4    | chkchi/chkmu | 74+?  | regressor chi-square / mean tests           | todo   |
