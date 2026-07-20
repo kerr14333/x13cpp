@@ -32,6 +32,19 @@ void x11pt1(X13Context& ctx, bool lmodel, bool lgraf, bool lgrfxr);
 void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats, bool lgraf,
             bool lgrfxr);
 
+// x11pt3.f: X-11 PARTS D8->D16 -- the finals. Consumes the D7 trend/seasonal
+// left by x11pt2 and produces the final seasonal (D10=Sts), final SA (D11=Stci),
+// final trend (D12=Stc), final irregular (D13=Sti), the combined factors
+// (D16=ststd), the unmodified/modified SI (D8/D9), and the Part-E modified series
+// (E1/E2/E3). Base decomposition path only (Muladd==0 mult, Kfulsm==0, Ksdev==1,
+// Psuadd=F, no priors/TD/holiday/outliers/forcing/constant): every gated-off
+// feature branch (Kfulsm==2/1, Psuadd, Adjsea/Adjso/Adj*, Ishrnk, holiday/TD
+// combine, rmpadj, Iyrt force, ssrit, getrev, constant removal, logadd) fatals
+// cleanly via not_ported; the D8 F/M diagnostics (ftest/kwtest/mstest/COMBFT)
+// and the residual-seasonality ftest are deferred no-ops. lgraf gates only
+// deferred graph saves; lttc feeds only gated-off (temporary-change) branches.
+void x11pt3(X13Context& ctx, bool lgraf, bool lttc);
+
 // chktrn.f: multiplicative-mode trend-positivity check/repair, called from x11pt2
 // (Muladd==0). Replaces any non-positive value in the trend-cycle stc in place
 // (mean of nearest positive neighbours, or the nearest positive value at a series
