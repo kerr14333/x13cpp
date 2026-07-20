@@ -7,6 +7,22 @@ against the oracle. Newest first. Remove an item once it's verified + gated.
 
 ## Open
 
+A. **[FIXED] Codegen mis-sized `xtrm_cmn.Stdev` (PYRS collision).** `cmn2hpp.py`
+   merged `srslen.prm` (PYRS=PYR1+20=**85**) and the stale duplicate `srslen.i`
+   (PYRS=PYR1+10=**75**) into one symbol table; "first definition wins" +
+   `"srslen.i" < "srslen.prm"` sort order let the `.i` value win, so
+   `Stdev(PYRS+1)` generated as **76** instead of **86** — a 10-double
+   under-allocation that would overflow for series > ~75 years (and would be
+   over-written by `x11int`'s `setdp(0D0,PY1=86,Stdev)`). NOT a Census bug: only
+   `bench.f` includes `srslen.i`; the 393 `.f` consumers (incl. every `.cmn`
+   world) use `srslen.prm`. Fixed by gathering `.prm` before `.i` in
+   `build_dim_symbols`; hand-corrected `xtrm_cmn.hpp` to 86 (regen also clobbers
+   the hand-maintained `x13context.hpp`, so that file is NOT auto-regenerated —
+   cmn2hpp now writes a `.generated` sidecar when it exists). Rebuilt full tree;
+   unit 8/8 + parity 337 passed. **Verify:** confirm no other PYRS-derived COMMON
+   array exists (grep found only `Stdev`) and that `x11int` (unported) zeroes
+   exactly `PY1=86`.
+
 0. **SEATS poly + root leaves (CONV/CONJ/MULTFN/DIVFCN, C02AEF/C02AEZ, RPQ) —
    `core/src/seats/{poly,roots}.cpp`.** VERIFIED bit-exact: `C02AEF` (the #1 SEATS
    parity hinge) was cross-checked against a standalone oracle driver built from

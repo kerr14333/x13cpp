@@ -9,7 +9,7 @@ namespace x13 {
 // COMMON blocks: /cxtrm/
 struct xtrm_cmn {
     x13::farray1<double, 1020> stwt;  // Stwt(PLEN)
-    x13::farray1<double, 76> stdev;  // Stdev(PYRS+1)
+    x13::farray1<double, 86> stdev;  // Stdev(PYRS+1)
     x13::farray1<double, 12> stdper;  // Stdper(PSP)
     int ksdev;  // Ksdev
     int kersa;  // Kersa

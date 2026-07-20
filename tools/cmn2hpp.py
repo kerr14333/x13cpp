@@ -274,7 +274,14 @@ def build_dim_symbols(src_dir: str, cmn_files):
     in priority order: .prm and .i shared includes, PARAMETERs defined inside the
     .cmn files themselves, and finally a targeted scan of .f files for any leftover
     dimension symbols (e.g. PR = PLEN/4, defined per-routine, not in an include)."""
-    table = gather_symbols(src_dir, (".prm", ".i"))
+    # .prm BEFORE .i: gather_symbols is "first definition wins", and a stale
+    # duplicate include (srslen.i: PYRS=PYR1+10=75) disagrees with the live one
+    # (srslen.prm: PYRS=PYR1+20=85). srslen.prm is included by 393 .f files incl.
+    # every .cmn consumer; srslen.i by bench.f alone. Gathering .prm first lets the
+    # real value win (else "srslen.i" < "srslen.prm" sorts first and undersizes
+    # PYRS-derived COMMON arrays, e.g. xtrm.cmn Stdev(PYRS+1) -> 76 not 86).
+    table = gather_symbols(src_dir, (".prm",))
+    gather_symbols(src_dir, (".i",), table)
     gather_symbols(src_dir, (".cmn",), table)
     resolve_all(table)
     values = {n: s.value for n, s in table.items() if s.value is not None}
@@ -385,7 +392,17 @@ def generate(src_dir: str, out_dir: str, ctx_dir: str):
     for struct, member in structs:
         ctx.append("    {} {};".format(struct, member_name(member)))
     ctx += ["};", "", "}  // namespace x13", "#endif  // {}".format(guard)]
-    with open(os.path.join(ctx_dir, "x13context.hpp"), "w") as fh:
+    # WARNING: x13context.hpp is HAND-MAINTAINED beyond the generated members
+    # (LexState/SaveState/FcstOut/TrnAicResult, extra includes). Overwriting it
+    # wholesale silently drops those and breaks the build. So write the generated
+    # struct to a sidecar when the real file exists; reconcile by hand. Only the
+    # per-COMMON gen/*.hpp headers are safe to overwrite blindly.
+    ctx_path = os.path.join(ctx_dir, "x13context.hpp")
+    if os.path.exists(ctx_path):
+        ctx_path += ".generated"
+        print("  NOTE: x13context.hpp exists (hand-maintained); wrote generated "
+              "struct to x13context.hpp.generated -- reconcile by hand.")
+    with open(ctx_path, "w") as fh:
         fh.write("\n".join(ctx) + "\n")
 
     print("cmn2hpp: {} common blocks -> {} structs".format(len(cmn_files), len(structs)))
