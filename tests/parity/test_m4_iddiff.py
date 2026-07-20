@@ -32,17 +32,20 @@ _CASES = [
 
 # Real automdl corpus specs with NO auto-transform / aictest preamble, so the
 # harness (pre-model + iddiff [+ amdid]) reproduces the oracle path directly.
-# (rel, idr, ids, expected arimamdl or None). idr/ids (iddiff's differencing) are
-# gated for all; the full amdid model is gated where it currently matches. expgs
-# and region_north differ on the ARMA orders only -- a BIC-ranking gap tracked
-# below -- so their arimamdl is left None (differencing still gated).
+# (rel, idr, ids, expected amdid model). idr/ids is iddiff's differencing; the
+# model is amdid's identified ARMA orders -- compared to the oracle's SELECTED
+# automdl model (arimamdl) where automd leaves it unchanged, and to the oracle's
+# BIC winner (best5.mdl1) for region_north, whose arimamdl (3 2 1)(0 1 1) is set
+# by automd's later model-adequacy stage (not yet ported) rather than by amdid.
 _AUTOMDL_CASES = [
     ("generated/airline_seats.spc", 1, 1, "(0 1 1)(0 1 1)"),
     ("generated/payems_seats.spc", 1, 0, "(0 1 2)"),
     ("generated/unrate_seats.spc", 1, 0, "(0 1 1)"),
     ("edge/span-modelspan.spc", 1, 0, "(0 1 2)"),
-    ("generated/expgs_seats.spc", 1, 0, None),          # oracle (2 1 0); gap
-    ("census-examples/composite/region_north.spc", 2, 1, None),  # oracle (3 2 1)(0 1 1); gap
+    ("generated/expgs_seats.spc", 1, 0, "(2 1 0)"),
+    # amdid picks the oracle BIC winner (best5.mdl1); automd's adequacy stage
+    # later revises arimamdl to (3 2 1)(0 1 1).
+    ("census-examples/composite/region_north.spc", 2, 1, "(1 2 2)(0 1 1)"),
 ]
 
 
@@ -92,5 +95,4 @@ def test_automdl_corpus_identification(rel, idr, ids, mdl):
     assert vals.get("OUTCOME") == "OK", vals
     assert int(vals["idnonseasonaldiff.first"]) == idr, vals
     assert int(vals["idseasonaldiff.first"]) == ids, vals
-    if mdl is not None:
-        assert vals["arimamdl"] == mdl, vals
+    assert vals["arimamdl"] == mdl, vals

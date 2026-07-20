@@ -118,6 +118,12 @@ void amdid2(X13Context& ctx, int irar, int irdf, int irma, int isar, int isdf,
                    ctx.adj.adj.data() + ctx.adj.adj1st - 1, ctx.adj.adjmod,
                    ar.fcntyp, ar.lam);
     }
+    if (lgo && std::getenv("X13_AMDID_DEBUG"))
+        std::fprintf(stderr,
+                     "  cand (%d %d %d)(%d %d %d): lnlkhd=%.4f bic2=%.5f "
+                     "nb=%d nintvl=%d nefobs=%d var=%.6e\n",
+                     irar, irdf, irma, isar, isdf, isma, d.lnlkhd, ctx.lkhd.bic2,
+                     m.nb, m.nintvl, nefobs, d.var);
     if (lgo) lgo = d.convrg && d.armaer == 0;
 }
 

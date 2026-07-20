@@ -99,8 +99,15 @@ int main(int argc, char** argv) {
     int idr = maxdr, ids = maxds, nefobs = 0, frstry = 0, na = 0;
     bool lmu = false;
 
+    // The identification routines take Trnsrs -- the transformed series -- as a
+    // read-only input, a SEPARATE buffer from Tsrs (which rgarma overwrites with
+    // regression residuals during estimation). Give them their own copy so an
+    // internal rgarma cannot clobber the series a later stage reads.
+    std::vector<double> trnsrs(static_cast<std::size_t>(x13::prm::PLEN));
+    x13::copy(ctx.series.tsrs.data(), x13::prm::PLEN, 1, trnsrs.data());
+
     try {
-        x13::iddiff(ctx, idr, ids, ctx.series.tsrs.data(), nefobs, frstry, a.data(),
+        x13::iddiff(ctx, idr, ids, trnsrs.data(), nefobs, frstry, a.data(),
                     na, /*imu=*/0, lmu, /*svldif=*/false, /*lsumm=*/0);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "x13run_iddiff: iddiff exception: %s\n", e.what());
@@ -122,9 +129,8 @@ int main(int argc, char** argv) {
         int irar = 0, irma = 0, isar = 0, isma = 0;
         bool locok = true;
         try {
-            x13::amdid(ctx, irar, idr, irma, isar, ids, isma,
-                       ctx.series.tsrs.data(), frstry, nefobs, a.data(), na, lmu,
-                       /*lsumm=*/0, locok);
+            x13::amdid(ctx, irar, idr, irma, isar, ids, isma, trnsrs.data(),
+                       frstry, nefobs, a.data(), na, lmu, /*lsumm=*/0, locok);
         } catch (const std::exception& e) {
             std::fprintf(stderr, "x13run_iddiff: amdid exception: %s\n", e.what());
             return 3;
