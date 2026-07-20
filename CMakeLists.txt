@@ -98,6 +98,13 @@ add_executable(x13run_iddiff tools/x13run_iddiff.cpp)
 target_link_libraries(x13run_iddiff PRIVATE x13core)
 
 # ---------------------------------------------------------------------------
+# x13run_x11 -- M5 harness: parse + assemble the X-11 decomposition spine
+# (no-model path), printing the B/C/D save tables to stdout for the X-11 gate.
+# ---------------------------------------------------------------------------
+add_executable(x13run_x11 tools/x13run_x11.cpp)
+target_link_libraries(x13run_x11 PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
 # Unit tests (self-contained microtest framework; no external dependencies).
 # ---------------------------------------------------------------------------
 option(X13_BUILD_TESTS "Build unit tests" ON)

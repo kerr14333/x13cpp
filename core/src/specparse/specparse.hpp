@@ -297,6 +297,13 @@ bool parse_spec(X13Context& ctx, const std::string& spec_text,
 bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base,
             bool estimate = false);
 
+// M5 X-11 phase (core/src/driver/run_x11.cpp): parse, then assemble the classic
+// X-11 decomposition spine (setxpt -> x11int -> x11pt1 -> x11pt2) producing the
+// B/C/D tables (B1..D7) in the ctx x11srs arrays. Wired for the no-model direct-
+// X11 path (airline_x11-default) so far; a spec carrying a regARIMA model fatals
+// cleanly until the estimate/forecast/extend/adjreg glue lands.
+bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& base);
+
 } // namespace x13
 
 #endif // X13_SPECPARSE_SPECPARSE_HPP
