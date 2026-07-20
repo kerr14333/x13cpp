@@ -12,6 +12,24 @@
 > `tdxtrm`. Then Tier 5 (`setxpt`/`extend`/`forcst`/`x11int`/`x11ref`) and Tier 6
 > (`x11pt1`→B1, `x11pt2`→B1–D7, `x11pt3`→D8–D16, `x11pt4`, `x11ari`) wired behind
 > `x11{}`. First end-to-end gate: `airline_x11-default` D10/D11/D12/D13.
+>
+> **Tier-4 dependency correction (found 2026-07-20 while starting si/vtc):**
+> The ported `vsfb` takes `lterm, lter[], ksect, shrtsf` as EXPLICIT args (they
+> were COMMON in the Fortran). Those come from the MSR seasonal-filter selection
+> (`sfmsr`/`getsmat`/`gttrmo`), which is UNPORTED, so `si` cannot be wired until
+> the MSR trio lands. **Corrected port order: (1) MSR trio → (2) `vtc` → (3) `si`
+> → (4) `setxpt`/`extend`/`forcst` → (5) `x11pt1`.**
+> - `vtc` (90) is READY NOW: pure compute, calls only ported `hndtrn`+`divsub`,
+>   no print/save. Reads ctx.x11ptr (Pos1bk/Posffc/Posfob), ctx.x11opt
+>   (Muladd/Ktcopt/Kpart/Ny/Nterm/Tic). NOTE the ported `hndtrn` sig is
+>   `hndtrn(stc, stci, lfda, lldaf, nterm, tic&, lend, lsame, tru7hn)` (9 args) —
+>   supply `tru7hn` from ctx.x11opt.
+> - `si` (106) also calls deferred print/save (`table`/`punch`) — stub like the
+>   other deferred output engines. Pseudo-additive (`Sti=Stsi-Sts+1`) and
+>   `Kfulsm==2` (copy SI through) bypass divsub.
+> - Stateful convention: si/vtc take `X13Context& ctx` FIRST; pass ctx table
+>   fields via `.data()` to leaves. Gate each with a `ref_*.f` oracle driver
+>   (test_x11b pattern) building the x11ptr/x11opt COMMON + Stc/Stci.
 
 
 Scouted 2026-07-20 against `oracle/fortran` (v1.1 b61). Scope: the classic
