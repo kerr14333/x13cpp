@@ -117,6 +117,25 @@ The MISSING tail (arima.f l.1136-1290) is:
   before x11pt1 (populated by the parse/getsrs stage). x11pt1's Sto = prior-adjusted
   original series == run_m2's padj -- same quantity.
 
+**NEWLY-FOUND PREREQUISITE (2026-07-20): the x11-option defaults are unported.**
+The C++ parse (gtinpt.cpp/readers_spec.cpp) captures only x11_mode->muladd, divpwr,
+kfulsm -- but x11pt2/setxpt/x11int need the full x11opt/xtrm scalar set, and NONE of
+the getx11.f (576-line option reader) defaults are populated. `ctx.x11opt.ny` is
+never set in C++ at all. For `airline_x11-default` (no x11 options) ONLY the
+defaults matter -- porting getx11's keyword parsing is NOT needed for the first
+gate, just the default block. Exact defaults (gtinpt.f:323-381 + resolution):
+```
+Muladd = NOTSET -> 0 (mult; gtinpt.f:954-956 from x11 mode)   Tmpma = Muladd (:970)
+Kfulsm = 0     Sigml = 1.5    Sigmu = 2.5    Ktcopt = 0        Ksdev = 1  (NOT 0!)
+Imad = 0       Shrtsf = F     Psuadd = F     Noxfct = F        Tru7hn = F
+Lterm = NOTSET -> 6 (auto MSR; seasonalma default)             Ny = Sp
+Kersa: find default (not in the :323-381 block -- likely x11int or a later init)
+Csigvc(1..Sp) = F (calendarsigma default none)
+```
+So the gate needs a small `getx11 defaults` step (port the ~13 scalar defaults into
+the x11 parse path, gtinpt.cpp) BEFORE the run_x11 driver. Not the full 576-line
+reader.
+
 **Deliverable:** a `run_x11` driver (core/src/driver/) that runs the spine into a
 live ctx + a `x13run_x11` harness exe (mirror x13run_m3.cpp) that dumps the B/C/D
 save tables, then a `tests/parity/test_x11_*.py` gating airline_x11-default
