@@ -8,8 +8,13 @@
 #include <cmath>
 #include <vector>
 
-#include "automdl/amdest.hpp"   // acf
-#include "gen/srslen.hpp"       // prm::PLEN
+#include "automdl/amdest.hpp"     // acf, cnvmdl
+#include "automdl/idmodel.hpp"    // chkurt
+#include "automdl/mdlset.hpp"     // mdlint, mdlset
+#include "regarima/estimate.hpp"  // armats
+#include "gen/srslen.hpp"         // prm::PLEN
+#include "gen/model.hpp"          // prm::PARIMA
+#include "gen/notset.hpp"         // prm::DNOTST
 
 namespace x13 {
 
@@ -57,6 +62,118 @@ void mdlchk(X13Context& ctx, const double* a, int na, int nefobs, double& blpct,
     rtval = rm / rstd;
 
     rvr = std::sqrt(d.var);
+}
+
+void tstmd2(X13Context& ctx, int& nnsig, int nz, int& ipr, int& iqr, int& ips,
+            int& iqs) {
+    using namespace prm;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    nnsig = 0;
+    double cval = ctx.arima.tsig;
+    double cmin = (nz <= 150) ? 0.15 : 0.1;
+    int ardsp = m.nnsedf + m.nseadf;
+
+    int idr, ids, id, ip, iq, iprs, iqrs, n;
+    cnvmdl(ctx, ipr, ips, idr, ids, iqr, iqs, id, ip, iq, iprs, iqrs, n);
+    if (ctx.error.lfatal) return;
+
+    int iurpr, iurps, iurqr, iurqs;
+    chkurt(ctx, iurpr, iurps, iurqr, iurqs);
+
+    double tval[PARIMA];
+    armats(ctx, tval);
+    if (ctx.error.lfatal) return;
+
+    int icpr = 0, icps = 0, icqr = 0, icqs = 0;
+    double bmin = -DNOTST;  // 999
+    if (iurpr == 0 && ipr > icpr) {
+        int i = ipr - icpr;
+        double cv = std::abs(tval[i - 1]);
+        if (cv < cval && std::abs(d.arimap(i + ardsp)) < cmin) {
+            ++icpr;
+            if (bmin > cv) bmin = cv;
+        }
+    }
+    if (ips > icps && iurps == 0) {
+        int i = iprs - icps;
+        double cv = std::abs(tval[i - 1]);
+        if (cv < cval && std::abs(d.arimap(i + ardsp)) < cmin) {
+            ++icps;
+            if (bmin > cv) {
+                bmin = cv;
+                icpr = 0;
+            }
+        }
+    }
+    if (iqr > icqr && iurqr == 0) {
+        int i = iprs + iqr - icqr;
+        double cv = std::abs(tval[i - 1]);
+        if (cv < cval && std::abs(d.arimap(i + ardsp)) < cmin) {
+            ++icqr;
+            if (bmin > cv) {
+                bmin = cv;
+                icpr = 0;
+                icps = 0;
+            }
+        }
+    }
+    if (iqs > icqs && iurqs == 0) {
+        int i = iprs + iqrs - icqs;
+        double cv = std::abs(tval[i - 1]);
+        if (cv < cval && std::abs(d.arimap(i + ardsp)) < cmin) {
+            ++icqs;
+            if (bmin > cv) {
+                bmin = cv;
+                icpr = 0;
+                icps = 0;
+                icqr = 0;
+            }
+        }
+    }
+    (void)bmin;
+    nnsig = nnsig + icpr + icps + icqr + icqs;
+    if ((iprs + iqrs) == 1 || (iurpr + iurps + iurqr + iurqs) > 0) nnsig = 0;
+
+    if (nnsig >= 1) {
+        if (icpr >= 1) {
+            while (true) {
+                for (int i = ipr; i <= n - 1; ++i)
+                    d.arimap(i + ardsp) = d.arimap(i + 1 + ardsp);
+                --ipr;
+                --icpr;
+                if (icpr <= 0) break;
+            }
+        } else if (icps >= 1) {
+            while (true) {
+                for (int i = iprs; i <= n - 1; ++i)
+                    d.arimap(i + ardsp) = d.arimap(i + 1 + ardsp);
+                --ips;
+                --icps;
+                if (icps <= 0) break;
+            }
+        } else if (icqr >= 1) {
+            while (true) {
+                for (int i = iprs + iqr; i <= n - 1; ++i)
+                    d.arimap(i + ardsp) = d.arimap(i + 1 + ardsp);
+                --iqr;
+                --icqr;
+                if (icqr <= 0) break;
+            }
+        } else {
+            while (true) {
+                for (int i = iprs + iqrs; i <= n - 1; ++i)
+                    d.arimap(i + ardsp) = d.arimap(i + 1 + ardsp);
+                --iqs;
+                --icqs;
+                if (icqs <= 0) break;
+            }
+        }
+        bool inptok = true;
+        mdlint(ctx);
+        mdlset(ctx, ipr, idr, iqr, ips, ids, iqs, inptok);
+    }
 }
 
 }  // namespace x13

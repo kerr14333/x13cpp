@@ -19,5 +19,15 @@ namespace x13 {
 void mdlchk(X13Context& ctx, const double* a, int na, int nefobs, double& blpct,
             double& blq, int& bldf, double& rvr, double& rtval);
 
+// tstmd2.f: unit-root-nearness / insignificant-parameter reduction. Checks the
+// ARMA t-statistics (armats) against Tsig and the coefficient magnitude against
+// a size-dependent cmin; where a parameter is insignificant AND its operator has
+// no near-unit root (chkurt), it drops the highest lag of that operator and
+// rebuilds the model (mdlint/mdlset). Never reduces a total-order-1 model or one
+// with any unit root. nnsig returns the number of parameters removed; ipr/iqr/
+// ips/iqs are updated in place. nz is the series length (sets cmin).
+void tstmd2(X13Context& ctx, int& nnsig, int nz, int& ipr, int& iqr, int& ips,
+            int& iqs);
+
 }  // namespace x13
 #endif  // X13_AUTOMDL_ADQTST_HPP
