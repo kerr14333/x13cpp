@@ -399,4 +399,39 @@ TEST("chktrn: tstfct+nfcst extends the oktrn span to the forecasts") {
     CHECK_EQ(s1[9 - 1], 30.0);
 }
 
+TEST("chktrn: adjacent negatives -- repair is sequential/in-place, not snapshot") {
+    // Negatives at 5 and 6. Processing ascends and mutates Stc in place:
+    //   i=5: before=Stc(4)=20; after skips the still-negative Stc(6) to Stc(7)=80
+    //        -> Stc(5)=(80+20)/2=50.
+    //   i=6: before finds the JUST-REPAIRED Stc(5)=50; after=Stc(7)=80
+    //        -> Stc(6)=(80+50)/2=65.
+    // A snapshot-then-fill implementation would instead skip the original negative
+    // Stc(5) and use Stc(4)=20 -> Stc(6)=50. The 65 pins the in-place semantics.
+    auto ctx = make_chktrn_ctx(2);
+    double stc[10] = {10, 10, 10, 20, -5, -9, 80, 30, 10, 10};
+    bool tstfct = false;
+    CHECK_EQ(chktrn(*ctx, stc, tstfct), false);
+    CHECK_EQ(stc[5 - 1], 50.0);
+    CHECK_EQ(stc[6 - 1], 65.0);
+}
+
+TEST("chktrn: exact 0.0 counts as non-positive (<=0 boundary)") {
+    auto ctx = make_chktrn_ctx(2);
+    double stc[10] = {10, 10, 20, 0.0, 40, 30, 25, 30, 10, 10};
+    bool tstfct = false;
+    CHECK_EQ(chktrn(*ctx, stc, tstfct), false);  // a zero flips oktrn
+    CHECK_EQ(stc[4 - 1], 30.0);                   // (Stc(3)+Stc(5))/2=(20+40)/2
+}
+
+TEST("chktrn: negative outside the core span repairs but leaves oktrn true") {
+    // Negative in the backcast region (index 2, < pos1ob). The observed core span
+    // is clean, so oktrn stays true even though a repair happens: the before-search
+    // runs off pos1ob (NOTSET) and the value is taken from the nearest obs, Stc(3).
+    auto ctx = make_chktrn_ctx(2);
+    double stc[10] = {10, -7, 20, 30, 40, 30, 25, 30, 10, 10};
+    bool tstfct = false;
+    CHECK_EQ(chktrn(*ctx, stc, tstfct), true);
+    CHECK_EQ(stc[2 - 1], 20.0);  // Stc(after)=Stc(3)
+}
+
 int main() { return mt::run_all(); }
