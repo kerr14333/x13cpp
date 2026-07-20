@@ -201,3 +201,14 @@ that pins it.
 ---
 
 _Append new entries as they are found while porting. Keep each pinned to a test._
+
+## CB-10: prtref/chkadj SO-outlier operator-precedence quirk (latent)
+
+`prtref.f:277` gates the SO-outlier factor accumulation as
+`IF((Adjso.eq.1).and.rtype.eq.PRGTSO.or.rtype.eq.PRGUSO)`. Fortran binds `.and.`
+before `.or.`, so this parses as `((Adjso==1 && rtype==PRGTSO) || rtype==PRGUSO)`
+-- a user-defined SO regressor (`PRGUSO`) contributes its factor regardless of the
+`Adjso` adjustment flag, unlike every sibling type (TD/holiday/AO/LS/TC) which is
+uniformly gated. Almost certainly a missing paren (intended
+`Adjso==1 && (rtype==PRGTSO || rtype==PRGUSO)`). Reproduced verbatim in
+`core/src/x11/x11drv.cpp` regeff(). Inert on the current corpus (no SO regressors).

@@ -93,6 +93,13 @@ void adjreg(X13Context& ctx, double* orix, double* orixmv, double* orixot,
 // is returned; the non-log-transform warning WRITE is deferred.
 void chkadj(X13Context& ctx, int& ntd, int khol, bool lseats, double lam);
 
+// prtref.f (compute part): accumulate each regression column's effect (beta *
+// design column) into the by-type factor buffers, gated on the Adj*/Fin*
+// indicators. adjreg then subtracts these from the X-11 input. Deferred print.
+void regeff(X13Context& ctx, int nrxy, double* ftd, double* fhol, double* fao,
+            double* fls, double* ftc, double* fso, double* fsea, double* fcyc,
+            double* fusr, double* fmv, bool lseats);
+
 }  // namespace x13
 
 #endif  // X13_X11_X11DRV_HPP

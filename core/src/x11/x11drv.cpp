@@ -677,4 +677,95 @@ void chkadj(X13Context& ctx, int& ntd, int khol, bool lseats, double lam) {
     }
 }
 
+// prtref.f (compute part, l.195-289): accumulate each regression column's effect
+// (beta * design column) into the by-type factor buffers Ftd/Fhol/Fao/Fls/Ftc/
+// Fso/Fsea/Fcyc/Fusr/Fmv, gated on the Adj*/Fin* indicators set by chkadj. The
+// factors are on the prior-adjusted, transformed (log/identity) scale; adjreg
+// subtracts them and inverse-transforms. The print/save (txy/prtmtx) is deferred.
+void regeff(X13Context& ctx, int nrxy, double* ftd, double* fhol, double* fao,
+            double* fls, double* ftc, double* fso, double* fsea, double* fcyc,
+            double* fusr, double* fmv, bool lseats) {
+    using namespace prm;
+    x11adj_cmn& adj = ctx.x11adj;
+    const model_cmn& m = ctx.model;
+    const int ncxy = m.ncxy;
+    const double* b = ctx.mdldat.b.data();
+    const double* xy = ctx.mdldat.xy.data();
+
+    // daxpy(Nrxy, beta, Xy(icol), Ncxy, F, 1): F[k] += beta * Xy(icol, k+1).
+    auto axpy = [&](double* f, double beta, int icol) {
+        for (int k = 0; k < nrxy; ++k)
+            f[k] += beta * xy[(icol - 1) + static_cast<std::size_t>(k) * ncxy];
+    };
+
+    int iusr = 1;
+    for (int icol = 1; icol <= m.nb; ++icol) {
+        int rtype = m.rgvrtp(icol);
+        bool lusr = false;
+        if (adj.nusrrg > 0) {
+            if (rtype == PRGTUD) {
+                rtype = ctx.usrreg.usrtyp(iusr);
+                ++iusr;
+                lusr = true;
+            } else if ((rtype >= PRGTUH && rtype <= PRGUH5) || rtype == PRGTUS) {
+                ++iusr;
+            }
+        }
+        const double beta = b[icol - 1];
+        // Trading day.
+        if (adj.adjtd == 1 &&
+            ((rtype == PRGTTD || rtype == PRGTST || rtype == PRRTTD ||
+              rtype == PRRTST || rtype == PRATTD || rtype == PRATST ||
+              rtype == PRG1TD || rtype == PRR1TD || rtype == PRA1TD ||
+              rtype == PRG1ST || rtype == PRR1ST || rtype == PRA1ST) ||
+             (rtype == PRGTLM || rtype == PRGTSL || rtype == PRGTLQ ||
+              rtype == PRGTLY || rtype == PRRTLM || rtype == PRRTSL ||
+              rtype == PRRTLQ || rtype == PRRTLY || rtype == PRATLM ||
+              rtype == PRATSL || rtype == PRATLQ || rtype == PRATLY) ||
+             (rtype == PRGUTD || rtype == PRGULM || rtype == PRGULQ ||
+              rtype == PRGULY)))
+            axpy(ftd, beta, icol);
+        // Holiday.
+        if (((adj.adjhol == 1) || adj.finhol) &&
+            (rtype == PRGTEA || rtype == PRGTEC || rtype == PRGTES ||
+             rtype == PRGTLD || rtype == PRGTTH ||
+             (rtype >= PRGTUH && rtype <= PRGUH5)))
+            axpy(fhol, beta, icol);
+        // User-defined.
+        if (((adj.adjusr == 1) || adj.finusr) && rtype == PRGTUD)
+            axpy(fusr, beta, icol);
+        // Seasonal.
+        if (adj.adjsea == 1 &&
+            (rtype == PRGTUS ||
+             (lseats && (rtype == PRGTSE || rtype == PRGTTS || rtype == PRRTSE ||
+                         rtype == PRRTTS || rtype == PRATSE || rtype == PRATTS))))
+            axpy(fsea, beta, icol);
+        // AO outlier.
+        if (((adj.adjao == 1) || adj.finao) &&
+            (rtype == PRGTAO || rtype == PRGTAA || rtype == PRGUAO))
+            axpy(fao, beta, icol);
+        // LS / ramp.
+        if (((adj.adjls == 1) || adj.finls) &&
+            (rtype == PRGTLS || rtype == PRGTRP || rtype == PRGTAL ||
+             rtype == PRGTTL || rtype == PRGTQI || rtype == PRGTQD ||
+             rtype == PRGULS))
+            axpy(fls, beta, icol);
+        // TC outlier.
+        if (((adj.adjtc == 1) || adj.fintc) && (rtype == PRGTTC || rtype == PRGTAT))
+            axpy(ftc, beta, icol);
+        // MV outlier.
+        if (rtype == PRGTMV) axpy(fmv, beta, icol);
+        // SO outlier. NOTE: reproduces the Fortran operator-precedence quirk
+        // (.and. binds before .or.) -- PRGUSO fires regardless of Adjso. Airline
+        // has no SO so it is inert; logged as a Census bug.
+        if ((adj.adjso == 1 && rtype == PRGTSO) || rtype == PRGUSO)
+            axpy(fso, beta, icol);
+        // Transitory (cycle), SEATS user-defined only.
+        if (lseats && lusr && rtype == PRGCYC) {
+            axpy(fcyc, beta, icol);
+            if (adj.adjcyc == 0) adj.adjcyc = 1;
+        }
+    }
+}
+
 }  // namespace x13

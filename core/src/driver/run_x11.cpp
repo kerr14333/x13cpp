@@ -15,7 +15,8 @@
 // they land; until then a spec carrying a model fatals cleanly.
 #include "specparse/specparse.hpp"
 #include "x11/x11parts.hpp"   // x11pt1, x11pt2
-#include "x11/x11drv.hpp"     // setxpt, x11int
+#include "x11/x11drv.hpp"     // setxpt, x11int, chkadj, regeff, extend, adjreg
+#include "regarima/regvar.hpp"   // regvar (design rebuild for regression effects)
 #include "notset.hpp"         // prm::NOTSET
 
 #include <algorithm>
@@ -129,10 +130,14 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     if (ctx.error.lfatal) return false;
 
     // Model path only (arima.f tail 1225-1332): forecast-extend the transformed
-    // series into orix, then adjreg subtracts the regression effects (all zero on
-    // this path -- no TD/outlier/holiday), inverse-transforms to the original
-    // scale, and fills Stcsi (the B1 input), the Series forecast tail, and Stocal.
+    // series into orix, then adjreg subtracts the regression effects (regeff
+    // fills them by type), inverse-transforms to the original scale, and fills
+    // Stcsi (the B1 input), the Series forecast tail, and Stocal.
     if (has_model) {
+        // chkadj (arima.f:1256): set the Adj*/count indicators from the estimated
+        // model's regressor types, so regeff/adjreg remove the effects present.
+        int ntd = 0;
+        chkadj(ctx, ntd, ctx.x11opt.khol, lseats, ctx.arima.lam);
         constexpr int PLEN = 1020;
         std::vector<double> orix(PLEN, 0.0), orixmv(PLEN, 0.0), orixot(PLEN, 0.0);
         std::vector<double> ftd(PLEN, 0.0), fao(PLEN, 0.0), fls(PLEN, 0.0),
@@ -148,6 +153,28 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
             if (ctx.error.lfatal) return false;
         } else {
             copy(trnsrs.data(), ctx.extend.nobspf, 1, orix.data() + (pos1ob - 1));
+        }
+        // arima.f:1283: rebuild the regression design over the forecast-extended
+        // orix. rgarma differenced Xy in place during estimation; regeff needs the
+        // un-differenced calendar columns. Only needed when regression effects are
+        // present (some Adj*==1); harmless otherwise.
+        const x11adj_cmn& adj = ctx.x11adj;
+        const bool have_eff = adj.adjtd == 1 || adj.adjhol == 1 || adj.adjao == 1 ||
+                              adj.adjls == 1 || adj.adjtc == 1 || adj.adjso == 1 ||
+                              adj.adjsea == 1 || adj.adjcyc == 1 || adj.adjusr == 1 ||
+                              adj.finhol || adj.finao || adj.finls || adj.fintc ||
+                              adj.finusr;
+        if (have_eff) {
+            int nrxy2 = 0, frstry2 = 0;
+            regvar(ctx, orix.data(), ctx.arima.nrxy, fctdrp, nfcst, nbcst,
+                   ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+                   ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom, nrxy2,
+                   ctx.arima.begxy.data(), frstry2, true, ctx.arima.elong);
+            if (ctx.error.lfatal) return false;
+            ctx.arima.nrxy = nrxy2;
+            regeff(ctx, ctx.arima.nrxy, ftd.data(), fhol.data(), fao.data(),
+                   fls.data(), ftc.data(), fso.data(), fsea.data(), fcyc.data(),
+                   fusr.data(), fmv.data(), lseats);
         }
         int n = 0;
         adjreg(ctx, orix.data(), orixmv.data(), orixot.data(), ftd.data(),

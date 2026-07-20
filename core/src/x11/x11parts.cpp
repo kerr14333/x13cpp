@@ -612,17 +612,28 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // Combined factors = seasonal factors (no trading-day component on base).
     copy(sts + (pos1bk - 1), k2, 1, ststd + (pos1bk - 1));
 
-    // Calendar / trading-day / prior-length-of-month combine (all off base).
+    // Calendar / trading-day combine (x11pt3.f:525-550). Holiday combined-factor
+    // rebuild: with no user holiday model (Haveum=F) this reduces to Faccal/Fachol.
+    double* faccal = ctx.x11fac.faccal.data();
     if (!adj.finhol && (opt.khol == 2 || (hid.ixreg > 0 && xl.axrghl) ||
                         adj.adjhol == 1)) {
-        x11_not_ported(ctx, "x11pt3 holiday factor rebuild (Faccal)");
-        return;
+        if (ctx.xrgum.haveum) {
+            setdp(muladd == 1 ? 0.0 : 1.0, PLEN, faccal);
+            if (adj.adjtd == 1)
+                addmul(faccal, faccal, ctx.x11fac.factd.data(), pos1bk, klda, muladd);
+            else if (opt.kswv > 0)
+                addmul(faccal, faccal, ctx.x11fac.stptd.data(), pos1bk, klda, muladd);
+        } else {
+            divsub(faccal, faccal, ctx.x11fac.fachol.data(), pos1bk, klda, muladd);
+        }
     }
+    // Combine the calendar factor into the final SA (D11) and total factors (D16).
     if ((adj.adjtd == 1 || (hid.ixreg > 0 && xl.axrgtd)) ||
         ((adj.finhol && (hid.ixreg > 0 && xl.axrghl)) || adj.adjhol == 1) ||
         opt.kswv > 0) {
-        x11_not_ported(ctx, "x11pt3 trading-day/holiday combine into D11/D16");
-        return;
+        if (opt.kfulsm == 0 || opt.kfulsm == 2)
+            divsub(stci, stci, faccal, pos1bk, posffc, muladd);
+        addmul(ststd, ststd, faccal, pos1bk, klda, muladd);
     }
     if ((adj.adjtd == 0 || opt.kswv == 0) && pri.priadj > 1) {
         x11_not_ported(ctx, "x11pt3 prior length-of-month fold-in (Priadj>1)");
