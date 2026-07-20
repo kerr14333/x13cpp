@@ -96,19 +96,26 @@ The MISSING tail (arima.f l.1136-1290) is:
    -> fills **Stcsi** (the B1 input!), Series forecast tail, Stocal. THIS is what
    makes Stcsi valid for x11pt2 (x11pt1 only set the observed span).
 
-**Open items to trace before wiring:**
-- **run_m2 reconciliation:** the oracle runs x11pt1 BEFORE arima (x11pt1 seeds
-  Sto/Orig over the span); the C++ run_m2 reads ctx.arima.y directly, not x11pt1's
-  Sto. Confirm the estimation reads equivalent state, or call x11pt1 first and have
-  the estimation read Sto. (x11pt1's Sto = prior-adjusted original series; run_m2's
-  padj/trnsrs is the same quantity -- likely already equivalent.)
-- **setxpt / x11int placement:** setxpt sets Pos1bk/Pos1ob/Posfob/Posffc; x11int
-  inits the Fac*/Sts/Stc arrays to the mode identity. Both must run BEFORE x11pt1
-  (x11pt1 uses the span pointers). Trace where the oracle calls them (gtinpt/
-  sspdrv setup vs early arima) and replicate. Both are PORTED (x11drv.cpp).
-- **fcstx extraction:** confirm the transformed-scale forecast vector is retained
-  on ctx.forecasts (FcstOut.fcst is original-scale; need the transformed one --
-  check fcstout / the forecast leaf for the transformed fcst buffer).
+**Open items -- RESOLVED (2026-07-20, read-only trace):**
+- **fcstx extraction -- DONE.** `ctx.forecasts.trnfct` is the transformed-scale
+  forecast vector (FcstOut.trnfct, length nfcst; .fcst is original-scale). That is
+  exactly the `fcstx` extend/adjreg consume. Populated by `fcstout`; the raw leaf
+  `fcstxy(ctx, fctori, nfcst, fcst, se, ...)` fills the transformed fcst/se directly
+  if the driver prefers to bypass fcstout's original-scale mapping.
+- **setxpt / x11int placement -- DONE.** Oracle: `setxpt` is called in the INPUT
+  setup (editor.f:233, `CALL setxpt(Nfdrp,lsadj,Fctdrp)`), after the bookkeeping at
+  editor.f:224-233 (Frstsy/Nomnfy/Nfdrp/Nobspf/**Nofpob/Nbfpob/Lsp=1**); the
+  x11ari.f:149 setxpt is only the degenerate Same/!havmdl branch. `x11int` is called
+  immediately BEFORE x11ari (x12run.f:174 -> :181; sspdrv.f:116 -> :180). So the
+  driver order is: [setxpt in setup] -> x11int -> trnaic -> x11pt1 -> arima-glue ->
+  x11pt2. run_m2 (run_pre_model.cpp:89-99) ALREADY computes Frstsy/Nomnfy/Nfdrp/
+  Nobspf; the driver only adds Nofpob/Nbfpob/Lsp + the setxpt call + x11int.
+- **run_m2 reconciliation -- DONE.** No existing C++ caller of setxpt/x11int/x11pt1/
+  x11ari -- run_x11 is greenfield assembly. run_m2 sources the series from
+  `ctx.arima.y` (span-offset); x11pt1 reads `ctx.inpt.series`/`ctx.inpt.orig`. The
+  single build-time check: ensure ctx.inpt.series/orig hold the observed series
+  before x11pt1 (populated by the parse/getsrs stage). x11pt1's Sto = prior-adjusted
+  original series == run_m2's padj -- same quantity.
 
 **Deliverable:** a `run_x11` driver (core/src/driver/) that runs the spine into a
 live ctx + a `x13run_x11` harness exe (mirror x13run_m3.cpp) that dumps the B/C/D
