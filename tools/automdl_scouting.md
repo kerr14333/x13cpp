@@ -41,14 +41,19 @@ arflt (armafilt), prlkhd, setmdl, setint, idotlr, eltfcn, copy, mdlint.
 
 New leaves needed (leaf-first tier order):
 
+Pure-numeric leaf tier: **COMPLETE** (all unit-verified in test_numeric).
+Everything below is stateful (needs a built ctx.model) — verify through the
+corpus gate, not microtests.
+
 | Tier | leaf        | lines | role                                        | status |
 |------|-------------|-------|---------------------------------------------|--------|
 | 0    | chsppf      | 223   | chi-square PPF (AIC-test crit value)        | **DONE** f318ca6 |
-| 0    | smeadl+sumf | 17+9  | mean-deletion of a series span              | next   |
-| 0    | genrtt      | 76    | mean/regression t-stat (chkmu)              | todo   |
-| 0    | chitst      | 61    | chi-square test statistic (chkchi)          | todo   |
-| 1    | chkrt1      | 93    | check AR/MA root moduli (iddiff)            | todo   |
-| 1    | chkurt      | 100   | unit-root nearness test (tstmd2)            | todo   |
+| 0    | sumf+smeadl | 9+17  | series sum + mean-deletion of a span        | **DONE** 7029e70 |
+| 0    | gauss+chisq | 60+60 | normal/chi-square probs (chitst)            | **DONE** f72424c |
+| 0*   | genrtt      | 76    | mean/regression t-stat (chkmu) — STATEFUL   | todo   |
+| 0*   | chitst      | 61    | chi-square group stat (chkchi) — STATEFUL   | todo   |
+| 1    | chkrt1      | 93    | AR/MA root moduli (iddiff) — STATEFUL; mirrors estimate.cpp:290-370 root loop, roots() ported | todo |
+| 1    | chkurt      | 100   | unit-root nearness (tstmd2) — STATEFUL; modlim=1/0.95 | todo   |
 | 1    | cnvmdl      | 60    | model-order <-> packed conversion           | todo   |
 | 1    | mdlchk      | 74    | model validity check                        | todo   |
 | 1    | mdlset      | ~     | set model orders into common state          | todo   |
@@ -81,6 +86,23 @@ New leaves needed (leaf-first tier order):
 - **regvar rebuilds mid-loop**: automd toggles regressor groups and re-runs
   regvar; the [X:y] column order must match what each AIC test expects (same Nb
   provenance concerns as m3_scouting §7).
+
+### Next session — stateful iddiff/amdid subtree
+
+The pure leaves are banked. The next unit is the **differencing/ARMA-order
+identification core**, ported as a group and verified end-to-end (no microtests
+for stateful routines — there is no lightweight ctx.model builder; construct
+state via the real getmdl/regvar front end and diff the identified orders vs the
+oracle `.udg`). Suggested order:
+1. chkrt1 + chkurt (root-modulus checkers) — trivial once you mirror the
+   estimate.cpp:290-370 loop; `roots(ctx,...)` already ported.
+2. amdest (+amdprt deferred) — the single-candidate estimate wrapper.
+3. bestmd/bestget — best-model bookkeeping for the grid.
+4. iddiff driver — differencing selection; verify d/D against oracle first
+   (isolate before ARMA-order search).
+5. amdid + amdid2 — the BIC ARMA-order grid.
+Gate incrementally: iddiff's chosen (d,D) is a discrete decision — check it
+exactly against the oracle before wiring amdid.
 
 ## 4. First corpus gate target
 
