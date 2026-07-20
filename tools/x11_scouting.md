@@ -65,6 +65,57 @@ SEATS (`seats*.f`), sliding-spans (`ss*.f`), revisions
 (`rev*.f`), aggregate/composite (`agr*.f`), and x11regression (`x11mdl/x11aic`)
 are separate, later sub-milestones and are NOT in scope here.
 
+## x11 driver assembly plan (x11ari base path -> airline B1..D7 gate) — 2026-07-20
+
+**Status:** x11pt1, x11pt2, chktrn, adjreg ALL PORTED. What remains for the first
+running gate is the **driver that assembles the pipeline** + a harness exe + the
+parity test. The full `x11ari.f` (389 lines) is mostly deferred (SEATS/spcdrv/agr/
+timers/prints); the base airline spine is:
+
+```
+[trnaic if Fcntyp==0]  (ported)   -- transform auto-select
+ -> x11pt1              (ported)   -- prior adjust, Sto/Stcsi over OBSERVED span
+ -> arima(...)          (glue)     -- estimate + forecast + EXTEND + adjreg
+ -> x11pt2              (ported)   -- B1..D7
+ -> x11pt3 -> x11pt4    (later)
+```
+
+**The `arima` glue is the remaining work.** The C++ `run_m2` (run_pre_model.cpp)
+already does arima.f's front: prep trnsrs from Sto -> trnaic -> trnfcn transform
+-> regvar -> estimate/automd/outlier -> `fcstout` (forecasts on ctx.forecasts).
+The MISSING tail (arima.f l.1136-1290) is:
+1. `prtfct` -> **fcstx** = the *transformed-scale* point forecasts, length Nfcst
+   (NOT untfct; extend consumes the transformed values). fcstout stores the
+   transformed fcst/se on ctx.forecasts -- extract fcstx from there (or call the
+   forecast leaf to fill an fcstx buffer). Nbcst=0 for airline -> skip mkback/bcstx.
+2. `setdp(0,PLEN,orix)` then `extend(ctx, trnsrs, begxy, orix, extok, lam, fcstx,
+   bcstx)` (PORTED) -> fills padded `orix` with observed+forecast(+backcast).
+   Guard: `Ldestm && ((Nfcst>0 && Nfdrp>0) || Nbcst>0)`; else `copy(trnsrs,Nobspf,
+   1, orix(Pos1ob))`.
+3. `adjreg(ctx, orix, orixmv, orixot, ftd..fhol=0, fcntyp, lam, Nrxy, n)` (PORTED)
+   -> fills **Stcsi** (the B1 input!), Series forecast tail, Stocal. THIS is what
+   makes Stcsi valid for x11pt2 (x11pt1 only set the observed span).
+
+**Open items to trace before wiring:**
+- **run_m2 reconciliation:** the oracle runs x11pt1 BEFORE arima (x11pt1 seeds
+  Sto/Orig over the span); the C++ run_m2 reads ctx.arima.y directly, not x11pt1's
+  Sto. Confirm the estimation reads equivalent state, or call x11pt1 first and have
+  the estimation read Sto. (x11pt1's Sto = prior-adjusted original series; run_m2's
+  padj/trnsrs is the same quantity -- likely already equivalent.)
+- **setxpt / x11int placement:** setxpt sets Pos1bk/Pos1ob/Posfob/Posffc; x11int
+  inits the Fac*/Sts/Stc arrays to the mode identity. Both must run BEFORE x11pt1
+  (x11pt1 uses the span pointers). Trace where the oracle calls them (gtinpt/
+  sspdrv setup vs early arima) and replicate. Both are PORTED (x11drv.cpp).
+- **fcstx extraction:** confirm the transformed-scale forecast vector is retained
+  on ctx.forecasts (FcstOut.fcst is original-scale; need the transformed one --
+  check fcstout / the forecast leaf for the transformed fcst buffer).
+
+**Deliverable:** a `run_x11` driver (core/src/driver/) that runs the spine into a
+live ctx + a `x13run_x11` harness exe (mirror x13run_m3.cpp) that dumps the B/C/D
+save tables, then a `tests/parity/test_x11_*.py` gating airline_x11-default
+`.b1 .d10 .d11 .d12 .d13` (+ the B2..D7 intermediates) bit-exact vs oracle goldens
+(24 x11 golden dirs ship them at 15-digit precision).
+
 ## x11pt2 port plan (the B1->D7 heart, 954 lines) — scouted 2026-07-20
 
 Structure = the classic B/C/D iteration; **most CALLs are already-ported leaves**
