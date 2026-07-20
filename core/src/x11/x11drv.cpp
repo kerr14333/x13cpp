@@ -14,6 +14,7 @@
 #include "transform/transform.hpp"  // invfcn (inverse Box-Cox)
 #include "specparse/specparse.hpp"  // copy, setdp
 #include "numeric/numeric.hpp"   // dpeq, dpow_ri
+#include "gen/model.hpp"         // prm:: regression-type constants (PRGT*)
 
 #include <algorithm>
 #include <cmath>
@@ -521,6 +522,159 @@ void adjreg(X13Context& ctx, double* orix, double* orixmv, double* orixot,
 
     // Calendar-adjusted series (with forecasts) -> Stocal.
     copy(orixcl + (pos1bk - 1), nrxy, 1, stocal + (pos1bk - 1));
+}
+
+// chkadj.f -- update the Adj*/Fin* regression-adjustment indicators from the
+// regressor types actually present in the model, and count each type into
+// ctx.x11adj (Ntd out; Nhol/Neas/Nao/Nls/Ntc/... on ctx). Determines which
+// regression effects adjreg/prtref remove from the X-11 input. The non-log/non-
+// identity WARNING WRITE is deferred (dropped).
+void chkadj(X13Context& ctx, int& ntd, int khol, bool lseats, double lam) {
+    using namespace prm;
+    x11adj_cmn& adj = ctx.x11adj;
+    const model_cmn& m = ctx.model;
+    const x11log_cmn& xl = ctx.x11log;
+
+    if (adj.adjhol < 0 && adj.finhol) adj.finhol = false;
+    if (adj.adjusr < 0 && adj.finusr) adj.finusr = false;
+    if (adj.adjao < 0 && adj.finao) adj.finao = false;
+    if (adj.adjls < 0 && adj.finls) adj.finls = false;
+    if (adj.adjtc < 0 && adj.fintc) adj.fintc = false;
+
+    if (!(adj.adjtd >= 0 || adj.adjhol >= 0 || adj.adjao >= 0 || adj.adjls >= 0 ||
+          adj.adjtc >= 0 || adj.adjso >= 0 || adj.adjsea >= 0 || adj.adjcyc >= 0 ||
+          adj.adjusr >= 0 || adj.finhol || adj.finao || adj.finls || adj.fintc ||
+          adj.finusr))
+        return;
+
+    int nusr = 0, nsea = 0, ncyc = 0, iusr = 1;
+    ntd = 0;
+    adj.nao = 0; adj.nls = 0; adj.ntc = 0; adj.nso = 0; adj.nramp = 0;
+    adj.nflwtd = 0; adj.nln = 0; adj.nsln = 0; adj.nlp = 0; adj.nhol = 0;
+    adj.neas = 0; adj.nseq = 0;
+
+    for (int icol = 1; icol <= m.nb; ++icol) {
+        int rtype = m.rgvrtp(icol);
+        if (adj.nusrrg > 0) {
+            if (rtype == PRGTUD) { rtype = ctx.usrreg.usrtyp(iusr); ++iusr; }
+            else if ((rtype >= PRGTUH && rtype <= PRGUH5) || rtype == PRGTUS)
+                ++iusr;
+        }
+        // Trading-day (flow/stock TD + length-of-month/quarter + leap year).
+        if ((rtype == PRGTTD || rtype == PRGTST || rtype == PRRTTD ||
+             rtype == PRRTST || rtype == PRATTD || rtype == PRATST ||
+             rtype == PRG1TD || rtype == PRR1TD || rtype == PRA1TD ||
+             rtype == PRG1ST || rtype == PRR1ST || rtype == PRA1ST) ||
+            (rtype == PRGTLM || rtype == PRGTSL || rtype == PRGTLQ ||
+             rtype == PRGTLY || rtype == PRRTLM || rtype == PRRTSL ||
+             rtype == PRRTLQ || rtype == PRRTLY || rtype == PRATLM ||
+             rtype == PRATSL || rtype == PRATLQ || rtype == PRATLY) ||
+            (rtype == PRGUTD || rtype == PRGULM || rtype == PRGULQ ||
+             rtype == PRGULY)) {
+            ++ntd;
+            if (rtype == PRGTTD || rtype == PRRTTD || rtype == PRATTD ||
+                rtype == PRG1TD || rtype == PRR1TD || rtype == PRA1TD ||
+                (m.isrflw == 0 && rtype == PRGUTD))
+                ++adj.nflwtd;
+            if (rtype == PRGTLM || rtype == PRGTLQ || rtype == PRRTLM ||
+                rtype == PRRTLQ || rtype == PRATLM || rtype == PRATLQ ||
+                rtype == PRGULM || rtype == PRGULQ)
+                ++adj.nln;
+            if (rtype == PRGTSL || rtype == PRRTSL || rtype == PRATSL) ++adj.nsln;
+            if (rtype == PRGTLY || rtype == PRRTLY || rtype == PRATLY ||
+                rtype == PRGULY)
+                ++adj.nlp;
+        }
+        // Holiday.
+        if (rtype == PRGTEA || rtype == PRGTLD || rtype == PRGTTH ||
+            rtype == PRGTEC || rtype == PRGTES ||
+            (rtype >= PRGTUH && rtype <= PRGUH5)) {
+            ++adj.nhol;
+            if (rtype == PRGTEA || rtype == PRGTEC || rtype == PRGTES)
+                ++adj.neas;
+        }
+        // User-defined.
+        if (rtype == PRGTUD) ++nusr;
+        // Seasonal.
+        if (rtype == PRGTUS ||
+            (lseats && (rtype == PRGTSE || rtype == PRGTTS || rtype == PRRTSE ||
+                        rtype == PRRTTS || rtype == PRATSE || rtype == PRATTS)))
+            ++nsea;
+        // AO outlier.
+        if (rtype == PRGTAO || rtype == PRGUAO || rtype == PRGTAA) ++adj.nao;
+        // LS / ramp.
+        if (rtype == PRGTLS || rtype == PRGULS || rtype == PRGTRP ||
+            rtype == PRGTAL || rtype == PRGTTL || rtype == PRGTQD ||
+            rtype == PRGTQI) {
+            ++adj.nls;
+            if (rtype == PRGTRP || rtype == PRGTQI || rtype == PRGTQD) ++adj.nramp;
+        }
+        // TC outlier.
+        if (rtype == PRGTTC || rtype == PRGTAT) ++adj.ntc;
+        // SO outlier.
+        if (rtype == PRGTSO || rtype == PRGUSO) ++adj.nso;
+        // MV outlier (counted with AO).
+        if (rtype == PRGTMV) ++adj.nao;
+        // Transitory (cycle).
+        if (rtype == PRGCYC) ++ncyc;
+    }
+
+    // Reset the adjustment indicators to match the effects actually present.
+    if (adj.adjtd == 1 && ntd == 0) adj.adjtd = 0;
+    if (adj.adjtd == 0 && ntd > 0) adj.adjtd = 1;
+    if (adj.adjhol == 1 && adj.nhol == 0) {
+        adj.adjhol = 0;
+        if (!(xl.axrghl || xl.axruhl || khol >= 1) && adj.finhol) adj.finhol = false;
+    }
+    if (adj.adjhol == 0 && adj.nhol > 0) adj.adjhol = 1;
+    if (adj.adjsea == 1 && nsea == 0) adj.adjsea = 0;
+    if (adj.adjsea == 0 && nsea > 0) adj.adjsea = 1;
+    if (nusr == 0) {
+        if (adj.adjusr == 1) adj.adjusr = 0;
+        if (adj.finusr) adj.finusr = false;
+    } else if (nusr > 0) {
+        if (adj.adjusr == 0) adj.adjusr = 1;
+    }
+    if (adj.nao == 0) {
+        if (adj.adjao == 1) adj.adjao = 0;
+        if (adj.finao) adj.finao = false;
+    } else if (adj.nao > 0) {
+        if (adj.adjao == 0) adj.adjao = 1;
+    }
+    if (adj.nls == 0) {
+        if (adj.adjls == 1) adj.adjls = 0;
+        if (adj.finls) adj.finls = false;
+    } else if (adj.nls > 0) {
+        if (adj.adjls == 0) adj.adjls = 1;
+    }
+    if (adj.ntc == 0) {
+        if (adj.adjtc == 1) adj.adjtc = 0;
+        if (adj.fintc) adj.fintc = false;
+    } else if (adj.ntc > 0) {
+        if (adj.adjtc == 0) adj.adjtc = 1;
+    }
+    if (adj.adjso == 1 && adj.nso == 0) adj.adjso = 0;
+    if (adj.adjso == 0 && adj.nso > 0) adj.adjso = 1;
+    if (adj.adjcyc == 1 && ncyc == 0) adj.adjcyc = 0;
+    if (adj.adjcyc == 0 && ncyc > 0) adj.adjcyc = 1;
+
+    // regARIMA preadjustment factors are only produced for log/no transform.
+    if (!(dpeq(lam, 0.0) || dpeq(lam, 1.0))) {
+        if (adj.adjtd == 1) adj.adjtd = 0;
+        if (adj.adjhol == 1) adj.adjhol = 0;
+        if (adj.adjao == 1) adj.adjao = 0;
+        if (adj.adjls == 1) adj.adjls = 0;
+        if (adj.adjtc == 1) adj.adjtc = 0;
+        if (adj.adjusr == 1) adj.adjusr = 0;
+        if (adj.adjsea == 1) adj.adjsea = 0;
+        if (adj.adjso == 1) adj.adjso = 0;
+        if (adj.adjcyc == 1) adj.adjcyc = 0;
+        if (!(xl.axrghl || xl.axruhl || khol >= 1) && adj.finhol) adj.finhol = false;
+        if (adj.finao) adj.finao = false;
+        if (adj.finls) adj.finls = false;
+        if (adj.fintc) adj.fintc = false;
+        if (adj.finusr) adj.finusr = false;
+    }
 }
 
 }  // namespace x13
