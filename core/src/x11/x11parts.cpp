@@ -498,8 +498,15 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
             for (int i = pos1bk; i <= posffc; ++i)
                 STEX(i) = STI(i) / (1.0 + STWT(i) * (STI(i) - 1.0));
         }
-        // (Axrg* off: Stcsi = Sto; Ixreg==1 Stocal calendar-adjust also skipped.)
+        // Stcsi = Sto (the prior-adjusted original). For x11regression TD
+        // (Axrgtd, Ixreg==1), also divide out the calendar (TD) factors so the
+        // NEXT iteration's seasonal adjustment works on the TD-adjusted series
+        // (x11pt2.f:846-889: rebuild Stcsi from Series/priors then divsub Faccal
+        // -- equivalent to Sto/Faccal here, since Sto already carries the LOM
+        // prior and this spec has no outlier/user/seasonal factors).
         for (int i = pos1bk; i <= posffc; ++i) STCSI(i) = STO(i);
+        if (ctx.hiddn.ixreg == 1 && ctx.x11log.axrgtd)
+            divsub(stcsi, stcsi, ctx.x11fac.faccal.data(), pos1bk, posffc, muladd);
 
         // Modify the (calendar-adjusted) original to remove the extremes.
         if (psuadd) {

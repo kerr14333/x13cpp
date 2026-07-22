@@ -266,8 +266,12 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     double* sti = ctx.x11srs.sti.data();
 
     const double sigxrg = 2.5;   // editor.f:1733 TD-only default
+    const int nfcst = ctx.extend.nfcst;
     const int nbeg = 0, irridx = pos1ob + nbeg;
-    const int nobspf = nspobs;   // no-model x11 path: no forecast extension
+    // The design/factors span the forecast-extended buffer [pos1ob, posffc] so
+    // Factd/Faccal cover the whole [pos1bk,posffc] used by the Stcsi feedback and
+    // the D-part; the OLS itself still uses only the Nspobs data rows (regx11).
+    const int nobspf = posffc - pos1ob + 1;
     const int irrend = irridx + nspobs - 1;
 
     // Trading-day calendar quantities (tdset).
@@ -285,7 +289,7 @@ void x11mdl_td(X13Context& ctx, int kpart) {
 
     // Build the design and solve the OLS.
     int nrxy = 0, frstry = 0;
-    regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, 0, 0, ar.userx.data(),
+    regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst, 0, ar.userx.data(),
            ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxy,
            ar.begxy.data(), frstry, /*xmeans=*/true, ar.elong);
     if (ctx.error.lfatal) return;

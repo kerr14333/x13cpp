@@ -102,6 +102,33 @@ focused multi-session port on the scale of the SEATS or automdl engines, not a
 leaf-routine increment. Reconnaissance is COMPLETE; the port is mechanical from
 this map.
 
+## ROOT CAUSE (as of the Codex-assisted debug pass)
+The coefficient bug is **the B13 irregular fed to the regression differs from
+the oracle at TD/leap-sensitive months**. Proven decisively:
+- My design X is BYTE-IDENTICAL to the oracle's saved regression matrix (.xrm),
+  maxdiff 0.0 over all 144 data rows.
+- regx11/olsreg is faithful (numpy lstsq on my X,y == my regx11 coeffs).
+- So the ONLY input differing is y = Xnstar*(Sti-1): my Sti[Feb1949]=1.0132 vs
+  oracle B13 1.005 (a ~0.8% gap ~= the Feb leap factor 28/28.25=0.9912); Jan/Mar
+  match. My y regressed on X gives the wrong (flat) coeffs; the oracle-B13-derived
+  y gives the right ones.
+- Direction + the Feb-worst error => **the LOM/leap prior on the x11regression
+  input is mishandled**. gtxreg.f:186-192 calls `rmlnvr` (remove length-of-month
+  variation) when Picktd; my gt_x11regression does NOT set Picktd / call rmlnvr,
+  so the base-x11 input series (and thus B13) carries a different length-of-month
+  adjustment than the oracle at Feb/leap months. NEXT: port rmlnvr + the Picktd
+  path in the parser (or the priadj/Sprior LOM handling for the x11reg TD case),
+  so b1/B13 match the oracle at Feb; then the regression y is correct and the
+  coeffs/b16/c16/d10-d13 should follow.
+
+Two faithful fixes ALREADY LANDED this pass (needed, not the coeff root cause):
+- x11pt2.f:846-889 Stcsi feedback: after x11mdl, `divsub(Stcsi,Stcsi,Faccal)`
+  for the Axrgtd Ixreg==1 case so the next iteration works on the TD-adjusted
+  series (core/src/x11/x11parts.cpp, `Sto/Faccal`).
+- Forecast-extended design span: x11mdl_td now uses nobspf=posffc-pos1ob+1 and
+  passes the real nfcst to regvar, so Factd/Faccal cover [pos1bk,posffc] (fixes
+  a NaN the Stcsi divsub hit on the un-extended factors).
+
 ## DEBUGGING STATUS (wired end-to-end, ~1-4% off — coeff/design scaling bug)
 The full TD path runs (commit 4ba4940). b16/c16 ~1e-2 off; d10-d13 ~2-4% off,
 **worst at February** (196002). Localization done — most of the pipeline is
