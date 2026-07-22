@@ -312,6 +312,19 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     for (int i = pos1ob; i <= posfob; ++i) snap[i - pos1ob] = ctx.x11fac.factd(i);
     if (kpart == 2) ctx.x11reg_b16 = snap;
     else ctx.x11reg_c16 = snap;
+
+    // Snapshot the xrm design matrix: the Nb regressor columns over ALL Nrxy
+    // rows (the oracle saves the forecast-extended span: Nspobs data + Nfcst
+    // rows). md.xy is row-major, stride Ncxy; col c of row r at r*Ncxy+c.
+    // Iteration-independent (the TD contrasts are date-based), so the last write
+    // wins -- C iteration.
+    const int ncxy = m.ncxy, nb = m.nb;
+    ctx.x11reg_xrm_ncol = nb;
+    ctx.x11reg_xrm.assign(static_cast<std::size_t>(nrxy) * nb, 0.0);
+    for (int r = 0; r < nrxy; ++r)
+        for (int c = 1; c <= nb; ++c)
+            ctx.x11reg_xrm[static_cast<std::size_t>(r) * nb + (c - 1)] =
+                md.xy(r * ncxy + c);
     ctx.x11reg_ran = true;
 
     // Divide the TD effect out of the irregular (x11pt2 re-iterates without it).

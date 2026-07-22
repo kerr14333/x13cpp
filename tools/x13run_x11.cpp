@@ -220,6 +220,20 @@ int main(int argc, char** argv) {
         };
         if (!ctx.x11reg_b16.empty()) emit16("b16", ctx.x11reg_b16);
         if (!ctx.x11reg_c16.empty()) emit16("c16", ctx.x11reg_c16);
+
+        // xrm design matrix: one row per data date, Nb regressor columns.
+        const int nc = ctx.x11reg_xrm_ncol;
+        if (nc > 0 && !ctx.x11reg_xrm.empty()) {
+            const int nrows = static_cast<int>(ctx.x11reg_xrm.size()) / nc;
+            for (int r = 0; r < nrows; ++r) {
+                int idate[2];
+                x13::addate(begspn, sp, r, idate);
+                std::printf("xrm %04d%02d", idate[0], idate[1]);
+                for (int c = 0; c < nc; ++c)
+                    std::printf(" %.15E", ctx.x11reg_xrm[static_cast<std::size_t>(r) * nc + c]);
+                std::printf("\n");
+            }
+        }
     }
 
     // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one

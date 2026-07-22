@@ -191,6 +191,11 @@ struct X13Context {
     // (Kpart=3) iterations of x11pt2.
     std::vector<double> x11reg_b16;
     std::vector<double> x11reg_c16;
+    // x11regression{} design matrix (xrm save): the Nb TD-contrast columns over
+    // the Nspobs data rows, row-major (row r, col c) at index r*x11reg_xrm_ncol+c.
+    // Snapshotted from md.xy at x11mdl_td (the design is iteration-independent).
+    std::vector<double> x11reg_xrm;
+    int x11reg_xrm_ncol = 0;
     bool x11reg_ran = false;
     // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
     // scale point forecast + confidence interval, plus the transformed-scale

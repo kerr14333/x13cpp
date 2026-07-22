@@ -503,12 +503,14 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
             for (int i = pos1bk; i <= posffc; ++i)
                 STEX(i) = STI(i) / (1.0 + STWT(i) * (STI(i) - 1.0));
         }
-        // Stcsi = Sto (the prior-adjusted original). For x11regression TD
-        // (Axrgtd, Ixreg==1), also divide out the calendar (TD) factors so the
-        // NEXT iteration's seasonal adjustment works on the TD-adjusted series
-        // (x11pt2.f:846-889: rebuild Stcsi from Series/priors then divsub Faccal
-        // -- equivalent to Sto/Faccal here, since Sto already carries the LOM
-        // prior and this spec has no outlier/user/seasonal factors).
+        // Stcsi for the next iteration. The oracle x11regression feedback
+        // (x11pt2.f:846-894, Axrgtd/Ixreg==1) rebuilds Stcsi from the raw forecast-
+        // extended Series, re-applies the outlier/user/Sprior priors, then divides
+        // out the combined calendar factors. On the TD-only corpus path that is
+        // exactly Sto/Faccal -- Sto is already Orig/Sprior (x11pt1) and there are
+        // no outlier/user factors -- so the STCSI=STO shortcut is bit-equivalent
+        // here (verified: rebuilding from Series gave identical results). Outlier/
+        // user x11reg specs would need the full :851-859 prior divsubs.
         for (int i = pos1bk; i <= posffc; ++i) STCSI(i) = STO(i);
         if (ctx.hiddn.ixreg == 1 && ctx.x11log.axrgtd)
             divsub(stcsi, stcsi, ctx.x11fac.faccal.data(), pos1bk, posffc, muladd);

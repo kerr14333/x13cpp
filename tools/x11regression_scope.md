@@ -133,19 +133,39 @@ The real cause, proven by a with/without-x11reg B1/B13 sweep + the oracle's own
 goldens; coeffs now track the oracle (C16 Sat 0.179 vs 0.168, Tue -0.123 vs
 -0.112, etc). No parity regressions (596 pass / 9 skip / 18 xfail).
 
-### STILL OPEN (next increment): the ~1.5e-3 residual + d13 ~1.7e-2 at leap-Feb
-Two candidates, both structural, not gross bugs:
-- **Extreme-exclusion mismatch:** my C-iteration `tdxtrm` excludes 12 pts vs the
-  oracle C14's 10 (8/10 shared; I add two leap-Febs, miss one Aug). tdxtrm is a
-  faithful port, so this is downstream of the ~1.5e-3 faccal reference feeding the
-  C-iteration sigma test — should tighten once the two-pass below is right.
-- **Outer two-pass:** the oracle estimates b16/c16 on the RAW B1 ("First pass"),
-  applies C16 as a prior → TD-adjusted B1 (111.30), then re-runs x11 for the final
-  d10-d16. My single pass removes TD in-iteration (Stcsi feedback). b16/c16 (pass-1
-  output) match to 1.5e-3, but the final d13 (pass-2) is 1.7e-2 off at leap-Feb —
-  likely because the final decomposition needs the actual TD-adjusted-B1 second
-  pass, not the in-iteration divsub. NEXT: check whether x11pt2/x11ari wraps a
-  second x11 pass for Ixreg==1 (the "prior adjustment factors" applied to B1).
+### GATED bit-exact: xrm design matrix
+`xrm` (the Nb TD-contrast columns over the forecast-extended 156-row span) is a
+pure integer/arithmetic day-contrast design — snapshotted from md.xy in x11mdl_td,
+byte-identical to the oracle (maxdiff 0.0). Gated at 1e-12 in
+`tests/parity/test_x11regression_tables.py` (parity 596→597).
+
+### STILL OPEN: the ~1.5e-3 b16/c16 residual + d10-d13 ~1.2e-2 at leap-Feb
+RULED OUT this pass (Codex-assisted deep read of x11pt1/x11pt2/x11mdl/x11ari):
+- **Outer two-pass:** THERE IS NONE for a single series. `x11ari.f:334` sets
+  `Ixreg=0` and re-runs only for INDIRECT composite adjustment (Iagr==3). x11pt2
+  runs once; x11mdl is called at Kpart=2 (B) and Kpart=3 (C) in that one pass.
+- **B1 pre-adjustment:** for Ixreg==1 the first B-iteration input is RAW
+  (x11pt1.f:71/80 copy Series/Orig to Stcsi/Sto; the prior-TD divide-out is gated
+  `Kswv.ne.0 .or. Ixreg.ge.2`, x11pt1.f:189 — NOT plain Ixreg==1). No priming
+  xrgdrv pass (x11ari.f:93 gates it on Ixreg==2/Khol==1). My raw B1 is correct.
+- **Stcsi feedback (Codex's primary lead):** the oracle rebuilds Stcsi from the
+  raw extended Series then /Sprior /Faccal (x11pt2.f:846-894). On THIS spec that is
+  bit-equivalent to the STCSI=STO shortcut (Sto is already Orig/Sprior from x11pt1,
+  and there are no outlier/user priors) — verified empirically (rebuilding from the
+  extended Series gave identical d-tables; using the un-extended ctx.inpt.series
+  made it worse, confirming the buffer identity, not a logic gap).
+
+REMAINING (needs oracle instrumentation, blocked by the pristine-oracle rule):
+- **tdxtrm exclusion + coefficient precision at leap-Feb.** My C-iteration tdxtrm
+  excludes 12 pts vs the oracle C14's 10 (8/10 shared; I add leap-Febs 1956/1960,
+  miss 1958-Aug). tdxtrm is a faithful port, so this is coupled to the ~1.5e-3
+  faccal reference (itself the B-iteration coefficient residual). The B-iteration
+  input B13 differs from the no-x11reg baseline at leap-Feb by ~3% — but that is
+  EXPECTED (picktd applies a leap Sprior to B1 that the no-x11reg run lacks), so
+  the no-x11reg baseline is the wrong comparison. Cracking this needs the oracle's
+  own B-iteration irregular / exclusion set (not saved; oracle can't be
+  instrumented under the parity rule). Likely a small port-level precision residual
+  in the leap-Feb calendar term, not a gross structural bug.
 
 Two faithful fixes from the prior pass (still in place, not the coeff cause):
 - x11pt2.f:846-889 Stcsi feedback (`divsub(Stcsi,Stcsi,Faccal)` for Axrgtd).
