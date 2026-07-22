@@ -83,6 +83,9 @@ def _estimation_reproducible(spc: str) -> bool:
 
     Excluded (need machinery beyond the current M3 slice):
       * automatic model / span identification (automdl, pickmdl),
+      * x11regression{} (irregular-component TD/holiday regression -- the golden
+        loglikelihood reflects that GLS fit, not the pure regARIMA model; the
+        x11reg compute is not yet ported),
       * automatic outlier identification (outlier{}), which the regvar branch
         still abends on,
       * automatic transform / AIC tests (function=auto, aictest),
@@ -98,7 +101,7 @@ def _estimation_reproducible(spc: str) -> bool:
         return False
     for bad in ("automdl", "pickmdl", "function=auto", "aictest",
                 "tdstock", "user=", "usertype", "tcrate",
-                "composite{"):
+                "x11regression{", "composite{"):
         if bad in flat:
             return False
     # Outlier / change-of-regime regressors in a variables list.

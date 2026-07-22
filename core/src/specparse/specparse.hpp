@@ -281,6 +281,9 @@ void gt_check(X13Context& ctx, bool& inptok);        // check{} (getchk)
 void gt_identify(X13Context& ctx, bool& inptok);     // identify{} (getid)
 void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok); // composite{}
 void gt_metadata(X13Context& ctx, bool& inptok);     // metadata{} (gtmtdt)
+void gt_spectrum(X13Context& ctx, bool& inptok);     // spectrum{} (gtspec)
+void gt_pickmdl(X13Context& ctx, bool& inptok);      // pickmdl{} (gtautx)
+void gt_x11regression(X13Context& ctx, bool& inptok);// x11regression{} (gtxreg)
 void gt_generic(X13Context& ctx, std::string_view argdic, const int* argptr,
                 int narg, bool& inptok);             // shared arg-consumer
 

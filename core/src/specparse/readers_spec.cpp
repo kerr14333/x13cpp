@@ -1566,4 +1566,51 @@ void gt_metadata(X13Context& ctx, bool& inptok) {
     inptok = inptok && argok;
 }
 
+// ---- spectrum{} (gtspec.f) ------------------------------------------------
+// Spectral-diagnostic block. Parse-acceptance only for now: the ARGDIC/argptr
+// are copied verbatim from gtspec.f so the block's args are recognized and
+// consumed; per-arg validation and the spectrum-table compute (spgrh/spgrh2/
+// gendff/spcrsd/Tukey via spcdrv.f) are follow-on work.
+void gt_spectrum(X13Context& ctx, bool& inptok) {
+    constexpr int PARG = 21;
+    static const char ARGDIC[] =
+        "startdifferencetypeseriessiglevelpeakwidthmaxara"
+        "ltfreqaxisprintsavesavelogsaveallfreqdecibellocalpeakstartdiffshow"
+        "seasonalfreqtukey120logqsqcheckrobustsa";
+    static const int argptr[PARG + 1] = {1, 6, 16, 20, 26, 34, 43, 48, 55, 59, 64,
+        68, 75, 86, 93, 102, 111, 127, 135, 140, 146, 154};
+    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+}
+
+// ---- pickmdl{} (gtautx.f) -------------------------------------------------
+// Classic X-11-ARIMA candidate-model selection. Parse-acceptance only; the
+// .mdl candidate-file read + the estimate/forecast-error selection loop are
+// follow-on.
+void gt_pickmdl(X13Context& ctx, bool& inptok) {
+    constexpr int PARG = 11;
+    static const char ARGDIC[] =
+        "modefileqlimfcstlimbcstlimoverdiffprintmethodout"
+        "ofsampleidentifysavelog";
+    static const int argptr[PARG + 1] = {1, 5, 9, 13, 20, 27, 35, 40, 46, 57, 65, 72};
+    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+}
+
+// ---- x11regression{} (gtxreg.f) -------------------------------------------
+// Irregular-component regression (TD/holiday within X-11). Parse-acceptance
+// only; the xrgdrv.f irregular-regression driver + the Axrg* X-11 folds are
+// follow-on.
+void gt_x11regression(X13Context& ctx, bool& inptok) {
+    constexpr int PARG = 36;
+    static const char ARGDIC[] =
+        "variablesuserdatastartfileformatbprintsaveuserty"
+        "pesigmacriticalumdataumstartumfileumformatumnameoutliermethodaicte"
+        "sttdpriornoapplyholidaynonlineastermeansforcecalspanoutlierspanump"
+        "recisionaicdiffsavelogumtrimzerocenteruserreweightcriticalalphadef"
+        "aultcriticalprioralmost";
+    static const int argptr[PARG + 1] = {1, 10, 14, 18, 23, 27, 33, 34, 39, 43, 51,
+        56, 64, 70, 77, 83, 91, 97, 110, 117, 124, 131, 144, 155, 163, 167, 178,
+        189, 196, 203, 213, 223, 231, 244, 259, 264, 272};
+    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+}
+
 } // namespace x13

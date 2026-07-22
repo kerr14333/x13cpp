@@ -49,9 +49,6 @@ BIN = _find_binary()
 # here: the strict xfail then turns the now-passing spec into a loud failure,
 # forcing this list to stay honest (no silent scope drift).
 _UNPARSED_BLOCKS = {
-    "spectrum": "M6-M7",
-    "x11regression": "M6-M7",
-    "pickmdl": "M4-M5",
 }
 
 # NOTE: assumes the block name and its `{` share a line (the whole corpus

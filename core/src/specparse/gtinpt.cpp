@@ -327,8 +327,23 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 ctx.captured.spec_order.push_back("metadata");
                 break;
             case 15:  // x11regression
+                gt_x11regression(ctx, inptok);
+                if (ctx.error.lfatal) return;
+                ctx.captured.spec_order.push_back("x11regression");
+                break;
             case 17:  // pickmdl
+                gt_pickmdl(ctx, inptok);
+                if (ctx.error.lfatal) return;
+                // pickmdl provides the ARIMA model (via the candidate .mdl file),
+                // so it satisfies the "model provision" check (gtinpt.f:877).
+                if (!havmdl) havmdl = true;
+                ctx.captured.spec_order.push_back("pickmdl");
+                break;
             case 20:  // spectrum
+                gt_spectrum(ctx, inptok);
+                if (ctx.error.lfatal) return;
+                ctx.captured.spec_order.push_back("spectrum");
+                break;
             default:
                 inpter(ctx, PERROR, L.pos.data() + 1,
                        "This spec is recognized but not yet supported by the M1 parser port.");
