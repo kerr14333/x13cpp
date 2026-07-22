@@ -1,6 +1,15 @@
 # spectrum{} compute — port plan (execution-ready)
 
-## STATUS: increments 1+2 LANDED (periodogram sp0/sp1/sp2 + spr, bit-exact ~5e-14)
+## STATUS: COMPLETE — all increments landed (periodogram + arspec, all 7 tables, bit-exact)
+Increment 4 (arspec, spgrh/sautco/sicp2): the AR-spectrum type. sautco =
+smeadl mean-delete + crosco autocov (Thtapr=0, no taper); sicp2 = Levinson-
+Durbin, but the AIC order-selection is dead code (CB-12) so it returns the
+full order l=min(Mxarsp,n-1); spgrh = the AR transfer-function spectrum
+sgme2/|1+sum coef_k e^{-i2pi k f}|^2. Wired via a spec_est selector (spgrh for
+spctyp==0, spgrh2 for ==1) across sp0/sp1/sp2/spr; st0/st1/st2 stay Tukey.
+gt_spectrum captures maxar. **596 parity pass, spectrum{} fully closed.**
+
+## (historical) increments 1+2 LANDED (periodogram sp0/sp1/sp2 + spr, bit-exact ~5e-14)
 `core/src/driver/run_spectrum.{cpp,hpp}` + `gt_spectrum` option capture +
 `x11parts.cpp` persists E3 (`ctx.mq5a_stime`). Gated by
 `tests/parity/test_spectrum_tables.py` on `airline_spectrum.spc` (arspec spec

@@ -13,9 +13,8 @@ gendff.f log+difference detrend, and the spgrh2.f periodogram. NOTE the SA and
 irregular series are E2/E3 (x11pt3 Part E), not the D11/D13 saves -- x11pt4 runs
 before spcdrv, so spcdrv's Stci/Sti hold the modified E-tables.
 
-The residual spectrum (spr), the Tukey tables (st0/st1/st2), and the arspec
-type (sp*, st* via the AR spectrum) are follow-on increments -- the arspec spec
-is xfailed here.
+Gated for both types: periodogram (spgrh2) and arspec (spgrh/sautco/sicp2 AR
+spectrum), all seven tables (sp0/sp1/sp2/spr + Tukey st0/st1/st2) each.
 
 Run:  python -m pytest tests/parity/test_spectrum_tables.py -q
 """
@@ -74,11 +73,6 @@ def _read_golden(path: str) -> dict[int, float]:
     return out
 
 
-def _is_arspec(spec_path: str) -> bool:
-    txt = open(spec_path, encoding="utf-8", errors="replace").read().lower()
-    return "type" in txt and "arspec" in txt
-
-
 def _discover() -> list[str]:
     specs: list[str] = []
     if not os.path.isdir(_CORPUS):
@@ -102,9 +96,6 @@ CASES = _discover()
 @pytest.mark.parametrize("tag", _TAGS)
 def test_spectrum_table(base: str, tag: str) -> None:
     spec = os.path.join(_CORPUS, base + ".spc")
-    if _is_arspec(spec):
-        pytest.xfail("arspec type (spgrh/sautco/sicp2 AR spectrum) is a later increment")
-
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.returncode == 0, f"{base}: harness exit {r.returncode}\n{r.stderr}"
     assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]

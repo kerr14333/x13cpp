@@ -255,3 +255,25 @@ uniformly gated. Almost certainly a missing paren (intended
   (spectrum.f), not ansub7.f, is what actually fills the ct/cs/cc + enot fed to
   ESTBUR. So the ansub7.f copy is dead for the s-table path. Logged for the record;
   no test needed (the live path never uses the typo'd value).
+
+---
+
+## CB-12: sicp2 AR order-selection is dead code — the fit always returns the full order
+
+- **Where:** `oracle/fortran/sicp2.f` (the Levinson-Durbin AR fit behind the
+  `spectrum{ type=arspec }` AR spectrum, called from `spgrh.f`).
+- **Severity:** `active` — sets the AR order (and thus every arspec `sp0/sp1/sp2/
+  spr` value) for every arspec run.
+- **Symptom:** the routine's header advertises AIC order selection, and the
+  `DO m=1,l` loop faithfully tracks the minimum-AIC order in `Moar`/`Osd`/`Oaic`
+  (`IF(Oaic.ge.aic) THEN Oaic=aic; Osd=sd; Moar=m`). But the `10 CONTINUE` tail —
+  reached both by falling through the loop and by the `sdr<cst01` early `GO TO 10`
+  — then unconditionally does `Oaic=aic; Osd=sd; Moar=l; DO i=1,l: Coef(i)=-a(i)`,
+  **overwriting the AIC selection with the full order `l = min(Mxarsp,n-1)`**. The
+  AIC bookkeeping is entirely dead; `spgrh` always gets the full-order model. (The
+  `5/15/80` comment marks this as an intentional-looking Census edit.)
+- **Port:** reproduced verbatim in `core/src/driver/run_spectrum.cpp` `sicp2()` —
+  the loop keeps the (unused) AIC tracking, then the label-10 override forces
+  `moar=l`, `osd=sd`, `coef[i]=-a[i]`. Pinned by
+  `tests/parity/test_spectrum_tables.py` (`airline_spectrum-arspec`, tags
+  `sp0/sp1/sp2/spr`, bit-exact ~7e-14 against the oracle goldens).

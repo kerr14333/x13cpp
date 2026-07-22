@@ -78,6 +78,97 @@ void spgrh2(const double* x, const std::vector<double>& frq, int n1, int n2,
     }
 }
 
+// smeadl.f + sautco.f: mean-delete x[n1..n2] in place, then the biased
+// autocovariance cxx[0..lagh1-1] (crosco). Thtapr defaults to 0 (no Tukey-Hanning
+// taper) on this path. Returns false if cxx[0]==0 (degenerate). x is modified.
+bool sautco(double* x, int n1, int n2, int n, int lagh1,
+            std::vector<double>& cxx) {
+    double sumf = 0.0;
+    for (int i = n1; i <= n2; ++i) sumf += x[i - 1];
+    const double xmean = sumf / n;
+    for (int i = n1; i <= n2; ++i) x[i - 1] -= xmean;
+    cxx.assign(static_cast<std::size_t>(lagh1), 0.0);
+    for (int i = 0; i < lagh1; ++i) {
+        double t = 0.0;
+        for (int j = n1; j <= n2 - i; ++j) t += x[(j + i) - 1] * x[j - 1];
+        cxx[i] = t / n;
+    }
+    return cxx[0] != 0.0;
+}
+
+// sicp2.f: Levinson-Durbin AR fit up to order l = l1-1. NOTE the Census 5/15/80
+// modification: although the loop tracks an AIC-selected order (Moar/Osd), the
+// label-10 tail unconditionally OVERWRITES it with the FULL order l -- coef =
+// -a[1..l], osd = the order-l innovation variance. The AIC selection is dead
+// code; the returned model is always order l. (Ported bug: reproduced verbatim.)
+void sicp2(const std::vector<double>& cyy, int l1, int n,
+           std::vector<double>& coef, int& moar, double& osd) {
+    const double cst1 = 1.0, cst2 = 2.0, cst01 = 0.00001;
+    const int l = l1 - 1;
+    double sd = cyy[0];
+    const double an = n;
+    double oaic = an * std::log(sd);
+    osd = sd;
+    moar = 0;
+    std::vector<double> a(static_cast<std::size_t>(l + 2), 0.0);
+    std::vector<double> b(static_cast<std::size_t>(l + 2), 0.0);
+    double se = cyy[1];
+    for (int m = 1; m <= l; ++m) {
+        const double sdr = sd / cyy[0];
+        if (sdr < cst01) break;   // GO TO 10
+        const int mp1 = m + 1;
+        const double d = se / sd;
+        a[m] = d;
+        sd = (cst1 - d * d) * sd;
+        const double aic = an * std::log(sd) + cst2 * static_cast<double>(m);
+        if (m != 1)
+            for (int i = 1; i <= m - 1; ++i) a[i] = a[i] - d * b[i];
+        for (int i = 1; i <= m; ++i) b[i] = a[mp1 - i];
+        if (oaic >= aic) { oaic = aic; osd = sd; moar = m; }
+        if (m != l) {
+            se = cyy[m + 1];
+            for (int i = 1; i <= m; ++i) se -= b[i] * cyy[i];
+        }
+    }
+    // label 10: the full-order-l override (discards the AIC selection above).
+    osd = sd;
+    moar = l;
+    coef.assign(static_cast<std::size_t>(l + 1), 0.0);
+    for (int i = 1; i <= l; ++i) coef[i] = -a[i];
+}
+
+// spgrh.f: the AR-spectrum estimator (the arspec type). Mean-delete + auto-
+// covariance (sautco), full-order AR fit (sicp2), then the AR transfer-function
+// spectrum sgme2 / |1 + sum coef[k] exp(-i 2 pi k f)|^2 at the given frequencies.
+// Returns false (leave sxx untouched) when sautco is degenerate.
+bool spgrh(const double* yy, const std::vector<double>& frq, int n1, int n2,
+           int nspfrq, int sp, int mxarsp, bool ldecbl, std::vector<double>& sxx) {
+    const double PI = 3.14159265358979;
+    const int n = n2 - n1 + 1;
+    std::vector<double> x(PLEN, 0.0);
+    for (int i = n1; i <= n2; ++i) x[i - 1] = yy[i - 1];
+    const int h = nspfrq - 1;
+    const int lagh1 = std::min(n - 1, h) + 1;
+    std::vector<double> cxx;
+    if (!sautco(x.data(), n1, n2, n, lagh1, cxx)) return false;
+    int ifpl = (mxarsp == prm::NOTSET) ? 30 * sp / 12 : mxarsp;
+    ifpl = std::min(ifpl, n - 1);
+    std::vector<double> coef;
+    int l = 0;
+    double sgme2 = 0.0;
+    sicp2(cxx, ifpl + 1, n, coef, l, sgme2);
+    sxx.assign(static_cast<std::size_t>(nspfrq), 0.0);
+    for (int i = 0; i < nspfrq; ++i) {
+        double c2 = 1.0, s2 = 0.0;
+        for (int k = 1; k <= l; ++k) c2 += coef[k] * std::cos(2.0 * k * PI * frq[i]);
+        for (int k = 1; k <= l; ++k) s2 += coef[k] * std::sin(2.0 * k * PI * frq[i]);
+        double pxx = sgme2 / (c2 * c2 + s2 * s2);
+        if (ldecbl) { if (pxx < 0.0) pxx = -pxx; pxx = 10.0 * std::log10(pxx); }
+        sxx[i] = pxx;
+    }
+    return true;
+}
+
 // getTPeaks window size (specpeak.f:560-577), sp==12 branch: the Tukey window m
 // as a function of series length nz. Returns -1 when no Tukey table is produced.
 int tukey_window(int nz, bool ltk120) {
@@ -137,15 +228,14 @@ bool tukey_spectrum(const double* x, int n1, int n2, bool ltk120,
 bool run_spectrum(X13Context& ctx) {
     if (!ctx.spcout.requested) return true;
 
-    // Increment 1 covers the periodogram type only. gt_spectrum sets Spctyp
-    // (0=arspec, 1=periodogram); defer arspec to a later increment.
-    if (ctx.rho.spctyp != 1) return true;
+    const int spctyp = ctx.rho.spctyp;   // 0 = arspec (spgrh), 1 = periodogram
+    const int mxarsp = ctx.rho.mxarsp;
 
     const int sp = ctx.model.sp;
-    // The oracle only computes the periodogram spectrum for monthly data
-    // (x11ari.f:282 gates the spcdrv call on Ny==12); quarterly/other periods
-    // produce no spectrum tables. (mkfreq's sp!=12 grid + the arspec type are a
-    // later increment; the quarterly TD-frequency substitutions here are stubbed.)
+    // The oracle only computes the spectrum for monthly data (x11ari.f:282 gates
+    // the spcdrv call on Ny==12); quarterly/other periods produce no spectrum
+    // tables. (mkfreq's sp!=12 grid + its quarterly TD-frequency substitutions
+    // are stubbed -- a later increment.)
     if (sp != 12) return true;
 
     const int muladd = ctx.x11opt.muladd;
@@ -218,6 +308,17 @@ bool run_spectrum(X13Context& ctx) {
     out.frq = mkfreq(sp, /*peakwd=*/1);
     std::vector<double> srs(PLEN, 0.0), tmp(PLEN, 0.0);
 
+    // Estimator selector (spcdrv.f: IF Spctyp==0 spgrh ELSE spgrh2): the AR
+    // spectrum for type=arspec, the periodogram for type=periodogram. Returns
+    // whether a table was produced.
+    auto spec_est = [&](const double* series, int n1, int n2,
+                        std::vector<double>& sxx) -> bool {
+        if (spctyp == 0)
+            return spgrh(series, out.frq, n1, n2, 61, sp, mxarsp, ldecbl, sxx);
+        spgrh2(series, out.frq, n1, n2, ldecbl, sxx);
+        return true;
+    };
+
     // --- sp0: detrended original / AdjOri (spcdrv.f:161-218) ---------------
     // Increment 1 implements only the Spcsrs>=2 default (adjoriginal/b1):
     // srs = Stcsi, then the extreme-value fold (addmul Stex) for the Lx11
@@ -232,8 +333,7 @@ bool run_spectrum(X13Context& ctx) {
             addmul(srs.data(), srs.data(), ctx.mq10_stex.data(), pos1bk, posffc,
                    muladd);
         gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
-        spgrh2(tmp.data(), out.frq, l1, posfob, ldecbl, out.sp0);
-        out.have_sp0 = true;
+        out.have_sp0 = spec_est(tmp.data(), l1, posfob, out.sp0);
         // st0: Tukey spectrum of the same detrended series (spcdrv.f:250-255).
         out.have_st0 = tukey_spectrum(tmp.data(), l1, posfob, ltk120, out.st0,
                                       out.frq_tukey);
@@ -245,8 +345,7 @@ bool run_spectrum(X13Context& ctx) {
         const double* stcime = ctx.adxser.stcime.data();
         for (int i = 1; i <= posfob; ++i) srs[i - 1] = stcime[i - 1];
         gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
-        spgrh2(tmp.data(), out.frq, l1, posfob, ldecbl, out.sp1);
-        out.have_sp1 = true;
+        out.have_sp1 = spec_est(tmp.data(), l1, posfob, out.sp1);
         // st1: Tukey spectrum of the same detrended SA series (spcdrv.f:388-392).
         out.have_st1 = tukey_spectrum(tmp.data(), l1, posfob, ltk120, out.st1,
                                       out.frq_tukey);
@@ -259,8 +358,7 @@ bool run_spectrum(X13Context& ctx) {
             tmp[i - 1] = stime[i - 1];
             if (muladd != 1) tmp[i - 1] -= 1.0;
         }
-        spgrh2(tmp.data(), out.frq, ipos, posfob, ldecbl, out.sp2);
-        out.have_sp2 = true;
+        out.have_sp2 = spec_est(tmp.data(), ipos, posfob, out.sp2);
         // st2: Tukey spectrum of the same irregular series (spcdrv.f:506-510).
         out.have_st2 = tukey_spectrum(tmp.data(), ipos, posfob, ltk120, out.st2,
                                       out.frq_tukey);
@@ -279,8 +377,7 @@ bool run_spectrum(X13Context& ctx) {
         else rpos += 1;
         std::vector<double> ra(PLEN, 0.0);
         for (int i = 1; i <= na; ++i) ra[i - 1] = ctx.resid_a[i - 1];
-        spgrh2(ra.data(), out.frq, rpos, na, ldecbl, out.spr);
-        out.have_spr = true;
+        out.have_spr = spec_est(ra.data(), rpos, na, out.spr);
     }
 
     out.ran = true;

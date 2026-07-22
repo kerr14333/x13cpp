@@ -1614,7 +1614,7 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
         // Tukey/arspec compute.
         std::vector<std::string> cap;
         const bool want = (argidx == 2 || argidx == 3 || argidx == 4 ||
-                           argidx == 14 || argidx == 16);
+                           argidx == 7 || argidx == 14 || argidx == 16);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
         if (cap.empty()) continue;
@@ -1627,6 +1627,12 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
             break;
         case 3:  // type: arspec | periodogram (gtspec.f:133)
             r.spctyp = (v == "periodogram") ? 1 : 0;
+            break;
+        case 7:  // maxar: AR-spectrum order, 1..30 (gtspec.f:157-164)
+            try {
+                const int mx = std::stoi(v);
+                if (mx >= 1 && mx <= 30) r.mxarsp = mx;
+            } catch (...) { /* range/format error handled by the Fortran path */ }
             break;
         case 4:  // series (gtspec.f:148-149): Spcsrs=ivec-1; if >3 subtract 4
             if (v == "original")              r.spcsrs = 0;
