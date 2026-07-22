@@ -1,0 +1,56 @@
+// x11reg.hpp -- x11regression{} irregular-component regression (x11mdl.f et al).
+//
+// WIP SCAFFOLDING (not yet wired into x11pt2). Ports the TD-only, multiplicative
+// path of the X-11 irregular regression: the user's trading-day regressors are
+// OLS-fit to the X-11 irregular (Sti) at the B (Kpart=2) and C (Kpart=3)
+// iterations, producing the b16/c16 TD-factor tables, and the TD effect is
+// divided out of the irregular so the seasonal adjustment re-iterates without it.
+//
+// Faithful to x11mdl.f (orchestration) + tdset/xrgtrn/tdxtrm/dlrgrw/regx11/
+// x11ref/mulref. Reuses the already-ported olsreg/resid/regvar/daxpy. See
+// tools/x11regression_scope.md for the full routine map. Holiday/user/aictest/
+// stock-TD/pseudo-additive/log-additive/prior branches are follow-on.
+#ifndef X13_X11_X11REG_HPP
+#define X13_X11_X11REG_HPP
+
+namespace x13 {
+
+struct X13Context;
+
+// tdset.f: fill the trading-day calendar quantities Tday / Xn / Xnstar / Xlpyr /
+// Daybar over the 1-based span [lfda, llda] anchored at date begdat (sp period).
+// Xn = actual days in the month-type; Xnstar = standardized (Feb=28.25); Xlpyr =
+// Xn-Xnstar; Daybar = 30.4375 (monthly) / 91.25 (quarterly).
+void tdset_td(X13Context& ctx, const int* begdat, int lfda, int llda, int sp);
+
+// xrgtrn.f (mult, Tdgrp>0, Kswv=0): transform the copied irregular in place over
+// the 1-based absolute span [l1,l2] (repacked to x[1..]): x = Xnstar*x - Xn.
+void xrgtrn_td(X13Context& ctx, double* x, int l1, int l2);
+
+// tdxtrm.f: two-pass sigma test on the RAW irregular Sti over [irridx,irrend];
+// flags extreme rows into ctx.xclude.rgxcld (1-based, i-irridx+1) and Nxcld.
+// Kpart=2 uses per-month-type means; Kpart=3 uses the B-iteration Faccal.
+void tdxtrm_td(X13Context& ctx, const double* sti, double sigm, int kpart,
+               int irridx, int irrend);
+
+// dlrgrw.f: compact the Nxcld excluded rows out of the row-major [X:y] matrix xy
+// (ncxy columns, nrxy rows) using the 1-based rgxcld flags.
+void dlrgrw(double* xy, int ncxy, int nrxy, const bool* rgxcld);
+
+// regx11.f: OLS of the (transformed) irregular design in ctx.mdldat.xy on the TD
+// columns, with the tdxtrm-excluded rows dropped. Fills ctx.mdldat.b (coeffs) +
+// chlxpx; sets Var/Lnlkhd/Armaer. Reuses the ported olsreg/resid. Returns false
+// on a singular column (Armaer=PSNGER).
+bool regx11(X13Context& ctx);
+
+// x11ref.f (mult, TD-only): build the TD factor series ftd (and combined fcal)
+// from the fitted coeffs b x design xy over Nrxy rows, mean-normalized by Xnstar
+// (mulref) then finished with Xn/Xnstar. xdev = Pos1bk. rtype[icol] is the
+// per-column regressor type. Both ftd/fcal are 1-based length-Nrxy outputs.
+void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
+               int ncxy, const double* b, const double* xy, int nb,
+               const int* rtype);
+
+}  // namespace x13
+
+#endif  // X13_X11_X11REG_HPP
