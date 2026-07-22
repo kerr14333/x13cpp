@@ -77,6 +77,31 @@ All Ixreg branches are guarded by `Ixreg>0` / `Axrgtd`, which are FALSE for ever
 existing gated spec — so the port is ADDITIVE (no regression risk to the current
 bit-exact X-11 path), as long as the guards are preserved exactly.
 
+## COMPLETE routine inventory (TD-only path, reconnaissance DONE)
+The factor build after regx11 is `x11ref` (x11mdl:694), NOT rgtdhl. Full surface:
+
+| routine | lines | status | role |
+|---|---|---|---|
+| gtxreg parser | — | NEW (reuse gtpdrg) | Ixreg=1, Axrgtd, build TD group |
+| tdset.f | 127 | NEW | calendar day-type quantities Xn/Xnstar/Xlpyr/Daybar (the /xtdtyp/ /tdtyp/ commons) — the standardized trading-day counts per month-type |
+| xrgtrn.f | 55 | NEW (reuse logar) | log-transform the irregular for mult/logadd |
+| tdxtrm.f | 126 | NEW | extreme-value exclusion (Sigxrg sigma test → Rgxcld/Nxcld) |
+| regvar | — | PORTED | design matrix Xy (TD columns) |
+| regx11.f | 97 | NEW-thin | OLS: copy Xy→txy, dlrgrw excluded rows, olsreg→B, resid→A, Var/Lnlkhd — REUSES ported olsreg/resid/yprmy |
+| dlrgrw.f | 34 | NEW-tiny | delete Nxcld excluded rows from txy |
+| x11ref.f | 162 | NEW | factor series ftd/fcal from B: `daxpy` accumulate B(icol)*Xy(:,icol) into Ftd for TD cols, then `mulref` mean-normalize by Xnstar, then mult finish `Ftd += Xn/Xnstar` |
+| mulref.f | 32 | NEW-tiny | X-11-style mean-correction of a raw factor by Xnstar |
+| daxpy | — | trivial | BLAS y+=a*x |
+| x11mdl orchestration | 890 | NEW (TD-only subset) | the above sequence + b16/c16 emit + `divsub(Sti,Sti,Faccal)` fold |
+
+REUSED (already ported): regvar, olsreg, resid, yprmy, logar/antilg, divsub,
+addate/dfdate. NEW C++ ≈ 700 lines across ~10 routines + the x11pt2 B/C wiring +
+harness b16/c16/xrm emit. **No partial gate exists** (the TD is removed each x11
+iteration, so nothing validates until the whole chain is bit-exact) — this is a
+focused multi-session port on the scale of the SEATS or automdl engines, not a
+leaf-routine increment. Reconnaissance is COMPLETE; the port is mechanical from
+this map.
+
 ## Suggested increments (each committable)
 1. **gtxreg parser** → set `Ixreg=1`, `Axrgtd`, build the TD regression group
    (reuse `getreg`/`gtpdrg`; the parse side already builds `td` columns for
