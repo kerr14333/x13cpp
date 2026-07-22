@@ -107,10 +107,6 @@ CASES = _discover()
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
 def test_x11_table(base: str, tag: str) -> None:
-    if "fixed-airline" in base:
-        # Forecasting on a post-outlier model with td is not yet bit-exact
-        # ([[x13cpp-outlier-forecast-deferred]]).
-        pytest.xfail("x11 model path: post-outlier td forecast not bit-exact")
     if base == "payems_automdl-acceptdefault":
         # acceptdefault=yes correctly forces the default airline (0 1 1)(0 1 1)
         # instead of the automatic search's (0 1 2) -- confirmed by the error

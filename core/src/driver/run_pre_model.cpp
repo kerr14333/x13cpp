@@ -132,6 +132,24 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
         }
     }
 
+    // adjsrs.f also records the prior-factor series in the /adjcmn/ Adj array and
+    // its span (Nadj/Adj1st/Begadj) so the X-11 makadj/tdlom step (x11pt2.f) can
+    // fold the length-of-month/leap-year prior back into the model trading-day
+    // factor (Factd) and strip it from the calendar-adjusted series. The aictest
+    // path rebuilds this inside automd (tdaic); the FIXED-model X-11 path never
+    // runs automd, so without this population Sprior stays identity (0) and tdlom
+    // multiplies Factd by it -> Factd==0 -> Faccal==0 -> D11/D13 divide-by-zero.
+    // (Adjmod is left at its default: tdlom only special-cases Adjmod==2, and the
+    // prior here is the multiplicative LOM/leap ratio.)
+    if (has_prior) {
+        for (int t = 0; t < nobspf; ++t)
+            ctx.adj.adj(t + 1) = fac[static_cast<std::size_t>(t)];
+        ctx.adj.begadj(1) = begspn[0];
+        ctx.adj.begadj(2) = begspn[1];
+        ctx.adj.nadj = nobspf;
+        ctx.adj.adj1st = 1;
+    }
+
     // Table a2 (LTRNPA): the combined prior-adjustment factors (Sprior).
     if (has_prior && wants_save(ctx, "a2")) {
         savtbl(ctx, LTRNPA, begspn, 1, nspobs, sp, fac.data(), base, base, nser);
@@ -298,6 +316,22 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                            ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
                            /*lauto=*/false, a.data());
                     if (ctx.error.lfatal) return false;
+                    // arima.f:773 -- after idotlr, rebuild the FULL Nobspf-row
+                    // regression design. idotlr's coladd/addotl fill only the
+                    // Nspobs span rows of any inserted outlier column (idotlr.f:
+                    // 869-873 pass Nspobs), leaving the forecast-period rows stale;
+                    // regvar re-runs addotl over Nobspf (regvar.f:247), so fcstxy's
+                    // design carries the correct outlier values in the forecast
+                    // region. Without it the point forecast (and hence the X-11
+                    // forecast-extended seasonal-filter tail) drifts ~1%.
+                    int nrxy2 = 0, frstry2 = 0;
+                    regvar(ctx, trnsrs.data(), nobspf, fctdrp, nfcst, 0,
+                           ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+                           ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom,
+                           nrxy2, ctx.arima.begxy.data(), frstry2, true,
+                           ctx.arima.elong);
+                    if (ctx.error.lfatal) return false;
+                    ctx.arima.nrxy = nrxy2;
                 }
             }
             (void)nefobs;  // nefobs == Nspobs-Nintvl; the estimates live in mdldat

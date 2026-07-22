@@ -341,11 +341,17 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // n2: combine end pointer (x11pt2.f:110-114).
         const int n2 = (nfcst < ny) ? posfob + ny : posffc;
 
-        if (adj.adjao == 1 || adj.finao || adj.adjls == 1 || adj.finls ||
-            adj.adjtc == 1 || adj.fintc || adj.adjso == 1 || adj.adjusr == 1 ||
-            adj.finusr || adj.adjsea == 1 || adj.adjcyc == 1 || opt.khol >= 2 ||
-            xl.axrgtd || xl.axrghl) {
-            x11_not_ported(ctx, "x11pt2 outlier/user/seasonal/x11reg factor combine+emit");
+        // Outlier factors (Facao/Facls/Factc/Facso) do NOT fold into Faccal on
+        // the base (non-x11reg) path: x11pt2.f:187-352 only builds the deferred
+        // A8/A18/A19 factor tables from them. The AO/LS/TC removal from the SA
+        // series happens upstream (adjreg -> B1) and is restored/finalized in
+        // x11pt3 (the D11 Fin* / D13 Adj* folds). So adjao/adjls/adjtc/adjso/fin*
+        // pass through here. Still-unported activations (user regression,
+        // regARIMA-seasonal, transitory cycle, x11-Easter Khol>=2, x11regression
+        // calendar) genuinely fatal.
+        if (adj.adjso == 1 || adj.adjusr == 1 || adj.finusr || adj.adjsea == 1 ||
+            adj.adjcyc == 1 || opt.khol >= 2 || xl.axrgtd || xl.axrghl) {
+            x11_not_ported(ctx, "x11pt2 user/seasonal/cycle/x11reg factor combine+emit");
             return;
         }
         // Trading day (x11pt2.f:158-171).
@@ -692,8 +698,12 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         bool chkfct = false;  // Nfcst>0 & Prttab(LXETRF): deferred print -> false.
         chktrn(ctx, stc, chkfct);  // oktrn/oktrf only gated deferred prints.
     }
-    if (adj.adjls == 1 || adj.adjao == 1 || adj.adjtc == 1 || adj.adjusr == 1) {
-        x11_not_ported(ctx, "x11pt3 outlier/user factor fold-in (Adj*)");
+    // x11pt3.f:439-442 accumulates the outlier/user factors into sp2 (a Sprior
+    // snapshot) that feeds only the deferred A18/D18 total-factor tables and the
+    // Sprior writeback (l.1285) -- none of which feed D10-D13. Skip it on the
+    // outlier base path; the user-regression factor stays unported.
+    if (adj.adjusr == 1) {
+        x11_not_ported(ctx, "x11pt3 user factor fold-in to Sprior (Adjusr)");
         return;
     }
 
@@ -736,13 +746,24 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
 
     // --- D13: final irregular ---
     divsub(sti, stci, stc, pos1bk, posffc, muladd);
-    if ((adj.finao && adj.nao > 0) || (adj.finls && adj.nls > 0) ||
-        (adj.fintc && adj.ntc > 0) || adj.finusr ||
-        (adj.adjls == 1 && adj.nls > 0) || (adj.adjao == 1 && adj.nao > 0) ||
-        (adj.adjtc == 1 && adj.ntc > 0) || adj.adjusr == 1) {
-        x11_not_ported(ctx, "x11pt3 final outlier/user re-adjustment of Stci/Sti");
+    // x11pt3.f:575-587 -- final outlier re-adjustment. Sti was computed from the
+    // pre-removal Stci above, so the order matters: Fin* remove the outlier from
+    // the final SA series (Stci/D11); Adj* remove it from the final irregular
+    // (Sti/D13, which the D13 published table then restores via sti2). The user-
+    // factor (Facusr) re-adjustment stays unported (no gated spec).
+    if (adj.finusr || adj.adjusr == 1) {
+        x11_not_ported(ctx, "x11pt3 final user-factor re-adjustment (Facusr)");
         return;
     }
+    double* facao = ctx.x11fac.facao.data();
+    double* facls = ctx.x11fac.facls.data();
+    double* factc = ctx.x11fac.factc.data();
+    if (adj.finao && adj.nao > 0) divsub(stci, stci, facao, pos1bk, posffc, muladd);
+    if (adj.finls && adj.nls > 0) divsub(stci, stci, facls, pos1bk, posffc, muladd);
+    if (adj.fintc && adj.ntc > 0) divsub(stci, stci, factc, pos1bk, posffc, muladd);
+    if (adj.adjls == 1 && adj.nls > 0) divsub(sti, sti, facls, pos1bk, posffc, muladd);
+    if (adj.adjao == 1 && adj.nao > 0) divsub(sti, sti, facao, pos1bk, posffc, muladd);
+    if (adj.adjtc == 1 && adj.ntc > 0) divsub(sti, sti, factc, pos1bk, posffc, muladd);
     if (pu.nustad > 0) {
         x11_not_ported(ctx, "x11pt3 user temporary-adjustment removal (Nustad)");
         return;
@@ -825,26 +846,50 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         (void)rndok;
     }
 
-    // --- D12 write: level-shift/temporary-change fold-in is off base; the ELSE
-    // is all deferred print (Cnstnt==DNOTST here). ---
-    if (((!adj.finls) && adj.adjls == 1) || (pu.nustad > 0 && pri.lprntr) ||
-        ((!adj.fintc) && lttc && adj.adjtc == 1)) {
-        x11_not_ported(ctx, "x11pt3 final-trend LS/TC fold-in (D12)");
+    // --- D12 published trend (x11pt3.f:926-932). If a level shift (or a TC, when
+    // Lttc) was removed pre-x11, fold it back into the FINAL trend: an LS is a
+    // permanent level change, so it belongs in the trend, not the irregular.
+    // stc2 = Facls*Stc (*Factc). The internal Stc stays LS-free (Part-E's weight-
+    // zero SA replacement then uses stc2); the published D12 is stc2, stored into
+    // srs.stc as the final action. Base path leaves srs.stc as the published D12.
+    if (pu.nustad > 0 && pri.lprntr) {
+        x11_not_ported(ctx, "x11pt3 D12 user temporary-adjustment fold-in (Nustad)");
         return;
     }
-    // (deferred: D12 table/prttrn/punch/x11plt of Stc.)
+    bool have_stc2 = false;
+    if (((!adj.finls) && adj.adjls == 1) ||
+        ((!adj.fintc) && lttc && adj.adjtc == 1)) {
+        copy(stc + (pos1bk - 1), posffc - pos1bk + 1, 1, stc2 + (pos1bk - 1));
+        if ((!adj.finls) && adj.adjls == 1)
+            addmul(stc2, facls, stc, pos1bk, posffc, muladd);
+        if ((!adj.fintc) && lttc && adj.adjtc == 1)
+            addmul(stc2, factc, stc2, pos1bk, posffc, muladd);
+        have_stc2 = true;
+    }
+    // (deferred: D12 table/prttrn/punch/x11plt of stc2/Stc.)
     if (hid.irev == 4) {
         x11_not_ported(ctx, "x11pt3 revisions trend store (getrev)");
         return;
     }
     // (deferred: logadd trend bias-correction table -- Tmpma==2 only.)
 
-    // --- D13 write (all deferred): AO/TC restore branch is off base. ---
+    // --- D13 published table (x11pt3.f:1089-1122). The AO/TC outliers removed
+    // from Sti above (Adj* -> irregular) are RESTORED for the published D13:
+    // sti2 = Sti (*Facao)(*Factc). Built into a scratch buffer here and stored
+    // into srs.sti as the final action (Part-E below still consumes the AO-removed
+    // Sti). The base path (no outlier) leaves srs.sti as the published D13, so it
+    // stays untouched. ---
+    double sti2buf[PLEN];
+    bool have_sti2 = false;
     if (adj.adjao == 1 || (adj.adjtc == 1 && !lttc)) {
-        x11_not_ported(ctx, "x11pt3 D13 AO/TC restore (sti2)");
-        return;
+        copy(sti + (pos1bk - 1), posffc - pos1bk + 1, 1, sti2buf + (pos1bk - 1));
+        if (adj.adjao == 1)
+            addmul(sti2buf, facao, sti2buf, pos1bk, posffc, muladd);
+        if (adj.adjtc == 1 && !lttc)
+            addmul(sti2buf, factc, sti2buf, pos1bk, posffc, muladd);
+        have_sti2 = true;
     }
-    // (deferred: D13 table/punch/x11plt of Sti.)
+    // (deferred: D13 table/punch/x11plt of sti2/Sti.)
 
     if (opt.khol == 1) return;
     // (deferred: D16 table/punch of ststd; D16b Psuadd; D18 TD table -- all off
@@ -858,21 +903,41 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
             stime[i - 1] = sti[i - 1];
             stcime[i - 1] = stci[i - 1];
         } else {
-            stcime[i - 1] = stc[i - 1];   // base: not LS/Nustad -> final trend
+            stcime[i - 1] = have_stc2 ? stc2[i - 1] : stc[i - 1];  // LS -> folded trend
             stime[i - 1] = ebar;          // expected irregular
             stome[i - 1] = series[i - 1] / sti[i - 1];  // muladd==0
             // (nadj2==0 base: no Sprior fold; Finls==F: no Facls divide.)
         }
     }
-    if (adj.adjao == 1 || adj.adjtc == 1) {
-        x11_not_ported(ctx, "x11pt3 Part-E AO/TC removal from modified series");
+    // x11pt3.f:1265-1273 -- if AO/TC outliers were removed pre-adjustment, remove
+    // them from the modified original (E1=Stome) and, unless kept final, the
+    // modified SA (E2=Stcime). The modified irregular (E3=Stime) is left untouched
+    // (the oracle comments out its divide). LS/user E-folds stay unported.
+    // Finls removes the LS from the modified SA (x11pt3.f:1247-1253); the adjls
+    // (non-final) LS lives in the folded trend stc2 (used above), so it needs no
+    // Part-E fold. User-factor re-adjustment stays unported.
+    if (adj.finls || adj.adjusr == 1) {
+        x11_not_ported(ctx, "x11pt3 Part-E Finls/user re-adjustment (Facls/Facusr)");
         return;
     }
-    // (Cnstnt==DNOTST base: no constant subtract.)
-    if (adj.adjls == 1 || adj.adjusr == 1 || adj.adjao == 1 || adj.adjtc == 1) {
-        x11_not_ported(ctx, "x11pt3 Part-E Sprior restore (Adj*)");
-        return;
+    if (adj.adjao == 1) {
+        divsub(stome, stome, facao, pos1bk, posffc, muladd);
+        if (!adj.finao) divsub(stcime, stcime, facao, pos1bk, posffc, muladd);
     }
+    if (adj.adjtc == 1) {
+        divsub(stome, stome, factc, pos1bk, posffc, muladd);
+        if (!adj.fintc) divsub(stcime, stcime, factc, pos1bk, posffc, muladd);
+    }
+    // (Cnstnt==DNOTST base: no constant subtract; the sp2/Sprior outlier writeback
+    // x11pt3.f:1284-1288 feeds only deferred downstream tables -- skipped.)
+
+    // Store the AO/TC-restored published D13 (sti2, built above) so the harness
+    // and D13 table read it as Sti. Base path (no outlier) leaves srs.sti as the
+    // already-published D13, untouched.
+    if (have_sti2)
+        copy(sti2buf + (pos1bk - 1), posffc - pos1bk + 1, 1, sti + (pos1bk - 1));
+    if (have_stc2)
+        copy(stc2 + (pos1bk - 1), posffc - pos1bk + 1, 1, stc + (pos1bk - 1));
 }
 
 }  // namespace x13

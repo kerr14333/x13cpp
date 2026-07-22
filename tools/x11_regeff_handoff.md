@@ -1,5 +1,61 @@
 # X-11 model-path regression effects — handoff / open bug
 
+## LATEST STATUS (session 7): fixed-airline OUTLIER path ported -- all 4 specs RUN, B1 bit-exact
+
+The `*_fixed-airline-x11` specs no longer fatal in x11pt2/x11pt3. Three independent
+pieces landed (all in `core/src`), and the outlier factor combine the older notes
+below call "PART 2" is confirmed already done for the aictest path -- what was
+missing was the OUTLIER-specific fold path plus a leap-year-prior gap on the
+fixed-model route:
+
+1. **x11pt2 guard narrowed** (`x11parts.cpp` ~l.344): the regARIMA outlier factors
+   (Facao/Facls/Factc/Facso) do NOT fold into Faccal on the base (non-x11reg) path
+   -- x11pt2.f:187-352 only builds the deferred A8/A18/A19 tables from them (the SA
+   removal is upstream in adjreg->B1, the restore is in x11pt3). So adjao/adjls/
+   adjtc/fin* now pass through; only user/seasonal/cycle/khol>=2/x11reg still fatal.
+2. **x11pt3 outlier folds ported** (`x11parts.cpp`): the D13 re-adjustment
+   (x11pt3.f:575-587 -- Fin* remove the outlier from D11/Stci, Adj* from D13/Sti),
+   the published-D13 `sti2` build (l.1089-1122 -- AO restored into the D13 table:
+   an AO is an irregular event, removed from Sti for diagnostics then added back
+   for the published irregular), the D12 LS/TC trend fold (l.926-932 -- `stc2 =
+   Facls*Stc`: a level shift is permanent, so it belongs in the final trend), and
+   the Part-E AO/TC folds (l.1265-1273). sti2/stc2 are built into scratch and
+   stored into srs.sti/srs.stc as the final action (Part-E consumes the pre-restore
+   Sti/Stc), so the base (no-outlier) path is byte-identical.
+3. **Leap-year prior fed to Sprior for the FIXED-model path** (`run_pre_model.cpp`,
+   the adjsrs.f port): it computed the LOM/leap `fac` series but only for the a2/a3
+   tables -- it never stored it into /adjcmn/ Adj (Nadj/Adj1st/Begadj). The aictest
+   path rebuilds that inside automd (tdaic->td7var); the fixed path has no automd,
+   so Nadj stayed 0, x11int left Sprior at identity(0), and x11pt2's tdlom did
+   `addmul(Factd, Factd, Sprior=0)` -> **Factd==0 -> Faccal==0 -> D11/D13 = x/0 =
+   inf**. Now run_pre_model populates ctx.adj.adj/nadj/adj1st/begadj so x11int
+   copies the leap factors into Sprior and tdlom folds them back into Factd.
+
+4. **Post-idotlr regvar rebuild** (`run_pre_model.cpp`, arima.f:773) -- THE forecast
+   fix. idotlr's coladd/addotl fill only the Nspobs SPAN rows of an inserted outlier
+   column (idotlr.f:869-873 pass Nspobs); the forecast-period rows stay stale, so the
+   post-outlier point forecast (and the transformed-scale trnfct that X-11 extends
+   the series with) drifted ~1%. The oracle rebuilds the FULL Nobspf-row design via
+   regvar right after idotlr (regvar.f:247 re-runs addotl over Nobspf). Ported that
+   one call -- guarded to the outlier path, which test_m3_forecast already excludes,
+   so it cannot regress the forecast gate. (fcstxy needs the UNDIFFERENCED design;
+   armafl does the differencing internally, and regvar produces undifferenced, so
+   this is consistent -- the earlier "broke airline" attempt must have placed it
+   wrong or predated the coladd/group-order fixes.)
+
+**RESULT: all four `*_fixed-airline-x11` now GATE BIT-EXACT (~5e-15) on b1/d10-d13**
+-- including unrate (additive + COVID LS/AO cluster; the earlier O(1e3) error was
+purely the stale-forecast drift, not an additive-mode fold bug). Un-xfailed in
+test_x11_tables.py. Full suite **568 passed / 13 skipped / 24 xfailed / 0 failed**
+(was 548/44), 10/10 unit, oracle tree pristine.
+
+NOTE: the ORIGINAL-scale forecast *table* (fct) still has a residual at February for
+the priadj>1 specs -- fcstout does not re-apply the LOM/leap prior (run_pre_model
+note ~l.343). That is a `fct`-table-only gap; it does NOT touch X-11, which extends
+with the transformed-scale trnfct and re-applies the prior itself via x11pt2 tdlom.
+test_m3_forecast still excludes outlier specs; closing the fct LOM re-application
+would let them in.
+
 ## LATEST STATUS (session 6): finalization landed -- 3/4 aictest-x11 specs GREEN
 
 The session-5 milestone (below) is DONE. Ported automd.f l.322-982 (Lidotl=F
