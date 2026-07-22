@@ -29,12 +29,12 @@ void fcstxy(X13Context& ctx, int fctori, int nfcst, double* fcst, double* se,
 // fcstxy, maps the transformed forecast back to the original scale (invfcn, or
 // the lognormal mean-correction lgnrmc when lognrm && lam==0), and forms the
 // two-tailed confidence band [invfcn(fcst - cv*se), invfcn(fcst + cv*se)] with
-// critical value cv = dinvnr((ciprob+1)/2). Reads the estimated model + forecast
-// options off ctx (fcntyp/lam/ciprob/lognrm), stores the result on
-// ctx.forecasts (no file output). Prior-adjustment and holiday/TD correction
-// branches of prtfct are out of this slice (reproducible only when there are no
-// user prior factors, i.e. Priadj<=1 and no user prior series). fctdrp is the
-// number of retained forecast-period observations dropped from the fit.
+// critical value cv = dinvnr((ciprob+1)/2). Predefined length-of-period/leap-year
+// prior factors (Priadj>1) are reapplied over the forecast window after inverse
+// transformation, matching prtfct.f's original-scale output. Reads the estimated
+// model + forecast options off ctx (fcntyp/lam/ciprob/lognrm), stores the result
+// on ctx.forecasts (no file output). fctdrp is the number of retained forecast-
+// period observations dropped from the fit.
 void fcstout(X13Context& ctx, int nfcst, int fctdrp, double ciprob, bool lognrm);
 
 }  // namespace x13

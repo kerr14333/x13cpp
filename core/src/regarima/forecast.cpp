@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "regarima/armafl.hpp"      // armafl
+#include "regarima/priadj.hpp"      // lpfac
 #include "regarima/regvar.hpp"      // ratpos
 #include "regarima/estimate.hpp"    // resid
 #include "numeric/numeric.hpp"      // dppsl, yprmy, dinvnr, scrmlt, eltfcn, dpeq
@@ -194,6 +195,25 @@ void fcstout(X13Context& ctx, int nfcst, int fctdrp, double ciprob, bool lognrm)
         invfcn(ctx, lwrci.data(), nfcst, fcntyp, lam, lwrci.data());
         invfcn(ctx, uprci.data(), nfcst, fcntyp, lam, uprci.data());
         if (ctx.error.lfatal) return;
+    }
+
+    // prtfct.f reapplies predefined prior factors after mapping forecasts back
+    // to the original scale. In the fixed-model path Adj only spans observed
+    // data, but these factors are date-only (td7var/lpfac), so build the
+    // forecast-window slice directly without extending X-11's Sprior state.
+    if (ctx.prior.priadj > 1) {
+        const bool lom = (ctx.prior.priadj == 2 || ctx.prior.priadj == 3);
+        const int op = (ctx.adj.adjmod < 2) ? ELT_MULT : ELT_ADD;
+        std::vector<double> prior(static_cast<std::size_t>(nfcst));
+        for (int i = 0; i < nfcst; ++i) {
+            int idate[2];
+            addate(ctx.mdldat.begspn.data(), ctx.model.sp, fctori + i, idate);
+            prior[static_cast<std::size_t>(i)] =
+                lpfac(idate[0], idate[1], ctx.model.sp, lom);
+        }
+        eltfcn(op, untfct.data(), prior.data(), nfcst, untfct.data());
+        eltfcn(op, lwrci.data(), prior.data(), nfcst, lwrci.data());
+        eltfcn(op, uprci.data(), prior.data(), nfcst, uprci.data());
     }
 
     out.nfcst = nfcst;

@@ -49,29 +49,21 @@ purely the stale-forecast drift, not an additive-mode fold bug). Un-xfailed in
 test_x11_tables.py. Full suite **568 passed / 13 skipped / 24 xfailed / 0 failed**
 (was 548/44), 10/10 unit, oracle tree pristine.
 
-NOTE: the ORIGINAL-scale forecast *table* (fct) still has a residual at February for
-the priadj>1 specs -- fcstout does not re-apply the LOM/leap prior (prtfct.f:416-424
-`untfct *= Adj(Adj1st+fctori)`). That is a `fct`-table-only gap; it does NOT touch
-X-11, which extends with the transformed-scale trnfct and re-applies the prior itself
-via x11pt2 tdlom. test_m3_forecast still excludes outlier specs.
-
-ATTEMPTED + REVERTED (session 7): porting the prtfct.f:416-424/464-465 prior
-re-application into fcstout is the RIGHT call but is BLOCKED by a row-count issue.
-In the forecast path `nobspf = min(Nspobs+Nfdrp, Nomnfy)` and for a series with no
-data past the span (airline: 144 obs, Nomnfy=144) it CAPS at Nspobs=144 -- so the
-run_pre_model prior array (ctx.adj.adj/Nadj) and the design only cover the span, and
-`Adj(Adj1st+fctori)` reads 0 in the forecast region (dumped nadj=144, adj[145]=0).
-Two ways to close it, each with a snag:
-  (a) extend the prior array to Nspobs+Nfcst (leap factors are date-based via lpfac,
-      computable past the data) -- but that also changes what x11int copies into
-      Sprior[145..] (currently identity), which feeds x11pt2 tdlom in the forecast
-      region and RISKS the now-bit-exact X-11 gate; needs a guarded verify.
-  (b) compute the forecast-window leap factors on the fly in fcstout (self-contained,
-      no ctx.adj.adj/X-11 interaction) -- less faithful but zero X-11 risk.
-The oracle's Adj genuinely covers the forecast (its Nobspf for the design is date-
-based, not data-capped), so the real fix is aligning the design/prior row count with
-the oracle rather than Nomnfy. Deferred -- the X-11 gate (the session goal) is closed
-and committed; this only gates the fct table for outlier specs in test_m3_forecast.
+CLOSED (session 7, follow-up): the ORIGINAL-scale forecast table (fct/fvr) LOM/leap
+re-application for priadj>1 specs is now ported in `fcstout` (forecast.cpp,
+prtfct.f:416-424/464-465): after mapping the forecast back to the original scale,
+`untfct` (and the lwrci/uprci band) is scaled by the predefined LOM/leap prior over
+the forecast window. The oracle reads these from `Adj(Adj1st+fctori..)`, but in this
+port the design/prior array is capped at the data span (`nobspf = min(Nspobs+Nfdrp,
+Nomnfy)`; airline has 144 obs -> Nomnfy=144 -> no forecast rows in Adj, dumped
+nadj=144/adj[145]=0). Since the LOM/leap factor is purely DATE-based, `fcstout`
+computes it directly via `lpfac(addate(Begspn,Sp,fctori+i), Sp, lom)` -- numerically
+identical to adjsrs's Adj, self-contained, and it never touches X-11's Sprior (so the
+committed X-11 gate is untouched). `op = MULT if Adjmod<2 else ADD`. This closed the
+February drift (airline fcst2 414.725 -> golden-exact 411.055) and un-xfailed the 4
+`*_fixed-airline-x11` specs in test_m3_forecast (removed the `_has_outlier` exclusion).
+Parity 568 -> 572 passed / 0 failed. Approach cross-checked: this fix and an
+independent Codex run converged on the same self-contained lpfac approach + code.
 
 ## LATEST STATUS (session 6): finalization landed -- 3/4 aictest-x11 specs GREEN
 
