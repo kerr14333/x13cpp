@@ -32,21 +32,36 @@ NO xrgdrv. (xrgdrv/Ixreg=2 = the `prior=yes` variant, a later increment.)
 - **xrm** = the irregular-regression model summary (coeffs / t-stats / the OLS
   design) — `prtxrg.f` / the LXRMDL table. Confirm exact content vs the golden.
 
-## x11mdl.f (890 lines) — the OLS core (the bulk of the work)
-Regresses the (logged, for mult) irregular `Sti` on the user's TD design:
-1. Build the TD regression design (reuse the ported `regvar`/`getreg` machinery
-   — the TD columns are the same 6 (or 1-coef) contrasts as regARIMA `td`).
-2. `trumlt=(.not.Psuadd).and.Muladd.eq.0` → work in logs for mult.
-3. OLS normal equations via the Cholesky factor `Chlxpx` (PXPX) — the codebase
-   already has `olsreg`/a Cholesky solve in `regarima/estimate.cpp`; check whether
-   it's directly reusable or needs the x11-specific weighting.
-4. Extreme-value weighting of the irregular before the fit (Stwt / the C17
-   weights) — the regression is on the extreme-modified irregular.
-5. Form `Factd` (and `Fachol`/`Faccal` for holiday) from the fitted coeffs ×
-   design; antilog for mult. Save b16/c16.
-6. Diagnostics (xrm): coeff table, t-stats, the aictest branch.
-For `variables=(td)` only: the TD-only path — skip holiday/user/outlier/aictest
-sub-branches (guarded, later increments).
+## x11mdl.f (890 lines) — the OLS core, MAPPED to implementation depth
+The TD-only, non-aictest path (airline_x11regression-td) is COMPACT and reuses
+already-ported routines. The 890 lines are mostly holiday/user/aictest/outlier/
+stock-TD/reweight/print branches that the TD-only path skips. Core sequence:
+1. **Reset transform for the AIC** (x11mdl:104-111): Lam=1, Fcntyp=4, Nestpm=0
+   (the irregular regression is always fit on the (log-)irregular directly).
+2. **Copy the irregular into trnsrs** (x11mdl:188-197): `copy(Sti(irridx),Nobspf,
+   -1,trnsrs)`, irridx=Pos1ob+nbeg. This is the B13 (Kpart=2) / C13 (Kpart=3)
+   irregular the x11pt2 iteration just produced.
+3. **xrgtrn** (x11mdl:203-205, `xrgtrn.f` — NEW, small): log-transform the
+   irregular for mult/logadd (trumlt). Reuses `logar`.
+4. **tdxtrm** (x11mdl:216, `tdxtrm.f` — NEW): flag extreme irregular values to
+   EXCLUDE from the regression (sets Rgxcld/Nxcld, the `xclude` common). Sigxrg
+   default (2.5 sigma). This is the x11-regression-specific extreme test.
+5. **regvar** (x11mdl:388, PORTED) — build the design Xy (TD columns = the same
+   `td` contrasts as regARIMA; getreg/gtpdrg already build them).
+6. **regx11** (`regx11.f`, 97 lines — THIN, reuses PORTED olsreg/resid/yprmy):
+   copy Xy→txy; `dlrgrw` deletes the Nxcld excluded rows (NEW, small); `olsreg`
+   → B (coeffs) + Chlxpx (Cholesky); `resid`→A; Var=A'A/Dnefob; Lnlkhd.
+7. **rgtdhl** (x11mdl:418, `rgtdhl.f`): **NO-OP for TD-only** (returns unless the
+   nonlinear Bell-Hilmer Easter+TD case). Skip.
+8. **Dx11 daily-weight construction** (x11mdl:541-660): from the TD coeffs B build
+   the 7 daily weights Dx11 (Mon..Sun); mult: `Dx11(i)=1+B(i)`, `Dx11(7)=1-sumB`.
+   The `Lxrneg` reweighting (negative-weight fixup) is a sub-branch (default off).
+9. **Factd build + b16/c16 save** (x11mdl:660-~830, still to read): apply the daily
+   weights across the calendar to form the TD-factor series `Factd`, antilog for
+   mult, `punch` to LXRTDF+Kpart-2 (b16 for Kpart=2, c16 for Kpart=3).
+NEW routines to port: xrgtrn (tiny), tdxtrm (extreme test), dlrgrw (row delete),
+the Dx11+Factd calendar build, b16/c16 emit. REUSED: regvar, olsreg, resid, yprmy,
+logar/antilg, regfix, addate/dfdate. `xrm` = prtxrg's regression-matrix summary.
 
 ## Axrgtd folds in x11pt2.f (combine Factd into the SA)
 ~30 `Ixreg`/`Axrgtd`/`Axrghl` conditional points. The load-bearing ones for the
