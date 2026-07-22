@@ -102,6 +102,29 @@ focused multi-session port on the scale of the SEATS or automdl engines, not a
 leaf-routine increment. Reconnaissance is COMPLETE; the port is mechanical from
 this map.
 
+## DEBUGGING STATUS (wired end-to-end, ~1-4% off — coeff/design scaling bug)
+The full TD path runs (commit 4ba4940). b16/c16 ~1e-2 off; d10-d13 ~2-4% off,
+**worst at February** (196002). Localization done — most of the pipeline is
+VERIFIED CORRECT:
+- **Input Sti** matches the oracle B13 exactly (Jan1949 mine 0.98439 vs oracle
+  xr.out:1838 "98.5") — so the base x11 + leap-adjusted b1 (111.30, matches
+  oracle B1 xr.out:1279) are right.
+- **Leap factors** right: tdset Xn/Xnstar give Feb non-leap 28/28.25=0.9912,
+  30/31-day = 1.0 (matches oracle xr.out:4548 "Leap Year factors").
+- **Design** looks right: regvar TD row0 = [0,-1,-1,-1,-1,0] = the correct
+  Jan1949 (Sun5 Mon5 Tue-Fri4 Sat5) day contrast.
+- **regx11/olsreg CORRECT**: a numpy lstsq on the dumped X/y gives the SAME
+  coeffs as regx11 (~[-0.066,0.050,-0.031,0.037,-0.053,0.017]) — so the OLS is
+  faithful.
+- **The gap**: those coeffs (~0.05) don't reconcile with the oracle. The oracle
+  .udg `Trading Day$Mon: -0.1305` vs the F4 daily-weight table (xr.out:4530,
+  31-day Mon=99.14 -> B~-0.0086) shows a parameterization/scaling difference to
+  chase. NEXT: (a) read the oracle "Irregular Component Regression Matrix"
+  (xr.out:386) and diff my design row-by-row; (b) compare my Dx11 daily weights
+  (x11ref) to the F4 table; (c) check whether the design needs mean-adjustment
+  (xmeans) applied/not, or the y transform has a leap term. The Feb-worst error
+  points at the leap/length interaction in the design or the Dx11 build.
+
 ## Suggested increments (each committable)
 1. **gtxreg parser** → set `Ixreg=1`, `Axrgtd`, build the TD regression group
    (reuse `getreg`/`gtpdrg`; the parse side already builds `td` columns for
