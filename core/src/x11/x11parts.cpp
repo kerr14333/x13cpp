@@ -11,6 +11,7 @@
 #include "common/x13context.hpp"
 #include "x11/x11filt.hpp"          // divsub, addmul, setmv, logar, averag
 #include "x11/x11seas.hpp"          // vsfa, vsfb
+#include "x11/x11reg.hpp"           // x11mdl_td (x11regression irregular regression)
 #include "x11/x11xtrm.hpp"          // xtrm, vtest, entsch
 #include "x11/x11drv.hpp"           // forcst, vtc, si
 #include "x11/x11force.hpp"         // qmap (force yearly totals)
@@ -349,8 +350,14 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // pass through here. Still-unported activations (user regression,
         // regARIMA-seasonal, transitory cycle, x11-Easter Khol>=2, x11regression
         // calendar) genuinely fatal.
+        // x11regression TD (xl.axrgtd, Ixreg==1) is handled IN the B/C iteration
+        // by x11mdl_td (below), not in this setup combine: at setup Factd is not
+        // yet built and adjtd==0 (the TD is X-11-regression, not a model factor),
+        // so the adjtd fold at :358 is skipped and Faccal passes through until
+        // x11mdl_td overwrites it. Holiday (axrghl) is still unported.
         if (adj.adjso == 1 || adj.adjusr == 1 || adj.finusr || adj.adjsea == 1 ||
-            adj.adjcyc == 1 || opt.khol >= 2 || xl.axrgtd || xl.axrghl) {
+            adj.adjcyc == 1 || opt.khol >= 2 || xl.axrghl ||
+            (xl.axrgtd && ctx.hiddn.ixreg != 1)) {
             x11_not_ported(ctx, "x11pt2 user/seasonal/cycle/x11reg factor combine+emit");
             return;
         }
@@ -456,7 +463,14 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // Preliminary irregular.
         divsub(sti, stci, stc, pos1bk, posffc, muladd);
         // (deferred: B10/C10 seasonal, B11/C11 SA, B13/C13 irregular tables.)
-        // (Ixreg==0: the x11-regression option is skipped.)
+
+        // X-11 regression on the irregular (x11pt2.f:711 -> x11mdl), Ixreg==1:
+        // regress the TD design on Sti (B13/C13), snapshot b16/c16, and divide
+        // the TD effect out of Sti so the iteration continues without it.
+        if (ctx.hiddn.ixreg == 1 && (kpart == 2 || kpart == 3)) {
+            x11mdl_td(ctx, kpart);
+            if (ctx.error.lfatal) return;
+        }
 
         // Bundesbank outlier test (B iteration): auto-select the sigma limits.
         if (kpart == 2 && xt.ksdev < 4) {

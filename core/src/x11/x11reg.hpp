@@ -51,6 +51,13 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
                int ncxy, const double* b, const double* xy, int nb,
                const int* rtype);
 
+// x11mdl.f orchestration (TD-only mult path): regress the X-11 irregular Sti on
+// the TD design at the B (kpart=2) or C (kpart=3) iteration, snapshot the TD
+// factors into ctx.x11reg_b16/c16 (b16/c16), and divide the TD effect out of
+// Sti so x11pt2 re-iterates without it. Called from x11pt2 when ctx.hiddn.ixreg
+// == 1 (x11regression{} present, no prior).
+void x11mdl_td(X13Context& ctx, int kpart);
+
 }  // namespace x13
 
 #endif  // X13_X11_X11REG_HPP

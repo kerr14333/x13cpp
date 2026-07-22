@@ -11,7 +11,9 @@
 
 #include "common/x13context.hpp"
 #include "regarima/estimate.hpp"   // olsreg, resid
+#include "regarima/regvar.hpp"     // regvar
 #include "numeric/numeric.hpp"     // daxpy
+#include "x11/x11filt.hpp"         // divsub
 #include "specparse/specparse.hpp" // addate
 #include "gen/model.hpp"           // PRG* regressor types, PSNGER
 #include "gen/notset.hpp"          // prm::DNOTST
@@ -249,6 +251,67 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
         ftd[irow - 1] += xn[ir2 - 1] / xnstar[ir2 - 1];
         fcal[irow - 1] += xn[ir2 - 1] / xnstar[ir2 - 1];
     }
+}
+
+// ---- x11mdl.f orchestration (TD-only mult path) --------------------------
+void x11mdl_td(X13Context& ctx, int kpart) {
+    auto& md = ctx.mdldat;
+    auto& m = ctx.model;
+    auto& ar = ctx.arima;
+    const int sp = m.sp;
+    const int pos1ob = ctx.x11ptr.pos1ob, posfob = ctx.x11ptr.posfob;
+    const int pos1bk = ctx.x11ptr.pos1bk, posffc = ctx.x11ptr.posffc;
+    const int nspobs = md.nspobs;
+    const int muladd = ctx.x11opt.muladd;
+    double* sti = ctx.x11srs.sti.data();
+
+    const double sigxrg = 2.5;   // editor.f:1733 TD-only default
+    const int nbeg = 0, irridx = pos1ob + nbeg;
+    const int nobspf = nspobs;   // no-model x11 path: no forecast extension
+    const int irrend = irridx + nspobs - 1;
+
+    // Trading-day calendar quantities (tdset).
+    int begd[2] = {md.begspn(1), md.begspn(2)};
+    tdset_td(ctx, begd, pos1bk, posffc, sp);
+
+    // Copy the irregular into trnsrs and transform it (mult/logadd).
+    std::vector<double> trnsrs(nobspf > 0 ? nobspf : 1, 0.0);
+    for (int i = 0; i < nobspf; ++i) trnsrs[i] = sti[(irridx - 1) + i];
+    if (muladd == 0 || muladd == 2)
+        xrgtrn_td(ctx, trnsrs.data(), irridx, irrend);
+
+    // Extreme-value exclusion on the RAW irregular.
+    tdxtrm_td(ctx, sti, sigxrg, kpart, irridx, irrend);
+
+    // Build the design and solve the OLS.
+    int nrxy = 0, frstry = 0;
+    regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, 0, 0, ar.userx.data(),
+           ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxy,
+           ar.begxy.data(), frstry, /*xmeans=*/true, ar.elong);
+    if (ctx.error.lfatal) return;
+    ar.nrxy = nrxy;
+    if (!regx11(ctx)) return;
+
+    // Build the TD factor series and copy into Factd/Faccal.
+    std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);
+    std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
+    x11ref_td(ctx, fcal.data(), ftd.data(), pos1bk, nrxy, m.ncxy, md.b.data(),
+              md.xy.data(), m.nb, m.rgvrtp.data());
+    const int nfac = posffc - pos1bk + 1;
+    for (int i = 0; i < nfac; ++i) {
+        ctx.x11fac.faccal(pos1bk + i) = fcal[i];
+        ctx.x11fac.factd(pos1bk + i) = ftd[i];
+    }
+
+    // Snapshot b16 (Kpart=2) / c16 (Kpart=3) over [Pos1ob, Posfob].
+    std::vector<double> snap(posfob - pos1ob + 1);
+    for (int i = pos1ob; i <= posfob; ++i) snap[i - pos1ob] = ctx.x11fac.factd(i);
+    if (kpart == 2) ctx.x11reg_b16 = snap;
+    else ctx.x11reg_c16 = snap;
+    ctx.x11reg_ran = true;
+
+    // Divide the TD effect out of the irregular (x11pt2 re-iterates without it).
+    divsub(sti, sti, ctx.x11fac.faccal.data(), pos1ob, posfob, muladd);
 }
 
 }  // namespace x13

@@ -327,7 +327,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 ctx.captured.spec_order.push_back("metadata");
                 break;
             case 15:  // x11regression
-                gt_x11regression(ctx, inptok);
+                gt_x11regression(ctx, havsrs, havesp, inptok);
                 if (ctx.error.lfatal) return;
                 ctx.captured.spec_order.push_back("x11regression");
                 break;

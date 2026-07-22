@@ -1670,10 +1670,10 @@ void gt_pickmdl(X13Context& ctx, bool& inptok) {
 }
 
 // ---- x11regression{} (gtxreg.f) -------------------------------------------
-// Irregular-component regression (TD/holiday within X-11). Parse-acceptance
-// only; the xrgdrv.f irregular-regression driver + the Axrg* X-11 folds are
-// follow-on.
-void gt_x11regression(X13Context& ctx, bool& inptok) {
+// Irregular-component regression. Builds the TD design via gtpdrg (x11reg=true)
+// and sets Ixreg=1 / Axrgtd so x11pt2's B/C iterations run x11mdl_td. TD-only
+// path; holiday/user/aictest/prior/outlier args are token-consumed (deferred).
+void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     constexpr int PARG = 36;
     static const char ARGDIC[] =
         "variablesuserdatastartfileformatbprintsaveuserty"
@@ -1684,7 +1684,30 @@ void gt_x11regression(X13Context& ctx, bool& inptok) {
     static const int argptr[PARG + 1] = {1, 10, 14, 18, 23, 27, 33, 34, 39, 43, 51,
         56, 64, 70, 77, 83, 91, 97, 110, 117, 124, 131, 144, 155, 163, 167, 178,
         189, 196, 203, 213, 223, 231, 244, 259, 264, 272};
-    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+    LexState& L = ctx.lex;
+    bool havtd = false, havhol = false, havln = false, havlp = false;
+    int arglog[2 * PARG];
+    for (auto& v : arglog) v = -32767;
+    int argidx;
+    while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
+        if (ctx.error.lfatal) return;
+        if (argidx == 1) {           // variables -> gtpdrg (x11reg=true)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool locok = true;
+            gtpdrg(ctx, ctx.arima.begsrs.data(), ctx.arima.endmdl.data(),
+                   ctx.arima.nobs, havsrs, havesp, /*x11reg=*/true, havtd, havhol,
+                   havln, havlp, locok, inptok);
+            if (ctx.error.lfatal) return;
+        } else {
+            consume_value(ctx, nullptr);
+            if (ctx.error.lfatal) return;
+        }
+    }
+    // gtxreg.f:883-889: Nb>0 -> Ixreg=1 (prior=yes -> 2, deferred); Havxtd ->
+    // Axrgtd. editor.f:1723 clears Axrgtd if no TD group materialized.
+    if (havtd) ctx.x11log.havxtd = true;
+    if (ctx.model.nb > 0) ctx.hiddn.ixreg = 1;
+    if (ctx.x11log.havxtd) ctx.x11log.axrgtd = true;
 }
 
 } // namespace x13

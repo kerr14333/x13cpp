@@ -207,6 +207,21 @@ int main(int argc, char** argv) {
         if (sc.have_st2) emit_tukey("st2", sc.st2);
     }
 
+    // x11regression{} b16/c16 regression trading-day factors (B/C iterations),
+    // over [pos1ob, posfob]. Gated in test_x11regression_tables.py.
+    if (ctx.x11reg_ran) {
+        auto emit16 = [&](const char* tag, const std::vector<double>& v) {
+            for (int i = pos1ob; i <= posfob; ++i) {
+                int idate[2];
+                x13::addate(begspn, sp, i - pos1ob, idate);
+                std::printf("%s %04d%02d %.15E\n", tag, idate[0], idate[1],
+                            v[i - pos1ob]);
+            }
+        };
+        if (!ctx.x11reg_b16.empty()) emit16("b16", ctx.x11reg_b16);
+        if (!ctx.x11reg_c16.empty()) emit16("c16", ctx.x11reg_c16);
+    }
+
     // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one
     // line per revision-table row (see tests/parity/test_history_tables.py).
     if (ctx.hist_out.ran) {

@@ -186,6 +186,12 @@ struct X13Context {
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).
     std::vector<double> resid_a;
     int resid_na = 0;
+    // x11regression{} B/C-iteration regression trading-day factors (b16/c16),
+    // snapshotted by x11mdl_td over [Pos1ob,Posfob] at the B (Kpart=2) and C
+    // (Kpart=3) iterations of x11pt2.
+    std::vector<double> x11reg_b16;
+    std::vector<double> x11reg_c16;
+    bool x11reg_ran = false;
     // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
     // scale point forecast + confidence interval, plus the transformed-scale
     // forecast/SE. Stored on the context (no auto file output); a thin driver
