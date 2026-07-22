@@ -51,7 +51,6 @@ BIN = _find_binary()
 _UNPARSED_BLOCKS = {
     "spectrum": "M6-M7",
     "x11regression": "M6-M7",
-    "metadata": "M9-M10",
     "pickmdl": "M4-M5",
 }
 

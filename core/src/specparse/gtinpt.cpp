@@ -129,6 +129,12 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     setint(prm::NOTSET, 2, ctx.picktd.tddate.data());
     setint(prm::NOTSET, 2, ctx.picktd.lndate.data());
 
+    // metadata{} defaults (gtinpt.f:553-557): no metadata present unless the
+    // metadata{} block sets it.
+    ctx.metadata.hvmtdt = false;
+    ctx.metadata.nkey = 0;
+    ctx.metadata.nval = 0;
+
     // Automatic-model-selection defaults (gtinpt.f 221-267). gt_automdl / gtauto
     // override these from an automdl{} spec; the automd driver reads them.
     ctx.arima.lautom = false;
@@ -315,9 +321,13 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 if (ctx.error.lfatal) return;
                 ctx.captured.spec_order.push_back("history");
                 break;
+            case 19:  // metadata
+                gt_metadata(ctx, inptok);
+                if (ctx.error.lfatal) return;
+                ctx.captured.spec_order.push_back("metadata");
+                break;
             case 15:  // x11regression
             case 17:  // pickmdl
-            case 19:  // metadata
             case 20:  // spectrum
             default:
                 inpter(ctx, PERROR, L.pos.data() + 1,

@@ -1395,4 +1395,175 @@ void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok) {
     gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
 }
 
+// ---- metadata{} (gtmtdt.f) ------------------------------------------------
+// User-defined descriptive key/value pairs echoed onto the diagnostic (.udg)
+// surface. Parse-only for the port: the resolved pairs are captured onto
+// ctx.metadata (the /cmtdat//cmtdic/ common block); no auto file output.
+void gt_metadata(X13Context& ctx, bool& inptok) {
+    LexState& L = ctx.lex;
+
+    // metadata argument data dictionary (gtmtdt.f:22-31).
+    constexpr int PMETA = 2;
+    static const char MDTDIC[] = "keysvalues";
+    static const int mdtptr[PMETA + 1] = {1, 5, 11};
+
+    // metadata.prm: PMTDAT = max number of metadata values, PLMETA = buffer len.
+    constexpr int PMTDAT = 20;
+    constexpr int PLMETA = 2000;
+
+    // Local mirror of the /cmtdat//cmtdic/ common block, initialized as in
+    // gtinpt.f:553-557. getttl grows these std::string buffers (pre-sized to
+    // PLMETA like the Fortran CHARACTER*(PLMETA)); persisted to ctx.metadata at
+    // the end. Element i (1-based) occupies buf[ptr[i-1] .. ptr[i]-1] (1-based).
+    std::string keystr(PLMETA, ' '), valstr(PLMETA, ' ');
+    int keyptr[PMTDAT + 1], valptr[PMTDAT + 1];
+    int nkey = 0, nval = 0;
+    bool hvmtdt = false, argok = true;
+    intlst(PMTDAT, keyptr, nkey);
+    intlst(PMTDAT, valptr, nval);
+
+    // Extract element i (1-based) into out; returns its length (getstr.f).
+    auto get_elt = [](const std::string& buf, const int* ptr, int i,
+                      std::string& out) -> int {
+        int nchr = ptr[i] - ptr[i - 1];
+        out = nchr > 0 ? buf.substr(static_cast<std::size_t>(ptr[i - 1] - 1),
+                                    static_cast<std::size_t>(nchr))
+                       : std::string();
+        return nchr;
+    };
+    // Append a new element to the (buf, ptr, n) list (insstr.f at the end == an
+    // append; the synthesis paths below only ever append).
+    auto append_elt = [](std::string& buf, int* ptr, int& n,
+                         const std::string& s) {
+        int start = ptr[n];   // 1-based next free position
+        for (std::size_t k = 0; k < s.size(); ++k)
+            buf[static_cast<std::size_t>(start - 1) + k] = s[k];
+        ptr[n + 1] = start + static_cast<int>(s.size());
+        n = n + 1;
+    };
+
+    int mdtlog[2 * PMETA];
+    for (auto& v : mdtlog) v = -32767;   // NOTSET
+
+    // --- Argument get loop (gtmtdt.f:38-58) ---
+    int mdtidx;
+    while (gtarg(ctx, MDTDIC, mdtptr, PMETA, mdtidx, mdtlog, inptok)) {
+        if (ctx.error.lfatal) return;
+        switch (mdtidx) {
+        case 1:  // keys
+            getttl(ctx, LPAREN, true, PMTDAT, keystr, keyptr, nkey, argok, inptok);
+            if (ctx.error.lfatal) return;
+            break;
+        case 2:  // values
+            getttl(ctx, LPAREN, true, PMTDAT, valstr, valptr, nval, argok, inptok);
+            if (ctx.error.lfatal) return;
+            break;
+        }
+    }
+    if (ctx.error.lfatal) return;
+    if (argok) hvmtdt = true;
+
+    const int* pos = L.pos.data() + 1;   // gtmtdt.f uses Pos for inpter
+
+    // --- Check keys for prohibited characters (gtmtdt.f:64-87) ---
+    if (nkey > 0) {
+        for (int i = 1; i <= nkey; ++i) {
+            if (!argok) break;
+            std::string thisky;
+            get_elt(keystr, keyptr, i, thisky);
+            if (thisky.find(' ') != std::string::npos) {
+                inpter(ctx, PERRNP, pos,
+                       "Keys specified in metadata spec cannot contain spaces.");
+                hvmtdt = false;
+                argok = false;
+            }
+            if (argok && thisky.find(':') != std::string::npos) {
+                inpter(ctx, PERRNP, pos,
+                       "Keys specified in metadata spec cannot contain colons.");
+                hvmtdt = false;
+                argok = false;
+            }
+        }
+    }
+
+    // --- Key/value count reconciliation (gtmtdt.f:92-141) ---
+    if (nkey == 0 && nval > 0) {
+        // No keys given: synthesize 'keyN' for each value.
+        keyptr[0] = 1;
+        for (int i = 1; i <= nval; ++i) {
+            std::string ikeystr(10, ' ');
+            ikeystr[0] = 'k'; ikeystr[1] = 'e'; ikeystr[2] = 'y';
+            int ikey = 4;
+            itoc(ctx, i, ikeystr, ikey);
+            if (ctx.error.lfatal) return;
+            append_elt(keystr, keyptr, nkey,
+                       ikeystr.substr(0, static_cast<std::size_t>(ikey - 1)));
+        }
+    } else if (nval > nkey) {
+        // Fewer keys than values: warn, then synthesize the missing 'keyN'.
+        std::string ckey(5, ' '); int ikey = 1; itoc(ctx, nkey, ckey, ikey);
+        if (ctx.error.lfatal) return;
+        std::string cval(5, ' '); int ival = 1; itoc(ctx, nval, cval, ival);
+        if (ctx.error.lfatal) return;
+        inpter(ctx, PWRNNP, pos,
+               "Fewer keys (" + ckey.substr(0, static_cast<std::size_t>(ikey - 1)) +
+               ") than values (" + cval.substr(0, static_cast<std::size_t>(ival - 1)) +
+               ") specified in metadata spec.");
+        for (int i = nkey + 1; i <= nval; ++i) {
+            std::string thisky(10, ' ');
+            thisky[0] = 'k'; thisky[1] = 'e'; thisky[2] = 'y';
+            int ik = 4;
+            itoc(ctx, i, thisky, ik);
+            if (ctx.error.lfatal) return;
+            append_elt(keystr, keyptr, nkey,
+                       thisky.substr(0, static_cast<std::size_t>(ik - 1)));
+        }
+    } else if (nval < nkey) {
+        // Fewer values than keys: error. NOTE the message text swaps the two
+        // counts (ckey holds Nkey but is printed as "values", cval holds Nval
+        // but is printed as "keys") -- ported verbatim from gtmtdt.f:132-134
+        // (Census bug CB, reproduced exactly).
+        std::string ckey(5, ' '); int ikey = 1; itoc(ctx, nkey, ckey, ikey);
+        if (ctx.error.lfatal) return;
+        std::string cval(5, ' '); int ival = 1; itoc(ctx, nval, cval, ival);
+        if (ctx.error.lfatal) return;
+        inpter(ctx, PERRNP, pos,
+               "Fewer values (" + ckey.substr(0, static_cast<std::size_t>(ikey - 1)) +
+               ") than keys (" + cval.substr(0, static_cast<std::size_t>(ival - 1)) +
+               ") specified in metadata spec.");
+        hvmtdt = false;
+        argok = false;
+    } else if (nval == 0 && nkey == 0) {
+        hvmtdt = false;
+    }
+
+    // --- Check that key values are unique (gtmtdt.f:145-161) ---
+    if (argok && hvmtdt) {
+        for (int i = 1; i <= nval - 1; ++i) {
+            std::string thisky;
+            int ikey = get_elt(keystr, keyptr, i, thisky);
+            for (int j = i + 1; j <= nval; ++j) {
+                std::string thatky;
+                int jkey = get_elt(keystr, keyptr, j, thatky);
+                if (ikey == jkey && thisky == thatky) {
+                    inpter(ctx, PERRNP, pos, "Key values must be unique.");
+                    hvmtdt = false;
+                    argok = false;
+                }
+            }
+        }
+    }
+
+    // Persist the resolved metadata onto ctx (the result object). No file output.
+    metadata_cmn& m = ctx.metadata;
+    m.keystr = keystr;
+    m.valstr = valstr;
+    for (int i = 0; i <= PMTDAT; ++i) { m.keyptr(i) = keyptr[i]; m.valptr(i) = valptr[i]; }
+    m.nkey = nkey;
+    m.nval = nval;
+    m.hvmtdt = hvmtdt;
+
+    inptok = inptok && argok;
+}
+
 } // namespace x13
