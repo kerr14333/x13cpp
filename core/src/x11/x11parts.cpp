@@ -573,7 +573,9 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // loop (see its declaration there); this is the fix, not just a rename --
     // the prior function-local Stex here was uninitialized on every call.
     double* stex = ctx.mq10_stex.data();
-    double stime[PLEN];   // /mq5a/  Stime  (E3 modified irregular)
+    double* stime = ctx.mq5a_stime.data();  // /mq5a/ Stime (E3 modified irregular),
+                          // ctx-persistent so run_spectrum can read it (spcdrv
+                          // differences E2/E3, computed here in Part E below).
     double ckhs[PLEN];    // /kcser/ Ckhs   (SA snapshot; dead on the base path)
     double ststd[PLEN];   // ststd          (D16 combined factors)
     double biasfc[PLEN];  // biasfc         (logadd trend bias-correction factors)

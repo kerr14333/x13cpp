@@ -20,6 +20,7 @@
 #include "notset.hpp"         // prm::NOTSET
 #include "x11/slidingspans.hpp"  // ssprep_snapshot, run_slidingspans
 #include "driver/run_history.hpp"  // run_history
+#include "driver/run_spectrum.hpp"  // run_spectrum
 
 #include <algorithm>
 #include <string>
@@ -238,6 +239,15 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // their last span's value; `nspobs`/`nfcst` are already const locals holding
     // the main-run values, but `begspn` aliases the live ctx.mdldat buffer).
     const int begspn_full[2] = {begspn[0], begspn[1]};
+
+    // spectrum{} (spcdrv.f): the data-based periodogram diagnostic (sp0/sp1/sp2).
+    // Runs on the pristine main-run X-11 state -- BEFORE the sliding-spans/history
+    // span replays below, which mutate ctx.mdldat.begspn/nspobs and the x11ptr
+    // span pointers that run_spectrum reads for Bgspec/begbk2. This mirrors the
+    // oracle flow: spcdrv is part of the main x11ari pass (after x11pt4), while
+    // slidingspans{}/history{} are separate re-runs. No-op when spectrum{} was
+    // absent (ctx.spcout.requested false).
+    if (!run_spectrum(ctx)) return false;
 
     if (!run_slidingspans(ctx, trnsrs)) return false;
 

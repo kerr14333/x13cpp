@@ -184,6 +184,20 @@ int main(int argc, char** argv) {
                          so.c_flat.data(), so.dmax_chs.data());
     }
 
+    // spectrum{} sp0/sp1/sp2 periodogram tables -- `<tag> <pos> <freq> <value>`,
+    // one line per frequency (Pos 0..60). Gated in test_spectrum_tables.py vs
+    // the oracle .sp0/.sp1/.sp2 goldens.
+    if (ctx.spcout.ran) {
+        const auto& sc = ctx.spcout;
+        auto emit_spec = [&](const char* tag, const std::vector<double>& v) {
+            for (std::size_t i = 0; i < v.size(); ++i)
+                std::printf("%s %zu %.15E %.15E\n", tag, i, sc.frq[i], v[i]);
+        };
+        if (sc.have_sp0) emit_spec("sp0", sc.sp0);
+        if (sc.have_sp1) emit_spec("sp1", sc.sp1);
+        if (sc.have_sp2) emit_spec("sp2", sc.sp2);
+    }
+
     // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one
     // line per revision-table row (see tests/parity/test_history_tables.py).
     if (ctx.hist_out.ran) {

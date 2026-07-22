@@ -1,5 +1,17 @@
 # spectrum{} compute — port plan (execution-ready)
 
+## STATUS: increment 1 LANDED (periodogram sp0/sp1/sp2, bit-exact ~5e-14)
+`core/src/driver/run_spectrum.{cpp,hpp}` + `gt_spectrum` option capture +
+`x11parts.cpp` persists E3 (`ctx.mq5a_stime`). Gated by
+`tests/parity/test_spectrum_tables.py` on `airline_spectrum.spc` (arspec spec
+xfailed). **KEY correction to the plan below:** spcdrv runs AFTER x11pt4, so its
+`Stci`/`Sti` hold the *modified-for-extremes* E2 (`Stcime`) / E3 (`Stime`) tables
+(x11pt3.f Part E, lines 1199-1289), NOT the D11/D13 saves. sp1 uses
+`ctx.adxser.stcime`, sp2 uses `ctx.mq5a_stime`. sp0 uses `Stcsi`+`Stex` (survives).
+Remaining: increment 2 (spr), 3 (Tukey st0/st1/st2), 4 (arspec).
+
+
+
 Parse is DONE (gt_spectrum, commit 73dca96). This note scopes the COMPUTE (the
 save tables) so it lands as one focused pass. Ground truth: `oracle/fortran/
 spcdrv.f` (997 lines, the driver) + the leaf routines. Corpus specs:

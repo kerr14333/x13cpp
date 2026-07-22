@@ -101,6 +101,9 @@
 // Hand-maintained: history{} sar/sae/trr/tre result struct (HistoryOutput),
 // not a COMMON mirror -- see core/src/driver/run_history.hpp.
 #include "driver/run_history.hpp"
+// Hand-maintained: spectrum{} sp0/sp1/sp2 result struct (SpectrumOutput),
+// not a COMMON mirror -- see core/src/driver/run_spectrum.hpp.
+#include "driver/run_spectrum.hpp"
 
 namespace x13 {
 
@@ -172,6 +175,12 @@ struct X13Context {
     // windowed data changes vtest/entsch's auto-selected Ksdev). Fixing this
     // is what un-blocked the slidingspans{} sfs/chs gate.
     std::vector<double> mq10_stex = std::vector<double>(1020, 0.0);
+    // /mq5a/ Stime (E3, the modified irregular): x11pt3's Part-E builds it into a
+    // function-local array in the oracle; persisted here so run_spectrum can read
+    // it (spcdrv.f differences E2/E3, not the D11/D13 saves -- x11pt4 runs before
+    // spcdrv). The AO/TC divsub on Stime is commented out in the oracle, so this
+    // holds Sti where C17-good, ebar where extreme, with no further adjustment.
+    std::vector<double> mq5a_stime = std::vector<double>(1020, 0.0);
     // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
     // scale point forecast + confidence interval, plus the transformed-scale
     // forecast/SE. Stored on the context (no auto file output); a thin driver
@@ -199,6 +208,7 @@ struct X13Context {
     // per-span S/Sa/Td arrays live on the real COMMON mirror, sspdat below.
     SlidingSpansOutput ssout;
     HistoryOutput hist_out;
+    SpectrumOutput spcout;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

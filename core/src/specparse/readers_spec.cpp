@@ -1579,7 +1579,75 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
         "seasonalfreqtukey120logqsqcheckrobustsa";
     static const int argptr[PARG + 1] = {1, 6, 16, 20, 26, 34, 43, 48, 55, 59, 64,
         68, 75, 86, 93, 102, 111, 127, 135, 140, 146, 154};
-    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+
+    // gtinpt.f:354-379 defaults (set for every run; captured here onto /rho/ so
+    // run_spectrum can read them). NOTE the default type is arspec (Spctyp=0);
+    // periodogram is an explicit override.
+    auto& r = ctx.rho;
+    r.spcdff = true;
+    r.spdfor = prm::NOTSET;
+    r.lstdff = false;
+    r.svallf = false;
+    r.ldecbl = true;
+    r.spctyp = 0;
+    r.spcsrs = 2;
+    r.mxarsp = prm::NOTSET;
+    r.spclim = 6.0;
+    r.peakwd = prm::NOTSET;
+    r.plocal = 0.002;
+    r.bgspec(1) = prm::NOTSET;
+    r.bgspec(2) = prm::NOTSET;
+    r.axsame = false;
+    ctx.spcout.requested = true;
+
+    int arglog[2 * PARG];
+    for (auto& v : arglog) v = -32767;   // NOTSET
+    int argidx;
+    while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
+        if (ctx.error.lfatal) return;
+        // Capture the value tokens for the options run_spectrum needs; the rest
+        // are consumed token-faithfully without application. Deferred to later
+        // increments (parsed + consumed here, not yet applied): start (arg 1 ->
+        // Bgspec override; run_spectrum currently always uses the gtspec.f:324
+        // eight-years-back default), peakwidth/altfreq/showseasonalfreq (arg
+        // 6/8/17 -> the mkfreq peak-frequency grid), and the peaks/plots/qcheck/
+        // Tukey/arspec compute.
+        std::vector<std::string> cap;
+        const bool want = (argidx == 2 || argidx == 3 || argidx == 4 ||
+                           argidx == 14 || argidx == 16);
+        consume_value(ctx, want ? &cap : nullptr);
+        if (ctx.error.lfatal) return;
+        if (cap.empty()) continue;
+        const std::string& v = cap[0];
+        switch (argidx) {
+        case 2:  // difference: yes | first | no (gtspec.f:117-124)
+            r.spcdff = (v != "no");
+            if (v == "first") r.spdfor = 1;
+            else if (v == "no") r.spdfor = 0;
+            break;
+        case 3:  // type: arspec | periodogram (gtspec.f:133)
+            r.spctyp = (v == "periodogram") ? 1 : 0;
+            break;
+        case 4:  // series (gtspec.f:148-149): Spcsrs=ivec-1; if >3 subtract 4
+            if (v == "original")              r.spcsrs = 0;
+            else if (v == "outlieradjoriginal") r.spcsrs = 1;
+            else if (v == "adjoriginal")      r.spcsrs = 2;
+            else if (v == "modoriginal")      r.spcsrs = 3;
+            else if (v == "a1")               r.spcsrs = 0;
+            else if (v == "a19")              r.spcsrs = 1;
+            else if (v == "b1")               r.spcsrs = 2;
+            else if (v == "e1")               r.spcsrs = 3;
+            break;
+        case 14:  // decibel: yes | no (gtspec.f:255)
+            r.ldecbl = (v == "yes");
+            break;
+        case 16:  // startdiff: yes | no (gtspec.f:279)
+            r.lstdff = (v == "yes");
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 // ---- pickmdl{} (gtautx.f) -------------------------------------------------
