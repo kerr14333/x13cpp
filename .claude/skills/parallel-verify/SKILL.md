@@ -24,6 +24,22 @@ Codex edits the main tree; you edit the worktree. Fully independent, no races. E
 tree has its **own `build/`** — expect a full rebuild in the worktree (see `build-run`;
 run `& tools/build.ps1` from the worktree dir).
 
+### GOTCHA: the Agent tool's `isolation: "worktree"` does NOT reliably branch from HEAD
+Observed: spawning subagents with `isolation: "worktree"` put them on **stale old
+commits** (it reused pre-existing `worktree-agent-*` branches, not current HEAD) — so
+their work targeted a divergent codebase (missing files that exist at HEAD, missing
+test infra) and could not be merged back. One agent's whole premise ("wire the
+existing `spectru.cpp`") was void because that file didn't exist on its base.
+**Before trusting a worktree-isolated agent's output, verify its base:**
+`git -C <worktree> log --oneline -1` — if it's not HEAD, the work is on the wrong
+base. Prefer provisioning the worktree YOURSELF from HEAD (`git worktree add … HEAD`)
+and pointing the agent at that path, or just do parallel novel-port work **inline in
+the main tree** (only one editor per file at a time). If an agent already produced good
+logic on a stale base, salvage it by hand-porting the additive pieces onto HEAD rather
+than merging the branch. And: **novel bit-exact ports** (vs *verification* of a known
+fix) are riskier for cold subagents — they must re-derive the whole port convention;
+weigh doing them inline.
+
 Shell cwd resets to the main tree between tool calls — use `Set-Location <worktree>`
 (PowerShell) or absolute paths for every worktree command.
 
