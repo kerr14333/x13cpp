@@ -92,7 +92,10 @@ including the near-non-invertible fixed-airline variants (payems_fixed /
 expgs_fixed, closed via a faithful CALCFX forecast-residual port in
 `core/src/seats/estbur.cpp`). **slidingspans{} is also now bit-exact** (all
 4 spans, sfs+chs; the per-span `xtrm.ksdev` reset fix in `run_x11_span`).
-Remaining diagnostics front: history{} (reuses the re-entrant span driver).
+**history{} revisions are now bit-exact too** (sar/sae/trr/tre, at the per-span
+re-estimation floor ~7e-6; `core/src/driver/run_history.cpp`, reusing the
+re-entrant span driver + a per-span `Lterm`/`Nterm` reset). The whole X-11
+diagnostics front (force / slidingspans / history) is now closed.
 - **Open:** the `*-aictest-x11` / `*-fixed-airline-x11` specs are xfailed. The
   aictest selection IS now wired into `automd` (gated `do_aictest`; block-1
   tdaic/easaic + a0/ismd0 revert), so on `airline` the correct model (td1coef +

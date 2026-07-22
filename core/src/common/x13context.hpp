@@ -98,6 +98,9 @@
 // Hand-maintained: slidingspans{} sfs/chs result struct (SlidingSpansOutput),
 // not a COMMON mirror -- see core/src/x11/slidingspans.hpp.
 #include "x11/slidingspans.hpp"
+// Hand-maintained: history{} sar/sae/trr/tre result struct (HistoryOutput),
+// not a COMMON mirror -- see core/src/driver/run_history.hpp.
+#include "driver/run_history.hpp"
 
 namespace x13 {
 
@@ -130,6 +133,15 @@ struct X13Context {
         // flips entsch's kersa/ksdev decode -> wrong extreme weights ->
         // wrong seasonal filter). See run_x11_span / ssprep_snapshot.
         int ksdev0 = 1;
+        // x11opt.Lterm (seasonal-filter MSR selector) and Nterm (Henderson
+        // trend-filter length) as parsed, captured before the main run's
+        // x11pt2/vtc resolve them. history{}'s expanding-window replay resets
+        // these per span so each span re-selects its own filter length (the
+        // selection is length-dependent); without the reset every span reuses
+        // the first (shortest) span's resolved choice. See run_history /
+        // ssprep_snapshot.
+        int lterm0 = 0;
+        int nterm0 = 0;
     } saved;
     // work3.cmn's Stsie (D8 "unmodified SI ratio" buffer). x11pt2/x11pt3 treat
     // most of their COMMON scratch (Temp/Stex/Stime/Ckhs/Ststd/Biasfc/Sp2) as
@@ -186,6 +198,7 @@ struct X13Context {
     // Max_%_DIFF column + the derived month-to-month SA-change array; the raw
     // per-span S/Sa/Td arrays live on the real COMMON mirror, sspdat below.
     SlidingSpansOutput ssout;
+    HistoryOutput hist_out;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

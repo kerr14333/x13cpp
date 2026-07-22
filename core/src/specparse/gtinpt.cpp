@@ -311,6 +311,10 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 ctx.captured.spec_order.push_back("slidingspans");
                 break;
             case 12:  // history
+                gt_history(ctx, havesp, inptok);
+                if (ctx.error.lfatal) return;
+                ctx.captured.spec_order.push_back("history");
+                break;
             case 15:  // x11regression
             case 17:  // pickmdl
             case 19:  // metadata

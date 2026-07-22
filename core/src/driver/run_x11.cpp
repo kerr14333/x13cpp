@@ -19,6 +19,7 @@
 #include "regarima/regvar.hpp"   // regvar (design rebuild for regression effects)
 #include "notset.hpp"         // prm::NOTSET
 #include "x11/slidingspans.hpp"  // ssprep_snapshot, run_slidingspans
+#include "driver/run_history.hpp"  // run_history
 
 #include <algorithm>
 #include <string>
@@ -232,7 +233,18 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // producing the sfs/chs cross-span stability tables on ctx.ssout. No-op
     // when slidingspans{} was not requested (ctx.hiddn.issap != 1). trnsrs is
     // empty on the no-model path; run_x11_span only reads it when has_model.
+    // Capture the main run's own geometry BEFORE the span drivers overwrite the
+    // ctx copies (run_slidingspans / run_x11_span reset ctx.mdldat.begspn to
+    // their last span's value; `nspobs`/`nfcst` are already const locals holding
+    // the main-run values, but `begspn` aliases the live ctx.mdldat buffer).
+    const int begspn_full[2] = {begspn[0], begspn[1]};
+
     if (!run_slidingspans(ctx, trnsrs)) return false;
+
+    // history{} (revchk.f/setrvp.f/revdrv.f/getrev.f/prtrev.f): the expanding-
+    // span concurrent-vs-final revisions analysis, built on the same re-entrant
+    // driver (driver/run_history.hpp). No-op when history{} was absent.
+    if (!run_history(ctx, trnsrs, begspn_full, nspobs, nfcst)) return false;
 
     return !ctx.error.lfatal;
 }

@@ -183,5 +183,23 @@ int main(int argc, char** argv) {
         dump_span_table("chs", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
                          so.c_flat.data(), so.dmax_chs.data());
     }
+
+    // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one
+    // line per revision-table row (see tests/parity/test_history_tables.py).
+    if (ctx.hist_out.ran) {
+        const auto& ho = ctx.hist_out;
+        for (std::size_t r = 0; r < ho.dates.size(); ++r) {
+            if (ho.have_sa) {
+                std::printf("sar %06d %.15E\n", ho.dates[r], ho.sar[r]);
+                std::printf("sae %06d %.15E %.15E\n", ho.dates[r],
+                            ho.sae_cnc[r], ho.sae_fin[r]);
+            }
+            if (ho.have_tr) {
+                std::printf("trr %06d %.15E\n", ho.dates[r], ho.trr[r]);
+                std::printf("tre %06d %.15E %.15E\n", ho.dates[r],
+                            ho.tre_cnc[r], ho.tre_fin[r]);
+            }
+        }
+    }
     return 0;
 }

@@ -50,7 +50,6 @@ BIN = _find_binary()
 # forcing this list to stay honest (no silent scope drift).
 _UNPARSED_BLOCKS = {
     "spectrum": "M6-M7",
-    "history": "M9-M10",
     "x11regression": "M6-M7",
     "metadata": "M9-M10",
     "pickmdl": "M4-M5",

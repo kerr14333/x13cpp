@@ -1119,6 +1119,254 @@ void gt_slidingspans(X13Context& ctx, bool& havesp, bool& inptok) {
     ctx.captured.has_slidingspans = true;
 }
 
+// ---- history{} (gtrvst.f) --------------------------------------------------
+// Revisions-history controls. Fills ctx.rev (rev_cmn) + ctx.hiddn.irev/irevsa,
+// mirroring gtrvst.f. Entry defaults are the gtinpt.f:485-518 block (set once
+// before the block is parsed; nothing reads ctx.rev earlier, same convention as
+// gt_force/gt_slidingspans). The driver (revdrv) is scoped separately.
+void gt_history(X13Context& ctx, bool& havesp, bool& inptok) {
+    constexpr int PARG = 20;
+    static const char ARGDIC[] =
+        "estimatessadjlagstrendlagsfstepstartendtablefixmdltransparent"
+        "refreshoutlieroutlierwintargetprintsavesavelogfixregx11outlier"
+        "fixx11regadditivesatransformfcst";
+    static const int argptr[PARG + 1] = {1, 10, 18, 27, 32, 37, 45, 51, 62, 69,
+        76, 86, 92, 97, 101, 108, 114, 124, 133, 143, 156};
+
+    // estimates dictionary (sadj/seasonal/sadjchng/aic/fcst/trend/trendchng/
+    // arma/td -> 1..9).
+    static const char ESTDIC[] = "sadjseasonalsadjchngaicfcsttrendtrendchngarmatd";
+    static const int estptr[10] = {1, 5, 13, 21, 24, 28, 33, 42, 46, 48};
+    static const char YSNDIC[] = "yesno";
+    static const int ysnptr[3] = {1, 4, 6};
+    static const char OTLDIC[] = "keepremoveauto";
+    static const int otlptr[4] = {1, 5, 11, 15};
+    static const char TRGDIC[] = "concurrentfinal";
+    static const int trgptr[3] = {1, 11, 16};
+    static const char FXRDIC[] = "tdholidayuseroutlier";
+    static const int fxrptr[5] = {1, 3, 10, 14, 21};
+    static const char ADDDIC[] = "differencepercent";
+    static const int addptr[3] = {1, 11, 18};
+
+    rev_cmn& rv = ctx.rev;
+    revtrg_cmn& rt = ctx.revtrg;
+    hiddn_cmn& hid = ctx.hiddn;
+    const int sp = ctx.model.sp;
+
+    // gtinpt.f:485-518 entry defaults.
+    hid.irev = 0;
+    hid.irevsa = 0;
+    rv.cnctar = false;
+    rt.ntarsa = 0;
+    rt.ntartr = 0;
+    rv.nfctlg = 0;
+    rv.rvstrt(1) = 0;
+    rv.rvstrt(2) = 0;
+    rv.lrvsa = rv.lrvsf = rv.lrvch = rv.lrvtrn = rv.lrvtch = false;
+    rv.lrvaic = rv.lrvfct = rv.lrvarma = rv.lrvtdrg = false;
+    rv.revfix = false;
+    rv.lrfrsh = false;
+    rv.otlrev = 0;
+    rv.otlwin = prm::NOTSET;
+    rv.rvtran = true;
+    rv.rvdiff = 2;
+    rv.revfxx = false;
+    rv.rvxotl = true;
+    rv.rvtrfc = false;
+    rv.nrvfxr = 0;
+
+    int arglog[2 * PARG];
+    for (auto& v : arglog) v = -32767;
+    int argidx;
+    bool argok = true;
+    while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
+        if (ctx.error.lfatal) return;
+        const int* ep = ctx.lex.errpos.data() + 1;
+        int ivec[4] = {0, 0, 0, 0};
+        int estidx[9] = {0};
+        int nelt = 0;
+        switch (argidx) {
+        case 1: {  // estimates
+            gtdcvc(ctx, LPAREN, false, 9, ESTDIC, estptr, 9,
+                   "Choices of estimates are sadj, seasonal, sadjchng, trend, "
+                   "trendchng, aic, fcst, arma, and td.",
+                   estidx, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok) {
+                for (int i = 0; i < nelt; ++i) {
+                    switch (estidx[i]) {
+                    case 1: rv.lrvsa = true; break;
+                    case 2: rv.lrvsf = true; break;
+                    case 3: rv.lrvch = true; break;
+                    case 4: rv.lrvaic = true; break;
+                    case 5: rv.lrvfct = true; break;
+                    case 6: rv.lrvtrn = true; break;
+                    case 7: rv.lrvtch = true; break;
+                    case 8: rv.lrvarma = true; break;
+                    case 9: rv.lrvtdrg = true; break;
+                    }
+                }
+            }
+            break;
+        }
+        case 2:  // sadjlags
+            getivc(ctx, LPAREN, true, 5, rt.targsa.data(), rt.ntarsa,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && rt.ntarsa > 0)
+                for (int i = 1; i <= rt.ntarsa; ++i)
+                    if (rt.targsa(i) <= 0) {
+                        inpter(ctx, PERROR, ep,
+                               "Entries for sadjlags must be greater than zero.");
+                        inptok = false;
+                    }
+            break;
+        case 3:  // trendlags
+            getivc(ctx, LPAREN, true, 5, rt.targtr.data(), rt.ntartr,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && rt.ntartr > 0)
+                for (int i = 1; i <= rt.ntartr; ++i)
+                    if (rt.targtr(i) <= 0) {
+                        inpter(ctx, PERROR, ep,
+                               "Entries for trendlags must be greater than zero.");
+                        inptok = false;
+                    }
+            break;
+        case 4:  // fstep
+            getivc(ctx, LPAREN, true, 4, rv.rfctlg.data(), rv.nfctlg,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            break;
+        case 5:  // start
+            gtdtvc(ctx, havesp, ctx.model.sp, LPAREN, false, 1,
+                   rv.rvstrt.data(), nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            break;
+        case 6:  // endtable
+            gtdtvc(ctx, havesp, ctx.model.sp, LPAREN, false, 1,
+                   rv.rvend.data(), nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            break;
+        case 7:  // fixmdl
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for fixmdl are no or yes.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) rv.revfix = (ivec[0] == 1);
+            break;
+        case 8:  // transparent
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for transparent are no or yes.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) rv.rvtran = (ivec[0] == 1);
+            break;
+        case 9:  // refresh
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for refresh are no or yes.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) rv.lrfrsh = (ivec[0] == 1);
+            break;
+        case 10: {  // outlier
+            int ivec2[2] = {0, 0};
+            gtdcvc(ctx, LPAREN, true, 2, OTLDIC, otlptr, 3,
+                   "Available options for outlier are remove, keep or auto.",
+                   ivec2, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok) {
+                rv.otlrev = 0;
+                for (int i = 0; i < nelt; ++i) rv.otlrev += (ivec2[i] - 1);
+                if (nelt == 2 && rv.otlrev == 1) {
+                    inpter(ctx, PERROR, ep, "Cannot specify both remove and "
+                           "keep for the outlier argument.");
+                    inptok = false;
+                }
+            }
+            break;
+        }
+        case 11:  // outlierwin
+            getivc(ctx, LPAREN, true, 1, ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            rv.otlwin = ivec[0];
+            if (argok && rv.otlwin < 0) {
+                inpter(ctx, PERROR, ep, "Value of outlierwin must be an integer "
+                       "greater than or equal to zero.");
+                inptok = false;
+            }
+            break;
+        case 12:  // target
+            gtdcvc(ctx, LPAREN, true, 1, TRGDIC, trgptr, 2,
+                   "Available options for target are concurrent or final.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) rv.cnctar = (ivec[0] == 1);
+            break;
+        case 13:  // print
+            consume_value(ctx, nullptr);
+            break;
+        case 14:  // save
+            consume_value(ctx, nullptr);
+            break;
+        case 15:  // savelog
+            consume_value(ctx, nullptr);
+            break;
+        case 16:  // fixreg
+            gtdcvc(ctx, LPAREN, true, 4, FXRDIC, fxrptr, 4,
+                   "Available options for fixreg are td, holiday, or user.",
+                   rv.rvfxrg.data(), rv.nrvfxr, argok, inptok);
+            if (ctx.error.lfatal) return;
+            break;
+        case 17:  // x11outlier
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for x11outlier are no or yes.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) rv.rvxotl = (ivec[0] == 1);
+            break;
+        case 18:  // fixx11reg
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for fixx11reg are no or yes.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) rv.revfxx = (ivec[0] == 1);
+            break;
+        case 19:  // additivesa
+            gtdcvc(ctx, LPAREN, true, 1, ADDDIC, addptr, 2,
+                   "Available options for additivesa are difference or percent.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) rv.rvdiff = ivec[0];
+            break;
+        case 20:  // transformfcst
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for transformfcst are no or yes.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) rv.rvtrfc = (ivec[0] == 1);
+            break;
+        }
+        if (ctx.error.lfatal) return;
+    }
+    if (ctx.error.lfatal) return;
+
+    // Post-parse checks (gtrvst.f:349-360).
+    if (hid.irev == 0) hid.irev = 1;
+    if (!rv.lrvsa && rt.ntarsa > 0) rv.lrvsa = true;
+    if (!rv.lrvtrn && rt.ntartr > 0) rv.lrvtrn = true;
+    if (!rv.lrvsa && !rv.lrvsf && !rv.lrvch && !rv.lrvtrn && !rv.lrvaic &&
+        !rv.lrvfct && !rv.lrvtch && !rv.lrvarma && !rv.lrvtdrg)
+        rv.lrvsa = true;
+    if (rv.lrvsa || rv.lrvsf || rv.lrvch || rv.lrvtrn || rv.lrvtch)
+        hid.irevsa = 1;
+    if (rv.otlwin == prm::NOTSET) rv.otlwin = sp;
+    // (Iagr>0 composite indirect-revision bookkeeping: single-series only here.)
+
+    inptok = inptok && argok;
+    ctx.captured.has_history = true;
+}
+
 // ---- check{} (getchk.f) ----------------------------------------------------
 void gt_check(X13Context& ctx, bool& inptok) {
     constexpr int PARG = 7;

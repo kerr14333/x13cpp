@@ -53,6 +53,13 @@ void ssprep_snapshot(X13Context& ctx) {
     // still the parsed spec/default value -- stash it for each span's fresh
     // start (run_x11_span). Not an oracle ssprep.cmn field (kept in ctx.saved).
     ctx.saved.ksdev0 = ctx.xtrm.ksdev;
+    // Same rationale for the seasonal-filter selector (Lterm) and Henderson
+    // trend-filter length (Nterm): captured here as parsed, before x11pt2/vtc
+    // resolve them, so history{}'s expanding-window replay can re-select per
+    // span. (slidingspans uses fixed-length spans and does not read these back,
+    // so capturing them is harmless there.)
+    ctx.saved.lterm0 = ctx.x11opt.lterm;
+    ctx.saved.nterm0 = ctx.x11opt.nterm;
 
     if (!ctx.captured.has_model) return;
     const model_cmn& m = ctx.model;

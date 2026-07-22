@@ -276,6 +276,7 @@ void gt_x11(X13Context& ctx, bool& inptok);          // x11{} (getx11)
 void gt_seats(X13Context& ctx, bool& inptok);        // seats{} (gtseat)
 void gt_force(X13Context& ctx, bool& inptok);        // force{} (getfrc)
 void gt_slidingspans(X13Context& ctx, bool& havesp, bool& inptok); // slidingspans{} (getssp)
+void gt_history(X13Context& ctx, bool& havesp, bool& inptok);      // history{} (gtrvst)
 void gt_check(X13Context& ctx, bool& inptok);        // check{} (getchk)
 void gt_identify(X13Context& ctx, bool& inptok);     // identify{} (getid)
 void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok); // composite{}

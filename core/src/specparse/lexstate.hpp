@@ -124,6 +124,7 @@ struct ParseSettings {
     bool has_seats = false;
     bool has_force = false;             // force{} spec present (force yearly totals)
     bool has_slidingspans = false;      // slidingspans{} spec present
+    bool has_history = false;           // history{} spec present (revisions)
     // Sscut(5): slidingspans{} cutseas/cutchng/cuttd cutoffs (getssp.f). Not a
     // Fortran COMMON -- Sscut is a plain local array threaded from gtinpt.f down
     // into getssp.f and back up to editor.f (which later builds ssap_cmn.cut
