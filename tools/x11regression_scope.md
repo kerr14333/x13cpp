@@ -102,34 +102,66 @@ focused multi-session port on the scale of the SEATS or automdl engines, not a
 leaf-routine increment. Reconnaissance is COMPLETE; the port is mechanical from
 this map.
 
-## ROOT CAUSE (as of the Codex-assisted debug pass)
-The coefficient bug is **the B13 irregular fed to the regression differs from
-the oracle at TD/leap-sensitive months**. Proven decisively:
-- My design X is BYTE-IDENTICAL to the oracle's saved regression matrix (.xrm),
-  maxdiff 0.0 over all 144 data rows.
-- regx11/olsreg is faithful (numpy lstsq on my X,y == my regx11 coeffs).
-- So the ONLY input differing is y = Xnstar*(Sti-1): my Sti[Feb1949]=1.0132 vs
-  oracle B13 1.005 (a ~0.8% gap ~= the Feb leap factor 28/28.25=0.9912); Jan/Mar
-  match. My y regressed on X gives the wrong (flat) coeffs; the oracle-B13-derived
-  y gives the right ones.
-- Direction + the Feb-worst error => **the LOM/leap prior on the x11regression
-  input is mishandled**. gtxreg.f:186-192 calls `rmlnvr` (remove length-of-month
-  variation) when Picktd; my gt_x11regression does NOT set Picktd / call rmlnvr,
-  so the base-x11 input series (and thus B13) carries a different length-of-month
-  adjustment than the oracle at Feb/leap months. NEXT: port rmlnvr + the Picktd
-  path in the parser (or the priadj/Sprior LOM handling for the x11reg TD case),
-  so b1/B13 match the oracle at Feb; then the regression y is correct and the
-  coeffs/b16/c16/d10-d13 should follow.
+## ROOT CAUSE — DECISIVELY FOUND & FIXED (the flat-coeff bug)
+The earlier "B13 input differs / rmlnvr-as-input-LOM-adjust" hypothesis was WRONG.
+The real cause, proven by a with/without-x11reg B1/B13 sweep + the oracle's own
+`np=3` estimation report:
 
-Two faithful fixes ALREADY LANDED this pass (needed, not the coeff root cause):
-- x11pt2.f:846-889 Stcsi feedback: after x11mdl, `divsub(Stcsi,Stcsi,Faccal)`
-  for the Axrgtd Ixreg==1 case so the next iteration works on the TD-adjusted
-  series (core/src/x11/x11parts.cpp, `Sto/Faccal`).
-- Forecast-extended design span: x11mdl_td now uses nobspf=posffc-pos1ob+1 and
-  passes the real nfcst to regvar, so Factd/Faccal cover [pos1bk,posffc] (fixes
-  a NaN the Stcsi divsub hit on the un-extended factors).
+1. **The x11regression TD regressors were leaking into the regARIMA ML estimate.**
+   `gt_x11regression`→`gtpdrg(x11reg=true)` built the 6 TD (+ leap year) into
+   `ctx.model` (the regARIMA store), so `estimate{}` fit airline+TD and produced a
+   TD-adjusted B1 → the irregular had NO TD signal left → the OLS returned flat
+   (~0) coefficients. The oracle keeps them SEPARATE: its regARIMA model is bare
+   airline (`np=3`; the .out explicitly notes the x11reg estimates are not ML),
+   and the TD lives in a dedicated x11-regression model store (`xrgmdl.cmn`).
+   **FIX — ported `loadxr.f`** (`core/src/x11/loadxr.{hpp,cpp}` + `ctx.xrgmdl`):
+   the parser clears the working regressors, gtpdrg builds the TD into the bare
+   model, `loadxr(true)` saves it into `ctx.xrgmdl`, then the working model is
+   restored to bare airline (gtinpt.f:804-834 ssprep/dlrgef/loadxr(T)/restor). The
+   x11pt2 call site wraps `x11mdl_td` with `loadxr(false)`/`loadxr(true)`
+   (x11pt2.f:720/724) to swap the TD regressors in for the irregular OLS.
 
-## DEBUGGING STATUS (wired end-to-end, ~1-4% off — coeff/design scaling bug)
+2. **The leap-year regressor must be stripped for the mult/log x11reg td.**
+   gtpdrg's picktd "td" appends a Leap Year (PRGTLY) column; the oracle's x11reg
+   model is 6 day-contrasts only (nxreg=6) — the length/leap effect is carried by
+   the Xnstar day-count normalization in x11ref, not a regression column.
+   **FIX — gtxreg.f:186-192**: after gtpdrg, when `Picktd` and (the caller's
+   `Priadj`, which gtxreg binds to its param named `Muladd`) != 1/NOTSET, call
+   `rmlnvr(NOTSET, 0, Nspobs)` to drop the Leap Year column.
+
+**Result:** b16/c16 went from ~3e-2 off (flat coeffs) to **~1.5e-3** vs the
+goldens; coeffs now track the oracle (C16 Sat 0.179 vs 0.168, Tue -0.123 vs
+-0.112, etc). No parity regressions (596 pass / 9 skip / 18 xfail).
+
+### STILL OPEN (next increment): the ~1.5e-3 residual + d13 ~1.7e-2 at leap-Feb
+Two candidates, both structural, not gross bugs:
+- **Extreme-exclusion mismatch:** my C-iteration `tdxtrm` excludes 12 pts vs the
+  oracle C14's 10 (8/10 shared; I add two leap-Febs, miss one Aug). tdxtrm is a
+  faithful port, so this is downstream of the ~1.5e-3 faccal reference feeding the
+  C-iteration sigma test — should tighten once the two-pass below is right.
+- **Outer two-pass:** the oracle estimates b16/c16 on the RAW B1 ("First pass"),
+  applies C16 as a prior → TD-adjusted B1 (111.30), then re-runs x11 for the final
+  d10-d16. My single pass removes TD in-iteration (Stcsi feedback). b16/c16 (pass-1
+  output) match to 1.5e-3, but the final d13 (pass-2) is 1.7e-2 off at leap-Feb —
+  likely because the final decomposition needs the actual TD-adjusted-B1 second
+  pass, not the in-iteration divsub. NEXT: check whether x11pt2/x11ari wraps a
+  second x11 pass for Ixreg==1 (the "prior adjustment factors" applied to B1).
+
+Two faithful fixes from the prior pass (still in place, not the coeff cause):
+- x11pt2.f:846-889 Stcsi feedback (`divsub(Stcsi,Stcsi,Faccal)` for Axrgtd).
+- Forecast-extended design span (nobspf=posffc-pos1ob+1, real nfcst to regvar).
+
+## DEBUGGING STATUS — SUPERSEDED (see "ROOT CAUSE — DECISIVELY FOUND & FIXED")
+The narrative below is HISTORICAL and its conclusion was WRONG. It claimed the
+design/olsreg were fine and the "~0.05 vs 0.13" coeff gap was a scaling/leap
+puzzle in the design or Dx11 build. The actual cause (see the ROOT CAUSE section
+above) was that the x11reg TD regressors were being fit by the regARIMA ML
+estimate (removing the TD signal from the irregular → flat coeffs) and that the
+leap-year column was not stripped. Both are now fixed (loadxr + rmlnvr); b16/c16
+are at ~1.5e-3. Kept only for the verified sub-facts (leap factors, design row0).
+
+<details><summary>Old (wrong-conclusion) notes</summary>
+
 The full TD path runs (commit 4ba4940). b16/c16 ~1e-2 off; d10-d13 ~2-4% off,
 **worst at February** (196002). Localization done — most of the pipeline is
 VERIFIED CORRECT:
@@ -141,16 +173,10 @@ VERIFIED CORRECT:
 - **Design** looks right: regvar TD row0 = [0,-1,-1,-1,-1,0] = the correct
   Jan1949 (Sun5 Mon5 Tue-Fri4 Sat5) day contrast.
 - **regx11/olsreg CORRECT**: a numpy lstsq on the dumped X/y gives the SAME
-  coeffs as regx11 (~[-0.066,0.050,-0.031,0.037,-0.053,0.017]) — so the OLS is
-  faithful.
-- **The gap**: those coeffs (~0.05) don't reconcile with the oracle. The oracle
-  .udg `Trading Day$Mon: -0.1305` vs the F4 daily-weight table (xr.out:4530,
-  31-day Mon=99.14 -> B~-0.0086) shows a parameterization/scaling difference to
-  chase. NEXT: (a) read the oracle "Irregular Component Regression Matrix"
-  (xr.out:386) and diff my design row-by-row; (b) compare my Dx11 daily weights
-  (x11ref) to the F4 table; (c) check whether the design needs mean-adjustment
-  (xmeans) applied/not, or the y transform has a leap term. The Feb-worst error
-  points at the leap/length interaction in the design or the Dx11 build.
+  coeffs as regx11 — so the OLS is faithful.
+- **The gap**: those coeffs (~0.05) don't reconcile with the oracle. [This was
+  the flat-coeff symptom of the regARIMA-estimate leak, not a design/scaling bug.]
+</details>
 
 ## Suggested increments (each committable)
 1. **gtxreg parser** → set `Ixreg=1`, `Axrgtd`, build the TD regression group

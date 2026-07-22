@@ -12,6 +12,7 @@
 #include "x11/x11filt.hpp"          // divsub, addmul, setmv, logar, averag
 #include "x11/x11seas.hpp"          // vsfa, vsfb
 #include "x11/x11reg.hpp"           // x11mdl_td (x11regression irregular regression)
+#include "x11/loadxr.hpp"           // loadxr (regARIMA <-> x11reg model swap)
 #include "x11/x11xtrm.hpp"          // xtrm, vtest, entsch
 #include "x11/x11drv.hpp"           // forcst, vtc, si
 #include "x11/x11force.hpp"         // qmap (force yearly totals)
@@ -468,7 +469,11 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // regress the TD design on Sti (B13/C13), snapshot b16/c16, and divide
         // the TD effect out of Sti so the iteration continues without it.
         if (ctx.hiddn.ixreg == 1 && (kpart == 2 || kpart == 3)) {
+            // x11pt2.f:720/724: swap the x11reg regressors into the working model
+            // for the irregular OLS, then save the estimated betas back.
+            loadxr(ctx, /*toxreg=*/false);
             x11mdl_td(ctx, kpart);
+            loadxr(ctx, /*toxreg=*/true);
             if (ctx.error.lfatal) return;
         }
 

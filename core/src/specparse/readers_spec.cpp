@@ -12,6 +12,7 @@
 #include "notset.hpp"
 #include "srslen.hpp"
 #include "model.hpp"   // prm::POTLR
+#include "x11/loadxr.hpp"   // loadxr, xrg_clear_working (x11regression model store)
 
 #include <cmath>
 #include <string>
@@ -1688,6 +1689,12 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     bool havtd = false, havhol = false, havln = false, havlp = false;
     int arglog[2 * PARG];
     for (auto& v : arglog) v = -32767;
+    // gtinpt.f:804-816 ssprep+dlrgef: clear the regARIMA regressors so gtxreg
+    // parses the x11reg variables into a bare model. On the bare-ARIMA corpus
+    // path the model has no regressors, so the clear is exact; a regARIMA model
+    // that already carries regressors needs the full ssprep/restor snapshot
+    // (deferred -- xrg_clear_working leaves that case as future work).
+    xrg_clear_working(ctx);
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
@@ -1703,10 +1710,28 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
             if (ctx.error.lfatal) return;
         }
     }
-    // gtxreg.f:883-889: Nb>0 -> Ixreg=1 (prior=yes -> 2, deferred); Havxtd ->
+    // gtinpt.f:830 loadxr(T): move the parsed x11reg model into ctx.xrgmdl so
+    // the regARIMA estimate stays the bare ARIMA model (the oracle fits np=3, no
+    // TD -- the x11reg estimates are not ML). gtinpt.f:832 restor: restore the
+    // regARIMA model (bare ARIMA -> clear the working regressors back out).
+    // gtxreg.f:186-192: for the multiplicative/log-additive td regression the
+    // length-of-month / leap-year variation is carried by the Xnstar day-count
+    // normalization (x11ref), not a regression column -- rmlnvr strips the Leap
+    // Year regressor that gtpdrg's picktd "td" adds, so the x11reg model is the
+    // 6 day-contrasts alone (the oracle's nxreg=6). The prior-adjust arg is a
+    // throwaway here (NOTSET): x11reg does not fold the LOM into a series prior.
+    if (ctx.picktd.picktd && ctx.prior.priadj != prm::NOTSET &&
+        ctx.prior.priadj != 1) {
+        int tmppa = prm::NOTSET;
+        rmlnvr(ctx, tmppa, 0, ctx.mdldat.nspobs);
+        if (ctx.error.lfatal) return;
+    }
+    loadxr(ctx, /*toxreg=*/true);
+    xrg_clear_working(ctx);
+    // gtxreg.f:883-889: Nbx>0 -> Ixreg=1 (prior=yes -> 2, deferred); Havxtd ->
     // Axrgtd. editor.f:1723 clears Axrgtd if no TD group materialized.
     if (havtd) ctx.x11log.havxtd = true;
-    if (ctx.model.nb > 0) ctx.hiddn.ixreg = 1;
+    if (ctx.xrgmdl.nbx > 0) ctx.hiddn.ixreg = 1;
     if (ctx.x11log.havxtd) ctx.x11log.axrgtd = true;
 }
 
