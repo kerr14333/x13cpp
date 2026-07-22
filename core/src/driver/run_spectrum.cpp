@@ -78,6 +78,60 @@ void spgrh2(const double* x, const std::vector<double>& frq, int n1, int n2,
     }
 }
 
+// getTPeaks window size (specpeak.f:560-577), sp==12 branch: the Tukey window m
+// as a function of series length nz. Returns -1 when no Tukey table is produced.
+int tukey_window(int nz, bool ltk120) {
+    if (ltk120 && nz >= 120) return 120;
+    if (nz >= 120) return 112;
+    if (nz >= 80) return 79;
+    return -1;
+}
+
+// The Tukey-smoothed spectrum of the 1-based series x[n1..n2] (getTPeaks ->
+// getWind(Tukey) + covWind, ansub11.f). Fills st[0..m/2] with 10*log10(|p|) and
+// frq[0..m/2] with i/m (savstp.f's single-precision float division), where m is
+// the getTPeaks window. Returns false (no table) when nz<=80 or m<0. crosco.f:
+// biased autocovariance c(i)=(1/nz)*sum x(j+i)x(j), no mean removal.
+bool tukey_spectrum(const double* x, int n1, int n2, bool ltk120,
+                    std::vector<double>& st, std::vector<double>& frq) {
+    const int nz = n2 - n1 + 1;
+    if (nz <= 80) return false;   // spcdrv.f gate: nsrs > 80
+    const int m = tukey_window(nz, ltk120);
+    if (m < 0) return false;
+    // Repack to 0-based x[0..nz-1] = series[n1..n2].
+    std::vector<double> xx(static_cast<std::size_t>(nz));
+    for (int j = 0; j < nz; ++j) xx[j] = x[(n1 - 1) + j];
+    // crosco: c[0..m].
+    std::vector<double> c(static_cast<std::size_t>(m + 1), 0.0);
+    for (int i = 0; i <= m; ++i) {
+        double t = 0.0;
+        for (int j = 0; j < nz - i; ++j) t += xx[j + i] * xx[j];
+        c[i] = t / nz;
+    }
+    // Tukey window w[0..m] (getWind ind=2).
+    std::vector<double> w(static_cast<std::size_t>(m + 1));
+    for (int j = 0; j <= m; ++j)
+        w[j] = 0.5 * (1.0 + std::cos(3.14159265358979 * j / m));
+    // covWind (pm=nw2=600 -> mm=m): p[0]=sum c[j]w[j] (factor 1 -- the Census
+    // quirk), p[k]=c0*w0 + sum_{j=1}^m 2 c[j] w[j] cos(2pi j k / m).
+    const double pi2 = 6.28318530717959;
+    const int half = m / 2;
+    std::vector<double> p(static_cast<std::size_t>(half + 1), 0.0);
+    for (int j = 0; j <= m; ++j) p[0] += c[j] * w[j];
+    for (int k = 1; k <= half; ++k) {
+        double s = c[0] * w[0];
+        for (int j = 1; j <= m; ++j) s += 2.0 * c[j] * w[j] * std::cos(pi2 * j * k / m);
+        p[k] = s;
+    }
+    st.assign(static_cast<std::size_t>(half + 1), 0.0);
+    frq.assign(static_cast<std::size_t>(half + 1), 0.0);
+    for (int i = 0; i <= half; ++i) {
+        st[i] = 10.0 * std::log10(std::fabs(p[i]));
+        frq[i] = static_cast<double>(static_cast<float>(i) / static_cast<float>(m));
+    }
+    return true;
+}
+
 }  // namespace
 
 bool run_spectrum(X13Context& ctx) {
@@ -158,6 +212,7 @@ bool run_spectrum(X13Context& ctx) {
     }
 
     const bool taklog = (muladd != 1);
+    const bool ltk120 = ctx.rho.ltk120;
 
     auto& out = ctx.spcout;
     out.frq = mkfreq(sp, /*peakwd=*/1);
@@ -179,6 +234,9 @@ bool run_spectrum(X13Context& ctx) {
         gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
         spgrh2(tmp.data(), out.frq, l1, posfob, ldecbl, out.sp0);
         out.have_sp0 = true;
+        // st0: Tukey spectrum of the same detrended series (spcdrv.f:250-255).
+        out.have_st0 = tukey_spectrum(tmp.data(), l1, posfob, ltk120, out.st0,
+                                      out.frq_tukey);
     }
     // --- sp1: detrended seasonally adjusted (spcdrv.f:301-349) -------------
     // The SA series is E2 (Stcime, the SA modified for extreme values), NOT the
@@ -189,6 +247,9 @@ bool run_spectrum(X13Context& ctx) {
         gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
         spgrh2(tmp.data(), out.frq, l1, posfob, ldecbl, out.sp1);
         out.have_sp1 = true;
+        // st1: Tukey spectrum of the same detrended SA series (spcdrv.f:388-392).
+        out.have_st1 = tukey_spectrum(tmp.data(), l1, posfob, ltk120, out.st1,
+                                      out.frq_tukey);
     }
     // --- sp2: irregular (spcdrv.f:438-467) -- no differencing -------------
     // Likewise the irregular is E3 (Stime, the modified irregular), not D13.
@@ -200,6 +261,9 @@ bool run_spectrum(X13Context& ctx) {
         }
         spgrh2(tmp.data(), out.frq, ipos, posfob, ldecbl, out.sp2);
         out.have_sp2 = true;
+        // st2: Tukey spectrum of the same irregular series (spcdrv.f:506-510).
+        out.have_st2 = tukey_spectrum(tmp.data(), ipos, posfob, ltk120, out.st2,
+                                      out.frq_tukey);
     }
     // --- spr: regARIMA model residuals (spcrsd.f, periodogram path) --------
     // No detrend, no log: the residuals `a` are used directly. Their start date

@@ -27,11 +27,20 @@ struct SpectrumOutput {
     bool have_sp1 = false;
     bool have_sp2 = false;
     bool have_spr = false;
+    bool have_st0 = false;
+    bool have_st1 = false;
+    bool have_st2 = false;
     std::vector<double> frq;  // 61 frequencies (mkfreq.f)
     std::vector<double> sp0;  // 61 -- 10*Log(Spectrum_AdjOri)
     std::vector<double> sp1;  // 61 -- 10*Log(Spectrum_SA)
     std::vector<double> sp2;  // 61 -- 10*Log(Spectrum_Irr)
     std::vector<double> spr;  // 61 -- 10*Log(Spectrum_Rsd) (regARIMA residuals)
+    // Tukey-smoothed spectra of the same AdjOri/SA/Irr series (getTPeaks/covWind).
+    // Their grid is Frq(i)=i/m over i=0..m/2 (m = Tukey window, not the 61-pt grid).
+    std::vector<double> frq_tukey;  // m/2+1 frequencies i/m
+    std::vector<double> st0;        // Tukey(Spectrum_AdjOri)
+    std::vector<double> st1;        // Tukey(Spectrum_SA)
+    std::vector<double> st2;        // Tukey(Spectrum_Irr)
 };
 
 // Compute the spectrum{} periodogram tables after the X-11 decomposition. No-op

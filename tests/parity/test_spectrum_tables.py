@@ -39,7 +39,7 @@ _GOLDEN = os.path.join(_REPO, "tests", "golden", "extra")
 # troughs stay far inside it).
 ABS_TOL = 1e-8
 
-_TAGS = ["sp0", "sp1", "sp2", "spr"]
+_TAGS = ["sp0", "sp1", "sp2", "spr", "st0", "st1", "st2"]
 
 
 def _find_binary() -> str:

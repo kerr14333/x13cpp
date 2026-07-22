@@ -11,7 +11,13 @@ xfailed). **KEY correction to the plan below:** spcdrv runs AFTER x11pt4, so its
 Increment 2 (spr, spcrsd.f): periodogram of the regARIMA residuals `a` (no
 detrend/log), captured off the estimate as `ctx.resid_a`/`resid_na`; residual
 start = Begspn + (Nspobs - na); span [rpos, na], rpos = dfdate(Bgspec,Begrsd)+1.
-Remaining: increment 3 (Tukey st0/st1/st2), 4 (arspec).
+Increment 3 (Tukey st0/st1/st2, getTPeaks/covWind/crosco): the Tukey-windowed
+autocovariance spectrum of the SAME detrended AdjOri/SA/Irr series, window
+m=tukey_window(nz) (79 here), 40 pts on the i/m grid. crosco = biased autocov
+(no mean removal); covWind's p(0) has the factor-1 Census quirk; savstp does
+10log10(|.|) with the freq as single-precision float(i)/float(m).
+Remaining: increment 4 (arspec -- spgrh/sautco/sicp2 AR spectrum, replaces
+spgrh2 for the sp0/sp1/sp2/spr tables; st0/st1/st2 stay Tukey).
 
 
 

@@ -197,6 +197,14 @@ int main(int argc, char** argv) {
         if (sc.have_sp1) emit_spec("sp1", sc.sp1);
         if (sc.have_sp2) emit_spec("sp2", sc.sp2);
         if (sc.have_spr) emit_spec("spr", sc.spr);
+        // Tukey tables use their own i/m frequency grid (sc.frq_tukey).
+        auto emit_tukey = [&](const char* tag, const std::vector<double>& v) {
+            for (std::size_t i = 0; i < v.size(); ++i)
+                std::printf("%s %zu %.15E %.15E\n", tag, i, sc.frq_tukey[i], v[i]);
+        };
+        if (sc.have_st0) emit_tukey("st0", sc.st0);
+        if (sc.have_st1) emit_tukey("st1", sc.st1);
+        if (sc.have_st2) emit_tukey("st2", sc.st2);
     }
 
     // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one
