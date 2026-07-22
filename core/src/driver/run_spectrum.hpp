@@ -26,10 +26,12 @@ struct SpectrumOutput {
     bool have_sp0 = false;
     bool have_sp1 = false;
     bool have_sp2 = false;
+    bool have_spr = false;
     std::vector<double> frq;  // 61 frequencies (mkfreq.f)
     std::vector<double> sp0;  // 61 -- 10*Log(Spectrum_AdjOri)
     std::vector<double> sp1;  // 61 -- 10*Log(Spectrum_SA)
     std::vector<double> sp2;  // 61 -- 10*Log(Spectrum_Irr)
+    std::vector<double> spr;  // 61 -- 10*Log(Spectrum_Rsd) (regARIMA residuals)
 };
 
 // Compute the spectrum{} periodogram tables after the X-11 decomposition. No-op

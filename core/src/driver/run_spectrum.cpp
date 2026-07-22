@@ -132,6 +132,9 @@ bool run_spectrum(X13Context& ctx) {
     }
     int begbk2[2];
     addate(begspn, sp, pos1bk - pos1ob, begbk2);
+    // spcrsd (spr) runs in the regARIMA phase, before spcdrv applies any Lstdff
+    // shift to Bgspec -- snapshot the default Bgspec for the residual span.
+    const int bgspec_rsd[2] = {bgspec[0], bgspec[1]};
 
     // Relative starting position for the spectrum span (spcdrv.f:137-151).
     int ipos = 0;
@@ -197,6 +200,23 @@ bool run_spectrum(X13Context& ctx) {
         }
         spgrh2(tmp.data(), out.frq, ipos, posfob, ldecbl, out.sp2);
         out.have_sp2 = true;
+    }
+    // --- spr: regARIMA model residuals (spcrsd.f, periodogram path) --------
+    // No detrend, no log: the residuals `a` are used directly. Their start date
+    // Begrsd = Begspn + (Nspobs - na); the span is [rpos, na] where rpos =
+    // dfdate(Bgspec, Begrsd)+1 (clamped to 1 if Bgspec precedes the residuals).
+    if (ctx.resid_na > 0) {
+        const int na = ctx.resid_na;
+        int begrsd[2];
+        addate(begspn, sp, ctx.mdldat.nspobs - na, begrsd);
+        int rpos = 0;
+        dfdate(bgspec_rsd, begrsd, sp, rpos);
+        if (rpos < 0) rpos = 1;
+        else rpos += 1;
+        std::vector<double> ra(PLEN, 0.0);
+        for (int i = 1; i <= na; ++i) ra[i - 1] = ctx.resid_a[i - 1];
+        spgrh2(ra.data(), out.frq, rpos, na, ldecbl, out.spr);
+        out.have_spr = true;
     }
 
     out.ran = true;

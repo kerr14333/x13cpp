@@ -181,6 +181,11 @@ struct X13Context {
     // spcdrv). The AO/TC divsub on Stime is commented out in the oracle, so this
     // holds Sti where C17-good, ebar where extreme, with no further adjustment.
     std::vector<double> mq5a_stime = std::vector<double>(1020, 0.0);
+    // Final regARIMA residuals (arima.f's `a`, length `resid_na`) captured after
+    // estimation for the residual-spectrum diagnostic (spr, spcrsd.f). Their
+    // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).
+    std::vector<double> resid_a;
+    int resid_na = 0;
     // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
     // scale point forecast + confidence interval, plus the transformed-scale
     // forecast/SE. Stored on the context (no auto file output); a thin driver

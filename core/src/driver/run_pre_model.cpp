@@ -336,6 +336,15 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             }
             (void)nefobs;  // nefobs == Nspobs-Nintvl; the estimates live in mdldat
 
+            // Capture the final regARIMA residuals for the residual-spectrum
+            // diagnostic (spr, spcrsd.f, run from arima.f:1126 after the final
+            // fit). Their start date is Begspn + (Nspobs - na); run_spectrum
+            // reads these off ctx.
+            if (na > 0) {
+                ctx.resid_a.assign(a.begin(), a.begin() + na);
+                ctx.resid_na = na;
+            }
+
             // Likelihood statistics (arima.f:742 prlkhd): the transform-Jacobian-
             // adjusted log likelihood + AIC/AICC/BIC/HQ into ctx.lkhd. Y is the
             // original untransformed series over the span (aptr == Y(Frstsy)); the

@@ -196,6 +196,7 @@ int main(int argc, char** argv) {
         if (sc.have_sp0) emit_spec("sp0", sc.sp0);
         if (sc.have_sp1) emit_spec("sp1", sc.sp1);
         if (sc.have_sp2) emit_spec("sp2", sc.sp2);
+        if (sc.have_spr) emit_spec("spr", sc.spr);
     }
 
     // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one
