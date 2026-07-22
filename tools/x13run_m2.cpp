@@ -68,6 +68,21 @@ int main(int argc, char** argv) {
     }
 
     std::printf("OUTCOME: %s\n", ok ? "OK" : "FATAL");
+
+    // Emit both error channels so runtime (transform/model) FATALs can be gated
+    // on their message text: Mt2 is the .err channel (parity vs the oracle .err),
+    // the stdio::STDERR channel is the separate stderr stream. trnfcn.f and other
+    // routines deliberately word the two differently (e.g. "log of a zero" to Mt2,
+    // "log of zero" to STDERR); dumping both locks that split.
+    std::string errm = ctx.channels_.unit(ctx.units.mt2).str();
+    std::fputs("===ERR===\n", stdout);
+    std::fputs(errm.c_str(), stdout);
+    std::fputs("===END ERR===\n", stdout);
+    std::string errs = ctx.channels_.unit(x13::stdio::STDERR).str();
+    std::fputs("===STDERR===\n", stdout);
+    std::fputs(errs.c_str(), stdout);
+    std::fputs("===END STDERR===\n", stdout);
+
     for (const auto& st : ctx.saves.tables) {
         // Write the save file verbatim (binary: bytes exactly as captured).
         std::ofstream of(st.filename, std::ios::binary);

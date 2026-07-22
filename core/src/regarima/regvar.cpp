@@ -186,9 +186,12 @@ void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
             }
             break;
         }
-        case 30:
-            not_ported(ctx, "trigonometric seasonal regressors (adsncs.f)");
-            return;
+        case 30: {
+            // Trigonometric (sine-cosine) seasonal effects.
+            adsncs(ctx, begxy, nrxy, M.ncxy, begcol, endcol, D.xy.data(), begrgm);
+            if (ctx.error.lfatal) return;
+            break;
+        }
         case 100: {
             // Labor Day holiday effect.
             int ipos = nigrpc + 2;

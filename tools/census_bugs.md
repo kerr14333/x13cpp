@@ -212,3 +212,46 @@ before `.or.`, so this parses as `((Adjso==1 && rtype==PRGTSO) || rtype==PRGUSO)
 uniformly gated. Almost certainly a missing paren (intended
 `Adjso==1 && (rtype==PRGTSO || rtype==PRGUSO)`). Reproduced verbatim in
 `core/src/x11/x11drv.cpp` regeff(). Inert on the current corpus (no SO regressors).
+
+---
+
+## CB-11: rndsa yearly-total discrepancy loops use the default DO step (only |d|==1 corrected)
+
+- **Where:** `oracle/fortran/rndsa.f:103-116` (the force{ round=yes } rounded-SA
+  benchmark).
+- **Severity:** `active` — changes the rounded seasonally adjusted series (`rnd`
+  table) whenever a year's rounding discrepancy `|d| > 1`.
+- **Symptom:** after rounding each year's SA values to integers, `d = round(sum)
+  - sum(round)` is the leftover discrepancy that should be spread by adding/
+  subtracting 1 from the `|d|` obs with the largest/smallest residuals. Both
+  distribution loops are written without an explicit step:
+  - `IF(d.gt.0) DO j=nn,nn-d+1` — Fortran's default step is `+1`, so with
+    `nn-d+1 < nn` this executes **once for d==1** (j=nn) and **zero times for
+    d>=2**. Only the single largest-residual obs is ever bumped.
+  - `ELSE IF(d.lt.0) DO j=1,d` — with `d<0` this runs **zero times**, so a
+    negative discrepancy is never corrected at all.
+  Intended code almost certainly had `,-1` on the first loop and `1,-d` (or
+  `nn,nn+d+1,-1`) on the second. Net effect: the rounded SA series is only
+  guaranteed to re-sum to the rounded total when `|d| <= 1`.
+- **Port:** reproduced exactly in `core/src/x11/x11force.cpp` rndsa() (the `d>0`
+  loop uses `for (jj=nn; jj<=nn-d+1; ++jj)`, the `d<0` loop `for (jj=1; jj<=d;
+  ++jj)` -- both intentionally degenerate). Pinned by
+  `tests/parity/test_force_tables.py` (`airline_automdl-x11-force`, tag `rnd`,
+  bit-exact against the oracle golden).
+
+## ansub7.f trend-min split point: `0.5d0*2D0` typo for `0.5*pi` — latent
+- **Where:** `ansub7.f:474,481` set `lb/ub = 0.5d0*2D0` (== 1.0) as the split
+  frequency between the two trend-spectrum-minimum searches (GlobalMINIM over
+  [1.0, pi] and [0, 1.0]). The parallel diagnostic code in `spectrum.f:1016,1024`
+  correctly uses `0.5d0*pi` (== 1.5708). `0.5*2D0` is almost certainly a typo for
+  `0.5*pi` (the surrounding cycle/seasonal splits all use `pi`-based bounds).
+- **Severity:** latent. GlobalMINIM is a 12-step global search over each half, so
+  moving the split from pi/2 to 1.0 does not change which global minimum `enot`
+  lands on for the airline (0 1 1)(0 1 1) case (verified: enot identical either
+  way). It could matter for a model whose trend-spectrum minimum sits between 1.0
+  and pi/2, but no gated spec exercises that.
+- **Port:** NOT reproduced — the C++ (`core/src/seats/spectru.cpp` trend `enot`)
+  mirrors `spectrum.f`'s correct `0.5*pi`, and `sigex.f:709` shows `SPECTRUM`
+  (spectrum.f), not ansub7.f, is what actually fills the ct/cs/cc + enot fed to
+  ESTBUR. So the ansub7.f copy is dead for the s-table path. Logged for the record;
+  no test needed (the live path never uses the typo'd value).

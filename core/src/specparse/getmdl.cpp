@@ -10,6 +10,7 @@
 #include "notset.hpp"
 #include "srslen.hpp"
 #include "gen/model.hpp"
+#include "numeric/numeric.hpp"   // dpeq (dpeq.f tolerance equality)
 
 #include <string>
 
@@ -577,7 +578,7 @@ void mdlfix(X13Context& ctx) {
             int beglag = M.opr(iopr - 1);
             int endlag = M.opr(iopr) - 1;
             for (int ilag = beglag; ilag <= endlag; ++ilag) {
-                if (ctx.mdldat.arimap(ilag) == prm::DNOTST) {
+                if (dpeq(ctx.mdldat.arimap(ilag), prm::DNOTST)) {  // mdlfix.f:33
                     if (lmdlfx) lmdlfx = false;
                 } else {
                     lmdlfx = lmdlfx && M.arimaf(ilag);

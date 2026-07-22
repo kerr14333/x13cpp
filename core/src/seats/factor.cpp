@@ -54,10 +54,15 @@ void conjm(const double* a, int mplus1, const double* b, int nplus1, double* c,
     }
 }
 
+}  // namespace
+
 // MLTSOL(a,n,l,pr,pc) -- ansub2.f:2565. Solve l right-hand sides (packed in
 // columns n+1..n+l of a) against the n-by-n system in columns 1..n, by sparse
 // Gauss-Jordan with implicit pivoting; the solution overwrites those columns.
-// a is (pr=60, pc=66) column-major.
+// a is (pr=60, pc=66) column-major -- the SAME physical layout ESTBUR's own
+// am(60,66) uses (estbur.cpp reuses this directly rather than re-porting a
+// second copy). Exposed (moved out of the anonymous namespace above) so
+// estbur.cpp can link it; declared in seatsfact.hpp.
 void mltsol(double* a, int n, int l) {
     int m[67];
     double b[61];
@@ -111,6 +116,8 @@ void mltsol(double* a, int n, int l) {
         for (int r = 1; r <= n; ++r) CC(a, r, k) = b[r];
     }
 }
+
+namespace {
 
 // SYMPOLY(poly,npoly,rdpoly,nrpoly) -- ansub2.f:2309. Reduce a symmetric
 // polynomial (n coeffs) to the Chebyshev-basis polynomial of n/2 coeffs.

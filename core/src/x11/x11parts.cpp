@@ -13,6 +13,8 @@
 #include "x11/x11seas.hpp"          // vsfa, vsfb
 #include "x11/x11xtrm.hpp"          // xtrm, vtest, entsch
 #include "x11/x11drv.hpp"           // forcst, vtc, si
+#include "x11/x11force.hpp"         // qmap (force yearly totals)
+#include "x11/slidingspans.hpp"     // ssrit
 #include "specparse/specparse.hpp"  // copy, setlg, abend, errhdr, writln, stdio
 #include "numeric/numeric.hpp"      // dpeq
 #include "gen/notset.hpp"           // prm::NOTSET
@@ -202,7 +204,7 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
 // preamble is deferred print/save plus Faccal combines gated by inactive flags;
 // makadj/tdlom/ssrit and the x11-regression option stay not_ported. All table/
 // punch/x11plt/ftest output is dropped (deferred-print convention).
-void x11pt2(X13Context& ctx, bool /*lmodel*/, bool lx11, bool lseats,
+void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
             bool /*lgraf*/, bool /*lgrfxr*/) {
     x11opt_cmn& opt = ctx.x11opt;
     x11ptr_cmn& ptr = ctx.x11ptr;
@@ -246,35 +248,115 @@ void x11pt2(X13Context& ctx, bool /*lmodel*/, bool lx11, bool lseats,
     auto STWT = [&](int i) -> double& { return stwt[i - 1]; };
 
     double temp[PLEN];  // COMMON /work/ Temp  -- vsfb scratch
-    double stex[PLEN];  // COMMON /mq10/ Stex  -- per-iteration extreme component
+    // COMMON /mq10/ Stex -- per-iteration extreme component. ctx-persistent
+    // (ctx.mq10_stex): x11pt3's D8/D9 stage reads whatever x11pt2's LAST pass
+    // (Part D) leaves here; see the ctx.mq10_stex declaration for why this
+    // must be a real ctx member, not a function-local array (a single main
+    // run happened to never exercise the consumer path, but a sliding-spans
+    // sub-span replay does).
+    double* stex = ctx.mq10_stex.data();
     auto STEX = [&](int i) -> double& { return stex[i - 1]; };
 
     // --- Model-based prior-adjustment / factor preamble (l.74-351) ---
-    // (deferred: .xdg prioradj savelog.) None of these run on the base path:
-    // makadj/tdlom (model-TD + length-of-month) need Priadj>1; ssrit needs sliding
-    // spans; the Faccal/Fachol factor combines + calendar/outlier-adjusted-series
-    // emits are print/save gated by the Adj*/Khol/Axrg* flags. Guard the compute-
-    // affecting activations so a spec that needs them fatals cleanly.
+    // (deferred: .xdg prioradj savelog.)
+    //
+    // makadj/tdlom (x11pt2.f:115-129): when a model trading-day effect coexists
+    // with a length-of-month/leap-year PRIOR adjustment (Priadj>1, set by the
+    // aictest td1coef selection), fold the prior factor (Sprior, populated from
+    // ctx.adj by x11int) into the model TD factor (Factd) and remove it from the
+    // calendar-adjusted series (Stocal); then neutralise Sprior and negate Priadj
+    // so it is not removed again downstream. B1 (Stcsi) is untouched here -- the
+    // leap-year effect was already divided out of the series pre-estimation.
     if (ctx.hiddn.ixreg != 2 && ctx.prior.priadj > 1 && goodlm) {
-        x11_not_ported(
-            ctx, "x11pt2 model-TD/length-of-month prior adjustment (makadj/tdlom)");
-        return;
-    }
-    if (ctx.hiddn.issap == 2) {
-        x11_not_ported(ctx, "x11pt2 sliding-spans trading-day capture (ssrit)");
-        return;
-    }
-    {
-        const x11adj_cmn& adj = ctx.x11adj;
-        const x11log_cmn& xl = ctx.x11log;
-        if (adj.adjtd == 1 || adj.adjhol == 1 || adj.finhol || adj.adjao == 1 ||
-            adj.finao || adj.adjls == 1 || adj.finls || adj.adjtc == 1 ||
-            adj.fintc || adj.adjso == 1 || adj.adjsea == 1 || adj.adjcyc == 1 ||
-            adj.adjusr == 1 || adj.finusr || opt.khol >= 2 || xl.axrgtd ||
-            xl.axrghl) {
-            x11_not_ported(ctx, "x11pt2 model-based adjustment-factor combine/emit");
+        // makadj.f: user temporary/permanent prior adjustments are unported; for
+        // the predefined lom/loq/lpyear priors (no user prior) Adjtmp is the mode
+        // identity.
+        if (ctx.priusr.nustad > 0 || ctx.priusr.nuspad > 0) {
+            x11_not_ported(ctx, "x11pt2 makadj user prior-adjustment combine");
             return;
         }
+        x11adj_cmn& adj = ctx.x11adj;
+        const adj_cmn& adjc = ctx.adj;
+        const int muladd = opt.muladd;
+        const int n2 = (nfcst < ny) ? posfob + ny : posffc;
+        double adjtmp[PLEN];
+        setdp(adjc.adjmod == 2 ? 0.0 : 1.0, PLEN, adjtmp);
+        double* sprior = ctx.inpt.sprior.data();
+        double* factd = ctx.x11fac.factd.data();
+        double* stocal = os.stocal.data();
+        if (adj.nflwtd > 0) {
+            // tdlom.f (Adjtd==1): combine LOM/leap-year prior into the model TD
+            // factor and strip it from Stocal; reset Sprior to Adjtmp.
+            if (adj.adjtd == 1) {
+                addmul(factd, factd, sprior, pos1bk, n2, muladd);
+                divsub(factd, factd, adjtmp, pos1bk, n2, muladd);
+                divsub(stocal, stocal, sprior, pos1bk, n2, muladd);
+                addmul(stocal, stocal, adjtmp, pos1bk, n2, muladd);
+                copy(adjtmp + (adjc.setpri - 1), adjc.nadj, 1,
+                     sprior + (adjc.setpri - 1));
+                ctx.prior.priadj = -ctx.prior.priadj;
+            } else {
+                // Adjtd==0 branch (tdlom.f:44-59): unported (no gated spec).
+                x11_not_ported(ctx, "x11pt2 tdlom Adjtd==0 LOM removal");
+                return;
+            }
+        } else {
+            // Nflwtd==0 (x11pt2.f:125-128): strip LOM from Stocal directly.
+            divsub(stocal, stocal, sprior, pos1bk, n2, muladd);
+            addmul(stocal, stocal, adjtmp, pos1bk, n2, muladd);
+        }
+    }
+    // Store regression trading-day factors for sliding-spans analysis
+    // (x11pt2.f:131-146). No RETURN here in the oracle -- falls through to
+    // the adjustment-factor combine below regardless.
+    if (ctx.hiddn.issap == 2) {
+        ssap_cmn& ssa = ctx.ssap;
+        if (ssa.itd == 1) {
+            if (ctx.x11adj.adjtd == 1) {
+                ssrit(ctx, ctx.x11fac.factd.data(), pos1ob, posfob, 1,
+                      ctx.inpt.series.data());
+            } else {
+                ssa.itd = 0;
+                if (ctx.x11log.axrgtd) ssa.itd = 1;
+            }
+        }
+        if (!(ctx.x11adj.adjhol == 1 || ctx.x11adj.finhol) &&
+            (ssa.ihol == 1 && opt.khol == 0))
+            ssa.ihol = 0;
+    }
+    // --- Model-based adjustment-factor combine (x11pt2.f:158-336). Fold the
+    // regARIMA trading-day + holiday factors into the combined calendar factor
+    // Faccal (which x11pt3 divides out of D11 and folds into the D16 total
+    // factors). Factd/Fachol were inverse-transformed and stored in ctx.x11fac by
+    // adjreg; Faccal was identity-initialized in x11int. The factor tables/emits
+    // (D16/D18/A18 + the outlier/user/seasonal factor prints) are deferred output;
+    // the only compute here is the Faccal combine. The still-unported activations
+    // (outlier ao/ls/tc/so, user, regARIMA-seasonal, cycle, Khol>=2 x11-Easter,
+    // x11regression Axrg* calendar) fatal cleanly. ---
+    {
+        x11adj_cmn& adj = ctx.x11adj;
+        const x11log_cmn& xl = ctx.x11log;
+        x11fac_cmn& fac = ctx.x11fac;
+        const int muladd = opt.muladd;
+        // n2: combine end pointer (x11pt2.f:110-114).
+        const int n2 = (nfcst < ny) ? posfob + ny : posffc;
+
+        if (adj.adjao == 1 || adj.finao || adj.adjls == 1 || adj.finls ||
+            adj.adjtc == 1 || adj.fintc || adj.adjso == 1 || adj.adjusr == 1 ||
+            adj.finusr || adj.adjsea == 1 || adj.adjcyc == 1 || opt.khol >= 2 ||
+            xl.axrgtd || xl.axrghl) {
+            x11_not_ported(ctx, "x11pt2 outlier/user/seasonal/x11reg factor combine+emit");
+            return;
+        }
+        // Trading day (x11pt2.f:158-171).
+        if (adj.adjtd == 1 && goodlm)
+            addmul(fac.faccal.data(), fac.faccal.data(), fac.factd.data(), pos1bk,
+                   n2, muladd);
+        // Holiday (x11pt2.f:173-186); Khol!=1, in a model, not x11-reg holiday.
+        if ((adj.adjhol == 1 || (adj.finhol && adj.nhol > 0)) && opt.khol != 1 &&
+            goodlm && lmodel && !xl.axrghl)
+            addmul(fac.faccal.data(), fac.faccal.data(), fac.fachol.data(), pos1bk,
+                   n2, muladd);
     }
 
     // --- PART B ---
@@ -473,10 +555,18 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     double* stcime = ax.stcime.data();
     double* stci2 = ax.stci2.data();
 
-    // Transient COMMON scratch (function-local PLEN, as in x11pt2).
+    // Transient COMMON scratch (function-local PLEN, as in x11pt2). Stsie is
+    // ctx-persistent (ctx.work3_stsie) -- see its declaration in
+    // x13context.hpp for why: x11pt3.f's Ksdev>1 branch resets Stsi from
+    // Stsie starting at index 1 (not Pos1bk), which only stays well-defined
+    // for a replayed sub-span (Pos1bk>1, slidingspans{}/history{}) if Stsie
+    // genuinely persists across calls like the oracle's COMMON does.
     double temp[PLEN];    // /work/  Temp   (D9 replacement buffer)
-    double stsie[PLEN];   // /work3/ Stsie  (D8 unmodified SI)
-    double stex[PLEN];    // /mq10/  Stex   (extreme component; carries from x11pt2)
+    double* stsie = ctx.work3_stsie.data();  // /work3/ Stsie (D8 unmodified SI)
+    // /mq10/ Stex -- ctx-persistent (ctx.mq10_stex), written by x11pt2's B/C/D
+    // loop (see its declaration there); this is the fix, not just a rename --
+    // the prior function-local Stex here was uninitialized on every call.
+    double* stex = ctx.mq10_stex.data();
     double stime[PLEN];   // /mq5a/  Stime  (E3 modified irregular)
     double ckhs[PLEN];    // /kcser/ Ckhs   (SA snapshot; dead on the base path)
     double ststd[PLEN];   // ststd          (D16 combined factors)
@@ -560,10 +650,10 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         return;
     }
     // (deferred: D10 table/punch/x11plt, D10b/EARS/SNS emits.)
-    if (hid.issap == 2) {
-        x11_not_ported(ctx, "x11pt3 sliding-spans seasonal store (ssrit)");
-        return;
-    }
+    // Store the final seasonal factors for sliding-spans analysis
+    // (x11pt3.f:311). No RETURN here in the oracle -- falls through to the
+    // Irev check (and beyond, to D12/D11) regardless.
+    if (hid.issap == 2) ssrit(ctx, sts, pos1ob, posfob, 2, series);
     if (hid.irev == 4) {
         x11_not_ported(ctx, "x11pt3 revisions seasonal store (getrev)");
         return;
@@ -665,9 +755,10 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     }
     // (deferred: D11 table/punch; residual-seasonality ftest(Stci) -- read-only.)
 
-    // Store SA for sliding-spans / revisions (off base).
+    // Store SA for sliding-spans / revisions (off base). Oracle RETURNs
+    // immediately after the ssrit call here (x11pt3.f:678-680).
     if (hid.issap == 2 && frc.iyrt == 0 && !frc.lrndsa) {
-        x11_not_ported(ctx, "x11pt3 sliding-spans SA store (ssrit)");
+        ssrit(ctx, stci, pos1ob, posfob, 3, series);
         return;
     }
     if (hid.irev == 4 && frc.iyrt == 0) {
@@ -676,16 +767,62 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     }
     // (deferred: D11 forecast-portion table/x11plt.)
 
-    // Force yearly totals (Iyrt>0) is off base -> ELSE copies Stci into Stci2.
+    // Force yearly totals (Iyrt>0): revise D11 (Stci) into Stci2 so its
+    // calendar-year totals match a target series' yearly totals (force{} spec).
+    // x11pt3.f:702-784. Iyrt==0 -> ELSE just copies Stci into Stci2.
     if (frc.iyrt > 0) {
-        x11_not_ported(ctx, "x11pt3 force yearly totals (qmap/qmap2)");
-        return;
+        const int lstfrc = frc.lfctfr ? posffc : posfob;  // last obs to force
+        // Target (stbase): only Iftrgt==0 (target=original) is ported; the
+        // calendar-adjusted / permanent-prior-adjusted targets are untested.
+        if (frc.iftrgt != 0) {
+            x11_not_ported(ctx, "x11pt3 force non-original target (Iftrgt>0)");
+            return;
+        }
+        double stbase[PLEN];
+        copy(series, lstfrc, 1, stbase);
+
+        if (frc.iyrt == 1) {
+            // type=denton: modified-Denton benchmarking.
+            int ib = 0, ie = 0;
+            qmap(stbase, stci, stci2, pos1ob, lstfrc, ny, ib, ie, frc.begyrt);
+            // Carry the boundary adjustment across a trailing/leading partial
+            // year (X-11-ARIMA/88 behaviour, x11pt3.f:730-745).
+            if (ie < lstfrc) {
+                const double d = stci2[ie - 1] - stci[ie - 1];
+                for (int i = ie + 1; i <= lstfrc; ++i) stci2[i - 1] = stci[i - 1] + d;
+            }
+            if (ib > pos1ob) {
+                const double d = stci2[ib - 1] - stci[ib - 1];
+                for (int i = pos1ob; i <= ib - 1; ++i) stci2[i - 1] = stci[i - 1] + d;
+            }
+        } else {
+            // type=regress: Cholette-Dagum regression benchmarking. qmap2
+            // computes the full forced span directly (no partial-year carry).
+            qmap2(stbase, stci, stci2, pos1ob, lstfrc, ny, 0, frc.lamda,
+                  frc.rol, frc.mid, frc.begyrt);
+        }
+
+        // Negative-value correction re-runs qmap2; unreachable on the base path
+        // (Cnstnt==DNOTST is guaranteed by the constant-removal guard above).
+        if (muladd != 1 && !dpeq(adjc.cnstnt, prm::DNOTST)) {
+            x11_not_ported(ctx, "x11pt3 force negative-value correction (qmap2)");
+            return;
+        }
+        // (deferred: D11A/rnd/e6*/p6*/cr/rr/ffc table + punch.)
+    } else {
+        copy(stci, posffc, 1, stci2);
     }
-    copy(stci, posffc, 1, stci2);
 
     if (frc.lrndsa) {
-        x11_not_ported(ctx, "x11pt3 rounded seasonally adjusted series (rndsa)");
-        return;
+        // Rounded seasonally adjusted series (UK X-11): round Stci2 so each
+        // year's rounded values sum to the rounded annual total (x11pt3.f:881).
+        bool rndok = false;
+        rndsa(stci2, ctx.adxser.stcirn.data(), pos1ob, posfob, ny,
+              ctx.x11opt.kdec, rndok);
+        // (deferred: rnd table/punch; residual ftest on Stcirn; ssrit/getrev
+        // stores. Rndok==false only on integer overflow -- unreachable for the
+        // ported spans -- so no Lrndsa fallback is needed here.)
+        (void)rndok;
     }
 
     // --- D12 write: level-shift/temporary-change fold-in is off base; the ELSE

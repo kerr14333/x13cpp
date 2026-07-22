@@ -54,6 +54,11 @@ void td7var(const int* begdat, int isp, int nrxy, int ncxy, int begcol, bool lom
 void addsef(X13Context& ctx, const int* begdat, int numrxy, int numcxy,
             int begcol, int endcol, double* xy, const bool* begrgm);
 
+// adsncs.f: trigonometric (sine-cosine) seasonal regressors into Xy columns
+// begcol..endcol. Column titles are "sin(2pi*<h>t/<sp>)" / "cos(2pi*<h>t/<sp>)".
+void adsncs(X13Context& ctx, const int* begdat, int numrxy, int numcxy,
+            int begcol, int endcol, double* xy, const bool* begrgm);
+
 // sceast.f: Statistics Canada Easter regressor value.
 double sceast(int ndays, int pdays, bool first, bool ineast);
 

@@ -49,6 +49,17 @@ DATA = "../data"  # shared corpus data lives in the sibling data/ directory
 # sspans   : sfs sfSpans, ads saSpans, chs chngSpans (tb3DIC).
 # x11reg   : xrm xregressionMatrix, b16/c16 x11reg trading-day factors (tb2DIC).
 # force    : saa seasadjTotal, ffc forceFactor, rnd saRound (tb2DIC).
+# force_full: force{}'s complete 9-tag save dictionary (LSPFRC=208, NSPFRC=9,
+#           frctbl.i LFCSAA..LFRFAC), decoded programmatically from
+#           stable.prm/stable.var (see tools/testgen_scope.md for the decoder).
+#           saa seasadjTotal (D11A), rnd saRound (written only when round=yes),
+#           cr cratio / rr rratio (type=regress only, via qmap2.f -- empty for
+#           type=denton), ffc forceFactor, e6a/p6a revised-SA period changes
+#           (diff/pct) and e6r/p6r rounded-SA period changes (diff/pct) --
+#           all populated on a plain single-series run with type=regress +
+#           round=yes (verified against the oracle: see
+#           airline_automdl-x11-force.spc's golden, all 9 tags non-empty).
+#           Not composite{}-only, despite qmap2.f's Iagr parameter name.
 # ---------------------------------------------------------------------------
 SAVE = {
     "spectrum_x11": ["sp0", "sp1", "sp2", "spr", "st0", "st1", "st2"],
@@ -64,6 +75,7 @@ SAVE = {
     "sspans": ["sfs", "ads", "chs"],
     "x11reg": ["xrm", "b16", "c16"],
     "force": ["saa", "ffc", "rnd"],
+    "force_full": ["saa", "rnd", "e6a", "p6a", "e6r", "p6r", "cr", "rr", "ffc"],
 }
 
 # Specs whose savelog range includes the 'all' shortcut (svltbl.prm).
@@ -143,6 +155,14 @@ def x11_block(mode=None):
 
 def forecast_block(maxlead=12):
     return block("forecast", ["maxlead = %d" % maxlead], print_all=True)
+
+
+def transform_auto():
+    return block("transform", ["function = auto"], print_all=False)
+
+
+def automdl_block():
+    return block("automdl", [], print_all=True, savelog=True)
 
 
 HEADER = (
@@ -292,6 +312,29 @@ def spec_force_regress():
         "force{} regression (Cholette-Dagum) benchmarking to original", blocks)
 
 
+def spec_force_automdl_x11():
+    # M5 x11pt3 force-yearly-totals proof case: the SAME automdl-x11 config
+    # genspecs.py already produces in ../generated/airline_automdl-x11.spc
+    # (whose b1/d10-d13 already pass the C++ x13run_x11 gate) with a force{}
+    # block layered on top. type = regress + round = yes populates all 9 of
+    # force's save tags on this single series (verified against the oracle
+    # golden) -- see force_full's comment above.
+    blocks = [
+        series_airline(),
+        transform_auto(),
+        automdl_block(),
+        forecast_block(),
+        x11_block(),
+        block("force",
+              ["type = regress", "target = original", "round = yes",
+               "rho = 0.9"],
+              save_key="force_full", print_all=True),
+    ]
+    return "airline_automdl-x11-force.spc", assemble(
+        "force{} regress+round=yes on automdl-x11 -- x11pt3 force gate proof",
+        blocks)
+
+
 def spec_metadata():
     blocks = [
         series_airline(),
@@ -405,6 +448,7 @@ BUILDERS = [
     spec_x11regression_aictest,
     spec_force_denton,
     spec_force_regress,
+    spec_force_automdl_x11,
     spec_metadata,
     spec_pickmdl,
     spec_seats_tabtables,

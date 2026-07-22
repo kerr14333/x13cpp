@@ -43,6 +43,15 @@ void parfra(const double* rt, int nrt, const double* t, int nt, const double* s,
 void mak1(const double* ufin, int nufin, double* theta, int& ntheta,
           double& var, int nnio, double xl, double& toterr);
 
+// MLTSOL(a,n,l,pr,pc) -- ansub2.f:2565. Sparse Gauss-Jordan solve of l
+// right-hand sides (packed in columns n+1..n+l of a) against the n-by-n
+// system in columns 1..n; the solution overwrites those columns in place.
+// `a` is a (60,66) column-major buffer (physical leading dimension 60,
+// matching both PARFRA's own cc(60,66) and ESTBUR's am(60,66) -- session 7's
+// estbur.cpp reuses this directly instead of re-porting a second copy).
+// Exposed (session 7; was file-local to factor.cpp through session 6).
+void mltsol(double* a, int n, int l);
+
 }  // namespace x13
 
 #endif  // X13_SEATS_SEATSFACT_HPP

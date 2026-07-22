@@ -18,6 +18,7 @@
 #include "x11/x11drv.hpp"     // setxpt, x11int, chkadj, regeff, extend, adjreg
 #include "regarima/regvar.hpp"   // regvar (design rebuild for regression effects)
 #include "notset.hpp"         // prm::NOTSET
+#include "x11/slidingspans.hpp"  // ssprep_snapshot, run_slidingspans
 
 #include <algorithm>
 #include <string>
@@ -73,8 +74,13 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.extend.nbfpob = nspobs + nfdrp + nbcst;
     ctx.lzero.lsp = 1;
 
-    // editor.f:150 Ny=Sp ; editor.f:1486 Kersa=0 (set under IF(Lx11)).
+    // editor.f:150 Ny=Sp ; editor.f:235 Lyr=Begspn(1) ; editor.f:1486 Kersa=0
+    // (set under IF(Lx11)). Lyr (the calendar year of the analyzed span's
+    // first observation) has no other writer in this port; slidingspans{}'s
+    // setssp_span/run_x11_span (core/src/x11/slidingspans.hpp) need it to
+    // convert padded-buffer positions back to calendar dates per span.
     ctx.x11opt.ny = sp;
+    ctx.x11opt.lyr = begspn[0];
     ctx.xtrm.kersa = 0;
     // gtinpt.f: Cnstnt defaults to DNOTST (no user constant). x11pt3 keys its
     // constant-removal branch on Cnstnt != DNOTST, so the zero-init default must
@@ -112,6 +118,11 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // Posfob = Posffc = Nspobs.
     setxpt(ctx, nfdrp, lsadj, fctdrp);
     const int pos1ob = ctx.x11ptr.pos1ob;
+    // editor.f:851 Setpri=Pos1bk -- the 1-based start of the prior-adjustment span
+    // in the padded buffer. Never set in the base port (no gated prior-adj spec);
+    // required now that the aictest leap-year prior gives Nadj>0, so x11int and the
+    // x11pt2 makadj/tdlom Sprior copies index correctly.
+    ctx.adj.setpri = ctx.x11ptr.pos1bk;
 
     // Populate the X-11 input buffers. x11pt1 reads Series (-> Stcsi/Stoap/Stopp/
     // Stocal) and Orig (-> Sto), both 1-based starting at Pos1ob. With no model
@@ -120,6 +131,15 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     const int norig = ctx.arima.nomnfy;
     for (int i = 0; i < nspobs; ++i) ctx.inpt.series(pos1ob + i) = aptr[i];
     for (int i = 0; i < norig; ++i)  ctx.inpt.orig(pos1ob + i) = aptr[i];
+
+    // ssprep.f: snapshot the model's converged parameters + the (still
+    // unresolved, sentinel==6) x11 seasonal-filter settings BEFORE the main
+    // run's own x11int/x11pt2/x11pt3 potentially mutate/resolve Lter -- this
+    // is what slidingspans{}'s restor_span() resets to before each span, so
+    // it must run here (mirrors x12run.f's CALL ssprep(...) placement, right
+    // before x11int), not later from run_slidingspans(). Cheap; harmless
+    // when slidingspans{} was not requested.
+    ssprep_snapshot(ctx);
 
     // X-11 array initialization (x11int.f), then the parts spine.
     x11int(ctx);
@@ -182,6 +202,20 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
                fcyc.data(), fusr.data(), fmv.data(), fhol.data(), fcntyp, lam,
                ctx.arima.nrxy, n);
         if (ctx.error.lfatal) return false;
+        // Snapshot the adjreg-adjusted B1 (Stcsi) for the b1 table: x11pt2
+        // overwrites Stcsi in place during the C/D passes. Use Stoap -- a x11pt1
+        // scratch buffer (original*prior) that is dead after x11pt1 and untouched by
+        // x11pt2/pt3. (NOT Series: x11pt3 reads Series as the ORIGINAL for D11 =
+        // Series/seasonal/faccal; overwriting it double-removes the calendar.)
+        // Snapshot the FULL padded span [Pos1bk, Posffc] (not just the observed
+        // [Pos1ob, Posfob]): Stcsi here is the forecast/backcast-extended B1, so
+        // this captures the appended forecast (and backcast) rows the b1 table
+        // emits when series{appendfcst/appendbcst=yes} (getsrs.f Savfct/Savbct,
+        // agr3.f:158-160). The extra region is harmless scratch when not saved.
+        const int pos1bk_b1 = ctx.x11ptr.pos1bk;
+        const int posffc_b1 = ctx.x11ptr.posffc;
+        copy(ctx.orisrs.stcsi.data() + (pos1bk_b1 - 1), posffc_b1 - pos1bk_b1 + 1,
+             1, ctx.orisrs.stoap.data() + (pos1bk_b1 - 1));
     }
 
     x11pt2(ctx, lmodel, lx11, lseats, lgraf, lgrfxr);
@@ -192,6 +226,13 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // finals do not depend on it, so they gate correctly regardless.)
     x11pt3(ctx, lgraf, /*lttc=*/false);
     if (ctx.error.lfatal) return false;
+
+    // slidingspans{} (ssap.f/sspdrv.f/ssrit.f): replay the model+X11 pipeline
+    // over each sub-span (driver/run_x11_span.hpp -- the re-entrant driver),
+    // producing the sfs/chs cross-span stability tables on ctx.ssout. No-op
+    // when slidingspans{} was not requested (ctx.hiddn.issap != 1). trnsrs is
+    // empty on the no-model path; run_x11_span only reads it when has_model.
+    if (!run_slidingspans(ctx, trnsrs)) return false;
 
     return !ctx.error.lfatal;
 }

@@ -5,6 +5,7 @@
 #include <string>
 
 #include "specparse/specparse.hpp"   // abend, STDERR
+#include "numeric/numeric.hpp"       // dpeq (dpeq.f tolerance equality)
 #include "x13/fformat.hpp"
 
 namespace x13 {
@@ -12,14 +13,18 @@ namespace x13 {
 namespace {
 constexpr int PSTOP = 10;
 constexpr double ZO = 0.0, ONE = 1.0;
-inline bool dpeq(double a, double b) { return a == b; }
 
 // Emit the two-channel (STDERR + Mt2) error record for an out-of-domain value.
+// trnfcn.f writes the STDERR and Mt2 diagnostics separately; for the log-of-zero
+// case the two channels use different wording (trnfcn.f:86-87). what_mt2 supplies
+// the Mt2 text when it differs; otherwise both channels get `what`.
 void trnerr(X13Context& ctx, const std::string& fmt, const char* what, int i,
-            double val) {
+            double val, const char* what_mt2 = nullptr) {
     std::string rec = fwrite_fmt(fmt, std::string(what), i, val);
     ctx.channels_.unit(stdio::STDERR).put(rec + "\n");
-    ctx.channels_.unit(ctx.units.mt2).put(rec + "\n");
+    std::string rec2 =
+        what_mt2 ? fwrite_fmt(fmt, std::string(what_mt2), i, val) : rec;
+    ctx.channels_.unit(ctx.units.mt2).put(rec2 + "\n");
 }
 }  // namespace
 
@@ -68,8 +73,10 @@ void trnfcn(X13Context& ctx, const double* y, int nsrs, int fcntyp, double lam,
             if (yi > ZO) {
                 trny[i - 1] = std::log(yi);
             } else {
+                // trnfcn.f:86-87: STDERR says "log of zero", Mt2 "log of a zero".
                 trnerr(ctx, FMT1020,
-                       yi < ZO ? "log of a negative number" : "log of a zero", i, yi);
+                       yi < ZO ? "log of a negative number" : "log of zero", i, yi,
+                       yi < ZO ? "log of a negative number" : "log of a zero");
                 lstop = true;
                 if (++nstop > PSTOP) { maxerr(); return; }
             }

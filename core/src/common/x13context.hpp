@@ -95,6 +95,9 @@
 // cchars.i /cchars/) plus rngbuf SAVE state. The generator only covered .cmn
 // files, so this member is added by hand (M1 spec-parser milestone).
 #include "specparse/lexstate.hpp"
+// Hand-maintained: slidingspans{} sfs/chs result struct (SlidingSpansOutput),
+// not a COMMON mirror -- see core/src/x11/slidingspans.hpp.
+#include "x11/slidingspans.hpp"
 
 namespace x13 {
 
@@ -120,7 +123,43 @@ struct X13Context {
         int armafl_nextma = 0;
         double stpitr_oldobj = 0.0;
         bool setmdl_first = true;
+        // xtrm.Ksdev (extreme-value sigma-vector mode) as parsed, captured
+        // before the main run's entsch mutates it -- so each sliding-spans
+        // sub-span replay can start its own fresh adjustment from the spec
+        // default instead of leaking the main run's evolved value (which
+        // flips entsch's kersa/ksdev decode -> wrong extreme weights ->
+        // wrong seasonal filter). See run_x11_span / ssprep_snapshot.
+        int ksdev0 = 1;
     } saved;
+    // work3.cmn's Stsie (D8 "unmodified SI ratio" buffer). x11pt2/x11pt3 treat
+    // most of their COMMON scratch (Temp/Stex/Stime/Ckhs/Ststd/Biasfc/Sp2) as
+    // function-local PLEN arrays -- harmless for a single main run (always
+    // Pos1bk==1, so nothing outside [Pos1bk,Posffc] is ever meaningfully read
+    // back). Stsie is the one exception: x11pt3.f's Ksdev>1 branch does
+    // `CALL copy(Stsie,Posfob,1,Stsi)`, an index-1-based (not Pos1bk-based)
+    // reset that relies on positions [1,Pos1bk-1] holding whatever a PRIOR
+    // call (the main run, or an earlier sliding-spans replay) already
+    // computed there -- exactly how a real Fortran COMMON persists across
+    // calls. A function-local Stsie loses that history on every call, so a
+    // replayed span with Pos1bk>1 (slidingspans{}/history{}) reads
+    // uninitialized stack memory into the dead zone, which replac() then
+    // pulls across the Pos1bk boundary via its period lookback -- NaN. Making
+    // this one buffer ctx-persistent (zero-initialized once, like a COMMON's
+    // OS-provided zero-init) reproduces the real persistence faithfully.
+    std::vector<double> work3_stsie = std::vector<double>(1020, 0.0);
+    // mq10.cmn's Stex (the per-iteration extreme component: x11pt2's B/C/D
+    // loop writes it every pass, x11pt3's D8/D9 stage reads whatever x11pt2's
+    // LAST pass (Part D) left there). Same story as work3_stsie above: a
+    // function-local Stex in x11pt3 is simply uninitialized (x11pt2's own
+    // local Stex is a DIFFERENT stack allocation, gone once x11pt2 returns),
+    // not just missing history in a dead zone -- this is wrong for every
+    // call, single main run included, but was latent because sfmsr's D8
+    // Ksdev>1 replac() path (the only consumer that actually feeds D10/D11,
+    // via Stsie) never triggered for the corpus's existing gated specs; a
+    // sliding-spans sub-span replay does trigger it (shorter/differently-
+    // windowed data changes vtest/entsch's auto-selected Ksdev). Fixing this
+    // is what un-blocked the slidingspans{} sfs/chs gate.
+    std::vector<double> mq10_stex = std::vector<double>(1020, 0.0);
     // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
     // scale point forecast + confidence interval, plus the transformed-scale
     // forecast/SE. Stored on the context (no auto file output); a thin driver
@@ -143,6 +182,10 @@ struct X13Context {
         double aiclog = 0.0;   // AICC, log-transformed model
         bool selected_log = false;
     } trnaic_result;
+    // slidingspans{} sfs/chs result (core/src/x11/slidingspans.hpp) -- the
+    // Max_%_DIFF column + the derived month-to-month SA-change array; the raw
+    // per-span S/Sa/Td arrays live on the real COMMON mirror, sspdat below.
+    SlidingSpansOutput ssout;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

@@ -31,8 +31,30 @@ $env:PATH = "$ToolchainBin;$env:PATH"
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $BuildPath = Join-Path $RepoRoot $BuildDir
 
-$cmake = "C:\Program Files\CMake\bin\cmake.exe"
-$ctest = "C:\Program Files\CMake\bin\ctest.exe"
+# Resolve a CMake >= 3.16 (the project's minimum). The system CMake under
+# "C:\Program Files\CMake" is pinned at 3.14 on this machine, which fails to
+# *configure* new targets; a newer pip-installed CMake usually sits under the
+# user's Python Scripts dir. Probe known locations + PATH, pick the first that
+# meets the minimum, and derive ctest from the same bin dir.
+$minCMake = [version]"3.16"
+$cmakeCandidates = @(
+    (Get-Command cmake.exe -ErrorAction SilentlyContinue | ForEach-Object { $_.Source }),
+    (Join-Path $env:APPDATA "Python\Python314\Scripts\cmake.exe"),
+    "C:\Program Files\CMake\bin\cmake.exe"
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+$cmake = $null
+foreach ($cand in $cmakeCandidates) {
+    $verLine = & $cand --version 2>$null | Select-Object -First 1
+    if ($verLine -match "(\d+\.\d+\.\d+)" -and ([version]$Matches[1] -ge $minCMake)) {
+        $cmake = $cand
+        break
+    }
+}
+if (-not $cmake) { throw "no CMake >= $minCMake found (looked in: $($cmakeCandidates -join '; '))" }
+
+$ctest = Join-Path (Split-Path -Parent $cmake) "ctest.exe"
+if (-not (Test-Path $ctest)) { $ctest = "ctest" }  # fall back to PATH
 
 # Configure if the build dir has no cache yet.
 if (-not (Test-Path (Join-Path $BuildPath "CMakeCache.txt"))) {

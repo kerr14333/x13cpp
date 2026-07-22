@@ -4,7 +4,8 @@ set(X13_UNIT_TESTS
     test_farray
     test_fstring
     test_channels
-    test_fformat)
+    test_fformat
+    test_api)
 
 foreach(t ${X13_UNIT_TESTS})
   add_executable(${t} ${t}.cpp)
@@ -61,6 +62,19 @@ target_include_directories(test_seats PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(test_seats PRIVATE x13core x13_fp_flags)
 add_test(NAME test_seats COMMAND test_seats)
+
+# test_api_facade drives the public framework facade (core/src/api, in x13core)
+# end-to-end against committed goldens, so it links x13core and needs the repo
+# root at compile time to locate the corpus spec + golden files.
+add_executable(test_api_facade test_api_facade.cpp)
+target_include_directories(test_api_facade PRIVATE
+  "${CMAKE_SOURCE_DIR}/core/include"
+  "${CMAKE_SOURCE_DIR}/core/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(test_api_facade PRIVATE
+  X13_REPO_ROOT="${CMAKE_SOURCE_DIR}")
+target_link_libraries(test_api_facade PRIVATE x13core x13_fp_flags)
+add_test(NAME test_api_facade COMMAND test_api_facade)
 
 # The fformat test validates against gfortran when available. Point it at the
 # gfortran the build already knows about (Fortran optional), and give it a

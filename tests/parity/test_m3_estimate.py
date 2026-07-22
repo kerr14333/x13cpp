@@ -86,17 +86,18 @@ def _estimation_reproducible(spc: str) -> bool:
       * automatic outlier identification (outlier{}), which the regvar branch
         still abends on,
       * automatic transform / AIC tests (function=auto, aictest),
-      * regressor families outside the ported set (user, sincos, change-of-regime,
+      * regressor families outside the ported set (user, change-of-regime,
         outlier regressors ao/ls/tc/so/rp/tls, stock td),
       * fixed-model or fixed-coefficient runs (a separate branch, unit-tested),
       * composite runs.
+    (sincos / trigonometric-seasonal regressors ARE now ported -- adsncs.f.)
     """
     txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
     flat = txt.replace(" ", "")
     if "arima{" not in flat or "model=" not in flat:
         return False
     for bad in ("automdl", "pickmdl", "function=auto", "aictest",
-                "tdstock", "sincos", "user=", "usertype", "tcrate",
+                "tdstock", "user=", "usertype", "tcrate",
                 "composite{"):
         if bad in flat:
             return False

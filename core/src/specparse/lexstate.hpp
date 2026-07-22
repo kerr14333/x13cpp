@@ -122,6 +122,15 @@ struct ParseSettings {
     std::string x11_mode;               // x11{ mode = ... }
     bool has_x11 = false;
     bool has_seats = false;
+    bool has_force = false;             // force{} spec present (force yearly totals)
+    bool has_slidingspans = false;      // slidingspans{} spec present
+    // Sscut(5): slidingspans{} cutseas/cutchng/cuttd cutoffs (getssp.f). Not a
+    // Fortran COMMON -- Sscut is a plain local array threaded from gtinpt.f down
+    // into getssp.f and back up to editor.f (which later builds ssap_cmn.cut
+    // from it during the X-11 driver phase), so it is captured here rather than
+    // in a generated common struct. Default from gtinpt.f:521-522:
+    // setdp(3D0,5,Sscut); Sscut(2)=2D0  ->  [3,2,3,3,3].
+    std::array<double, 5> ssp_cut{{3.0, 2.0, 3.0, 3.0, 3.0}};
     bool has_outlier = false;           // outlier{} spec present (auto outlier ID)
     std::vector<std::string> regression_vars;   // regression{ variables = ... }
     std::vector<std::string> aictest_vars;      // regression{ aictest = ... }

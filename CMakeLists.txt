@@ -105,6 +105,26 @@ add_executable(x13run_x11 tools/x13run_x11.cpp)
 target_link_libraries(x13run_x11 PRIVATE x13core)
 
 # ---------------------------------------------------------------------------
+# x13run_seats -- SEATS harness (scoping pass): parse + estimate the model,
+# then dispatch to x13::run_seats. The decomposition is not yet ported (see
+# tools/seats_scope.md), so this currently prints OUTCOME: FATAL for every
+# spec -- it exists to give the (xfailed) SEATS parity gate
+# (tests/parity/test_seats_tables.py) a stable target to run against as the
+# decomposition lands incrementally.
+# ---------------------------------------------------------------------------
+add_executable(x13run_seats tools/x13run_seats.cpp)
+target_link_libraries(x13run_seats PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
+# adjust_demo -- example of the public C++ framework (core/include/x13/api).
+# Demonstrates the whole intended usage: hand a .spc to the facade, read the
+# result's components as ordinary series. Links x13core (the facade impl in
+# core/src/api compiles into it).
+# ---------------------------------------------------------------------------
+add_executable(adjust_demo examples/adjust_demo.cpp)
+target_link_libraries(adjust_demo PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
 # Unit tests (self-contained microtest framework; no external dependencies).
 # ---------------------------------------------------------------------------
 option(X13_BUILD_TESTS "Build unit tests" ON)

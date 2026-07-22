@@ -56,11 +56,18 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                         std::vector<double>* out_trnsrs, int* out_nobspf) {
     if (!ctx.captured.has_series) return false;
 
-    // Save-format setup (gtinpt.f): default precision 15 -> field width 22,
-    // format (sp,e22.15).
-    ctx.savcmn.svprec = 15;
-    ctx.savcmn.svsize = 22;
-    ctx.savcmn.svfmt = "(sp,e22.15)";
+    // Save-format setup (gtinpt.f:1185-1187). svprec is already set by the parser
+    // (default 15, or series{saveprecision=} in [1,14]); derive the field width and
+    // format from it instead of clobbering back to the default.
+    ctx.savcmn.svsize = (ctx.savcmn.svprec < 15) ? ctx.savcmn.svprec + 7 : 22;
+    {
+        auto z2 = [](int n) {
+            std::string s = std::to_string(n);
+            return s.size() < 2 ? "0" + s : s;
+        };
+        ctx.savcmn.svfmt = "(sp,e" + z2(ctx.savcmn.svsize) + "." +
+                           z2(ctx.savcmn.svprec) + ")";
+    }
 
     int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
@@ -159,7 +166,19 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // the prior-adjusted series (== a3, or a1 when there is no prior), over
     // Nobspf points (span + retained forecast-period data); the trn table
     // itself covers the span.
-    std::vector<double> trnsrs(static_cast<std::size_t>(nobspf));
+    // NOTE: sized prm::PLEN (the Fortran COMMON Trnsrs(PLEN) bound), not nobspf.
+    // automd/tdaic/easaic (automdl/automd.cpp, automdl/aictst.cpp) are ported
+    // faithfully against the oracle's fixed-size Trnsrs COMMON and do blanket
+    // `copy(trnsrs, PLEN, ...)` snapshot/restore calls on this same buffer
+    // (tdaic.f:66-72 `tsrs`/`a2` save, tdaic.f:283 restore). A buffer sized only
+    // to nobspf (~144 for a 12-year monthly series) is a heap allocation of ~156
+    // doubles; a PLEN=1020-element copy against it is a heap buffer overflow
+    // (over-read building the snapshot, over-WRITE on restore) that corrupts
+    // adjacent heap memory and crashes later, nondeterministically, wherever the
+    // corruption is next touched. tools/x13run_iddiff.cpp's tdaic/easaic harness
+    // already allocates its `trn` buffer PLEN-sized for exactly this reason --
+    // match it here so the real automd()-driven X-11 path is safe too.
+    std::vector<double> trnsrs(static_cast<std::size_t>(prm::PLEN));
     bool have_trn = false;
     if (wants_save(ctx, "trn") || ctx.captured.has_model) {
         trnfcn(ctx, padj.data(), nobspf, ctx.arima.fcntyp, ctx.arima.lam,
@@ -227,13 +246,22 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // spec is present. The reduced driver (default -> chkmu -> iddiff ->
             // amdid -> mean -> final) identifies and estimates the model in place.
             // trnsrs is the clean transformed series (rgarma writes residuals into
-            // ctx.series.tsrs, a separate buffer). Deferred automd features
-            // (auto-transform, aictest, outlier, adequacy retry) are noted in
-            // tools/automdl_scouting.md; specs needing them are not in the gate.
+            // ctx.series.tsrs, a separate buffer). do_aictest=true enables the
+            // block-1 tdaic/easaic regressor selection + ismd0 a0-revert (reaches
+            // parity for ismd0 series like airline). Still-deferred automd features
+            // (auto-transform, outlier, non-default-model nloop/tstmd1 finalization)
+            // are noted in tools/automdl_scouting.md; specs needing them stay xfailed.
             if (ctx.arima.lautom) {
-                automd(ctx, trnsrs.data(), frstry, nefobs, a.data(), na);
+                automd(ctx, trnsrs.data(), frstry, nefobs, a.data(), na,
+                       /*do_aictest=*/true);
                 if (ctx.error.lfatal) return false;
                 (void)na;
+                // Re-capture the transformed series AFTER automd: for aictest the
+                // block-1 tdaic applies the leap-year prior adjustment (priadj=4)
+                // to trnsrs, which the X-11 stage (adjreg -> B1) needs. For the
+                // non-aictest automdl path automd does not modify trnsrs, so this
+                // is a no-op there.
+                if (out_trnsrs) *out_trnsrs = trnsrs;
             } else {
                 rgarma(ctx, ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
                        /*lprtit=*/false, a.data(), na, nefobs, lauto);

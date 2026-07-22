@@ -274,6 +274,8 @@ void gt_outlier(X13Context& ctx, bool& inptok);      // outlier{} (gtotlr)
 void gt_forecast(X13Context& ctx, bool& inptok);     // forecast{} (gtfcst)
 void gt_x11(X13Context& ctx, bool& inptok);          // x11{} (getx11)
 void gt_seats(X13Context& ctx, bool& inptok);        // seats{} (gtseat)
+void gt_force(X13Context& ctx, bool& inptok);        // force{} (getfrc)
+void gt_slidingspans(X13Context& ctx, bool& havesp, bool& inptok); // slidingspans{} (getssp)
 void gt_check(X13Context& ctx, bool& inptok);        // check{} (getchk)
 void gt_identify(X13Context& ctx, bool& inptok);     // identify{} (getid)
 void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok); // composite{}
@@ -309,6 +311,15 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
 // X11 path (airline_x11-default) so far; a spec carrying a regARIMA model fatals
 // cleanly until the estimate/forecast/extend/adjreg glue lands.
 bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& base);
+
+// M6(scoping) SEATS phase (core/src/driver/run_seats.cpp): parse, estimate the
+// regARIMA model (SEATS is always model-based -- no direct-SEATS path exists
+// in the oracle), then dispatch to the SEATS decomposition. The decomposition
+// itself (root allocation/canonical split/WK-filter signal extraction) is not
+// yet ported (see tools/seats_scope.md); this currently always returns false
+// with a "not yet ported" fatal once the model is in hand, giving the parity
+// harness (tools/x13run_seats.cpp) a stable, xfailed gate to iterate against.
+bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string& base);
 
 } // namespace x13
 

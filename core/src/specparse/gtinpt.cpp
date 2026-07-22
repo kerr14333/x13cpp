@@ -9,6 +9,7 @@
 #include "specparse/specparse.hpp"
 #include "notset.hpp"
 #include "gen/model.hpp"
+#include "numeric/numeric.hpp"   // dpeq (dpeq.f tolerance equality)
 
 #include <algorithm>
 #include <cstring>
@@ -16,9 +17,6 @@
 namespace x13 {
 
 using namespace lexprm;
-
-// dpeq helper.
-static inline bool dpeq(double a, double b) { return a == b; }
 
 void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inptok) {
     LexState& L = ctx.lex;
@@ -297,11 +295,24 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 lseats = true;
                 ctx.captured.spec_order.push_back("seats");
                 break;
-            case 12:  // history
+            case 18:  // force
+                gt_force(ctx, inptok);
+                if (ctx.error.lfatal) return;
+                ctx.captured.spec_order.push_back("force");
+                break;
             case 13:  // slidingspans
+                gt_slidingspans(ctx, havesp, inptok);
+                if (ctx.error.lfatal) return;
+                // gtinpt.f:760 -- IF(.not.Ssdiff)Ssidif=Ssdiff: once Ssdiff
+                // (additivesa=difference) is forced false->false is a no-op,
+                // but if it went false due to additivesa=percent request
+                // being overridden, force Ssidif false to match.
+                if (!ctx.sspinp.ssdiff) ctx.sspinp.ssidif = ctx.sspinp.ssdiff;
+                ctx.captured.spec_order.push_back("slidingspans");
+                break;
+            case 12:  // history
             case 15:  // x11regression
             case 17:  // pickmdl
-            case 18:  // force
             case 19:  // metadata
             case 20:  // spectrum
             default:

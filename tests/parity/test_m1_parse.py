@@ -51,9 +51,7 @@ BIN = _find_binary()
 _UNPARSED_BLOCKS = {
     "spectrum": "M6-M7",
     "history": "M9-M10",
-    "slidingspans": "M9-M10",
     "x11regression": "M6-M7",
-    "force": "M9-M10",
     "metadata": "M9-M10",
     "pickmdl": "M4-M5",
 }
@@ -79,6 +77,14 @@ def _unparsed_reason(spc: str):
         f"{b} ({_UNPARSED_BLOCKS[b]})" for b in sorted(hits))
 
 
+# Specs whose FATAL is a POST-PARSE (runtime transform/model) error, not a parse
+# error: x13parse (parse-only) correctly parses them OK while the oracle aborts
+# later in the pipeline. They are gated by their own runtime harness (e.g.
+# test_transform_err.py), so the M1 parse gate must not treat them as parse-error
+# cases (it would see parser OK=True vs oracle OK=False).
+_POST_PARSE_FATAL = {"edge/log-zero-series.spc"}
+
+
 def _corpus_specs():
     out = []
     for root, _dirs, files in os.walk(_CORPUS):
@@ -86,6 +92,9 @@ def _corpus_specs():
             if not f.endswith(".spc"):
                 continue
             spc = os.path.join(root, f)
+            rel = os.path.relpath(spc, _CORPUS).replace(os.sep, "/")
+            if rel in _POST_PARSE_FATAL:
+                continue
             # The M1 gate compares against the Fortran oracle goldens; skip any
             # spec that has no golden (e.g. synthetic fixtures for later-milestone
             # harnesses like extra/airline_iddiff.spc, gated in their own tests).

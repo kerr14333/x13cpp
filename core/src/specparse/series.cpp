@@ -264,11 +264,13 @@ void getsrs(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr, bool ldata,
                 gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
                        "Available options for appending forecasts are yes or no.", ivec, nelt, argok, inptok);
                 if (ctx.error.lfatal) return;
+                if (argok && nelt > 0) ctx.tbllog.savfct = (ivec[0] == 1);  // getsrs.f:400
                 break;
             case 23:  // appendbcst
                 gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
                        "Available options for appending backcasts are yes or no.", ivec, nelt, argok, inptok);
                 if (ctx.error.lfatal) return;
+                if (argok && nelt > 0) ctx.tbllog.savbct = (ivec[0] == 1);  // getsrs.f:409
                 break;
             case 24:  // type
                 gtdcvc(ctx, LPAREN, true, 1, TYPDIC, typptr, 2,
