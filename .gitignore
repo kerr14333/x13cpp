@@ -17,6 +17,15 @@ oracle/build-*/
 tests/parity/_runs/
 tests/compare/_reports/
 
+# Harness/oracle run-output accidentally written into the corpus tree: keep only
+# the source specs/data/docs, ignore every generated save-table (.a1/.s10/.fct/...).
+tests/corpus/**/*.*
+!tests/corpus/**/*.spc
+!tests/corpus/**/*.dat
+!tests/corpus/**/*.md
+!tests/corpus/**/*.py
+!tests/corpus/**/*.mta
+
 # Python
 __pycache__/
 *.pyc

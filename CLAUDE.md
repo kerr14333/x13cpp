@@ -96,11 +96,12 @@ expgs_fixed, closed via a faithful CALCFX forecast-residual port in
 re-estimation floor ~7e-6; `core/src/driver/run_history.cpp`, reusing the
 re-entrant span driver + a per-span `Lterm`/`Nterm` reset). The whole X-11
 diagnostics front (force / slidingspans / history) is now closed.
-- **Open:** the `*-aictest-x11` / `*-fixed-airline-x11` specs are xfailed. The
-  aictest selection IS now wired into `automd` (gated `do_aictest`; block-1
-  tdaic/easaic + a0/ismd0 revert), so on `airline` the correct model (td1coef +
-  Easter) reaches X-11 with nonzero factors. The remaining blocker is **x11pt2's
-  model-based factor combine** (`x11pt2.f:74-352`, unported — fatals at
-  `x11parts.cpp:275` before any table emits). Port that + wire regeff's ftd/fhol
-  into `ctx.x11fac` to un-xfail airline. Full nloop/tstmd1 still needed for the
-  non-default-model series. See **`tools/x11_regeff_handoff.md`** (session update).
+- **Model X-11 path — CLOSED.** The `*-aictest-x11` (airline/expgs/payems) and all
+  four `*-fixed-airline-x11` specs gate bit-exact on X-11 **and** on the fct forecast:
+  automd aictest selection + finalization, x11pt2's model factor combine, the
+  x11pt2/x11pt3 outlier folds (AO→D13, LS→D12 trend), the fixed-model leap-year
+  Sprior population, the post-idotlr regvar rebuild, and the fcstout LOM-prior
+  re-application all landed. See **`tools/x11_regeff_handoff.md`**.
+- **Still xfailed (regARIMA-estimation frontier, not X-11):** `unrate_automdl-aictest-x11`
+  (default-model seasonal-MA near-unit-root t-stat flips tstmd1) and
+  `payems_automdl-acceptdefault` (~8.5e-6 tail forecast-extension floor).

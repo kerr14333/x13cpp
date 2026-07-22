@@ -17,8 +17,10 @@ benchmarking methods land in different milestones:
                             (with its matrix helpers MATMLT/SIMUL/MEANCRA),
                             gated here.
 
-Two force features still fatal and xfail: round=yes (the rounded SA series,
-rndsa) and non-original force targets (target != original).
+round=yes (the rounded SA series, rndsa) is ported and gated where a golden
+ships. The one still-unported force feature is non-original force targets
+(target != original, Iftrgt>0) -- it fatals cleanly and is reached by no shipped
+golden.
 
 Run:  python -m pytest tests/parity/test_force_tables.py -q
 """
