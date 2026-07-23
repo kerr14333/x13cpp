@@ -14,13 +14,16 @@
 //     plus sadjchng (Lrvch: chr/che) -- the month-to-month SA %-change history:
 //     putrev's Outch = (Stci(i)-Stci(i-1))/Stci(i-1)*100 on each span, revision
 //     = Final - Conc (Tbltyp=2 forces Rvper=F, no second percenting).
-//     Projected seasonal factors (Lrvsf: sfr/sfe) are NOT ported -- no golden
-//     ships them for this spec, and they only add the year-early
-//     Beglup..Begrev-1 iterations (which never touch Cncsa/Cnctrn), so the loop
-//     starts at Begrev. Changes-in-trend (Lrvtch) / AICC (Lrvaic) / forecast
-//     (Lrvfct) / ARMA-coeff / TD-coeff histories are out of scope. The
-//     additive-mode negative-value ceasing branch of putrev (Muladd==1) is also
-//     out of scope (this spec is multiplicative).
+//   * seasonal (Lrvsf: sfr/sfe) -- the seasonal-factor history. sfe emits the
+//     concurrent Sts(Posfob), the projected factor (forecast-region Sts from the
+//     prior year-boundary/December span, getrev Itype=0's Cncsfp), and the final
+//     Sts; sfr the two revisions Final-Conc and Final-Proj (prtrv2, %-form when
+//     Muladd!=1). setrvp.f's Beglup: with Lrvsf the loop starts a year earlier,
+//     at the December before Rvstrt, so the first table year's projections run.
+//     Fixper (fixed-period model estimation) shifting Beglup is out of scope.
+//     Changes-in-trend (Lrvtch) / AICC (Lrvaic) / forecast (Lrvfct) / ARMA-coeff
+//     / TD-coeff histories are out of scope. The additive-mode negative-value
+//     ceasing branch of putrev (Muladd==1) is also out of scope (mult spec).
 //   * No revision targets (Ntarsa==Ntartr==0 -> only the Fin(0,.) concurrent-
 //     vs-final column), no regression{}/outlier{}/x11regression{}, model
 //     re-estimated each span (Revfix=F -- restor_span resets Arimap to the main
@@ -44,6 +47,7 @@ struct HistoryOutput {
     bool have_sa = false;
     bool have_tr = false;
     bool have_ch = false;            // sadjchng requested (chr/che)
+    bool have_sf = false;            // seasonal requested (sfr/sfe)
     int nsea = 0;
     int revspn[2] = {0, 0};          // Rvstrt (first revision date)
     std::vector<int> dates;          // YYYYMM per row
@@ -59,6 +63,14 @@ struct HistoryOutput {
     std::vector<double> chr;         // SA-change revision
     std::vector<double> che_cnc;     // Conc_SA_change
     std::vector<double> che_fin;     // Final_SA_change
+    // seasonal: concurrent + projected + final seasonal factor (all x100 when
+    // Muladd!=1, matching putrev Itype=0). sfe emits the three levels; sfr the
+    // two revisions Final-Conc and Final-Proj (prtrv2, %-form when Muladd!=1).
+    std::vector<double> sfe_cnc;     // Conc_SF
+    std::vector<double> sfe_proj;    // Proj_SF (from the prior-December span)
+    std::vector<double> sfe_fin;     // Final_SF
+    std::vector<double> sfr_cnc;     // SF revision vs concurrent
+    std::vector<double> sfr_proj;    // SF revision vs projected
 };
 
 // Run the revisions-history analysis. No-op (returns true, leaves

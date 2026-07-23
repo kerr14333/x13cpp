@@ -262,6 +262,12 @@ int main(int argc, char** argv) {
                 std::printf("che %06d %.15E %.15E\n", ho.dates[r],
                             ho.che_cnc[r], ho.che_fin[r]);
             }
+            if (ho.have_sf) {
+                std::printf("sfr %06d %.15E %.15E\n", ho.dates[r],
+                            ho.sfr_cnc[r], ho.sfr_proj[r]);
+                std::printf("sfe %06d %.15E %.15E %.15E\n", ho.dates[r],
+                            ho.sfe_cnc[r], ho.sfe_proj[r], ho.sfe_fin[r]);
+            }
         }
     }
     return 0;

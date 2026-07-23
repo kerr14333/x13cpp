@@ -219,11 +219,12 @@ def spec_history():
         estimate_block(),
         x11_block(),
         block("history",
-              ["estimates = (sadj sadjchng trend)", "start = 1955.jan"],
+              ["estimates = (sadj sadjchng seasonal trend)", "start = 1955.jan"],
               save_key="history", print_all=True, savelog=True),
     ]
     return "airline_history.spc", assemble(
-        "history{} sadj+sadjchng+trend revisions, modest span from 1955", blocks)
+        "history{} sadj+sadjchng+seasonal+trend revisions, modest span from 1955",
+        blocks)
 
 
 def spec_slidingspans():

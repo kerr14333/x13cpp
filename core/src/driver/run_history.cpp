@@ -39,7 +39,9 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const bool lrvsa = rev.lrvsa;
     const bool lrvtrn = rev.lrvtrn;
     const bool lrvch = rev.lrvch;                  // sadjchng (chr/che)
-    if (!(lrvsa || lrvtrn || lrvch)) return true;  // nothing this driver emits
+    const bool lrvsf = rev.lrvsf;                  // seasonal (sfr/sfe)
+    if (!(lrvsa || lrvtrn || lrvch || lrvsf))
+        return true;                               // nothing this driver emits
 
     const int ny = ctx.model.sp;
     const bool has_model = ctx.captured.has_model;
@@ -73,12 +75,27 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     ctx.x11opt.lyr = begspn_full[0];
     ctx.x11opt.ny = ny;
 
+    // setrvp.f: with Lrvsf the loop starts a year earlier, at Beglup = the
+    // December (month=Ny) of the year before Rvstrt, so the year-boundary span
+    // that projects the first table year's seasonal factors runs. (No Fixper
+    // handling -- fixed-period model estimation is out of scope.)
+    int beglup = begrev;
+    if (lrvsf) {
+        int lupbeg[2] = {rvstrt[0] - 1, ny};
+        dfdate(lupbeg, begspn_full, ny, beglup);
+        beglup += lfda;
+        if (beglup < 1) beglup = 1;                // clamp (Frstsa floor)
+    }
+
     const int nspan = endrev - begrev + 1;         // includes the final full span
     std::vector<double> cncsa(nspan + 1, 0.0), cnctrn(nspan + 1, 0.0);
     std::vector<double> cncch(nspan + 1, 0.0);     // concurrent SA % change (putrev)
+    std::vector<double> cncsf(nspan + 1, 0.0);     // concurrent seasonal factor (x100)
+    std::vector<double> projsf(revnum + 1, 0.0);   // projected SF, by output revptr
+    const double sfsc = (ctx.x11opt.muladd != 1) ? 100.0 : 1.0;  // putrev Itype=0
 
-    for (int i = begrev; i <= endrev; ++i) {
-        const int revptr = i - begrev + 1;
+    for (int i = beglup; i <= endrev; ++i) {
+        const int revptr = i - begrev + 1;         // <=0 for the pre-Begrev spans
         // restor.f: reset Lter/Ktcopt/Tic and (model) Arimap/Arimaf/... to the
         // main run's converged snapshot as this span's fresh starting state.
         // Model NOT fixed (no ssmdl_fix_model) -> rgarma re-estimates each span.
@@ -96,12 +113,27 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             return false;
         if (ctx.error.lfatal) return false;
         const int posfob = ctx.x11ptr.posfob;      // = nlen = i
-        cncsa[revptr] = ctx.x11srs.stci(posfob);
-        cnctrn[revptr] = ctx.x11srs.stc(posfob);
-        if (lrvch) {                               // putrev Outch on this span's Stci
-            const double a = ctx.x11srs.stci(posfob);
-            const double b = ctx.x11srs.stci(posfob - 1);
-            cncch[revptr] = ((a - b) / b) * 100.0;  // Muladd!=1 -> percent change
+        if (revptr > 0) {                          // getrev's IF(Revptr.gt.0)
+            cncsa[revptr] = ctx.x11srs.stci(posfob);
+            cnctrn[revptr] = ctx.x11srs.stc(posfob);
+            if (lrvch) {                           // putrev Outch on this span's Stci
+                const double a = ctx.x11srs.stci(posfob);
+                const double b = ctx.x11srs.stci(posfob - 1);
+                cncch[revptr] = ((a - b) / b) * 100.0;  // Muladd!=1 -> percent change
+            }
+            if (lrvsf) cncsf[revptr] = ctx.x11srs.sts(posfob) * sfsc;
+        }
+        // getrev Itype=0: at a year-boundary span (Posfob a multiple of Ny =
+        // December for this Jan-start series) store the Ny projected factors
+        // Sts(Posfob+k) -- the forecast-region seasonal factors -- into the
+        // output row (revptr+k) they concurrently project. One December span
+        // covers the next 12 months, so rows never collide.
+        if (lrvsf && posfob % ny == 0) {
+            for (int k = 1; k <= ny; ++k) {
+                const int outr = revptr + k;
+                if (outr >= 1 && outr <= revnum)
+                    projsf[outr] = ctx.x11srs.sts(posfob + k) * sfsc;
+            }
         }
     }
 
@@ -109,7 +141,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // ctx.x11srs.stci/stc now hold the final adjustment. Fin(0,revptr) is the
     // final estimate at the revision date Begrev+revptr-1 (getrev.f:118-124).
     std::vector<double> finsa(revnum + 1, 0.0), fintrn(revnum + 1, 0.0);
-    std::vector<double> finch(revnum + 1, 0.0);
+    std::vector<double> finch(revnum + 1, 0.0), finsf(revnum + 1, 0.0);
     for (int revptr = 1; revptr <= revnum; ++revptr) {
         const int pos = begrev + revptr - 1;
         finsa[revptr] = ctx.x11srs.stci(pos);
@@ -119,6 +151,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             const double b = ctx.x11srs.stci(pos - 1);
             finch[revptr] = ((a - b) / b) * 100.0;
         }
+        if (lrvsf) finsf[revptr] = ctx.x11srs.sts(pos) * sfsc;
     }
 
     // --- prtrev.f: revision arithmetic ----------------------------------------
@@ -129,6 +162,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     out.have_sa = lrvsa;
     out.have_tr = lrvtrn;
     out.have_ch = lrvch;
+    out.have_sf = lrvsf;
     out.nsea = ny;
     out.revspn[0] = rvstrt[0];
     out.revspn[1] = rvstrt[1];
@@ -160,6 +194,19 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.che_cnc.push_back(cnc);
             out.che_fin.push_back(fin);
             out.chr.push_back(fin - cnc);
+        }
+        if (lrvsf) {
+            // prtrv2: two revisions, Final-Conc and Final-Proj; Rvper (Muladd!=1)
+            // divides each by its own base. The stored levels are already x100.
+            const double cnc = cncsf[revptr], proj = projsf[revptr];
+            const double fin = finsf[revptr];
+            double rc = fin - cnc, rp = fin - proj;
+            if (rvper) { rc = (rc / cnc) * 100.0; rp = (rp / proj) * 100.0; }
+            out.sfe_cnc.push_back(cnc);
+            out.sfe_proj.push_back(proj);
+            out.sfe_fin.push_back(fin);
+            out.sfr_cnc.push_back(rc);
+            out.sfr_proj.push_back(rp);
         }
     }
     return true;
