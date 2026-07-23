@@ -268,7 +268,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             case 11:  // x11
                 if (lseats) { inpter(ctx, PERROR, L.pos.data() + 1,
                         "Cannot specify x11 and seats spec in the same input file."); inptok = false; }
-                gt_x11(ctx, inptok);
+                gt_x11(ctx, havesp, inptok);
                 if (ctx.error.lfatal) return;
                 if (!lx11) lx11 = true;
                 ctx.captured.spec_order.push_back("x11");

@@ -199,7 +199,7 @@ void gt_forecast(X13Context& ctx, bool& inptok) {
 }
 
 // ---- x11{} (getx11.f) : capture mode --------------------------------------
-void gt_x11(X13Context& ctx, bool& inptok) {
+void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
     constexpr int PARG = 25;
     static const char ARGDIC[] =
         "modesigmalimseasonalmatrendmatitleextremeadjtypeappendfcsttrendic"
@@ -207,11 +207,105 @@ void gt_x11(X13Context& ctx, bool& inptok) {
         "savelogprint1stpassexcludefcsttrue7termshrinkcenterseasonalappendbcst";
     static const int argptr[PARG + 1] = {1, 5, 13, 23, 30, 35, 45, 49, 59, 66, 79,
         87, 96, 101, 112, 117, 124, 129, 133, 140, 152, 163, 172, 178, 192, 202};
+    // seasonalma filter dictionary (getx11.f:76): index i -> filter code i-1
+    // (x11default=0 s3x3=1 s3x5=2 s3x9=3 s3x15=4 stable=5 msr=6 s3x1=7).
+    static const char SFDIC[] = "x11defaults3x3s3x5s3x9s3x15stablemsrs3x1";
+    static const int sfptr[9] = {1, 11, 15, 19, 23, 28, 34, 37, 41};
     int arglog[2 * PARG];
     for (auto& v : arglog) v = -32767;
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        if (argidx == 2) {
+            // sigmalim -> Sigml/Sigmu (getx11.f:200-224). The extreme-value
+            // weighting (xtrm/wtxtrm) already honours Sigml/Sigmu.
+            double sigl[2] = {prm::DNOTST, prm::DNOTST};
+            int nelt = 0;
+            bool argok = true;
+            gtdpvc(ctx, LPAREN, false, 2, sigl, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt == 1) {
+                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                       "Two sigma limits needed (or use a comma as place "
+                       "holder).");
+                inptok = false;
+            } else if (nelt > 0) {
+                if (dpeq(sigl[0], prm::DNOTST)) sigl[0] = 1.5;
+                if (dpeq(sigl[1], prm::DNOTST)) sigl[1] = 2.5;
+                if (sigl[0] <= 0.0 || sigl[1] <= 0.0) {
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "Sigma limits must be greater than zero.");
+                    inptok = false;
+                } else if (sigl[0] > sigl[1]) {
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "Lower sigma limit must be less than upper sigma "
+                           "limit.");
+                    inptok = false;
+                } else {
+                    ctx.x11opt.sigml = sigl[0];
+                    ctx.x11opt.sigmu = sigl[1];
+                }
+            }
+            continue;
+        }
+        if (argidx == 4) {
+            // trendma -> Ktcopt (fixed Henderson length; getx11.f:283-295). vtc
+            // honours Ktcopt>0 as the trend-filter length.
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            getivc(ctx, LPAREN, true, 1, ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (ivec[0] % 2 == 0 || ivec[0] <= 0) {
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "Length of Henderson trend filter must be a positive "
+                           "odd integer.");
+                    inptok = false;
+                } else {
+                    ctx.x11opt.ktcopt = ivec[0];
+                }
+            }
+            continue;
+        }
+        if (argidx == 3) {
+            // seasonalma -> Lterm/Lter (getx11.f:228-268). The seasonal filter
+            // (vsfa) already honours Lterm/Lter; only this parse wiring was
+            // missing.
+            int isf[prm::PSP];
+            setint(prm::NOTSET, prm::PSP, isf);
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, false, prm::PSP, SFDIC, sfptr, 8,
+                   "Improper value(s) entered for seasonalma.", isf, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                const int sp = ctx.model.sp;
+                if (!havesp) {
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "No seasonal period specified in series spec.");
+                    inptok = false;
+                } else if (nelt == 1) {
+                    ctx.x11opt.lterm = isf[0] - 1;
+                    for (int i = 1; i <= sp; ++i)
+                        ctx.x11opt.lter(i) = ctx.x11opt.lterm;
+                } else if (nelt == sp) {
+                    if (isf[0] == prm::NOTSET) isf[0] = 6;
+                    ctx.x11opt.lterm = isf[0] - 1;
+                    ctx.x11opt.lter(1) = ctx.x11opt.lterm;
+                    for (int i = 2; i <= sp; ++i)
+                        ctx.x11opt.lter(i) =
+                            (isf[i - 1] == prm::NOTSET) ? ctx.x11opt.lterm
+                                                        : isf[i - 1] - 1;
+                } else {
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "Specify either 1 or Sp values for seasonalma.");
+                    inptok = false;
+                }
+            }
+            continue;
+        }
         std::vector<std::string> cap;
         consume_value(ctx, argidx == 1 ? &cap : nullptr);   // 1 = mode
         if (ctx.error.lfatal) return;
