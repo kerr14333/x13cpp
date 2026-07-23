@@ -277,3 +277,17 @@ uniformly gated. Almost certainly a missing paren (intended
   `moar=l`, `osd=sd`, `coef[i]=-a[i]`. Pinned by
   `tests/parity/test_spectrum_tables.py` (`airline_spectrum-arspec`, tags
   `sp0/sp1/sp2/spr`, bit-exact ~7e-14 against the oracle goldens).
+
+## CB-13 — shrink.f/glbshk.f `lx11(Mtype)` out-of-bounds for a stable filter
+
+`shrink.f:57` computes the shrinkage weight as `dlx11=DBLE(lx11(Mtype))` where
+`lx11` is `DATA lx11/1,3,5,9,15/` (5 entries) and `Mtype` is the final seasonal
+moving-average code from `vsfb.f` (2=3x3, 3=3x5, 4=3x9, 5=3x15, **6=stable**,
+7=3-term). The `Mtype.ne.7` branch indexes `lx11(Mtype)` for ANY other value, so
+`Mtype==6` (stable seasonal) reads `lx11(6)` — one past the array. Undefined in
+Fortran; a latent bug. Not reachable on the gated shrink specs (the default MSR
+filters resolve to `Mtype in {2,3,4,5}`), so no shrink+stable spec exists to pin
+it. `Mtype==7` (3-term) is special-cased to `wtx11=1/3` and avoids the access.
+- **Port:** `core/src/x11/shrink.cpp` transcribes `lx11[mtype-1]` verbatim
+  (same latent OOB for `mtype==6`), commented at the access site. Reproduce the
+  bug if a shrink+stable path is ever gated.

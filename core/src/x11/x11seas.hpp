@@ -50,9 +50,13 @@ void vsfa(const double* stsi, int lfda, int llda, int nyr, int muladd,
 // preselected/AllStable filter is requested) and shrtsf (short-series seasonal
 // filter honoring) are the gating flags. temp is vsfc scratch; muladd selects
 // the recombine mode.
+// pmtype (optional) receives the final Mtype (seasonal moving-average code) set
+// by the last filter block -- the oracle keeps it in the x11opt common where
+// shrink() later reads it (vsfb.f:51/68). Pass &ctx.x11opt.mtype at the final
+// (D-pass) seasonal call so shrink sees the same value.
 void vsfb(double* sts, const double* stsi, int lfda, int llda, int nyr,
           int lterm, const int* lter, int ksect, bool shrtsf, double* temp,
-          int muladd);
+          int muladd, int* pmtype = nullptr);
 
 }  // namespace x13
 

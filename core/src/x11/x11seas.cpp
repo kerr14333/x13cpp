@@ -140,7 +140,7 @@ void vsfa(const double* stsi, int lfda, int llda, int nyr, int muladd,
 // vsfc centering. w9 / w15 are the 3x9 / 3x15 end-weight tables (verbatim).
 void vsfb(double* sts, const double* stsi, int lfda, int llda, int nyr,
           int lterm, const int* lter, int ksect, bool shrtsf, double* temp,
-          int muladd) {
+          int muladd, int* pmtype) {
     static const double w9[40] = {
         0.246, 0.221, 0.197, 0.173, 0.112, 0.051,
         0.208, 0.192, 0.176, 0.160, 0.144, 0.092, 0.028,
@@ -273,6 +273,7 @@ void vsfb(double* sts, const double* stsi, int lfda, int llda, int nyr,
             sts[i - 1] = savg[k - 1];
         }
     }
+    if (pmtype) *pmtype = mtype;  // export final Mtype for shrink (vsfb.f common)
     vsfc(sts, lfda, llda, nyr, lter, temp, muladd);
 }
 

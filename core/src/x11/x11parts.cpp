@@ -17,6 +17,7 @@
 #include "x11/x11drv.hpp"           // forcst, vtc, si
 #include "x11/x11force.hpp"         // qmap (force yearly totals)
 #include "x11/slidingspans.hpp"     // ssrit
+#include "x11/shrink.hpp"           // shrink (seasonal-factor shrinkage)
 #include "specparse/specparse.hpp"  // copy, setlg, abend, errhdr, writln, stdio
 #include "numeric/numeric.hpp"      // dpeq
 #include "gen/notset.hpp"           // prm::NOTSET
@@ -409,7 +410,7 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
                pos1ob, posfob, opt.kfulsm, pos1ex, posfex);
         } else if (opt.kfulsm < 2) {
             vsfb(sts, stsi, mfda, mlda, ny, opt.lterm, opt.lter.data(), opt.ksect,
-                 ctx.x11msc.shrtsf, temp, muladd);
+                 ctx.x11msc.shrtsf, temp, muladd, &opt.mtype);
             // (deferred: C4/D4 modified-SI table.)
         }
 
@@ -448,7 +449,7 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
             vsfa(stsi, pos1bk, posfob, ny, muladd, psuadd, opt.rati.data(),
                  opt.ratis);
             vsfb(sts, stsi, pos1bk, posffc, ny, opt.lterm, opt.lter.data(),
-                 opt.ksect, ctx.x11msc.shrtsf, temp, muladd);
+                 opt.ksect, ctx.x11msc.shrtsf, temp, muladd, &opt.mtype);
             // (deferred: C9 modified-SI table.)
         }
 
@@ -692,8 +693,11 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         return;
     }
     if (opt.ishrnk > 0) {
-        x11_not_ported(ctx, "x11pt3 seasonal shrinkage (Ishrnk)");
-        return;
+        // x11pt3.f:283-287: shrink the final seasonal factors (Miller &
+        // Williams 2003). The Sts snapshot into stsx11 feeds only the deferred
+        // SNS diagnostic table, so it is skipped here.
+        shrink(stsi, sts, opt.mtype, opt.ishrnk, muladd, ny, pos1ob, posfob,
+               pos1bk, posffc);
     }
     // (deferred: D10 table/punch/x11plt, D10b/EARS/SNS emits.)
     // Store the final seasonal factors for sliding-spans analysis

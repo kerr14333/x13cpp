@@ -326,7 +326,7 @@ void sfmsr(X13Context& ctx, double* sts, double* stsi, int lfda, int llda,
     double temp[PLEN];  // vsfb work scratch
     vsfa(stsi, lfda, llda, ny, muladd, psuadd, opt.rati.data(), opt.ratis);
     vsfb(sts, stsi, lfda, lldaf, ny, opt.lterm, opt.lter.data(), opt.ksect,
-         shrtsf, temp, muladd);
+         shrtsf, temp, muladd, &opt.mtype);
 }
 
 // si.f -- calculates the seasonals from the SI estimates for Part B. Optional
@@ -370,7 +370,7 @@ void si(X13Context& ctx, int ksect, int kfda, int klda, int nyr, int iforc,
             vsfa(stsi, kfda, llda, nyr, muladd, psuadd, opt.rati.data(),
                  opt.ratis);
         vsfb(sts, stsi, kfda, klda, nyr, opt.lterm, opt.lter.data(), opt.ksect,
-             shrtsf, temp, muladd);
+             shrtsf, temp, muladd, &opt.mtype);
     }
 
     // (deferred: table/punch of Stsi -- B3/B8)
@@ -397,7 +397,7 @@ void si(X13Context& ctx, int ksect, int kfda, int klda, int nyr, int iforc,
 
     if (kfulsm < 2)
         vsfb(sts, stsi, kfda, klda, nyr, opt.lterm, opt.lter.data(), opt.ksect,
-             shrtsf, temp, muladd);
+             shrtsf, temp, muladd, &opt.mtype);
 }
 
 // adjreg.f -- build the X-11 input buffers from the forecast/backcast-extended,

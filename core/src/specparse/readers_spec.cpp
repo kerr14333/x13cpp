@@ -339,6 +339,22 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
             }
             continue;
         }
+        if (argidx == 23) {
+            // shrink -> Ishrnk (getx11.f:459-465). SHKDIC='nonegloballocal',
+            // Ishrnk=ivec(1)-1 (none=0 global=1 local=2). x11pt3 calls shrink()
+            // on the final seasonal factors when Ishrnk>0.
+            static const char SHKDIC[] = "nonegloballocal";
+            static const int shkptr[4] = {1, 5, 11, 16};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, SHKDIC, shkptr, 3,
+                   "Entry for shrink argument must be none, global or local.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.x11opt.ishrnk = ivec[0] - 1;
+            continue;
+        }
         if (argidx == 7) {
             // type -> Kfulsm (getx11.f:339-343). TYPDIC='sasummarytrend',
             // Kfulsm=ivec(1)-1 (sa=0 summary=1 trend=2). The X-11 spine already
