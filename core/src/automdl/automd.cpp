@@ -398,7 +398,7 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         lmu = kmu > 0;
     }
 
-    // ---- estimate the default model ----
+    // ---- estimate the default model (automd.f:266) ----
     bool argok = true;
     rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
     if (!ctx.error.lfatal) {
@@ -614,6 +614,24 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     // accept test is not aictest-gated, so it lives here in the non-aic path too
     // (the aic path has the mirror branch). ----
     if (ar.laccdf) {
+        // automd.f:325 -- the residual-diagnostics rgarma refines the default
+        // model estimate. The l.266 rgarma above only converges partway from
+        // the chkmu-context start; the oracle runs this second rgarma (Lestim)
+        // unconditionally before the accept test. The aic path runs it as its
+        // own line-422 call; the non-aic acceptdefault path needs it here too,
+        // or the accepted airline's tail forecast drifts ~8.5e-6. (The
+        // intervening Lidotl amidot/pass0 block is a no-op here -- BIGCV finds
+        // no outlier and payems carries no regressor -- exactly as on the aic
+        // path, which also skips it and stays bit-exact.)
+        rgarma(ctx, ar.lestim, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal) {
+            prterr(ctx, nefobs, true);
+            if (!ctx.mdldat.convrg)
+                abend(ctx);
+            else if (!argok)
+                abend(ctx);
+        }
+        if (ctx.error.lfatal) return;
         double blpct0, blq0, rvr0, rtval0;
         int bldf0;
         mdlchk(ctx, a, na, nefobs, blpct0, blq0, bldf0, rvr0, rtval0);

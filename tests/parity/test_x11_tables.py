@@ -107,18 +107,6 @@ CASES = _discover()
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
 def test_x11_table(base: str, tag: str) -> None:
-    if base == "payems_automdl-acceptdefault":
-        # acceptdefault=yes correctly forces the default airline (0 1 1)(0 1 1)
-        # instead of the automatic search's (0 1 2) -- confirmed by the error
-        # collapsing from ~5e-4 (wrong model) to ~8.5e-6 (right model) once the
-        # accept-default branch fires. The residual ~8.5e-6 is localized at the
-        # series tail (202504) -- a forecast-extension parameter sensitivity of
-        # the accepted airline model on payems (the clean fixed-airline payems
-        # path is bit-exact, so this is specific to automd's accept-default
-        # estimate handoff, not an X-11 issue). Same estimation-convergence
-        # frontier family as the other model-based forecast xfails.
-        pytest.xfail("acceptdefault selects airline correctly (err 5e-4->8.5e-6); "
-                     "residual is a tail forecast-extension estimation floor")
     spec = os.path.join(_CORPUS, base + ".spc")
     # Tolerance by path: no-model decomposition is pure arithmetic (tight);
     # model-based runs carry estimation-derived values (loose).
