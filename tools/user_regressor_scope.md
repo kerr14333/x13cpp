@@ -16,6 +16,31 @@ DEFERRED, inpter). Tail (getreg.f:558-567): hvfile && !haveux → gtfldt_free
 reads the free-format matrix into ctx.arima.userx. Exposed gtfldt_free (was
 anon-namespace in series.cpp; decl in specparse.hpp).
 
+**`usertype=holiday*` DONE (commit 67fd88c).** Ported chkuhg.f (util.cpp):
+contiguous-sequence check + nguhl count. gt_regression tracks iuhl per holiday
+usertype, calls chkuhg after the broadcast, builds the 5 holiday adrgef groups.
+Gate airline_user-reg-hol (usertype=(holiday holiday2)). Parity 611.
+
+## DEFERRED (need real unported machinery — do NOT rush)
+Both verified SAFE to add (no corpus spec uses b= or format=, so zero impact on
+existing greens) but each needs an unported+unverified path:
+
+1. **fixed user coefs (`b=`)** — needs:
+   - gtrgvl.f (145 lines, `b=(v1 v2f v3e ...)` w/ f/e suffix → Bvec/Fixvec).
+   - getreg.f:512-553 insertion tail (Leap-Year auto-fix bvec insert + B/Regfx
+     copy; the `nbvec != Nb+Ncusrx` count guard).
+   - regfix.f (44 lines, trivial: sets Iregfx 0/1/2/3 from Regfx/B-vs-DNOTST).
+   - getreg.f:746-767 Userfx (fixed user-regressor indicator).
+   - RISK: the fixed-REGRESSION-coefficient ESTIMATION path is UNEXERCISED
+     (unit tests cover fixed ARMA only; no corpus b= spec). Must verify the GLS
+     hold-fixed (iregfx>=2/3) is bit-exact before gating. Un-narrow the M3
+     exclusion `\d\s*f[\s,)]` only for the new spec.
+
+2. **`format=` formatted files** — the entire Fortran FORMAT-descriptor read
+   path is unported (series.cpp only ever did free-format; gtfree vs formatted).
+   Needs a Fortran-format-string interpreter for the data read. Largest of the
+   three. Currently inpter-deferred cleanly.
+
 `usertype=` parse (arg 13): gtdcvc(URGDIC) → usrtyp per column; broadcast when
 one type; havtd/havln/havlp/havhol set. Tail dispatches each usrtyp to the right
 adrgef title. HOLIDAY types (holiday..holiday5) → inpter DEFERRED (need chkuhg).
