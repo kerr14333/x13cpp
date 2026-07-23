@@ -661,9 +661,14 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         return;
     }
     if (psuadd) {
-        x11_not_ported(ctx, "x11pt3 pseudo-additive D10/D11 (Psuadd)");
-        return;
-    }
+        // Pseudo-additive modified SA (x11pt3.f:245-249):
+        // Stci = Stcsi - Stc*(Sts-1); flag any non-positive result as not-good.
+        for (int i = pos1bk; i <= posffc; ++i) {
+            stci[i - 1] = stcsi[i - 1] - stc[i - 1] * (sts[i - 1] - 1.0);
+            if (ctx.goodob.gudval(i) && stci[i - 1] <= 0.0)
+                ctx.goodob.gudval(i) = false;
+        }
+    } else {
     divsub(stci, stcsi, sts, pos1bk, posffc, muladd);  // modified SA
     if (muladd == 2) {
         // Log-additive: the components are on the log scale; antilog the seasonal
@@ -677,7 +682,10 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         divsub(stex, stsie, stsi, pos1bk, posffc, muladd);
         antilg(stcsi, pos1bk, posffc);
     }
-    if (adj.adjsea == 1 || adj.adjso == 1) {
+    }  // end !psuadd modified-SA
+    // The regARIMA-seasonal combine is skipped in the pseudo-additive case
+    // (x11pt3.f:272 .and.(.not.Psuadd)).
+    if ((adj.adjsea == 1 || adj.adjso == 1) && !psuadd) {
         x11_not_ported(ctx, "x11pt3 regARIMA-seasonal combine (Adjsea/Adjso)");
         return;
     }
@@ -737,8 +745,17 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         return;
     }
 
-    // --- D11: final seasonally adjusted series ---
-    divsub(stci, series, sts, pos1bk, posffc, muladd);
+    // --- D11: final seasonally adjusted series (x11pt3.f:450-458) ---
+    if (psuadd) {
+        // Pseudo-additive: Stci = Series - Stc*(Sts-1).
+        for (int i = pos1bk; i <= posffc; ++i) {
+            stci[i - 1] = series[i - 1] - stc[i - 1] * (sts[i - 1] - 1.0);
+            if (ctx.goodob.gudval(i) && stci[i - 1] <= 0.0)
+                ctx.goodob.gudval(i) = false;
+        }
+    } else {
+        divsub(stci, series, sts, pos1bk, posffc, muladd);
+    }
     // Combined factors = seasonal factors (no trading-day component on base).
     copy(sts + (pos1bk - 1), k2, 1, ststd + (pos1bk - 1));
 
