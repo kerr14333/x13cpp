@@ -369,7 +369,11 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // already folded X11hol -> Faccal in Part A, and this block's khol==2
         // work (Fachol += X11hol at x11pt2.f:309, the Stocal A18 print) feeds
         // only deferred factor tables (A16/A18), not D10-D13.
-        if (adj.adjso == 1 || adj.adjusr == 1 || adj.finusr || adj.adjsea == 1 ||
+        // Adjusr/Finusr (user-regression factor) are also NOT fatal here: like
+        // the AO/LS/TC factors they only build deferred A8/A18/A19 tables in
+        // x11pt2; the user effect is removed at adjreg (-> B1) and restored/
+        // finalized by the x11pt3 D11 Finusr / D13 Adjusr folds.
+        if (adj.adjso == 1 || adj.adjsea == 1 ||
             adj.adjcyc == 1 || xl.axrghl ||
             (xl.axrgtd && ctx.hiddn.ixreg != 1)) {
             x11_not_ported(ctx, "x11pt2 user/seasonal/cycle/x11reg factor combine+emit");
@@ -753,12 +757,9 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     }
     // x11pt3.f:439-442 accumulates the outlier/user factors into sp2 (a Sprior
     // snapshot) that feeds only the deferred A18/D18 total-factor tables and the
-    // Sprior writeback (l.1285) -- none of which feed D10-D13. Skip it on the
-    // outlier base path; the user-regression factor stays unported.
-    if (adj.adjusr == 1) {
-        x11_not_ported(ctx, "x11pt3 user factor fold-in to Sprior (Adjusr)");
-        return;
-    }
+    // Sprior writeback (l.1285) -- none of which feed D10-D13. Skipped on the
+    // outlier base path; the user-regression factor (Adjusr) is likewise
+    // deferred-only here.
 
     // --- D11: final seasonally adjusted series (x11pt3.f:447-467, 516-522) ---
     if (opt.kfulsm == 2) {
@@ -842,24 +843,23 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
 
     // --- D13: final irregular ---
     divsub(sti, stci, stc, pos1bk, posffc, muladd);
-    // x11pt3.f:575-587 -- final outlier re-adjustment. Sti was computed from the
-    // pre-removal Stci above, so the order matters: Fin* remove the outlier from
-    // the final SA series (Stci/D11); Adj* remove it from the final irregular
-    // (Sti/D13, which the D13 published table then restores via sti2). The user-
-    // factor (Facusr) re-adjustment stays unported (no gated spec).
-    if (adj.finusr || adj.adjusr == 1) {
-        x11_not_ported(ctx, "x11pt3 final user-factor re-adjustment (Facusr)");
-        return;
-    }
+    // x11pt3.f:575-587 -- final outlier/user re-adjustment. Sti was computed from
+    // the pre-removal Stci above, so the order matters: Fin* remove the effect
+    // from the final SA series (Stci/D11); Adj* remove it from the final irregular
+    // (Sti/D13, which the D13 published table then restores via sti2). Facusr (the
+    // user-regression factor) folds with no count guard, mirroring the oracle.
     double* facao = ctx.x11fac.facao.data();
     double* facls = ctx.x11fac.facls.data();
     double* factc = ctx.x11fac.factc.data();
+    double* facusr = ctx.x11fac.facusr.data();
     if (adj.finao && adj.nao > 0) divsub(stci, stci, facao, pos1bk, posffc, muladd);
     if (adj.finls && adj.nls > 0) divsub(stci, stci, facls, pos1bk, posffc, muladd);
     if (adj.fintc && adj.ntc > 0) divsub(stci, stci, factc, pos1bk, posffc, muladd);
+    if (adj.finusr) divsub(stci, stci, facusr, pos1bk, posffc, muladd);
     if (adj.adjls == 1 && adj.nls > 0) divsub(sti, sti, facls, pos1bk, posffc, muladd);
     if (adj.adjao == 1 && adj.nao > 0) divsub(sti, sti, facao, pos1bk, posffc, muladd);
     if (adj.adjtc == 1 && adj.ntc > 0) divsub(sti, sti, factc, pos1bk, posffc, muladd);
+    if (adj.adjusr == 1) divsub(sti, sti, facusr, pos1bk, posffc, muladd);
     if (pu.nustad > 0) {
         x11_not_ported(ctx, "x11pt3 user temporary-adjustment removal (Nustad)");
         return;
@@ -1015,9 +1015,11 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // (the oracle comments out its divide). LS/user E-folds stay unported.
     // Finls removes the LS from the modified SA (x11pt3.f:1247-1253); the adjls
     // (non-final) LS lives in the folded trend stc2 (used above), so it needs no
-    // Part-E fold. User-factor re-adjustment stays unported.
-    if (adj.finls || adj.adjusr == 1) {
-        x11_not_ported(ctx, "x11pt3 Part-E Finls/user re-adjustment (Facls/Facusr)");
+    // Part-E fold. Adjusr does NOT fold into E1/E2 here -- it only triggers the
+    // deferred sp2 -> Sprior writeback (x11pt3.f:1284-1288, Kfmt/A18), which does
+    // not feed the E-tables; so it passes through.
+    if (adj.finls) {
+        x11_not_ported(ctx, "x11pt3 Part-E Finls re-adjustment (Facls)");
         return;
     }
     if (adj.adjao == 1) {
