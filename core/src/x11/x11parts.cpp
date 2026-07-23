@@ -19,6 +19,7 @@
 #include "x11/slidingspans.hpp"     // ssrit
 #include "x11/shrink.hpp"           // shrink (seasonal-factor shrinkage)
 #include "specparse/specparse.hpp"  // copy, setlg, abend, errhdr, writln, stdio
+#include "transform/transform.hpp"  // invfcn (makadj user-prior inverse transform)
 #include "numeric/numeric.hpp"      // dpeq
 #include "gen/notset.hpp"           // prm::NOTSET
 
@@ -279,19 +280,31 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
     // so it is not removed again downstream. B1 (Stcsi) is untouched here -- the
     // leap-year effect was already divided out of the series pre-estimation.
     if (ctx.hiddn.ixreg != 2 && ctx.prior.priadj > 1 && goodlm) {
-        // makadj.f: user temporary/permanent prior adjustments are unported; for
-        // the predefined lom/loq/lpyear priors (no user prior) Adjtmp is the mode
-        // identity.
-        if (ctx.priusr.nustad > 0 || ctx.priusr.nuspad > 0) {
-            x11_not_ported(ctx, "x11pt2 makadj user prior-adjustment combine");
-            return;
-        }
         x11adj_cmn& adj = ctx.x11adj;
         const adj_cmn& adjc = ctx.adj;
+        const priusr_cmn& pu = ctx.priusr;
         const int muladd = opt.muladd;
         const int n2 = (nfcst < ny) ? posfob + ny : posffc;
+        // makadj.f: build the temporary prior-adjustment Adjtmp. With user prior
+        // factors, copy Usrtad (+ Usrpad) into Adjtmp(Setpri); otherwise it is the
+        // mode identity. Pre-fill base so positions the user span does not cover
+        // are deterministic (the oracle leaves them as stack garbage but only reads
+        // the written [Setpri,+Nadj) range).
         double adjtmp[PLEN];
         setdp(adjc.adjmod == 2 ? 0.0 : 1.0, PLEN, adjtmp);
+        if (pu.nustad > 0 || pu.nuspad > 0) {
+            double* atmp = adjtmp + (adjc.setpri - 1);
+            if (pu.nustad > 0) {
+                copy(&ctx.priadj.usrtad.data()[pu.frstat - 1], adjc.nadj, 1, atmp);
+                if (pu.nuspad > 0)
+                    addmul(atmp, &ctx.priadj.usrpad.data()[pu.frstap - 1], atmp, 1,
+                           adjc.nadj, muladd);
+            } else {
+                copy(&ctx.priadj.usrpad.data()[pu.frstap - 1], adjc.nadj, 1, atmp);
+            }
+            if (muladd != 1 && adjc.adjmod == 0)
+                invfcn(ctx, atmp, adjc.nadj, 1, 0.0, atmp);
+        }
         double* sprior = ctx.inpt.sprior.data();
         double* factd = ctx.x11fac.factd.data();
         double* stocal = os.stocal.data();
