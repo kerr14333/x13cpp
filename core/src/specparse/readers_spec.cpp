@@ -339,6 +339,60 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
             }
             continue;
         }
+        if (argidx == 11) {
+            // sigmavec -> Csigvc (getx11.f:390-427). Per-period calendarsigma=
+            // select flags. SUMDIC maps a month/quarter name to a 1..28 index;
+            // monthly full names (13-24) fold to 1..12 and quarter names (25-28)
+            // to 1..4. xtrm honours Csigvc(period) when Ksdev==4.
+            static const char SUMDIC[] =
+                "janfebmaraprmayjunjulaugsepoctnovdec"
+                "januaryfebruarymarchaprilmayjunejulyaugustseptember"
+                "octobernovemberdecemberq1q2q3q4";
+            static const int sumptr[29] = {1, 4, 7, 10, 13, 16, 19, 22, 25, 28,
+                31, 34, 37, 44, 52, 57, 62, 65, 69, 73, 79, 88, 95, 103, 111,
+                113, 115, 117, 119};
+            int calidx[prm::PSP];
+            setint(prm::NOTSET, prm::PSP, calidx);
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, prm::PSP, SUMDIC, sumptr, 28,
+                   "Improper value(s) entered for sigmavec.", calidx, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                const int sp = ctx.model.sp;
+                if (!havesp) {
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "No seasonal period specified in series spec.");
+                    inptok = false;
+                } else {
+                    for (int i = 0; i < nelt; ++i) {
+                        int isvc = calidx[i];
+                        if (isvc >= 13 && isvc <= 24 && sp == 12) {
+                            isvc -= 12;
+                        } else if (isvc >= 25 && sp == 4) {
+                            isvc -= 24;
+                        } else {
+                            if (sp == 12 && isvc >= 25) {
+                                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                                       "Entry for sigmavec not valid for monthly "
+                                       "data.");
+                                inptok = false;
+                                isvc = prm::NOTSET;
+                            } else if (sp == 4 && isvc < 25) {
+                                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                                       "Entry for sigmavec not valid for "
+                                       "quarterly data.");
+                                inptok = false;
+                                isvc = prm::NOTSET;
+                            }
+                        }
+                        if (isvc > 0) ctx.xtrm.csigvc(isvc) = true;
+                    }
+                }
+            }
+            continue;
+        }
         if (argidx == 23) {
             // shrink -> Ishrnk (getx11.f:459-465). SHKDIC='nonegloballocal',
             // Ishrnk=ivec(1)-1 (none=0 global=1 local=2). x11pt3 calls shrink()
