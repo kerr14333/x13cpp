@@ -594,10 +594,20 @@ void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
                         }
                     }
                     if (L.nxtktp == SLASH) {
-                        not_ported(ctx,
-                                   "change-of-regime trading day regressors "
-                                   "(adrgim.f)");
-                        return;
+                        // adpdrg.f:656-666: change-of-regime trading day.
+                        if (regidx == 15 || regidx == 16)
+                            adrgim(ctx, begsrs, nobs, havesp,
+                                   "1-Coefficient Trading Day", prm::PRR1TD,
+                                   prm::PRA1TD, zeroz, /*delreg=*/!P.fulltd,
+                                   P.lrgmtd, /*fullef=*/P.fulltd, locok, inptok);
+                        else
+                            adrgim(ctx, begsrs, nobs, havesp, "Trading Day",
+                                   prm::PRRTTD, prm::PRATTD, zeroz,
+                                   /*delreg=*/!P.fulltd, P.lrgmtd,
+                                   /*fullef=*/P.fulltd, locok, inptok);
+                        if (ctx.error.lfatal) return;
+                        if (P.picktd) P.lnzero = zeroz;
+                        if (zeroz == 0) P.fulltd = true;
                     } else {
                         P.fulltd = true;
                     }
