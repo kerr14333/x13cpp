@@ -12,9 +12,12 @@ the full-data span. Four save tables land per revision date:
   * tre -- concurrent + final trend level (Conc_TRND, Final_TRND)
   * trr -- trend percent revision
 
-Projected seasonal factors (sfr/sfe), changes (chr/ctr), AICC (r07), forecast
-(r08) and ARMA/TD-coefficient histories are out of scope (no goldens ship for
-this spec); see core/src/driver/run_history.hpp for the full scope note.
+  * chr -- SA month-to-month %-change revision, (Final_chng - Conc_chng)
+  * che -- concurrent + final SA %-change (Conc_chng, Final_chng)
+
+Projected seasonal factors (sfr/sfe), trend changes (tcr/tce), AICC (r07),
+forecast (r08) and ARMA/TD-coefficient histories are out of scope (no goldens
+ship for this spec); see core/src/driver/run_history.hpp for the full scope note.
 
 STATUS: GATED at the estimation floor. Each span re-estimates the regARIMA
 model (Revfix=F -- no fixmdl), so the concurrent/final *levels* (sae/tre) agree
@@ -56,8 +59,11 @@ RTOL_LEVEL = 1e-5
 ATOL_REV = 5e-3
 
 # (tag, n_value_columns, kind) -- kind "level" uses RTOL_LEVEL, "rev" uses ATOL_REV.
+# che (month-to-month SA % change, conc+final) is a difference of two re-estimated
+# levels, so it crosses zero and is gated on absolute error like the revisions.
 _TABLES = [("sae", 2, "level"), ("tre", 2, "level"),
-           ("sar", 1, "rev"), ("trr", 1, "rev")]
+           ("sar", 1, "rev"), ("trr", 1, "rev"),
+           ("chr", 1, "rev"), ("che", 2, "rev")]
 _CORE_TAGS = ["sar", "sae", "trr", "tre"]
 
 _NUM_RE = re.compile(r"[+\-][0-9.EeDd+\-]+")

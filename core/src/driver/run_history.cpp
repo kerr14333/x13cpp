@@ -38,7 +38,8 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const rev_cmn& rev = ctx.rev;
     const bool lrvsa = rev.lrvsa;
     const bool lrvtrn = rev.lrvtrn;
-    if (!(lrvsa || lrvtrn)) return true;           // nothing this driver emits
+    const bool lrvch = rev.lrvch;                  // sadjchng (chr/che)
+    if (!(lrvsa || lrvtrn || lrvch)) return true;  // nothing this driver emits
 
     const int ny = ctx.model.sp;
     const bool has_model = ctx.captured.has_model;
@@ -74,6 +75,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
 
     const int nspan = endrev - begrev + 1;         // includes the final full span
     std::vector<double> cncsa(nspan + 1, 0.0), cnctrn(nspan + 1, 0.0);
+    std::vector<double> cncch(nspan + 1, 0.0);     // concurrent SA % change (putrev)
 
     for (int i = begrev; i <= endrev; ++i) {
         const int revptr = i - begrev + 1;
@@ -96,16 +98,27 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
         const int posfob = ctx.x11ptr.posfob;      // = nlen = i
         cncsa[revptr] = ctx.x11srs.stci(posfob);
         cnctrn[revptr] = ctx.x11srs.stc(posfob);
+        if (lrvch) {                               // putrev Outch on this span's Stci
+            const double a = ctx.x11srs.stci(posfob);
+            const double b = ctx.x11srs.stci(posfob - 1);
+            cncch[revptr] = ((a - b) / b) * 100.0;  // Muladd!=1 -> percent change
+        }
     }
 
     // Final column: the loop's last iteration was i=Endrev (full data), so
     // ctx.x11srs.stci/stc now hold the final adjustment. Fin(0,revptr) is the
     // final estimate at the revision date Begrev+revptr-1 (getrev.f:118-124).
     std::vector<double> finsa(revnum + 1, 0.0), fintrn(revnum + 1, 0.0);
+    std::vector<double> finch(revnum + 1, 0.0);
     for (int revptr = 1; revptr <= revnum; ++revptr) {
         const int pos = begrev + revptr - 1;
         finsa[revptr] = ctx.x11srs.stci(pos);
         fintrn[revptr] = ctx.x11srs.stc(pos);
+        if (lrvch) {                               // final change from full-data Stci
+            const double a = ctx.x11srs.stci(pos);
+            const double b = ctx.x11srs.stci(pos - 1);
+            finch[revptr] = ((a - b) / b) * 100.0;
+        }
     }
 
     // --- prtrev.f: revision arithmetic ----------------------------------------
@@ -115,6 +128,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     out.ran = true;
     out.have_sa = lrvsa;
     out.have_tr = lrvtrn;
+    out.have_ch = lrvch;
     out.nsea = ny;
     out.revspn[0] = rvstrt[0];
     out.revspn[1] = rvstrt[1];
@@ -137,6 +151,15 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.tre_cnc.push_back(cnc);
             out.tre_fin.push_back(fin);
             out.trr.push_back(r);
+        }
+        if (lrvch) {
+            // Change table (Tbltyp=2): the conc/final values are already the
+            // month-to-month % change; the revision is a plain difference
+            // (prtrev forces Rvper=F for Tbltyp 2), no second percenting.
+            const double cnc = cncch[revptr], fin = finch[revptr];
+            out.che_cnc.push_back(cnc);
+            out.che_fin.push_back(fin);
+            out.chr.push_back(fin - cnc);
         }
     }
     return true;

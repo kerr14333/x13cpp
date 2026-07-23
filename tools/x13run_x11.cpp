@@ -257,6 +257,11 @@ int main(int argc, char** argv) {
                 std::printf("tre %06d %.15E %.15E\n", ho.dates[r],
                             ho.tre_cnc[r], ho.tre_fin[r]);
             }
+            if (ho.have_ch) {
+                std::printf("chr %06d %.15E\n", ho.dates[r], ho.chr[r]);
+                std::printf("che %06d %.15E %.15E\n", ho.dates[r],
+                            ho.che_cnc[r], ho.che_fin[r]);
+            }
         }
     }
     return 0;

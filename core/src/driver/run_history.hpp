@@ -10,13 +10,17 @@
 //   * Single series (Iagr not composite), monthly or quarterly.
 //   * Multiplicative/log mode (Muladd!=1); the additive percent-vs-difference
 //     and negative-value ceasing branches (putrev.f/getrev.f) are out of scope.
-//   * sadj + trend revisions only (Lrvsa/Lrvtrn) -> the sar/sae/trr/tre save
-//     tables. Projected seasonal factors (Lrvsf: sfr/sfe) are NOT ported -- no
-//     golden ships them for this spec, and they only add the year-early
+//   * sadj + trend revisions (Lrvsa/Lrvtrn) -> the sar/sae/trr/tre save tables,
+//     plus sadjchng (Lrvch: chr/che) -- the month-to-month SA %-change history:
+//     putrev's Outch = (Stci(i)-Stci(i-1))/Stci(i-1)*100 on each span, revision
+//     = Final - Conc (Tbltyp=2 forces Rvper=F, no second percenting).
+//     Projected seasonal factors (Lrvsf: sfr/sfe) are NOT ported -- no golden
+//     ships them for this spec, and they only add the year-early
 //     Beglup..Begrev-1 iterations (which never touch Cncsa/Cnctrn), so the loop
-//     starts at Begrev. Changes-in-adjustment (Lrvch: chr) / changes-in-trend
-//     (Lrvtch) / AICC (Lrvaic) / forecast (Lrvfct) / ARMA-coeff / TD-coeff
-//     histories are likewise out of scope.
+//     starts at Begrev. Changes-in-trend (Lrvtch) / AICC (Lrvaic) / forecast
+//     (Lrvfct) / ARMA-coeff / TD-coeff histories are out of scope. The
+//     additive-mode negative-value ceasing branch of putrev (Muladd==1) is also
+//     out of scope (this spec is multiplicative).
 //   * No revision targets (Ntarsa==Ntartr==0 -> only the Fin(0,.) concurrent-
 //     vs-final column), no regression{}/outlier{}/x11regression{}, model
 //     re-estimated each span (Revfix=F -- restor_span resets Arimap to the main
@@ -39,6 +43,7 @@ struct HistoryOutput {
     bool ran = false;
     bool have_sa = false;
     bool have_tr = false;
+    bool have_ch = false;            // sadjchng requested (chr/che)
     int nsea = 0;
     int revspn[2] = {0, 0};          // Rvstrt (first revision date)
     std::vector<int> dates;          // YYYYMM per row
@@ -48,6 +53,12 @@ struct HistoryOutput {
     std::vector<double> trr;         // TRND_revision (percent)
     std::vector<double> tre_cnc;     // Conc_TRND
     std::vector<double> tre_fin;     // Final_TRND
+    // sadjchng: month-to-month SA percent change (putrev Outch), one per row.
+    // che_cnc/che_fin are the concurrent/final change; chr = Final - Conc (a
+    // plain difference -- Tbltyp=2 forces Rvper=F, no second percenting).
+    std::vector<double> chr;         // SA-change revision
+    std::vector<double> che_cnc;     // Conc_SA_change
+    std::vector<double> che_fin;     // Final_SA_change
 };
 
 // Run the revisions-history analysis. No-op (returns true, leaves
