@@ -254,6 +254,7 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     static const char URRDIC[] = "meanseasonal";
     static const int urrptr[3] = {1, 5, 13};
     bool lumean = false, luseas = false;
+    int iuhl[prm::PUHLGP] = {0};   // user holiday-group usage (getreg.f:137)
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
@@ -335,6 +336,7 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                     else if (u >= 7 && u <= 11) {
                         ut = (u == 7) ? prm::PRGTUH : prm::PRGUH2 + (u - 8);
                         havhol = true;
+                        if (iuhl[u - 7] == 0) iuhl[u - 7] = 1;  // iuhl(u-6)
                     } else if (u == 12) ut = prm::PRGUAO;
                     else if (u == 13) ut = prm::PRGULS;
                     else if (u == 14) ut = prm::PRGUSO;
@@ -406,10 +408,21 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                 ctx.arima.bgusrx(2) = ctx.arima.begsrs(2);
             }
             ctx.arima.nrusrx = neltux / ncusrx;
-            // getreg.f:581-585 -- one usertype broadcasts to every column.
-            if (nusrrg == 1)
-                for (int i = 2; i <= ncusrx; ++i)
-                    ctx.usrreg.usrtyp(i) = ctx.usrreg.usrtyp(1);
+            // getreg.f:576-598 -- broadcast a single usertype, then check the
+            // holiday-group sequence.
+            if (nusrrg > 0) {
+                if (nusrrg == 1)
+                    for (int i = 2; i <= ncusrx; ++i)
+                        ctx.usrreg.usrtyp(i) = ctx.usrreg.usrtyp(1);
+                bool herror = false;
+                chkuhg(iuhl, ctx.usrreg.nguhl, herror);
+                if (herror) {
+                    inpter(ctx, PERROR, ep,
+                           "Cannot specify holiday group types for user-defined "
+                           "regression variables out of sequence.");
+                    inptok = false;
+                }
+            }
             if (!chkcvr(ctx.arima.bgusrx.data(), ctx.arima.nrusrx,
                         ctx.mdldat.begspn.data(), ctx.mdldat.nspobs, ctx.model.sp)) {
                 inpter(ctx, PERROR, ep,
@@ -438,12 +451,16 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                     case prm::PRGULS: gt = "User-defined LS";           vt = prm::PRGULS; break;
                     case prm::PRGUSO: gt = "User-defined SO";           vt = prm::PRGUSO; break;
                     case prm::PRGUCY: gt = "User-defined Transitory";   vt = prm::PRGUCY; break;
+                    case prm::PRGTUH: gt = "User-defined Holiday";          vt = prm::PRGTUH; break;
+                    case prm::PRGUH2: gt = "User-defined Holiday Group 2";  vt = prm::PRGUH2; break;
+                    case prm::PRGUH3: gt = "User-defined Holiday Group 3";  vt = prm::PRGUH3; break;
+                    case prm::PRGUH4: gt = "User-defined Holiday Group 4";  vt = prm::PRGUH4; break;
+                    case prm::PRGUH5: gt = "User-defined Holiday Group 5";  vt = prm::PRGUH5; break;
                     case 0:
                     case prm::PRGTUD: gt = "User-defined";              vt = prm::PRGTUD; break;
-                    default:  // holiday groups need chkuhg (unported)
+                    default:
                         inpter(ctx, PERROR, ep,
-                               "user-defined holiday regressors (usertype=holiday) "
-                               "are not yet supported.");
+                               "unsupported user-defined regressor type.");
                         inptok = false;
                         return;
                     }

@@ -190,6 +190,7 @@ bool getint(X13Context& ctx, int& tmp);
 bool getdbl(X13Context& ctx, double& tmp);
 void eltlen(X13Context& ctx, int istr, const int* ptrvec, int nstr, int& length);
 void intlst(int pelt, int* ptrvec, int& nstr);
+void chkuhg(const int* iuhl, int& nguhl, bool& herror);
 void gtfldt_free(X13Context& ctx, int plen, const std::string& datfil, int ndfl,
                  double* y, int& nobs, bool& hvfreq, int& freq, bool hvstrt,
                  bool& argok, bool& inptok);

@@ -2,6 +2,7 @@
 // cmpstr.f, strinx.f, ctoi.f, ctod.f, isdate.f, addate.f, dfdate.f, chkcvr.f,
 // itoc.f. Grouped into one translation unit (all tiny, no shared state).
 #include "specparse/specparse.hpp"
+#include "model.hpp"   // prm::PUHLGP (chkuhg)
 
 #include <cmath>
 
@@ -153,6 +154,23 @@ bool chkcvr(const int* begsrs, int nobs, const int* begspn, int nspobs, int sp) 
     dfdate(begspn, begsrs, sp, idif);
     if (idif < 0 || idif + nspobs > nobs || nspobs <= 0) return false;
     return true;
+}
+
+// chkuhg.f -- validate the user-defined holiday-group codes are a contiguous
+// sequence from group 1 (no gaps) and count the groups into nguhl.
+void chkuhg(const int* iuhl, int& nguhl, bool& herror) {
+    herror = false;
+    bool hzero = false;
+    nguhl = 0;
+    for (int i = 0; i < prm::PUHLGP; ++i) {
+        if (iuhl[i] == 0) {
+            hzero = true;
+        } else if (hzero) {
+            herror = true;
+        } else if (!herror) {
+            ++nguhl;
+        }
+    }
 }
 
 // itoc.f  (writes into Str at 1-based Ipos; Str is a std::string long enough)
