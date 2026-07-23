@@ -384,7 +384,7 @@ void easter(X13Context& ctx, double* yhat, int khol, int kkhol, int kh2,
 
 // holidy.f: generate the Xhol Easter-date indicator (from kdate) and call easter.
 void holidy(X13Context& ctx, double* yhat, int nyear, int lfda, int lfbk,
-            int lyr, int llda, int numfct, int keastr, int& khol) {
+            int lyr, int llda, int numfct, int& keastr, int& khol) {
     double* xhol = ctx.xeastr.xhol.data();
     int m = (lfbk / 12) * 12 + 1;
     if (lfbk % 12 == 0) m = m - 12;
@@ -420,8 +420,10 @@ void holidy(X13Context& ctx, double* yhat, int nyear, int lfda, int lfbk,
     if (lfdam == 4) apr = 3;
 
     if (keastr >= 1) {
-        int ihol = keastr;
-        easter(ctx, yhat, mar, marbk, apr, llda, ihol, numfct);
+        // holidy.f:71 passes Keastr by reference into easter; easter.f zeroes it
+        // on an inadmissible (any-empty Ieast bin) decomposition, so the global
+        // Keastr must clear too -- pass ctx.x11opt.keastr straight through.
+        easter(ctx, yhat, mar, marbk, apr, llda, keastr, numfct);
     } else {
         int* ie = ctx.xeastr.ieast.data();
         for (int i = 0; i < 4; ++i) ie[i] = -99;

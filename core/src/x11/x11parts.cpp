@@ -388,6 +388,15 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
             goodlm && lmodel && !xl.axrghl)
             addmul(fac.faccal.data(), fac.faccal.data(), fac.fachol.data(), pos1bk,
                    n2, muladd);
+        // Combined holiday effect (x11pt2.f:294-311): fold the X-11 Easter factor
+        // into Fachol so x11pt3's divsub(Faccal,Faccal,Fachol) removes it from the
+        // combined calendar factor Faccal (affects D16/D18, not D10-D13). lsthol
+        // per x11pt2.f:301-305. The Facxhl/Axrghl irregular-reg branch is unported.
+        if (!ctx.xrgum.noxfac && opt.khol == 2 && goodlm) {
+            const int lsthol = (nfcst == 0) ? posfob + ny : posffc;
+            addmul(fac.fachol.data(), fac.fachol.data(), fac.x11hol.data(), pos1bk,
+                   lsthol, muladd);
+        }
     }
 
     // --- PART B ---

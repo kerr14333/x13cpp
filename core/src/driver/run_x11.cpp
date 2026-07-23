@@ -37,18 +37,22 @@ namespace x13 {
 static void x11_easter_prepass(X13Context& ctx) {
     extend_cmn& ext = ctx.extend;
     x11ptr_cmn& ptr = ctx.x11ptr;
-    const int nfcst0 = ext.nfcst, nbcst0 = ext.nbcst, nfdrp0 = ext.nfdrp,
-              nofpob0 = ext.nofpob, nbfpob0 = ext.nbfpob;
-    const int pos1bk0 = ptr.pos1bk, posffc0 = ptr.posffc;
+    const int nfcst0 = ext.nfcst, nbcst0 = ext.nbcst;
     const int nspobs = ctx.mdldat.nspobs;
 
-    ext.nfcst = 0;
-    ext.nbcst = 0;
-    ext.nfdrp = 0;
-    ext.nofpob = nspobs;
-    ext.nbfpob = nspobs;
-    ptr.pos1bk = ptr.pos1ob;
-    ptr.posffc = ptr.posfob;
+    // xrgdrv.f:134-150 -- zero forecasts/backcasts for the transparent pass, but
+    // only when there are any (Xdsp stays 0: the Ixreg x11regression prior-span
+    // path that moves it is unported, so the classic x11easter route never does).
+    const bool haveext = (nfcst0 > 0 || nbcst0 > 0);
+    if (haveext) {
+        ext.nfcst = 0;
+        ext.nbcst = 0;
+        ext.nfdrp = 0;
+        ext.nofpob = nspobs;
+        ext.nbfpob = nspobs;
+        ptr.pos1bk = ptr.pos1ob;
+        ptr.posffc = ptr.posfob;
+    }
 
     // No x11int here: the arrays were initialized once before this call, and
     // x11int would wipe X11hol/Faccal. x11pt1 re-populates the working buffers
@@ -58,20 +62,27 @@ static void x11_easter_prepass(X13Context& ctx) {
     if (!ctx.error.lfatal) x11pt3(ctx, false, /*lttc=*/false);
     if (ctx.error.lfatal) return;
 
+    // xrgdrv.f:168-178 -- restore the extension + X-11 pointers BEFORE holday, so
+    // the Easter span covers the full extended range (Pos1bk..Posfob+Nfcst) and
+    // backcast factors start at Pos1bk, not Pos1ob. Verbatim oracle formulas.
+    if (haveext) {
+        ext.nfcst = nfcst0;
+        ext.nbcst = nbcst0;
+        ext.nfdrp = nfcst0;
+        ext.nofpob = nspobs + nfcst0;
+        ext.nbfpob = nspobs + nfcst0 + nbcst0;
+        ptr.pos1bk = ptr.pos1ob - nbcst0;
+        ptr.posffc = ptr.posfob + nfcst0;
+    }
+
     // Begbak = Begspn shifted back Nbcst periods (editor.f:207) -- holidy uses
     // its year to index the Easter-date table. Not persisted in ctx, so derive
     // it here (mirrors the x11pt3 LOM-prior begbak recompute).
     addate(ctx.mdldat.begspn.data(), ctx.x11opt.ny, -nbcst0,
            ctx.extend.begbak.data());
-    holday(ctx, ctx.x11srs.sti.data(), /*iforc=*/0, /*xdsp=*/0);
+    // xrgdrv.f:184 passes the restored Nfcst as Iforc; Xdsp stays 0 (no x11reg).
+    holday(ctx, ctx.x11srs.sti.data(), /*iforc=*/nfcst0, /*xdsp=*/0);
 
-    ext.nfcst = nfcst0;
-    ext.nbcst = nbcst0;
-    ext.nfdrp = nfdrp0;
-    ext.nofpob = nofpob0;
-    ext.nbfpob = nbfpob0;
-    ptr.pos1bk = pos1bk0;
-    ptr.posffc = posffc0;
     // restor.f (Lx11=T): reset only Lter/Ktcopt/Tic (+ model params). Ksdev/
     // Lterm/Nterm are deliberately NOT reset -- the oracle's main pass reuses
     // whatever the transparent pass left them, so matching that is required.
@@ -203,11 +214,65 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // with no user-mean irregular regression enables the classic X-11 Easter
     // adjustment -- Khol=1, Lgenx=T. Monthly only.
     if (ctx.x11opt.keastr >= 1 && !ctx.xrgum.haveum) {
+        // editor.f:1920-1969 -- validate the classic X-11 Easter request; any
+        // failure aborts (Readok=F). Quarterly, auto-transform, non-mult mode,
+        // conflicting regARIMA/irregular-reg Easter, and pre-1901 start all fatal.
+        bool ok = true;
         if (ctx.model.sp == 4) {
             writln(ctx,
                    "ERROR: Cannot calculate X-11 holiday adjustment for a "
                    "quarterly series.",
                    ctx.units.mt2, stdio::STDERR, true);
+            ok = false;
+        }
+        if (ctx.arima.fcntyp == 0) {
+            writln(ctx,
+                   "ERROR: An X-11 holiday adjustment cannot be performed when "
+                   "the automatic transformation selection option is chosen.",
+                   ctx.units.mt2, stdio::STDERR, true);
+            ok = false;
+        } else if (ctx.x11opt.muladd > 0) {
+            writln(ctx,
+                   "ERROR: An X-11 holiday adjustment cannot be performed unless "
+                   "the multiplicative seasonal adjustment option is chosen.",
+                   ctx.units.mt2, stdio::STDERR, true);
+            ok = false;
+        }
+        // editor.f:1940-1952 -- regARIMA model-based Easter (Easter/StatCanEaster/
+        // StockEaster group) cannot coexist with X-11 Easter.
+        if (ctx.x11adj.adjhol == 1) {
+            const model_cmn& m = ctx.model;
+            int rhol = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                              "Easter");
+            if (rhol == 0)
+                rhol = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                              "StatCanEaster");
+            if (rhol == 0)
+                rhol = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                              "StockEaster");
+            if (rhol > 0) {
+                writln(ctx,
+                       "ERROR: X-11 and regARIMA model-based Easter adjustment "
+                       "cannot be specified in the same run.",
+                       ctx.units.mt2, stdio::STDERR, true);
+                ok = false;
+            }
+        }
+        // editor.f:1954-1960 -- irregular-component regression Easter conflict.
+        if (ctx.x11reg.easgrp > 0 && ctx.x11log.axrghl) {
+            writln(ctx,
+                   "ERROR: X-11 and irregular component regression-based Easter "
+                   "adjustment cannot be specified in the same run.",
+                   ctx.units.mt2, stdio::STDERR, true);
+            ok = false;
+        }
+        // editor.f:1961-1968 -- Easter date table starts in 1901.
+        if (ctx.mdldat.begspn(1) < 1901) {
+            writln(ctx, "ERROR: No X-11 holiday effect before 1901.",
+                   ctx.units.mt2, stdio::STDERR, true);
+            ok = false;
+        }
+        if (!ok) {
             ctx.error.lfatal = true;
             return false;
         }
