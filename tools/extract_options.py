@@ -24,16 +24,23 @@ import sys
 
 # reader stem -> the spec{} block it parses (Reference Manual ch.7).
 READER_SPEC = {
-    "getadj": "series.adjust", "getchk": "check", "getcmp": "composite",
+    "getadj": "transform", "getchk": "check", "getcmp": "composite",
     "getfrc": "force", "getid": "identify", "getreg": "regression",
     "getsrs": "series", "getssp": "slidingspans", "gtarma": "arima",
     "gtauto": "automdl", "gtautx": "x11.automdl", "gtestm": "estimate",
     "gtfcst": "forecast", "gtotlr": "outlier", "gtrvst": "history",
     "gtseat": "seats", "gtspec": "spectrum", "gtxreg": "x11regression",
+    "getx11": "x11", "gtmtdt": "metadata",
 }
 
-# get*.f readers NOT using the ARGDIC+argptr pattern (extracted elsewhere or
-# TODO): getx11 (x11), transform, pickmdl, metadata.
+# Readers whose dictionary/pointer are not named ARGDIC/argptr.
+DICT_OVERRIDE = {
+    "getx11": ("X11DIC", "x11ptr"),
+    "gtmtdt": ("MDTDIC", "mdtptr"),
+}
+
+# pickmdl (gtmdfl) parses its handful of args inline with no ARGDIC dictionary,
+# so it is not machine-extractable here -- tracked manually.
 
 
 def _reassemble_quoted(text: str, start_idx: int) -> str:
@@ -66,16 +73,16 @@ def _reassemble_quoted(text: str, start_idx: int) -> str:
     return "".join(out)
 
 
-def extract_argdic(src: str) -> str | None:
-    m = re.search(r"ARGDIC\s*=\s*'", src)
+def extract_argdic(src: str, dic: str = "ARGDIC") -> str | None:
+    m = re.search(re.escape(dic) + r"\s*=\s*'", src)
     if not m:
         return None
     return _reassemble_quoted(src, m.start())
 
 
-def extract_argptr(src: str) -> list[int] | None:
-    # DATA argptr/1,5,10,.../  (may wrap across continuation lines)
-    m = re.search(r"DATA\s+argptr\s*/", src, re.IGNORECASE)
+def extract_argptr(src: str, ptr: str = "argptr") -> list[int] | None:
+    # DATA <ptr>/1,5,10,.../  (may wrap across continuation lines)
+    m = re.search(r"DATA\s+" + re.escape(ptr) + r"\s*/", src, re.IGNORECASE)
     if not m:
         return None
     tail = src[m.end():]
@@ -109,8 +116,9 @@ def main() -> int:
             print(f"  [miss] {stem}.f not found", file=sys.stderr)
             continue
         src = open(path, encoding="utf-8", errors="replace").read()
-        argdic = extract_argdic(src)
-        argptr = extract_argptr(src)
+        dic, ptr = DICT_OVERRIDE.get(stem, ("ARGDIC", "argptr"))
+        argdic = extract_argdic(src, dic)
+        argptr = extract_argptr(src, ptr)
         if not argdic or not argptr:
             print(f"  [skip] {stem}: no ARGDIC/argptr", file=sys.stderr)
             continue
@@ -155,13 +163,13 @@ def _args_by_block(txt: str) -> dict[str, set[str]]:
 
 # spec key in the matrix -> the .spc block name that carries its args.
 SPEC_BLOCK = {
-    "series": "series", "series.adjust": "transform", "arima": "arima",
+    "series": "series", "transform": "transform", "arima": "arima",
     "automdl": "automdl", "check": "check", "composite": "composite",
     "estimate": "estimate", "force": "force", "forecast": "forecast",
     "history": "history", "identify": "identify", "outlier": "outlier",
     "regression": "regression", "seats": "seats", "slidingspans": "slidingspans",
     "spectrum": "spectrum", "x11regression": "x11regression",
-    "x11.automdl": "x11",
+    "x11.automdl": "x11", "x11": "x11", "metadata": "metadata",
 }
 
 

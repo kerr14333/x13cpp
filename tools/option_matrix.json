@@ -1,5 +1,5 @@
 {
-  "series.adjust": {
+  "transform": {
     "reader": "getadj",
     "args": [
       "data",
@@ -158,6 +158,36 @@
       "fixx11reg"
     ]
   },
+  "x11": {
+    "reader": "getx11",
+    "args": [
+      "mode",
+      "sigmalim",
+      "seasonalma",
+      "trendma",
+      "title",
+      "extremeadj",
+      "type",
+      "appendfcst",
+      "trendic",
+      "calendarsigma",
+      "sigmavec",
+      "x11easter",
+      "taper",
+      "keepholiday",
+      "final",
+      "sfshort",
+      "print",
+      "save",
+      "savelog",
+      "print1stpass",
+      "excludefcst",
+      "true7term",
+      "shrink",
+      "centerseasonal",
+      "appendbcst"
+    ]
+  },
   "arima": {
     "reader": "gtarma",
     "args": [
@@ -243,6 +273,13 @@
       "save",
       "maxback",
       "lognormal"
+    ]
+  },
+  "metadata": {
+    "reader": "gtmtdt",
+    "args": [
+      "keys",
+      "values"
     ]
   },
   "outlier": {
