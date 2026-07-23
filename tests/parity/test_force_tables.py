@@ -113,7 +113,8 @@ CASES = _discover()
 def test_force_table(base: str, tag: str) -> None:
     txt = _spec_text(base)
     if re.search(r"target\s*=\s*(calendaradj|permprioradj|both)", txt):
-        pytest.xfail("x11pt3 force non-original target (Iftrgt>0) not ported")
+        pytest.xfail("x11pt3 force non-original target (Iftrgt>0): blocked on the "
+                     "TD+force ~2.4e-3 floor, not the target selection")
 
     goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
     if not os.path.exists(goldpath):

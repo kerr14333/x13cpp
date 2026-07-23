@@ -924,10 +924,11 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         const int lstfrc = frc.lfctfr ? posffc : posfob;  // last obs to force
         // Target (stbase): only Iftrgt==0 (target=original) is ported. The
         // calendaradj/permprioradj/both targets (x11pt3.f:717-721 -> Stocal /
-        // Stopp) are transcribed but stay walled: force interacts with a prior
-        // adjustment (Priadj>1) through a still-unported path (the LOM-prior
-        // force case fails at ~2.5e-3 even for target=original), so there is no
-        // clean Stocal!=Series gate yet.
+        // Stopp) stay walled: any calendar target needs a TD/holiday/prior effect,
+        // and force-with-TD hits a pre-existing ~2.4e-3 floor (the Stci-before-
+        // force / TD-forecast interaction) that is independent of the target
+        // selection -- target=original+TD fails identically, so there is no clean
+        // Iftrgt>0 gate until that floor is closed.
         if (frc.iftrgt != 0) {
             x11_not_ported(ctx, "x11pt3 force non-original target (Iftrgt>0)");
             return;
