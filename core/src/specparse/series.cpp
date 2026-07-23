@@ -17,8 +17,10 @@ constexpr int YR = 0, MO = 1;   // 0-based date components
 
 // dpeq: Fortran near-equality against DNOTST sentinel.
 inline bool is_dnotst(double v) { return v == prm::DNOTST; }
+}  // namespace
 
 // gtfldt.f free-format path: read whitespace-separated reals from Datfil.
+// Exposed (getreg.f user= file= also loads a free-format regressor matrix).
 void gtfldt_free(X13Context& ctx, int plen, const std::string& datfil, int ndfl,
                  double* y, int& nobs, bool& hvfreq, int& freq, bool hvstrt,
                  bool& argok, bool& inptok) {
@@ -53,7 +55,6 @@ void gtfldt_free(X13Context& ctx, int plen, const std::string& datfil, int ndfl,
     }
     inptok = inptok && argok;
 }
-} // namespace
 
 // getsrs.f
 void getsrs(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr, bool ldata,

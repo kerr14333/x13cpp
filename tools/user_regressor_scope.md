@@ -1,13 +1,20 @@
 # User-defined regressor port map (`user=` / `data=` — regvar case 140)
 
-**STATUS 2026-07-22: default + `usertype=` + `centeruser=` DONE + bit-exact.**
-4 gate specs, all green in test_m3_estimate (nreg=2, nefobs=143, loglik/aic +
+**STATUS 2026-07-22: default + `usertype=` + `centeruser=` + `file=` DONE.**
+5 gate specs, all green in test_m3_estimate (nreg=2, nefobs=143, loglik/aic +
 MA coef match oracle .udg):
 - `airline_user-reg.spc` (2 cols, default PRGTUD).
 - `airline_user-reg-type.spc` (`usertype=(td seasonal)` → 2 groups).
 - `airline_user-reg-cmean.spc` (`centeruser=mean`).
 - `airline_user-reg-cseas.spc` (`centeruser=seasonal`).
-Full parity 607 pass / 0 fail / 18 xfail. NOT yet committed.
+- `airline_user-reg-file.spc` (`file=../data/userreg2.dat`, free-format).
+Full parity 609 pass / 0 fail / 18 xfail. `user-reg{,-type,-cmean,-cseas}`
+COMMITTED 6f15082; `-file` + the file=/format= wiring NOT yet committed.
+
+`file=` (arg 5) → gtnmvc→rgfile; `format=` (arg 6) → rgfmt (formatted path
+DEFERRED, inpter). Tail (getreg.f:558-567): hvfile && !haveux → gtfldt_free
+reads the free-format matrix into ctx.arima.userx. Exposed gtfldt_free (was
+anon-namespace in series.cpp; decl in specparse.hpp).
 
 `usertype=` parse (arg 13): gtdcvc(URGDIC) → usrtyp per column; broadcast when
 one type; havtd/havln/havlp/havhol set. Tail dispatches each usrtyp to the right

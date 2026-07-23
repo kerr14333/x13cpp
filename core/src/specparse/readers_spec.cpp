@@ -238,7 +238,10 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     // ctx.usrreg; the X matrix lands in ctx.arima.userx; ctx.arima.bgusrx holds
     // its start date. Only the default (untyped -> PRGTUD) path is built here.
     bool hvuttl = false, haveux = false, hvstrt = false;
-    int neltux = 0, nusrrg = 0;
+    bool hvfile = false, havfmt = false;
+    int neltux = 0, nusrrg = 0, nflchr = 0, nfmtch = 0;
+    std::string rgfile(static_cast<std::size_t>(stdio::PFILCR), ' ');
+    std::string rgfmt(static_cast<std::size_t>(stdio::PFILCR), ' ');
     std::string usrttl(static_cast<std::size_t>(prm::PUREG * prm::PCOLCR), ' ');
     // usertype dictionary (getreg.f:90). 16 entries.
     static const char URGDIC[] =
@@ -271,12 +274,40 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
             if (ctx.error.lfatal) return;
             hvuttl = argok && ctx.usrreg.ncusrx > 0;
         } else if (argidx == 3) {    // data -- the X matrix (getreg.f:175)
+            if (hvfile)
+                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                       "Getting data from a file");
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             bool argok = true;
             gtdpvc(ctx, LPAREN, true, prm::PUSERX, ctx.arima.userx.data(),
                    neltux, argok, inptok);
             if (ctx.error.lfatal) return;
             haveux = argok && neltux > 0;
+        } else if (argidx == 5) {    // file -- read X matrix from a file (getreg.f:189)
+            if (haveux)
+                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                       "Already have user regression");
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int nelt = 0; int tmpptr[2];
+            gtnmvc(ctx, LPAREN, true, 1, rgfile, tmpptr, nelt, stdio::PFILCR,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                eltlen(ctx, 1, tmpptr, nelt, nflchr);
+                if (ctx.error.lfatal) return;
+                hvfile = true;
+            }
+        } else if (argidx == 6) {    // format (getreg.f:203)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int nelt = 0; int tmpptr[2];
+            gtnmvc(ctx, LPAREN, true, 1, rgfmt, tmpptr, nelt, stdio::PFILCR,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok) {
+                eltlen(ctx, 1, tmpptr, nelt, nfmtch);
+                if (ctx.error.lfatal) return;
+                havfmt = true;
+            }
         } else if (argidx == 4) {    // start -- X matrix begin date (getreg.f:182)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             bool argok = true; int nelt = 0;
@@ -333,6 +364,26 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
             if (argidx == 10) ctx.captured.aictest_vars = tmp;
         }
     }
+
+    // getreg.f:558-567 -- if data comes from a file, load it now.
+    if (hvfile && !haveux) {
+        if (ctx.usrreg.ncusrx > 0) {
+            if (havfmt) {
+                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                       "formatted user-regressor files (format=) are not yet "
+                       "supported; use free-format data.");
+                inptok = false;
+            } else {
+                bool hvfreq = false; int freq = 0; bool argok = true;
+                gtfldt_free(ctx, prm::PUSERX, rgfile, nflchr,
+                            ctx.arima.userx.data(), neltux, hvfreq, freq, hvstrt,
+                            argok, inptok);
+                if (ctx.error.lfatal) return;
+                haveux = argok && neltux > 0;
+            }
+        }
+    }
+    (void)nfmtch;
 
     // getreg.f:571-736 tail -- attach the user-defined regressor groups.
     ctx.usrreg.usrttl = usrttl;   // persist the packed column names.
