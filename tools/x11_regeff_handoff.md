@@ -91,21 +91,21 @@ reduced-rmfix aictest re-estimation wasn't the oracle's full nloop). `expgs`
 and `payems` (the non-default-model series) ALSO reach bit-exact (worst
 ~8e-10 and ~8e-9). Un-xfailed all three in `test_x11_tables.py`.
 
-**`unrate` still xfailed** -- not a control-flow gap, a regARIMA-estimation
-edge case: the DEFAULT (0,1,1)(0,1,1) model's own seasonal-MA `armats` t-stat
-comes out ~62 (a boundary/near-unit-root signature) where the oracle's
-equivalent is presumably small, which flips tstmd1's `i1dfm+i2dfm==0`
-early-return check (automd.f:396) from "leave the identified (0,1,1) model
-untouched" to "enter the insignificant-lag-drop loop", which then correctly
-(per a faithful tstmd1 port) drops the regular MA term, landing on (0,1,0)
-instead of the golden's (0,1,1) (`arimamdl: (0 1 1)` per the golden .udg, MA1
-estimate -0.0369 se 0.03589 t~1.03 -- insignificant by BOTH the 1.8 and 1.96
-thresholds, yet the oracle keeps it, meaning its own tstmd1 call took the
-early-return path instead). The default-model rgarma/armafl call that produces
-this t-stat is pre-existing code (unchanged by this session), so this is a
-regARIMA-engine precision/boundary-case investigation, not an automd.cpp
-control-flow fix. d10 worst 5.5, d13 worst 8.9 (O(1) drift, not a tolerance
-miss) confirm the model itself diverged, not a downstream decomposition bug.
+**`unrate` -- CLOSED (commit e2191ad), and the earlier diagnosis above was
+WRONG.** The estimates are NOT the issue: an instrumented debug oracle (built
+in scratch, pristine tree untouched) proved the DEFAULT (0,1,1)(0,1,1) fit is
+bit-identical to the oracle (seasonal MA 0.96898, se 0.01555, t~62). The real
+cause is control flow: `tstmd1 is never called` by the oracle for unrate. At
+automd.f:118 `lidotl = ltstao|ltstls|ltsttc`; when off, automd.f:174-177 flips
+it on via the DEFAULT `Lotmod` (gtinpt.f:238) with `Critvl(AO)=BIGCV`. So at
+label 40 the oracle runs the `amidot` branch (idotlr with an impossible AO
+threshold -> finds nothing) INSTEAD of tstmd1. Our port hard-assumed Lidotl=F
+and ran tstmd1, whose insignificant-lag loop faithfully drops unrate's regular
+MA (|t|=1.03<1.8) -> (0 1 0) vs the golden (0 1 1). expgs/payems survived only
+because their tstmd1 doesn't reduce order. Fix: compute lidotl + the Lotmod
+branch at automd entry, add an `amidot()` wrapper over the already-ported
+idotlr, route label-40 to amidot when lidotl. All four aictest-x11 goldens have
+outlier.total=0, so BIGCV changes nothing except suppressing the erroneous drop.
 
 Gate after landing: `432 passed, 9 skipped, 36 xfailed` (was 417/9/51), 8/8
 unit, m4 aictest/iddiff/trnaic gates unchanged (32/32) -- do_aictest stays
