@@ -651,10 +651,13 @@ void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
                         if (ctx.error.lfatal) return;
                     }
                     if (L.nxtktp == SLASH) {
-                        not_ported(ctx,
-                                   "change-of-regime length-of-month regressors "
-                                   "(adrgim.f)");
-                        return;
+                        // adpdrg.f:708-712: change-of-regime length-of-month.
+                        adrgim(ctx, begsrs, nobs, havesp, "Length-of-Month",
+                               prm::PRRTLM, prm::PRATLM, zeroz,
+                               /*delreg=*/!P.fullln, P.lrgmln,
+                               /*fullef=*/P.fullln, locok, inptok);
+                        if (ctx.error.lfatal) return;
+                        P.lnzero = zeroz;
                     }
                 } else {
                     if (!P.fullln) {
@@ -663,10 +666,13 @@ void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
                         if (ctx.error.lfatal) return;
                     }
                     if (L.nxtktp == SLASH) {
-                        not_ported(ctx,
-                                   "change-of-regime length-of-quarter regressors "
-                                   "(adrgim.f)");
-                        return;
+                        // adpdrg.f:717-721: change-of-regime length-of-quarter.
+                        adrgim(ctx, begsrs, nobs, havesp, "Length-of-Quarter",
+                               prm::PRRTLQ, prm::PRATLQ, zeroz,
+                               /*delreg=*/!P.fullln, P.lrgmln,
+                               /*fullef=*/P.fullln, locok, inptok);
+                        if (ctx.error.lfatal) return;
+                        P.lnzero = zeroz;
                     }
                 }
                 if (zeroz == 0) P.fullln = true;
@@ -695,10 +701,13 @@ void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
                     if (ctx.error.lfatal) return;
                     if (regidx == 8) {
                         if (L.nxtktp == SLASH) {
-                            not_ported(ctx,
-                                       "change-of-regime leap year regressors "
-                                       "(adrgim.f)");
-                            return;
+                            // adpdrg.f:747-751: change-of-regime leap year.
+                            adrgim(ctx, begsrs, nobs, havesp, "Leap Year",
+                                   prm::PRRTLY, prm::PRATLY, zeroz,
+                                   /*delreg=*/!P.fulllp, P.lrgmln,
+                                   /*fullef=*/P.fulllp, locok, inptok);
+                            if (ctx.error.lfatal) return;
+                            P.lnzero = zeroz;
                         }
                         if (zeroz == 0) P.fulllp = true;
                     }

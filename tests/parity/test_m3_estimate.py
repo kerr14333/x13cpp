@@ -109,10 +109,11 @@ def _estimation_reproducible(spc: str) -> bool:
         return False
     m = re.search(r"variables\s*=\s*\(([^)]*)\)", txt)
     if m and "/" in m.group(1):
-        # change-of-regime (regressor/date split). SEASONAL and TRADING-DAY
-        # regime are ported (adrgim.f seasonal + td paths); lom/lq/ly/stock
-        # regime stay unported.
-        if not re.fullmatch(r"(seasonal|td)\s*/.*", m.group(1).strip()):
+        # change-of-regime (regressor/date split). seasonal/td/lom/loq/lpyear
+        # regime are ported (adrgim.f); stock (lomstock/tdstock) regime and
+        # user-defined regime stay unported.
+        if not re.fullmatch(r"(seasonal|td|lom|loq|lpyear)\s*/.*",
+                            m.group(1).strip()):
             return False
     # Fixed coefficients (ar/ma/b = (...f)) -- a separate, unit-tested branch.
     if re.search(r"\d\s*f[\s,)]", txt):
