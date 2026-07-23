@@ -40,7 +40,8 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const bool lrvtrn = rev.lrvtrn;
     const bool lrvch = rev.lrvch;                  // sadjchng (chr/che)
     const bool lrvsf = rev.lrvsf;                  // seasonal (sfr/sfe)
-    if (!(lrvsa || lrvtrn || lrvch || lrvsf))
+    const bool lrvtch = rev.lrvtch;                // trendchng (tcr/tce)
+    if (!(lrvsa || lrvtrn || lrvch || lrvsf || lrvtch))
         return true;                               // nothing this driver emits
 
     const int ny = ctx.model.sp;
@@ -90,6 +91,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const int nspan = endrev - begrev + 1;         // includes the final full span
     std::vector<double> cncsa(nspan + 1, 0.0), cnctrn(nspan + 1, 0.0);
     std::vector<double> cncch(nspan + 1, 0.0);     // concurrent SA % change (putrev)
+    std::vector<double> cnctch(nspan + 1, 0.0);    // concurrent trend % change (putrev)
     std::vector<double> cncsf(nspan + 1, 0.0);     // concurrent seasonal factor (x100)
     std::vector<double> projsf(revnum + 1, 0.0);   // projected SF, by output revptr
     const double sfsc = (ctx.x11opt.muladd != 1) ? 100.0 : 1.0;  // putrev Itype=0
@@ -122,6 +124,11 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
                 cncch[revptr] = ((a - b) / b) * 100.0;  // Muladd!=1 -> percent change
             }
             if (lrvsf) cncsf[revptr] = ctx.x11srs.sts(posfob) * sfsc;
+            if (lrvtch) {                          // putrev Outch on this span's Stc
+                const double a = ctx.x11srs.stc(posfob);
+                const double b = ctx.x11srs.stc(posfob - 1);
+                cnctch[revptr] = ((a - b) / b) * 100.0;
+            }
         }
         // getrev Itype=0: at a year-boundary span (Posfob a multiple of Ny =
         // December for this Jan-start series) store the Ny projected factors
@@ -142,6 +149,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // final estimate at the revision date Begrev+revptr-1 (getrev.f:118-124).
     std::vector<double> finsa(revnum + 1, 0.0), fintrn(revnum + 1, 0.0);
     std::vector<double> finch(revnum + 1, 0.0), finsf(revnum + 1, 0.0);
+    std::vector<double> fintch(revnum + 1, 0.0);
     for (int revptr = 1; revptr <= revnum; ++revptr) {
         const int pos = begrev + revptr - 1;
         finsa[revptr] = ctx.x11srs.stci(pos);
@@ -152,6 +160,11 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             finch[revptr] = ((a - b) / b) * 100.0;
         }
         if (lrvsf) finsf[revptr] = ctx.x11srs.sts(pos) * sfsc;
+        if (lrvtch) {                              // final trend change from full-data Stc
+            const double a = ctx.x11srs.stc(pos);
+            const double b = ctx.x11srs.stc(pos - 1);
+            fintch[revptr] = ((a - b) / b) * 100.0;
+        }
     }
 
     // --- prtrev.f: revision arithmetic ----------------------------------------
@@ -163,6 +176,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     out.have_tr = lrvtrn;
     out.have_ch = lrvch;
     out.have_sf = lrvsf;
+    out.have_tch = lrvtch;
     out.nsea = ny;
     out.revspn[0] = rvstrt[0];
     out.revspn[1] = rvstrt[1];
@@ -207,6 +221,12 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.sfe_fin.push_back(fin);
             out.sfr_cnc.push_back(rc);
             out.sfr_proj.push_back(rp);
+        }
+        if (lrvtch) {                              // trend-change table (Tbltyp=5, Rvper=F)
+            const double cnc = cnctch[revptr], fin = fintch[revptr];
+            out.tce_cnc.push_back(cnc);
+            out.tce_fin.push_back(fin);
+            out.tcr.push_back(fin - cnc);
         }
     }
     return true;

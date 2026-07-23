@@ -46,6 +46,7 @@ DATA = "../data"  # shared corpus data lives in the sibling data/ directory
 # outlier  : oit outlieriterations, fts finaltests.
 # history  : sar saRevisions, sae saEstimates, chr chngRevisions,
 #            che chngEstimates, trr trendRevisions, tre trendEstimates,
+#            tcr trendChngRevisions, tce trendChngEstimates,
 #            sfr sfRevisions, sfe sfEstimates (tb2DIC).
 # sspans   : sfs sfSpans, ads saSpans, chs chngSpans (tb3DIC).
 # x11reg   : xrm xregressionMatrix, b16/c16 x11reg trading-day factors (tb2DIC).
@@ -72,7 +73,8 @@ SAVE = {
     "identify": ["acf", "pacf", "iac", "ipc"],
     "check": ["acf", "pcf", "ac2"],
     "outlier": ["oit", "fts"],
-    "history": ["sar", "sae", "chr", "che", "trr", "tre", "sfr", "sfe"],
+    "history": ["sar", "sae", "chr", "che", "trr", "tre", "tcr", "tce",
+                "sfr", "sfe"],
     "sspans": ["sfs", "ads", "chs"],
     "x11reg": ["xrm", "b16", "c16"],
     "force": ["saa", "ffc", "rnd"],
@@ -219,11 +221,12 @@ def spec_history():
         estimate_block(),
         x11_block(),
         block("history",
-              ["estimates = (sadj sadjchng seasonal trend)", "start = 1955.jan"],
+              ["estimates = (sadj sadjchng seasonal trend trendchng)",
+               "start = 1955.jan"],
               save_key="history", print_all=True, savelog=True),
     ]
     return "airline_history.spc", assemble(
-        "history{} sadj+sadjchng+seasonal+trend revisions, modest span from 1955",
+        "history{} sadj+sadjchng+seasonal+trend+trendchng revisions, span from 1955",
         blocks)
 
 

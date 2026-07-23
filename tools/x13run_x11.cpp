@@ -268,6 +268,11 @@ int main(int argc, char** argv) {
                 std::printf("sfe %06d %.15E %.15E %.15E\n", ho.dates[r],
                             ho.sfe_cnc[r], ho.sfe_proj[r], ho.sfe_fin[r]);
             }
+            if (ho.have_tch) {
+                std::printf("tcr %06d %.15E\n", ho.dates[r], ho.tcr[r]);
+                std::printf("tce %06d %.15E %.15E\n", ho.dates[r],
+                            ho.tce_cnc[r], ho.tce_fin[r]);
+            }
         }
     }
     return 0;

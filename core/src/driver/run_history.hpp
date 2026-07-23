@@ -21,9 +21,12 @@
 //     Muladd!=1). setrvp.f's Beglup: with Lrvsf the loop starts a year earlier,
 //     at the December before Rvstrt, so the first table year's projections run.
 //     Fixper (fixed-period model estimation) shifting Beglup is out of scope.
-//     Changes-in-trend (Lrvtch) / AICC (Lrvaic) / forecast (Lrvfct) / ARMA-coeff
-//     / TD-coeff histories are out of scope. The additive-mode negative-value
-//     ceasing branch of putrev (Muladd==1) is also out of scope (mult spec).
+//   * trendchng (Lrvtch: tcr/tce) -- the month-to-month trend %-change history,
+//     the chr/che pattern on Stc (Itype=2): conc/final = (Stc(i)-Stc(i-1))/
+//     Stc(i-1)*100, revision = Final - Conc (Tbltyp=5 forces Rvper=F).
+//     AICC (Lrvaic) / forecast (Lrvfct) / ARMA-coeff / TD-coeff histories are
+//     out of scope. The additive-mode negative-value ceasing branch of putrev
+//     (Muladd==1) is also out of scope (this spec is multiplicative).
 //   * No revision targets (Ntarsa==Ntartr==0 -> only the Fin(0,.) concurrent-
 //     vs-final column), no regression{}/outlier{}/x11regression{}, model
 //     re-estimated each span (Revfix=F -- restor_span resets Arimap to the main
@@ -48,6 +51,7 @@ struct HistoryOutput {
     bool have_tr = false;
     bool have_ch = false;            // sadjchng requested (chr/che)
     bool have_sf = false;            // seasonal requested (sfr/sfe)
+    bool have_tch = false;           // trendchng requested (tcr/tce)
     int nsea = 0;
     int revspn[2] = {0, 0};          // Rvstrt (first revision date)
     std::vector<int> dates;          // YYYYMM per row
@@ -71,6 +75,11 @@ struct HistoryOutput {
     std::vector<double> sfe_fin;     // Final_SF
     std::vector<double> sfr_cnc;     // SF revision vs concurrent
     std::vector<double> sfr_proj;    // SF revision vs projected
+    // trendchng: month-to-month trend %-change (putrev Outch on Stc, Itype=2).
+    // tcr = Final - Conc (Tbltyp=5 -> Rvper=F, plain difference), tce the two levels.
+    std::vector<double> tcr;         // trend-change revision
+    std::vector<double> tce_cnc;     // Conc_TRND_change
+    std::vector<double> tce_fin;     // Final_TRND_change
 };
 
 // Run the revisions-history analysis. No-op (returns true, leaves

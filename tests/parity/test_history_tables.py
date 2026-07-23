@@ -14,12 +14,14 @@ the full-data span. Four save tables land per revision date:
 
   * chr -- SA month-to-month %-change revision, (Final_chng - Conc_chng)
   * che -- concurrent + final SA %-change (Conc_chng, Final_chng)
+  * tcr -- trend month-to-month %-change revision, (Final_chng - Conc_chng)
+  * tce -- concurrent + final trend %-change (Conc_chng, Final_chng)
   * sfr -- seasonal-factor revision, two columns (Final-Conc, Final-Proj)
   * sfe -- concurrent + projected + final seasonal factor (Conc/Proj/Final_SF)
 
-Trend changes (tcr/tce), AICC (r07), forecast (r08) and ARMA/TD-coefficient
-histories are out of scope (no goldens ship for this spec); see
-core/src/driver/run_history.hpp for the full scope note.
+AICC (r07), forecast (r08) and ARMA/TD-coefficient histories are out of scope
+(no goldens ship for this spec); see core/src/driver/run_history.hpp for the
+full scope note.
 
 STATUS: GATED at the estimation floor. Each span re-estimates the regARIMA
 model (Revfix=F -- no fixmdl), so the concurrent/final *levels* (sae/tre) agree
@@ -66,6 +68,7 @@ ATOL_REV = 5e-3
 _TABLES = [("sae", 2, "level"), ("tre", 2, "level"),
            ("sar", 1, "rev"), ("trr", 1, "rev"),
            ("chr", 1, "rev"), ("che", 2, "rev"),
+           ("tcr", 1, "rev"), ("tce", 2, "rev"),
            ("sfr", 2, "rev"), ("sfe", 3, "level")]
 _CORE_TAGS = ["sar", "sae", "trr", "tre"]
 
