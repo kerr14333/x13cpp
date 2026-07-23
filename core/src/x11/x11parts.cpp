@@ -727,8 +727,21 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // The regARIMA-seasonal combine is skipped in the pseudo-additive case
     // (x11pt3.f:272 .and.(.not.Psuadd)).
     if ((adj.adjsea == 1 || adj.adjso == 1) && !psuadd) {
-        x11_not_ported(ctx, "x11pt3 regARIMA-seasonal combine (Adjsea/Adjso)");
-        return;
+        // x11pt3.f:272-281: combine the regARIMA seasonal (Facsea) and seasonal-
+        // outlier (Facso) factors into the final X-11 seasonal Sts (D10). D11/Stci
+        // was already formed from the X-11-only Sts above; this fold makes D10 the
+        // TOTAL seasonal. The stsx11 snapshot feeds only the deferred A18/LXEARS
+        // table (output), so it is skipped.
+        if (adj.adjsea == 1)
+            addmul(sts, ctx.x11fac.facsea.data(), sts, pos1bk, posffc, muladd);
+        if (adj.adjso == 1)
+            addmul(sts, ctx.x11fac.facso.data(), sts, pos1bk, posffc, muladd);
+        if (ctx.x11msc.lcentr) {
+            // vsfc centering of the combined seasonal (x11pt3.f:280) -- deferred:
+            // no gated spec sets seasonalcentering, so keep it walled for now.
+            x11_not_ported(ctx, "x11pt3 combined-seasonal centering (Lcentr)");
+            return;
+        }
     }
     if (opt.ishrnk > 0) {
         // x11pt3.f:283-287: shrink the final seasonal factors (Miller &
