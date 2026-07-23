@@ -16,6 +16,7 @@
 #include "regarima/forecast.hpp"
 #include "regarima/outlier.hpp"     // idotlr, setcv
 #include "automdl/automd.hpp"       // automd (automatic model selection)
+#include "automdl/aictst.hpp"       // explicit_aictest (arima.f:569 aictest)
 #include "numeric/numeric.hpp"      // dpeq
 #include "gen/srslen.hpp"           // prm::PLEN (residual work-vector sizing)
 #include "gen/model.hpp"            // prm::PORDER
@@ -280,6 +281,16 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 // non-aictest automdl path automd does not modify trnsrs, so this
                 // is a no-op there.
                 if (out_trnsrs) *out_trnsrs = trnsrs;
+            } else if (ctx.arima.itdtst > 0 || ctx.arima.lomtst > 0 ||
+                       ctx.arima.leastr ||
+                       (ctx.arima.luser && ctx.usrreg.ncusrx > 0)) {
+                // Explicit-model AIC regressor test (arima.f:569-700). The td/
+                // lom/easter AIC tests estimate the model internally (with and
+                // without the regressor), keeping the lower-AICC form, so this
+                // REPLACES the plain rgarma. user/chi-square branches deferred.
+                explicit_aictest(ctx, trnsrs.data(), a.data(), nefobs, na, frstry);
+                if (ctx.error.lfatal) return false;
+                (void)na;
             } else {
                 rgarma(ctx, ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
                        /*lprtit=*/false, a.data(), na, nefobs, lauto);

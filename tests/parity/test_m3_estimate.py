@@ -99,7 +99,10 @@ def _estimation_reproducible(spc: str) -> bool:
     flat = txt.replace(" ", "")
     if "arima{" not in flat or "model=" not in flat:
         return False
-    for bad in ("automdl", "pickmdl", "function=auto", "aictest",
+    # NB: aictest is reproducible for EXPLICIT models (arima{} present) via the
+    # ported explicit-model aictest path; automdl+aictest stays excluded by the
+    # "automdl" token below.
+    for bad in ("automdl", "pickmdl", "function=auto",
                 "tdstock", "tcrate",
                 "x11regression{", "composite{"):
         if bad in flat:

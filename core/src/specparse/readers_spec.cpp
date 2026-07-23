@@ -363,7 +363,31 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
             if (ctx.error.lfatal) return;
             if (argidx == 9)
                 for (const auto& t : tmp) ctx.captured.save_tables.push_back(t);
-            if (argidx == 10) ctx.captured.aictest_vars = tmp;
+            if (argidx == 10) {
+                ctx.captured.aictest_vars = tmp;
+                // getreg.f:240-277: map each aictest token to its test flag so the
+                // explicit-model aictest path (arima.f:569) can run. The automd
+                // path reads aictest_vars directly and is unaffected.
+                for (const auto& t0 : tmp) {
+                    std::string s;
+                    for (char c : t0)
+                        s += static_cast<char>(
+                            std::tolower(static_cast<unsigned char>(c)));
+                    if (s == "td") ctx.arima.itdtst = 1;
+                    else if (s == "tdnolpyear") ctx.arima.itdtst = 2;
+                    else if (s == "tdstock") ctx.arima.itdtst = 3;
+                    else if (s == "td1coef") ctx.arima.itdtst = 4;
+                    else if (s == "td1nolpyear") ctx.arima.itdtst = 5;
+                    else if (s == "tdstock1coef") ctx.arima.itdtst = 6;
+                    else if (s == "easter") { ctx.arima.leastr = true; ctx.arima.eastst = 1; }
+                    else if (s == "easterstock") { ctx.arima.leastr = true; ctx.arima.eastst = 2; }
+                    else if (s == "user") ctx.arima.luser = true;
+                    else if (s == "lom") ctx.arima.lomtst = 1;
+                    else if (s == "loq") ctx.arima.lomtst = 2;
+                    else if (s == "lpyear") ctx.arima.lomtst = 3;
+                }
+                if (!tmp.empty()) ctx.model.iregfx = 0;  // getreg.f:276
+            }
         }
     }
 

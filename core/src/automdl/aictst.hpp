@@ -63,6 +63,24 @@ void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
 void easaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
             int& frstry, bool& lester);
 
+// lomaic.f: length-of-month / -quarter / leap-year AIC test. Estimates the
+// model with and without the lom/loq/lpyear regressor (per ctx.arima.lomtst =
+// 1/2/3), keeps the lower-AICC choice, stores the gap in ctx.arima.dfaicl.
+// Leaves the model rebuilt to the chosen form. Prints deferred.
+void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
+            int& frstry, bool& lester);
+
+// addlom.f: add a lom/loq/lpyear regressor group (used by lomaic). aicrgm is the
+// change-of-regime date (aicrgm[0]==NOTSET for a plain effect); aicln0 the
+// regime zero indicator; lnindx = 1/2/3 for lom/loq/lpyear.
+void addlom(X13Context& ctx, const int* aicrgm, int aicln0, int sp, int lnindx);
+
+// arima.f:569-700 explicit-model AIC regressor test: when an explicit arima{}
+// model carries aictest=(...), run the td/lom/easter (user/chi deferred) AIC
+// tests in place of the plain rgarma estimate. The aic routines self-estimate.
+void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
+                      int& na, int& frstry);
+
 }  // namespace x13
 
 #endif  // X13_AUTOMDL_AICTST_HPP

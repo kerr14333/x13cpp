@@ -16,6 +16,7 @@
 
 #include "numeric/numeric.hpp"       // dpeq, chsppf
 #include "regarima/estimate.hpp"     // rgarma, prlkhd
+#include "automdl/automd_finalize.hpp"  // ssprep_save, restor_model
 #include "regarima/regvar.hpp"       // regvar, td7var, gtrgpt
 #include "transform/transform.hpp"   // trnfcn
 #include "automdl/iddiff.hpp"        // prterr
@@ -712,6 +713,222 @@ void easaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
             rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
         if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) lester = true;
     }
+}
+
+// ---------------------------------------------------------------------------
+// addlom.f -- add a lom/loq/lpyear regressor group (possibly change-of-regime).
+void addlom(X13Context& ctx, const int* aicrgm, int aicln0, int sp, int lnindx) {
+    using namespace prm;
+    std::string datstr;
+    if (aicrgm[0] != NOTSET) {
+        datstr = wrtdat(aicrgm, sp);
+        if (ctx.error.lfatal) return;
+    }
+    if (lnindx == 0) return;
+    std::string base;
+    int varln, varln1, varln2;
+    if (lnindx == 1) { base = "Length-of-Month";   varln = PRGTLM; varln1 = PRRTLM; varln2 = PRATLM; }
+    else if (lnindx == 2) { base = "Length-of-Quarter"; varln = PRGTLQ; varln1 = PRRTLQ; varln2 = PRATLQ; }
+    else { base = "Leap Year"; varln = PRGTLY; varln1 = PRRTLY; varln2 = PRATLY; }
+    if (aicln0 == 0) {
+        std::string gt = base;
+        if (aicrgm[0] != NOTSET) gt = base + " (after " + datstr + ")";
+        adrgef(ctx, DNOTST, base, gt, varln, false, false);
+        if (ctx.error.lfatal) return;
+    }
+    if (aicrgm[0] != NOTSET) {
+        if (aicln0 >= 0) {
+            std::string gt = (aicln0 == 0)
+                ? base + " (change for before " + datstr + ")"
+                : base + " (before " + datstr + ")";
+            adrgef(ctx, DNOTST, base + " I", gt, varln1, false, false);
+        } else {
+            std::string gt = base + " (starting " + datstr + ")";
+            adrgef(ctx, DNOTST, base + " II", gt, varln2, false, false);
+        }
+        if (ctx.error.lfatal) return;
+    }
+}
+
+// find the lom/loq/lpyear GROUP by title (lomaic.f:49-55).
+static int find_lom_group(model_cmn& m, int lomtst) {
+    const char* t = (lomtst == 1) ? "Length-of-Month"
+                  : (lomtst == 2) ? "Length-of-Quarter" : "Leap Year";
+    return strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl, t);
+}
+
+// remove every Length-of-* / Leap Year column (lomaic.f:124-133 / 236-247).
+static void remove_lom_cols(X13Context& ctx, int nrxy) {
+    auto& m = ctx.model;
+    while (true) {
+        int ilom = strinx(true, m.colttl.raw(), m.colptr.data(), 1, m.ncoltl,
+                          "Length-of-");
+        if (ilom == 0)
+            ilom = strinx(true, m.colttl.raw(), m.colptr.data(), 1, m.ncoltl,
+                          "Leap Year");
+        if (ilom <= 0) break;
+        dlrgef(ctx, ilom, nrxy, 1);
+        if (ctx.error.lfatal) return;
+    }
+}
+
+// lomaic.f -- length-of-month/-quarter/leap-year AIC test. Estimates the model
+// with and without the regressor, keeps the lower-AICC form (Rgaicd(PLAIC) gap).
+void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
+            int& frstry, bool& lester) {
+    using namespace prm;
+    auto& m = ctx.model; auto& d = ctx.mdldat; auto& ar = ctx.arima;
+    auto& pr = ctx.prior; auto& aj = ctx.adj; auto& ext = ctx.extend;
+
+    bool argok = ar.lautom || ar.lautox;
+    auto reest = [&]() {
+        regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0, ar.userx.data(),
+               ar.bgusrx.data(), ar.nrusrx, pr.priadj, ar.reglom, ar.nrxy,
+               ar.begxy.data(), frstry, true, ar.elong);
+        if (ctx.error.lfatal) return;
+        argok = ar.lautom || ar.lautox;
+        rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) abend(ctx);
+    };
+    auto est_err = [&]() {
+        int e = d.armaer;
+        return e == PMXIER || e == PSNGER || e == PISNER || e == PNIFER ||
+               e == PNIMER || e == PCNTER || e == POBFN0 || e < 0 ||
+               ((ar.lautom || ar.lautox) && !argok);
+    };
+
+    int klm = find_lom_group(m, ar.lomtst);
+    bool lreest = false;
+
+    // Estimate the model as given, take its AICC.
+    reest();
+    if (ctx.error.lfatal) return;
+    if (est_err()) { lester = true; return; }
+    if (d.armaer != 0) d.armaer = 0;
+    prlkhd(ctx, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), aj.adjmod, ar.fcntyp, ar.lam);
+    if (ctx.error.lfatal) return;
+    double aiclom = DNOTST, aicnol = DNOTST;
+    if (klm > 0) aiclom = ctx.lkhd.aicc; else aicnol = ctx.lkhd.aicc;
+
+    // Toggle the regressor: add it if absent, else remove it.
+    if (klm == 0) {
+        int aicrgm[2] = {NOTSET, NOTSET};
+        addlom(ctx, aicrgm, 0, m.sp, ar.lomtst);
+        if (ctx.error.lfatal) return;
+        klm = find_lom_group(m, ar.lomtst);
+    } else {
+        remove_lom_cols(ctx, ar.nrxy);
+        if (ctx.error.lfatal) return;
+        klm = 0;
+    }
+
+    // Re-estimate and take the other AICC.
+    reest();
+    if (ctx.error.lfatal) return;
+    if (est_err()) { lester = true; return; }
+    if (d.armaer != 0) d.armaer = 0;
+    prlkhd(ctx, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), aj.adjmod, ar.fcntyp, ar.lam);
+    if (ctx.error.lfatal) return;
+    if (klm > 0) aiclom = ctx.lkhd.aicc; else aicnol = ctx.lkhd.aicc;
+
+    // Keep whichever AICC is lower (lomaic.f:186-263). Pvaic path deferred.
+    ar.dfaicl = aicnol - aiclom;
+    if (ar.dfaicl > ar.rgaicd(PLAIC)) {
+        if (klm == 0) {   // prefer WITH lom but it is currently removed
+            restor_model(ctx);
+            regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0,
+                   ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, pr.priadj,
+                   ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+            if (ctx.error.lfatal) return;
+            lreest = true;
+        }
+    } else {
+        if (klm > 0) {    // prefer WITHOUT lom but it is currently present
+            remove_lom_cols(ctx, ar.nrxy);
+            if (ctx.error.lfatal) return;
+            lreest = true;
+        }
+    }
+
+    if (lreest) {
+        regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0, ar.userx.data(),
+               ar.bgusrx.data(), ar.nrusrx, pr.priadj, ar.reglom, ar.nrxy,
+               ar.begxy.data(), frstry, true, ar.elong);
+        if (!ctx.error.lfatal)
+            rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+        if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) lester = true;
+    }
+}
+
+// arima.f:569-700 -- explicit-model AIC regressor test. Runs the td/lom/easter
+// AIC tests (user/chi deferred) in place of the plain rgarma when an explicit
+// arima{} model carries aictest=(...). Setup mirrors automd's block-1.
+void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
+                      int& na, int& frstry) {
+    using namespace prm;
+    auto& m = ctx.model; auto& ar = ctx.arima;
+
+    // aictest defaults the automatic-model path installs (automd.cpp:73-76).
+    ar.pvaic = DNOTST;
+    for (int k = 1; k <= PAICT; ++k) ar.rgaicd(k) = 0.0;
+    ar.traicd = DNOTST;
+
+    // Prior-adjustment span the AIC tests' leap-year preadjust needs
+    // (automd.cpp:60-71). Nbcst==0 for these specs.
+    const int nbcst = ctx.extend.nbcst < 0 ? 0 : ctx.extend.nbcst;
+    addate(ctx.mdldat.begspn.data(), m.sp, -nbcst, ctx.adj.begadj.data());
+    const int nfc = ctx.extend.nfcst < 0 ? 0 : ctx.extend.nfcst;
+    const int tail = m.sp > (nfc - ar.fctdrp) ? m.sp : (nfc - ar.fctdrp);
+    ctx.adj.nadj = ctx.mdldat.nspobs + nbcst + tail;
+    int a1st = 0;
+    dfdate(ctx.mdldat.begspn.data(), ctx.adj.begadj.data(), m.sp, a1st);
+    ctx.adj.adj1st = a1st + 1;
+
+    // Back up the initial ARMA coefficients into Ap1 (editor.f:921-925). tdaic
+    // seeds each candidate's arimap from Ap1; leaving it 0 (not DNOTST) would
+    // suppress rgarma's PNT1 default and start the candidates from ARMA=0,
+    // perturbing the optimizer trajectory (niter/nfev).
+    if (m.nopr > 0) {
+        int endlag = m.opr(m.nopr) - 1;
+        for (int ilag = 1; ilag <= endlag; ++ilag)
+            if (!m.arimaf(ilag)) m.ap1(ilag) = ctx.mdldat.arimap(ilag);
+    }
+
+    // Save the entry model so lomaic's restor branch has a valid target.
+    ssprep_save(ctx);
+
+    bool lester = false;
+    if (ar.itdtst > 0) {
+        // editor.f:1151-1166: aictest=td candidates Tdayvc=(0,1,4).
+        ar.ntdvec = 3;
+        ar.tdayvc(1) = 0; ar.tdayvc(2) = 1; ar.tdayvc(3) = 4;
+        int tdmdl1 = 0;
+        tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, false, lester);
+        if (ctx.error.lfatal) return;
+        ssprep_save(ctx);   // arima.f:599
+    }
+    if (!lester && ar.lomtst > 0) {
+        lomaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        if (ctx.error.lfatal) return;
+        ssprep_save(ctx);   // arima.f:619
+    }
+    if (!lester && ar.leastr) {
+        // editor.f:1410-1442: aictest=easter candidates Easvec=(-1,1,8,15).
+        if (ar.eastst == 0) ar.eastst = 1;
+        ar.neasvc = 4;
+        ar.easvec(1) = -1; ar.easvec(2) = 1; ar.easvec(3) = 8; ar.easvec(4) = 15;
+        ctx.x11adj.neas = 0;
+        if (!ctx.x11adj.finhol) ctx.x11adj.finhol = true;
+        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        if (ctx.error.lfatal) return;
+    }
+    // usraic (user) + chkchi (chi-square holiday) deferred.
+
+    // arima.f:697-700: turn off the AIC-test options for the rest of the run.
+    ar.itdtst = 0;
+    ar.leastr = false;
+    ar.luser = false;
+    ar.ch2tst = false;
 }
 
 }  // namespace x13
