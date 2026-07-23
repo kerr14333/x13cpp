@@ -441,8 +441,22 @@ void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
                 }
             }
             if (L.nxtktp == SLASH) {
-                not_ported(ctx, "change-of-regime seasonal regressors (adrgim.f)");
-                return;
+                // adpdrg.f:500-513: change-of-regime seasonal effects.
+                adrgim(ctx, begsrs, nobs, havesp, "Seasonal", prm::PRRTSE,
+                       prm::PRATSE, zeroz, /*delreg=*/!M.lseff, M.lrgmse,
+                       /*fullef=*/M.lseff, locok, inptok);
+                if (ctx.error.lfatal) return;
+                if (zeroz == 0 && (M.lseff || M.lseadf || M.lidsdf)) {
+                    if (M.lidsdf)
+                        inpter(ctx, PERROR, L.lstpos.data() + 1,
+                               "Already have a seasonal difference in the "
+                               "identify spec.");
+                    else
+                        inpter(ctx, PERROR, L.lstpos.data() + 1,
+                               "Already have seasonal effects or seasonal "
+                               "difference.");
+                    locok = false;
+                }
             }
         }
         if (locok && zeroz == 0) M.lseff = true;

@@ -119,6 +119,18 @@ void insstr(X13Context& ctx, std::string_view str, int istr, int pstr,
 void delstr(X13Context& ctx, int istr, char* chrvec, int* ptrvec, int& nstr,
             int nlim);
 
+// getdat.f: parse a date token (year[.period]) into idate[2]. argok=false when
+// the current token is not a date. Exposed for the change-of-regime parser.
+void getdat(X13Context& ctx, bool& havesp, int& sp, int* idate, bool& argok,
+            bool& inptok);
+
+// adrgim.f / gtrgdt.f: add change-of-regime regression variables. gtrgdt reads
+// the /date/ tokens (setting zeroz); adrgim builds the regime analogs of the
+// full-effect group Grptxt and renames the surviving full-effect group.
+void adrgim(X13Context& ctx, const int* begsrs, int nobs, bool havesp,
+            std::string_view grptxt, int vartyp, int vrtyp2, int& zeroz,
+            bool delreg, bool& lregim, bool fullef, bool& locok, bool& inptok);
+
 // copy.f / copylg.f: same-index vector copies with Inc controlling direction
 // (overlap-safe shifts). Pointers are to the Fortran 1-position (vec[0]==V(1)).
 void copy(const double* invec, int n, int inc, double* outvec);

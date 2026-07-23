@@ -29,6 +29,12 @@ void not_ported(X13Context& ctx, const std::string& what) {
            stdio::STDERR, ctx.units.mt2, true);
     abend(ctx);
 }
+
+// Fortran INDEX(str, pat): 1-based position of the first occurrence, 0 if none.
+int idxof(std::string_view str, std::string_view pat) {
+    std::size_t p = str.find(pat);
+    return p == std::string_view::npos ? 0 : static_cast<int>(p) + 1;
+}
 }  // namespace
 
 void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
@@ -118,6 +124,39 @@ void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
             140, 140, 140, 120, 120, 140, 140, 140, 140, 140,
             140, 140, 140, 140, 140};
         int lab = (rtype2 >= 1 && rtype2 <= 65) ? label[rtype2] : 0;
+
+        // Change-of-regime (regvar.f:332-364): recover the regime date from the
+        // group title, build the begrgm mask, then remap to the base builder so
+        // the shared case handlers below produce the regime columns.
+        if (lab == 150 || lab == 155) {
+            std::string_view gv =
+                std::string_view(igrptl).substr(0, static_cast<std::size_t>(nchr));
+            int idtpos;
+            int rgzero;
+            if (lab == 150) {
+                idtpos = idxof(gv, "(before ") + 8;
+                if (idtpos == 8) idtpos = idxof(gv, "(change for before ") + 19;
+                rgzero = 1;
+            } else {
+                idtpos = idxof(gv, "(starting ") + 10;
+                if (idtpos == 10) idtpos = idxof(gv, "(change for after ") + 18;
+                rgzero = -1;
+            }
+            int regmdt[2] = {0, 0};
+            bool lok = true;
+            ctodat(std::string_view(igrptl).substr(0, static_cast<std::size_t>(nchr - 1)),
+                   M.sp, idtpos, regmdt, lok);
+            gtrgpt(ctx, begxy, regmdt, rgzero, begrgm, nrxy);
+            // Remap rtype2 to the base-effect builder label.
+            static const int bl[9] = {0, 20, 30, 40, 50, 50, 60, 70, 80};
+            const int base0 = (lab == 150) ? PRRTSE : PRATSE;
+            if (rtype2 == PRR1TD || rtype2 == PRA1TD) lab = 40;
+            else if (rtype2 == PRR1ST || rtype2 == PRA1ST) lab = 70;
+            else {
+                int bi = rtype2 - base0 + 1;
+                lab = (bi >= 1 && bi <= 8) ? bl[bi] : 0;
+            }
+        }
 
         switch (lab) {
         case 10: {
@@ -216,7 +255,9 @@ void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
             return;
         case 150:
         case 155:
-            not_ported(ctx, "change-of-regime regressors (gtrgpt dispatch)");
+            // Remapped to a base builder above; reaching here means an
+            // unhandled regime base type.
+            not_ported(ctx, "change-of-regime base type " + std::to_string(rtype2));
             return;
         default:
             not_ported(ctx, "regression variable type " + std::to_string(rtype2));

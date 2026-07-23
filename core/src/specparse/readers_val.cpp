@@ -255,7 +255,7 @@ void ctodat(std::string_view str, int sp, int& ipos, int* idate, bool& locok) {
 }
 
 // getdat.f
-static void getdat(X13Context& ctx, bool& havesp, int& sp, int* idate, bool& argok, bool& inptok) {
+void getdat(X13Context& ctx, bool& havesp, int& sp, int* idate, bool& argok, bool& inptok) {
     LexState& L = ctx.lex;
     argok = true;
     int ipos = 1;
