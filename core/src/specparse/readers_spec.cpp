@@ -306,6 +306,54 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
             }
             continue;
         }
+        if (argidx == 6) {
+            // extremeadj -> Imad (getx11.f:325-333). sdxtrm honours Imad
+            // (std=0 wmad=1 wmadlog=2 tau=3 taulog=4).
+            static const char OTLDIC[] = "stdwmadwmadlogtautaulog";
+            static const int otlptr[6] = {1, 4, 8, 15, 18, 24};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, OTLDIC, otlptr, 5,
+                   "Improper X-11 outlier option: valid choices for extremeadj "
+                   "are", ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.x11opt.imad = ivec[0] - 1;
+            continue;
+        }
+        if (argidx == 9) {
+            // trendic -> Tic (I/C ratio; getx11.f:366-375). vtc honours Tic.
+            double dvec[1] = {prm::DNOTST};
+            int nelt = 0;
+            bool argok = true;
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] <= 0.0) {
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "Specified I/C ratio must be greater than zero.");
+                    inptok = false;
+                } else {
+                    ctx.x11opt.tic = dvec[0];
+                }
+            }
+            continue;
+        }
+        if (argidx == 10) {
+            // calendarsigma -> Ksdev (getx11.f:381-385). xtrm honours Ksdev
+            // (none=1 signif=2 all=3 select=4).
+            static const char BNDDIC[] = "nonesignifallselect";
+            static const int bndptr[5] = {1, 5, 11, 14, 20};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, BNDDIC, bndptr, 4,
+                   "Available options for calendarsigma are none, signif, all "
+                   "or select.", ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.xtrm.ksdev = ivec[0];
+            continue;
+        }
         std::vector<std::string> cap;
         consume_value(ctx, argidx == 1 ? &cap : nullptr);   // 1 = mode
         if (ctx.error.lfatal) return;
