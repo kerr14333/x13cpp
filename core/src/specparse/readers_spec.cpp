@@ -234,6 +234,23 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     int arglog[2 * PARG];
     for (auto& v : arglog) v = -32767;
     bool havhol = false, havln = false, havlp = false;
+    // User-defined regressor parse state (getreg.f). usrttl/usrptr feed
+    // ctx.usrreg; the X matrix lands in ctx.arima.userx; ctx.arima.bgusrx holds
+    // its start date. Only the default (untyped -> PRGTUD) path is built here.
+    bool hvuttl = false, haveux = false, hvstrt = false;
+    int neltux = 0, nusrrg = 0;
+    std::string usrttl(static_cast<std::size_t>(prm::PUREG * prm::PCOLCR), ' ');
+    // usertype dictionary (getreg.f:90). 16 entries.
+    static const char URGDIC[] =
+        "constantseasonaltdlomloqlpyearholidayholiday2holiday3holiday4"
+        "holiday5aolssotransitoryuser";
+    static const int urgptr[17] = {1, 9, 17, 19, 22, 25, 31, 38, 46, 54, 62,
+        70, 72, 74, 76, 86, 90};
+    constexpr int PURG = 16;
+    // centeruser dictionary (getreg.f:103).
+    static const char URRDIC[] = "meanseasonal";
+    static const int urrptr[3] = {1, 5, 13};
+    bool lumean = false, luseas = false;
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
@@ -245,6 +262,66 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                    ctx.arima.nobs, havsrs, havesp, false, havtd, havhol, havln,
                    havlp, locok, inptok);
             if (ctx.error.lfatal) return;
+        } else if (argidx == 2) {    // user -- names/# columns (getreg.f:165)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            gtnmvc(ctx, LPAREN, true, prm::PUREG, usrttl,
+                   ctx.usrreg.usrptr.data(), ctx.usrreg.ncusrx, prm::PCOLCR,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            hvuttl = argok && ctx.usrreg.ncusrx > 0;
+        } else if (argidx == 3) {    // data -- the X matrix (getreg.f:175)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            gtdpvc(ctx, LPAREN, true, prm::PUSERX, ctx.arima.userx.data(),
+                   neltux, argok, inptok);
+            if (ctx.error.lfatal) return;
+            haveux = argok && neltux > 0;
+        } else if (argidx == 4) {    // start -- X matrix begin date (getreg.f:182)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int nelt = 0;
+            gtdtvc(ctx, havesp, ctx.model.sp, LPAREN, false, 1,
+                   ctx.arima.bgusrx.data(), nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            hvstrt = argok && nelt > 0;
+        } else if (argidx == 13) {   // usertype (getreg.f:321)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            int urgidx[prm::PUREG];
+            gtdcvc(ctx, LPAREN, false, prm::PUREG, URGDIC, urgptr, PURG,
+                   "Improper entry for usertype.", urgidx, nusrrg, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nusrrg > 0) {
+                for (int i = 1; i <= nusrrg; ++i) {
+                    int u = urgidx[i - 1];
+                    int& ut = ctx.usrreg.usrtyp(i);
+                    if (u == 1) ut = prm::PRGUCN;
+                    else if (u == 2) ut = prm::PRGTUS;
+                    else if (u == 3) { ut = prm::PRGUTD; havtd = true; }
+                    else if (u == 4) { ut = prm::PRGULM; havln = true; }
+                    else if (u == 5) { ut = prm::PRGULQ; havln = true; }
+                    else if (u == 6) { ut = prm::PRGULY; havlp = true; }
+                    else if (u >= 7 && u <= 11) {
+                        ut = (u == 7) ? prm::PRGTUH : prm::PRGUH2 + (u - 8);
+                        havhol = true;
+                    } else if (u == 12) ut = prm::PRGUAO;
+                    else if (u == 13) ut = prm::PRGULS;
+                    else if (u == 14) ut = prm::PRGUSO;
+                    else if (u == 15) ut = prm::PRGUCY;
+                    else ut = prm::PRGTUD;   // 16/user or unset
+                }
+            }
+        } else if (argidx == 17) {   // centeruser (getreg.f:376)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int ivec[1]; int nelt = 0;
+            gtdcvc(ctx, LPAREN, false, 1, URRDIC, urrptr, 2,
+                   "Choices for centeruser are mean and seasonal.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                lumean = ivec[0] == 1;
+                luseas = ivec[0] == 2;
+            }
         } else {
             std::vector<std::string>* cap = nullptr;
             std::vector<std::string> tmp;
@@ -254,6 +331,110 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
             if (argidx == 9)
                 for (const auto& t : tmp) ctx.captured.save_tables.push_back(t);
             if (argidx == 10) ctx.captured.aictest_vars = tmp;
+        }
+    }
+
+    // getreg.f:571-736 tail -- attach the user-defined regressor groups.
+    ctx.usrreg.usrttl = usrttl;   // persist the packed column names.
+    if (hvuttl || haveux) {
+        const int* ep = ctx.lex.errpos.data() + 1;
+        const int ncusrx = ctx.usrreg.ncusrx;
+        if (hvuttl != haveux) {
+            inpter(ctx, PERROR, ep,
+                   "Need to specify both user-defined regression variables (with "
+                   "user argument) and X matrix (with file or data argument).");
+            inptok = false;
+        } else if (ncusrx > 0 && (neltux % ncusrx) != 0) {
+            inpter(ctx, PERROR, ep,
+                   "Number of user-defined X elements not equal to a multiple of "
+                   "the number of columns.");
+            inptok = false;
+        } else {
+            if (!hvstrt) {
+                ctx.arima.bgusrx(1) = ctx.arima.begsrs(1);
+                ctx.arima.bgusrx(2) = ctx.arima.begsrs(2);
+            }
+            ctx.arima.nrusrx = neltux / ncusrx;
+            // getreg.f:581-585 -- one usertype broadcasts to every column.
+            if (nusrrg == 1)
+                for (int i = 2; i <= ncusrx; ++i)
+                    ctx.usrreg.usrtyp(i) = ctx.usrreg.usrtyp(1);
+            if (!chkcvr(ctx.arima.bgusrx.data(), ctx.arima.nrusrx,
+                        ctx.mdldat.begspn.data(), ctx.mdldat.nspobs, ctx.model.sp)) {
+                inpter(ctx, PERROR, ep,
+                       "user-defined regression variables do not cover the span "
+                       "of the data.");
+                inptok = false;
+            } else {
+                for (int i = 1; i <= ncusrx; ++i) {
+                    std::string effttl; int nchr = 0;
+                    getstr(ctx, ctx.usrreg.usrttl.data(),
+                           ctx.usrreg.usrptr.data(), ncusrx, i, effttl, nchr);
+                    if (ctx.error.lfatal) return;
+                    std::string_view et = std::string_view(effttl).substr(
+                        0, static_cast<std::size_t>(nchr));
+                    // getreg.f:631-685 -- title/type per column's usrtyp.
+                    const int ut = ctx.usrreg.usrtyp(i);
+                    const char* gt = nullptr; int vt = 0;
+                    switch (ut) {
+                    case prm::PRGTUS: gt = "User-defined Seasonal";     vt = prm::PRGTUS; break;
+                    case prm::PRGUCN: gt = "User-defined Constant";     vt = prm::PRGUCN; break;
+                    case prm::PRGUTD: gt = "User-defined Trading Day";  vt = prm::PRGUTD; break;
+                    case prm::PRGULM: gt = "User-defined LOM";          vt = prm::PRGULM; break;
+                    case prm::PRGULQ: gt = "User-defined LOQ";          vt = prm::PRGULQ; break;
+                    case prm::PRGULY: gt = "User-defined Leap Year";    vt = prm::PRGULY; break;
+                    case prm::PRGUAO: gt = "User-defined AO";           vt = prm::PRGUAO; break;
+                    case prm::PRGULS: gt = "User-defined LS";           vt = prm::PRGULS; break;
+                    case prm::PRGUSO: gt = "User-defined SO";           vt = prm::PRGUSO; break;
+                    case prm::PRGUCY: gt = "User-defined Transitory";   vt = prm::PRGUCY; break;
+                    case 0:
+                    case prm::PRGTUD: gt = "User-defined";              vt = prm::PRGTUD; break;
+                    default:  // holiday groups need chkuhg (unported)
+                        inpter(ctx, PERROR, ep,
+                               "user-defined holiday regressors (usertype=holiday) "
+                               "are not yet supported.");
+                        inptok = false;
+                        return;
+                    }
+                    adrgef(ctx, 0.0, et, gt, vt, false, true);
+                    if (ctx.error.lfatal) return;
+                }
+                // getreg.f:692-732 -- remove regressor or seasonal mean.
+                double* ux = ctx.arima.userx.data();
+                if (lumean) {
+                    std::vector<double> urmean(static_cast<std::size_t>(ncusrx), 0.0);
+                    for (int i = 1; i <= neltux; ++i) {
+                        int i2 = i % ncusrx; if (i2 == 0) i2 = ncusrx;
+                        urmean[i2 - 1] += ux[i - 1];
+                    }
+                    for (int c = 0; c < ncusrx; ++c)
+                        urmean[c] /= static_cast<double>(ctx.arima.nrusrx);
+                    for (int i = 1; i <= neltux; ++i) {
+                        int i2 = i % ncusrx; if (i2 == 0) i2 = ncusrx;
+                        ux[i - 1] -= urmean[i2 - 1];
+                    }
+                } else if (luseas) {
+                    const int sp = ctx.model.sp;
+                    const int n2 = sp * ncusrx;
+                    for (int i = 1; i <= sp; ++i) {
+                        std::vector<double> urmean(static_cast<std::size_t>(ncusrx), 0.0);
+                        std::vector<double> urnum(static_cast<std::size_t>(ncusrx), 0.0);
+                        int i2 = (i - 1) * ncusrx + 1;
+                        for (int j = i2; j <= neltux; j += n2)
+                            for (int k = j; k <= ncusrx + j - 1; ++k) {
+                                int k2 = k % ncusrx; if (k2 == 0) k2 = ncusrx;
+                                urmean[k2 - 1] += ux[k - 1];
+                                urnum[k2 - 1] += 1.0;
+                            }
+                        for (int c = 0; c < ncusrx; ++c) urmean[c] /= urnum[c];
+                        for (int j = i2; j <= neltux; j += n2)
+                            for (int k = j; k <= ncusrx + j - 1; ++k) {
+                                int k2 = k % ncusrx; if (k2 == 0) k2 = ncusrx;
+                                ux[k - 1] -= urmean[k2 - 1];
+                            }
+                    }
+                }
+            }
         }
     }
 }

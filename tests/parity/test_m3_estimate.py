@@ -100,7 +100,7 @@ def _estimation_reproducible(spc: str) -> bool:
     if "arima{" not in flat or "model=" not in flat:
         return False
     for bad in ("automdl", "pickmdl", "function=auto", "aictest",
-                "tdstock", "user=", "usertype", "tcrate",
+                "tdstock", "tcrate",
                 "x11regression{", "composite{"):
         if bad in flat:
             return False

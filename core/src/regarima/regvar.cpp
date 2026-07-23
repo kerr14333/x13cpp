@@ -42,9 +42,6 @@ void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
             int priadj, int reglom, int& nrxy, int* begxy, int& frstry,
             bool xmeans, bool elong) {
     using namespace prm;
-    (void)userx;
-    (void)bgusrx;
-    (void)nrusrx;
     constexpr double ONE = 1.0;
     constexpr double ZERO = 0.0;
     constexpr int PLOM = 2, PLOQ = 3;
@@ -59,7 +56,6 @@ void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
     double emean[PSP];
 
     bool lckurg = true;
-    (void)lckurg;
     addate(D.begspn.data(), M.sp, -nbcst, begxy);
     nrxy = D.nspobs + nbcst + std::max(0, nfcst - fctdrp);
 
@@ -250,9 +246,65 @@ void regvar(X13Context& ctx, const double* y, int nobpf, int fctdrp, int nfcst,
             addotl(ctx, begxy, nrxy, nbcst, begcol, endcol);
             if (ctx.error.lfatal) return;
             break;   // GO TO 160
-        case 140:
-            not_ported(ctx, "user-defined regressors");
-            return;
+        case 140: {
+            // User-defined regressors (regvar.f:260-327): copy the stored X
+            // columns whose usrtyp matches this group's type into Xy.
+            constexpr int PUTY = 15;
+            static const char UTYDIC[] =
+                "User-defined SeasonalUser-defined HolidayUser-defined Holiday "
+                "Group 2User-defined Holiday Group 3User-defined Holiday Group 4"
+                "User-defined Holiday Group 5User-defined ConstantUser-defined "
+                "Trading DayUser-defined LOMUser-defined LOQUser-defined Leap "
+                "YearUser-defined AOUser-defined LSUser-defined SOUser-defined "
+                "Transitory";
+            static const int utyptr[PUTY + 1] = {1, 22, 42, 70, 98, 126, 154,
+                175, 199, 215, 231, 253, 268, 283, 298, 321};
+            const int ncusrx = ctx.usrreg.ncusrx;
+            if (lckurg) {
+                if (!chkcvr(bgusrx, nrusrx, D.begspn.data(), D.nspobs, M.sp) ||
+                    !chkcvr(bgusrx, nrusrx, begxy, nrxy, M.sp)) {
+                    errhdr(ctx);
+                    writln(ctx, " user-defined regression variables do not cover "
+                           "the required span", stdio::STDERR, ctx.units.mt2, true);
+                    abend(ctx);
+                    return;
+                }
+                lckurg = false;
+            }
+            int ixymu;
+            dfdate(begxy, bgusrx, M.sp, ixymu);
+            // Determine the user-regressor type from the group title.
+            int typidx = strinx(false, UTYDIC, utyptr, 1, PUTY,
+                                std::string_view(igrptl).substr(
+                                    0, static_cast<std::size_t>(nchr)));
+            int itype = typidx;
+            if (typidx == 1) itype = PRGTUS;
+            else if (typidx >= 2 && typidx <= 6) itype = PRGTUH + typidx - 2;
+            else if (typidx == 7) itype = PRGUCN;
+            else if (typidx == 8) itype = PRGUTD;
+            else if (typidx == 9) itype = PRGULM;
+            else if (typidx == 10) itype = PRGULQ;
+            else if (typidx == 11) itype = PRGULY;
+            else if (typidx == 12) itype = PRGUAO;
+            else if (typidx == 13) itype = PRGULS;
+            else if (typidx == 14) itype = PRGUSO;
+            else if (typidx == 15) itype = PRGUCY;
+            // Copy only the columns whose stored type matches this group.
+            int thisgp = 1;
+            for (int i = 1; i <= ncusrx; ++i) {
+                int ut = ctx.usrreg.usrtyp(i);
+                bool lurspc = (ut >= PRGTUH && ut <= PRGUH5) || ut == PRGTUS ||
+                              (ut >= PRGUTD && ut <= PRGUCY);
+                bool copy = lurspc ? (itype == ut) : (itype == 0);
+                if (copy) {
+                    int itogrp = begcol + thisgp - 1;
+                    copycl(userx + ixymu * ncusrx, nrxy, ncusrx, i, M.ncxy,
+                           itogrp, D.xy.data());
+                    ++thisgp;
+                }
+            }
+            break;
+        }
         case 150:
         case 155:
             // Remapped to a base builder above; reaching here means an
