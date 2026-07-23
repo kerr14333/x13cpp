@@ -339,6 +339,23 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
             }
             continue;
         }
+        if (argidx == 12) {
+            // x11easter -> Keastr (getx11.f:470-474). YSNDIC yes=1/no=2 ->
+            // Keastr=2-ivec (yes=1). The editor step (below, in run_x11) maps
+            // Keastr>=1 to Khol=1 + Lgenx=T so the classic X-11 Easter estimation
+            // runs; a monthly-only feature.
+            static const char YSNDIC[] = "yesno";
+            static const int ysnptr[3] = {1, 4, 6};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for x11easter are yes or no.", ivec, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.x11opt.keastr = 2 - ivec[0];
+            continue;
+        }
         if (argidx == 11) {
             // sigmavec -> Csigvc (getx11.f:390-427). Per-period calendarsigma=
             // select flags. SUMDIC maps a month/quarter name to a 1..28 index;

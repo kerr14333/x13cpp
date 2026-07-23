@@ -194,6 +194,14 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
     // Set Stcsi equal to the prior-adjusted series.
     copy(os.sto.data() + (pos1ob - 1), posfob - pos1ob + 1, -1,
          os.stcsi.data() + (pos1ob - 1));
+
+    // No-model B1 snapshot: when an X-11 Easter prior is present, B1 is the
+    // prior-adjusted Stcsi (not the raw series). x11pt2 overwrites Stcsi during
+    // the C/D passes, so stash it in Stoap (dead after x11pt1 on the no-model
+    // path) for the b1 save-table dump.
+    if (!lmodel && opt.khol > 1)
+        copy(os.stcsi.data() + (pos1ob - 1), posfob - pos1ob + 1, -1,
+             os.stoap.data() + (pos1ob - 1));
 }
 
 // x11pt2.f -- X-11 PARTS B1->D7: the iterated B/C/D moving-average decomposition.
@@ -357,8 +365,12 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // yet built and adjtd==0 (the TD is X-11-regression, not a model factor),
         // so the adjtd fold at :358 is skipped and Faccal passes through until
         // x11mdl_td overwrites it. Holiday (axrghl) is still unported.
+        // Khol>=2 (x11-Easter prior) is NOT fatal here: the Easter factor was
+        // already folded X11hol -> Faccal in Part A, and this block's khol==2
+        // work (Fachol += X11hol at x11pt2.f:309, the Stocal A18 print) feeds
+        // only deferred factor tables (A16/A18), not D10-D13.
         if (adj.adjso == 1 || adj.adjusr == 1 || adj.finusr || adj.adjsea == 1 ||
-            adj.adjcyc == 1 || opt.khol >= 2 || xl.axrghl ||
+            adj.adjcyc == 1 || xl.axrghl ||
             (xl.axrgtd && ctx.hiddn.ixreg != 1)) {
             x11_not_ported(ctx, "x11pt2 user/seasonal/cycle/x11reg factor combine+emit");
             return;

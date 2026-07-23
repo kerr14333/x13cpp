@@ -18,7 +18,8 @@
 #include "x11/x11drv.hpp"     // setxpt, x11int, chkadj, regeff, extend, adjreg
 #include "regarima/regvar.hpp"   // regvar (design rebuild for regression effects)
 #include "notset.hpp"         // prm::NOTSET
-#include "x11/slidingspans.hpp"  // ssprep_snapshot, run_slidingspans
+#include "x11/slidingspans.hpp"  // ssprep_snapshot, restor_span, run_slidingspans
+#include "x11/x11easter.hpp"      // holday (classic X-11 Easter estimation)
 #include "driver/run_history.hpp"  // run_history
 #include "driver/run_spectrum.hpp"  // run_spectrum
 
@@ -26,6 +27,56 @@
 #include <string>
 
 namespace x13 {
+
+// xrgdrv.f (Khol==1 branch): estimate the classic X-11 Easter holiday factor.
+// Runs a preliminary, model-free, no-forecast/backcast transparent X-11
+// decomposition to get the irregular Sti, then holday() fits the Easter effect
+// into X11hol and flips Khol to 2 so the main pass folds it as a prior. The
+// polluted extension/pointer/filter state is restored from the ssprep snapshot
+// (taken just before this call), so the main run starts clean.
+static void x11_easter_prepass(X13Context& ctx) {
+    extend_cmn& ext = ctx.extend;
+    x11ptr_cmn& ptr = ctx.x11ptr;
+    const int nfcst0 = ext.nfcst, nbcst0 = ext.nbcst, nfdrp0 = ext.nfdrp,
+              nofpob0 = ext.nofpob, nbfpob0 = ext.nbfpob;
+    const int pos1bk0 = ptr.pos1bk, posffc0 = ptr.posffc;
+    const int nspobs = ctx.mdldat.nspobs;
+
+    ext.nfcst = 0;
+    ext.nbcst = 0;
+    ext.nfdrp = 0;
+    ext.nofpob = nspobs;
+    ext.nbfpob = nspobs;
+    ptr.pos1bk = ptr.pos1ob;
+    ptr.posffc = ptr.posfob;
+
+    // No x11int here: the arrays were initialized once before this call, and
+    // x11int would wipe X11hol/Faccal. x11pt1 re-populates the working buffers
+    // from Series each pass, so the transparent decomposition is clean.
+    x11pt1(ctx, /*lmodel=*/false, false, false);
+    if (!ctx.error.lfatal) x11pt2(ctx, false, /*lx11=*/true, false, false, false);
+    if (!ctx.error.lfatal) x11pt3(ctx, false, /*lttc=*/false);
+    if (ctx.error.lfatal) return;
+
+    // Begbak = Begspn shifted back Nbcst periods (editor.f:207) -- holidy uses
+    // its year to index the Easter-date table. Not persisted in ctx, so derive
+    // it here (mirrors the x11pt3 LOM-prior begbak recompute).
+    addate(ctx.mdldat.begspn.data(), ctx.x11opt.ny, -nbcst0,
+           ctx.extend.begbak.data());
+    holday(ctx, ctx.x11srs.sti.data(), /*iforc=*/0, /*xdsp=*/0);
+
+    ext.nfcst = nfcst0;
+    ext.nbcst = nbcst0;
+    ext.nfdrp = nfdrp0;
+    ext.nofpob = nofpob0;
+    ext.nbfpob = nbfpob0;
+    ptr.pos1bk = pos1bk0;
+    ptr.posffc = posffc0;
+    // restor.f (Lx11=T): reset only Lter/Ktcopt/Tic (+ model params). Ksdev/
+    // Lterm/Nterm are deliberately NOT reset -- the oracle's main pass reuses
+    // whatever the transparent pass left them, so matching that is required.
+    restor_span(ctx);
+}
 
 bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& base) {
     if (!parse_spec(ctx, spec_text, base)) return false;
@@ -143,9 +194,30 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // when slidingspans{} was not requested.
     ssprep_snapshot(ctx);
 
-    // X-11 array initialization (x11int.f), then the parts spine.
+    // X-11 array initialization (x11int.f) -- once, before both the (optional)
+    // Easter transparent pre-pass and the main spine, so X11hol/Faccal set by
+    // the Easter estimation survive into the main pass's prior fold.
     x11int(ctx);
 
+    // Editor step (editor.f:1909-1920 / gtinpt.f:1239): x11easter=yes (Keastr>=1)
+    // with no user-mean irregular regression enables the classic X-11 Easter
+    // adjustment -- Khol=1, Lgenx=T. Monthly only.
+    if (ctx.x11opt.keastr >= 1 && !ctx.xrgum.haveum) {
+        if (ctx.model.sp == 4) {
+            writln(ctx,
+                   "ERROR: Cannot calculate X-11 holiday adjustment for a "
+                   "quarterly series.",
+                   ctx.units.mt2, stdio::STDERR, true);
+            ctx.error.lfatal = true;
+            return false;
+        }
+        ctx.x11opt.khol = 1;
+        ctx.xeastr.lgenx = true;
+        x11_easter_prepass(ctx);
+        if (ctx.error.lfatal) return false;
+    }
+
+    // (x11int already ran above.) The parts spine follows.
     const bool lmodel = has_model, lgraf = false, lgrfxr = false, lseats = false;
     const bool lx11 = true;
     x11pt1(ctx, lmodel, lgraf, lgrfxr);

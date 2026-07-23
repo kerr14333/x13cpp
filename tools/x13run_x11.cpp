@@ -141,8 +141,14 @@ int main(int argc, char** argv) {
                             ? ctx.x11ptr.pos1bk : pos1ob;
     const int b1_last = (ctx.captured.has_model && ctx.tbllog.savfct)
                             ? ctx.x11ptr.posffc : posfob;
-    dump("b1",  begspn, sp, b1_frst, b1_last,
-         ctx.captured.has_model ? ctx.orisrs.stoap.data() : ctx.inpt.series.data());
+    // B1 source: model path -> the adjreg-adjusted Stoap snapshot; no-model with
+    // an X-11 Easter prior -> the prior-adjusted Stoap snapshot (x11pt1); plain
+    // no-model -> the raw series (== unadjusted B1).
+    const double* b1src =
+        (ctx.captured.has_model || ctx.x11opt.khol > 1)
+            ? ctx.orisrs.stoap.data()
+            : ctx.inpt.series.data();
+    dump("b1",  begspn, sp, b1_frst, b1_last, b1src);
     // d10 seasonal factors are projected across the forecast/backcast span, so
     // they too honour appendfcst/appendbcst (the oracle saves d10 over the same
     // extended range as b1). d11/d12/d13 (SA/trend/irregular of the data) do not.
