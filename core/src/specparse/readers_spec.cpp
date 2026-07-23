@@ -73,15 +73,44 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     int arglog[2 * PARG];
     for (auto& v : arglog) v = -32767;
     int argidx;
+    // getadj.f user prior-adjustment capture (minimal slice: inline data=, ratio
+    // mode, type=permanent). data(1)/start(2)/mode(12)/type(14).
+    std::vector<double> pdata;
+    int pr_type = 0;     // 0 unset; 1 temporary, 2 permanent (TYPDIC order)
+    int pr_mode = 0;     // 0 percent, 1 ratio, 2 diff (Percnt after -1); default percent
+    int pr_start[2] = {prm::NOTSET, prm::NOTSET};
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
         // Capture the value tokens for the args whose state we set here:
-        //   6 = adjust, 8 = power, 9 = function, 11 = save, 17 = aicdiff.
+        //   6 = adjust, 8 = power, 9 = function, 11 = save, 17 = aicdiff,
+        //   1 = data, 2 = start, 12 = mode, 14 = type (user prior adjustment).
         std::vector<std::string> cap;
         bool want = (argidx == 6 || argidx == 8 || argidx == 9 || argidx == 11 ||
-                     argidx == 17);
+                     argidx == 17 || argidx == 1 || argidx == 2 || argidx == 12 ||
+                     argidx == 14);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
+        if (argidx == 1) {                       // data= : inline prior factors
+            for (const auto& t : cap) {
+                try { pdata.push_back(std::stod(t)); } catch (...) {}
+            }
+        } else if (argidx == 2) {                // start= : YYYY.MM
+            if (!cap.empty()) {
+                try {
+                    double d = std::stod(cap[0]);
+                    pr_start[0] = static_cast<int>(d);
+                    pr_start[1] = static_cast<int>((d - pr_start[0]) * 100.0 + 0.5);
+                } catch (...) {}
+            }
+        } else if (argidx == 12 && !cap.empty()) { // mode= percent|ratio|diff
+            if (cap[0] == "percent") pr_mode = 0;
+            else if (cap[0] == "ratio") pr_mode = 1;
+            else if (cap[0] == "diff") pr_mode = 2;
+        } else if (argidx == 14 && !cap.empty()) { // type= temporary|permanent
+            const std::string& t = cap[0];
+            if (t == "temporary" || t == "temp") pr_type = 1;
+            else if (t == "permanent" || t == "perm") pr_type = 2;
+        }
         if (argidx == 6 && !cap.empty()) {
             // getadj.f adjust= mapping (ADJDIC='nonelomloqlpyear'): 1 none, 2 lom,
             // 3 loq, 4 lpyear; then normalize lom/loq to the seasonal period.
@@ -121,6 +150,31 @@ void gt_transform(X13Context& ctx, bool& inptok) {
             try {
                 ctx.arima.traicd = std::stod(cap[0]);
             } catch (...) { /* malformed handled by the Fortran error path */ }
+        }
+    }
+    // getadj.f:442-580 -- store the inline user prior-adjustment factors. Minimal
+    // slice: permanent + ratio/percent mode. Temporary (Usrtad) and diff mode are
+    // not ported yet -> fatal cleanly (a spec that needs them self-skips).
+    if (!pdata.empty()) {
+        if (pr_type == 0) pr_type = 2;   // getadj.f:452 default: permanent
+        if (pr_type == 1 || pr_mode == 2) {
+            inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                   "transform temporary prior / diff mode not yet supported.");
+            inptok = false;
+        } else {
+            const int n = static_cast<int>(pdata.size());
+            double* up = ctx.priadj.usrpad.data();
+            for (int i = 0; i < n; ++i)
+                up[i] = (pr_mode == 0) ? pdata[i] / 100.0 : pdata[i];  // percent->ratio
+            ctx.priusr.nuspad = n;
+            ctx.priusr.npser = 7;   // "PermAdj"
+            if (pr_start[0] != prm::NOTSET) {
+                ctx.priusr.bgupad(1) = pr_start[0];
+                ctx.priusr.bgupad(2) = pr_start[1];
+            } else {                 // getadj.f:143 default = series start (Begsrs)
+                ctx.priusr.bgupad(1) = ctx.arima.begsrs(1);
+                ctx.priusr.bgupad(2) = ctx.arima.begsrs(2);
+            }
         }
     }
 }

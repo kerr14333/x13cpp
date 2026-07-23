@@ -97,8 +97,29 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // reproducible. User prior-factor files and calendar (holiday/TD) priors are
     // out of this pre-model slice.
     int priadj = ctx.prior.priadj;
-    bool has_prior = (priadj > 1);   // 2 lom / 3 loq / 4 lpyear
+    bool has_predef = (priadj > 1);   // 2 lom / 3 loq / 4 lpyear
     bool lom = (priadj == 2 || priadj == 3);   // adjsrs.f: lom for lom/loq
+
+    // User permanent prior-adjustment factors (getadj.f/addadj.f, Usrpad). Minimal
+    // slice: factors aligned 1:1 with the span (Frstad==0). The general addadj span
+    // shift (backcasts / start!=span-start) is deferred -> fatal below.
+    const int nuspad = ctx.priusr.nuspad;
+    const bool has_user = (nuspad > 0);
+    int frstad_u = 0;
+    if (has_user) {
+        int begadj_u[2];
+        addate(begspn, sp, -ctx.extend.nbcst, begadj_u);   // adjsrs.f:39 Begadj
+        dfdate(begadj_u, ctx.priusr.bgupad.data(), sp, frstad_u);  // addadj.f:42
+        if (frstad_u != 0) {
+            errhdr(ctx);
+            writln(ctx, "ERROR: addadj user-prior span shift (Frstad!=0) not yet "
+                        "ported.", stdio::STDERR, ctx.units.mt2, true);
+            abend(ctx);
+            return false;
+        }
+        ctx.priusr.frstap = 1;   // addadj.f:92 Frstad+1
+    }
+    const bool has_prior = has_predef || has_user;
 
     // Forecast-extension bookkeeping (editor.f 224-230). regvar builds
     // regressor rows for the forecast period from the calendar alone, so the
@@ -122,15 +143,18 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     std::vector<double> fac(static_cast<std::size_t>(nobspf), 1.0);
     for (int tpnt = 1; tpnt <= nobspf; ++tpnt) {
         double a1 = aptr[tpnt - 1];
-        if (has_prior) {
+        double f = 1.0;
+        if (has_predef) {
             int idate[2];
             addate(begspn, sp, tpnt - 1, idate);
-            double f = lpfac(idate[0], idate[1], sp, lom);   // td7var factor
-            fac[static_cast<std::size_t>(tpnt - 1)] = f;
-            padj[static_cast<std::size_t>(tpnt - 1)] = a1 / f;   // divsub (mult mode)
-        } else {
-            padj[static_cast<std::size_t>(tpnt - 1)] = a1;
+            f *= lpfac(idate[0], idate[1], sp, lom);   // td7var factor
         }
+        // addadj.f:61-87 -- fold the user permanent factor (ratio mode, Frstad==0)
+        // into the combined prior; positions past the user span keep factor 1.0.
+        if (has_user && (tpnt - 1) < nuspad)
+            f *= ctx.priadj.usrpad(tpnt);
+        fac[static_cast<std::size_t>(tpnt - 1)] = f;
+        padj[static_cast<std::size_t>(tpnt - 1)] = a1 / f;   // divsub (mult mode)
     }
 
     // adjsrs.f also records the prior-factor series in the /adjcmn/ Adj array and

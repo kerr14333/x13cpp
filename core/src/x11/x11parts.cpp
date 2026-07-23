@@ -839,15 +839,26 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         }
     }
     if (pu.nuspad > 0 || pri.priadj > 1) {
-        // x11pt3.f:568-569 rmpadj -- remove the prior adjustment from Stci (D11).
-        // Ported for the predefined-prior case (no user permanent/temporary
-        // prior): rmpadj.f then reduces to Stci /= Sprior (mult) / Stci - Sprior
-        // (add). The Usrpad/Usrtad user-prior branches stay unported.
-        if (pu.nuspad > 0 || pu.nustad > 0) {
-            x11_not_ported(ctx, "x11pt3 rmpadj user permanent/temporary prior");
-            return;
+        // x11pt3.f:569 rmpadj.f -- remove the permanent prior adjustment from Stci
+        // (D11). Three cases: no predefined prior => remove Usrpad; predefined prior
+        // and no temporary user prior => remove Sprior; predefined + temporary user
+        // prior => remove (Sprior -/ Usrtad). Frstap/Frstat+Lsp index the user
+        // arrays to the span start.
+        const int lsp = ctx.lzero.lsp;
+        const double* sprior = ctx.inpt.sprior.data();
+        for (int i = pos1bk; i <= posffc; ++i) {
+            double d;
+            if (pri.priadj <= 1) {
+                d = ctx.priadj.usrpad(pu.frstap + i - pos1bk + lsp - 1);
+            } else if (pu.nustad == 0) {
+                d = sprior[i - 1];
+            } else {
+                const double t = ctx.priadj.usrtad(pu.frstat + i - pos1bk + lsp - 1);
+                d = (muladd == 1) ? sprior[i - 1] - t : sprior[i - 1] / t;
+            }
+            if (muladd == 1) stci[i - 1] -= d;
+            else stci[i - 1] /= d;
         }
-        divsub(stci, stci, ctx.inpt.sprior.data(), pos1bk, posffc, muladd);
     }
 
     // --- D13: final irregular ---
