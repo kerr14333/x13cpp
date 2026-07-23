@@ -119,33 +119,6 @@ def test_x11_table(base: str, tag: str) -> None:
         # frontier family as the other model-based forecast xfails.
         pytest.xfail("acceptdefault selects airline correctly (err 5e-4->8.5e-6); "
                      "residual is a tail forecast-extension estimation floor")
-    if "aictest" in base and base.startswith("unrate_"):
-        # Session 6: automd.f's l.360-982 finalization (rmfix/addfix/ssprep/
-        # restor/pass0/chkrt1/tstmd1/block-2+3 AIC/testodf/tstmd2, wired as ONE
-        # unit in automd.cpp) landed and took airline/expgs/payems bit-exact
-        # (see the removed xfails below -- both were previously xfailed here).
-        # unrate alone still drifts (d10/d13 off by O(1), not a precision
-        # residual). Root-caused to the DEFAULT (0,1,1)(0,1,1) model's own
-        # seasonal-MA estimate: armats(tair) on the default model returns a
-        # seasonal-MA t-stat of ~62 (vs. a plausible/expected small value),
-        # a classic near-unit-root/boundary-parameter signature. That flips
-        # tstmd1's i1dfm+i2dfm early-return check (automd.f:390-396) from
-        # "return unchanged" to "enter the insignificant-lag-drop loop", which
-        # then legitimately (per a faithful tstmd1 port) drops the regular MA
-        # term the identified (0,1,1) model needs, landing on (0,1,0) instead
-        # of the golden's (0,1,1) (arimamdl: (0 1 1) per the golden .udg). The
-        # default-model rgarma/armafl fit for the seasonal-MA operator is a
-        # pre-existing regARIMA-estimation characteristic (unchanged by this
-        # session's control-flow port -- the same "estimate default model,
-        # then armats" call already existed before automd's finalization was
-        # wired up) rather than a control-flow bug; likely a boundary/near-
-        # singular-covariance case in the exact-ML fit for this series' span
-        # (span=(1961.01,)) that needs regARIMA-engine-level investigation,
-        # not an automd.cpp fix. See tools/x11_regeff_handoff.md session 6.
-        pytest.xfail("aictest non-default-model unrate: default-model seasonal-MA "
-                     "estimate is a boundary/near-unit case, flips tstmd1's "
-                     "keep-vs-drop path vs. the oracle -- regARIMA-estimation "
-                     "issue, not automd control flow")
     spec = os.path.join(_CORPUS, base + ".spc")
     # Tolerance by path: no-model decomposition is pure arithmetic (tight);
     # model-based runs carry estimation-derived values (loose).

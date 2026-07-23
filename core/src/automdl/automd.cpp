@@ -20,6 +20,7 @@
 #include "automdl/mdlset.hpp"        // mdlint, mdlset, mkmdsn
 #include "regarima/estimate.hpp"     // rgarma, armats
 #include "regarima/regvar.hpp"       // regvar
+#include "regarima/outlier.hpp"      // idotlr, setcv (amidot)
 #include "specparse/specparse.hpp"   // strinx, adrgef, abend, addate, dfdate,
                                      // setdp, dlrgef
 #include "numeric/numeric.hpp"       // daxpy
@@ -28,6 +29,7 @@
 #include "gen/srslen.hpp"            // prm::PLEN
 
 #include <cctype>                    // std::tolower
+#include <cmath>                     // std::pow (amidot)
 #include <string>
 #include <vector>
 
@@ -167,10 +169,10 @@ static void automd_reestim(X13Context& ctx, double* a, int& na, int& nefobs) {
 // automd.f label 30 (l.654) through label 70/autoer (l.983-985): the shared
 // finalization tail, reached both from the ismd0 a0-revert shortcut (l.503-506,
 // via GO TO 30) and after the non-ismd0 block-2 AIC / tstmd1 / block-3 AIC
-// sequence (also GO TO 30, l.654 immediately follows label 40's block). Ported
-// for the Lidotl=F path only: pass2 (l.664, outlier-model revert) and amidot
-// (redone automatic outlier ID) are unreachable -- the aictest-x11 corpus has
-// no outlier{} spec, so Lidotl is always false for the whole automd call.
+// sequence (also GO TO 30, l.654 immediately follows label 40's block). pass2
+// (l.664, outlier-model revert; Lidotl && nloop<=2) is unreachable here: it
+// needs a real (non-BIGCV) outlier scan that finds outliers, which the current
+// corpus never triggers (the Lotmod-forced AO scan uses BIGCV and finds none).
 static void automd_finalize_tail(X13Context& ctx, double* trnsrs, int& frstry,
                                  int& nefobs, double* a, int& na, int& lpr,
                                  int& ldr, int& lqr, int& lps, int& lds,
@@ -185,7 +187,8 @@ static void automd_finalize_tail(X13Context& ctx, double* trnsrs, int& frstry,
     if (ctx.error.lfatal) return;
 
     // (mkmdsn -> .udg 'automdl.first' print and pass2 (Lidotl && nloop<=2) are
-    // both deferred/not-applicable: no print milestone yet, Lidotl=F always.)
+    // both deferred/not-applicable: no print milestone yet, and the BIGCV AO
+    // scan never finds the outliers pass2 would revert.)
 
     // ---- final AIC significance recheck (automd.f:675-702) ----
     int isig = 0;
@@ -244,7 +247,8 @@ static void automd_finalize_tail(X13Context& ctx, double* trnsrs, int& frstry,
         }
         automd_reestim(ctx, a, na, nefobs);
         if (ctx.error.lfatal) return;
-        // (Lidotl && !Lotmod amidot redo skipped: Lidotl=F always.)
+        // (Lidotl && !Lotmod amidot redo skipped: the BIGCV AO scan finds
+        // nothing, so there is no outlier-model to redo here.)
         mdlchk(ctx, a, na, nefobs, blpct, blq, bldf, rvr, rtval);
         if (ctx.error.lfatal) return;
         mkmdsn(ctx, lpr, ldr, lqr, lps, lds, lqs);
@@ -296,6 +300,38 @@ static void automd_finalize_tail(X13Context& ctx, double* trnsrs, int& frstry,
     autoer(ctx, d.armaer);
 }
 
+// amidot.f: run automatic outlier identification inside the automatic model
+// procedure (the label-40 Lidotl branch). Delegates to the ported idotlr with
+// the model-span test window and the current critical values (Critvl(AO)=BIGCV
+// when Lotmod forced it on, so no AO is found), then reforms the full-Nobspf
+// regression design. Convergence/print-branch error handling deferred.
+static void amidot(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
+                   double* a) {
+    using namespace prm;
+    auto& ar = ctx.arima;
+    const int sp = ctx.model.sp;
+    int begtst[2] = {ctx.mdldat.begspn(1), ctx.mdldat.begspn(2)};
+    int endtst[2];
+    addate(ctx.mdldat.begspn.data(), sp, ctx.mdldat.nspobs - 1, endtst);
+    if (dpeq(ctx.model.tcalfa, DNOTST))
+        ctx.model.tcalfa = std::pow(0.7, 12.0 / sp);
+    int nobtst = 0;
+    dfdate(endtst, begtst, sp, nobtst);
+    nobtst += 1;
+    double cv = setcv(nobtst, ar.cvalfa);
+    for (int t = 1; t <= POTLR; ++t)
+        if (dpeq(ar.critvl(t), DNOTST)) ar.critvl(t) = cv;
+    double critvl[POTLR] = {ar.critvl(1), ar.critvl(2), ar.critvl(3)};
+    idotlr(ctx, ar.ltstao, ar.ltstls, ar.ltsttc, ar.ladd1, critvl, ar.cvrduc,
+           begtst, endtst, nefobs, ar.lestim, ar.mxiter, ar.mxnlit,
+           /*lauto=*/false, a);
+    if (ctx.error.lfatal) return;
+    int nrxy2 = 0;
+    regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst, 0,
+           ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
+           ar.reglom, nrxy2, ar.begxy.data(), frstry, true, ar.elong);
+}
+
 void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             double* a, int& na, bool do_aictest) {
     using namespace prm;
@@ -310,6 +346,24 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         imu = strinx(false, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
                      "Constant");
     if (imu > 0) lmu = true;
+
+    // ---- outlier-identification enable (automd.f:167-181). Lidotl comes from
+    // outlier{} (ltstao/ltstls/ltsttc). When it is off but the automdl outlier
+    // method Lotmod is on (the DEFAULT, gtinpt.f:238), the automatic modeler
+    // still runs a dummy AO identification pass with an impossible critical
+    // value (Critvl(AO)=BIGCV) -- it finds nothing but takes the amidot path at
+    // label 40 instead of tstmd1, so tstmd1's insignificant-lag order reduction
+    // is NOT applied to the identified model. (The cvlold critical-value backup
+    // and the outlier print/save-table suppression are deferred -- no print
+    // milestone; BIGCV makes the AO scan a no-op regardless.) ----
+    bool lidotl = ar.ltstao || ar.ltstls || ar.ltsttc;
+    if (lidotl) {
+        ar.lotmod = false;
+    } else if (ar.lotmod) {
+        ar.ltstao = true;
+        lidotl = true;
+        ar.critvl(AO) = 1000001.0;  // BIGCV (automd.f:36)
+    }
 
     // ---- default "airline" model (0 1 1)(0 1 1); no seasonal part for Sp==1
     // or seasonal-effect regressors. ----
@@ -356,12 +410,12 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     }
     if (ctx.error.lfatal) return;
 
-    // ---- aictest finalization: a faithful port of automd.f l.322-982 (the
-    // Lidotl=F path -- the aictest-x11 corpus has no outlier{} spec, so the
-    // outlier-ID/pass2/amidot branches never trigger for the whole automd
-    // call). Replaces the old ctx-snapshot-only ismd0 revert: this drives the
-    // oracle's own rmfix/addfix/ssprep/restor/pass0/chkrt1/tstmd1 sequence, so
-    // it also reaches the non-ismd0 (non-default-model) series. ----
+    // ---- aictest finalization: a faithful port of automd.f l.322-982.
+    // Replaces the old ctx-snapshot-only ismd0 revert: this drives the oracle's
+    // own rmfix/addfix/ssprep/restor/pass0/chkrt1 sequence and the label-40
+    // dispatch. With Lotmod on (default), label 40 takes the amidot branch (a
+    // BIGCV AO scan that finds nothing) rather than tstmd1, so the identified
+    // model's order is kept; only an explicit outlier{} would change that. ----
     if (aic) {
         // ---- default-model residual diagnostics (automd.f:322-344). Lidotl's
         // outlier-ID block (l.280-321) is skipped -- unreachable, see above. ----
@@ -516,25 +570,35 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             ssprep_save(ctx);
             if (!automd_aic_round(ctx, trnsrs, a, nefobs, na, frstry)) return;
 
-            // ---- label 40 (automd.f:549-649): Lidotl=F path. ----
-            tstmd1(ctx, trnsrs, frstry, a, na, nefobs, blpct0, rvr0, rtval0,
-                   lpr, lps, lqr, lqs, ldr, lds, lmu, adj0.data(),
-                   trns0.data(), tair);
-            if (ctx.error.lfatal) return;
-
-            if (ar.itdtst > 0 || ar.leastr ||
-                (ar.luser && ctx.usrreg.ncusrx > 0) || imu == 0) {
-                if (!automd_aic_round(ctx, trnsrs, a, nefobs, na, frstry))
-                    return;
-                if (ar.lchkmu) {
-                    chkmu(ctx, trnsrs, a, nefobs, na, frstry, kstep, false);
-                    if (ctx.error.lfatal) return;
-                    int kmu = strinx(false, m.grpttl.raw(), m.grpptr.data(), 1,
-                                     m.ngrptl, "Constant");
-                    lmu = kmu > 0;
-                }
-                automd_reestim(ctx, a, na, nefobs);
+            // ---- label 40 (automd.f:549-649). Lidotl -> amidot (automatic
+            // outlier ID); else (non-default identified model) tstmd1 + the
+            // redo-aictest block. With Lotmod forcing Lidotl on (BIGCV AO), the
+            // amidot branch is taken: idotlr finds nothing and, crucially,
+            // tstmd1's insignificant-lag order reduction is skipped. ----
+            if (lidotl) {
+                amidot(ctx, trnsrs, frstry, nefobs, a);
                 if (ctx.error.lfatal) return;
+            } else {
+                tstmd1(ctx, trnsrs, frstry, a, na, nefobs, blpct0, rvr0, rtval0,
+                       lpr, lps, lqr, lqs, ldr, lds, lmu, adj0.data(),
+                       trns0.data(), tair);
+                if (ctx.error.lfatal) return;
+
+                if (ar.itdtst > 0 || ar.leastr ||
+                    (ar.luser && ctx.usrreg.ncusrx > 0) || imu == 0) {
+                    if (!automd_aic_round(ctx, trnsrs, a, nefobs, na, frstry))
+                        return;
+                    if (ar.lchkmu) {
+                        chkmu(ctx, trnsrs, a, nefobs, na, frstry, kstep, false);
+                        if (ctx.error.lfatal) return;
+                        int kmu = strinx(false, m.grpttl.raw(),
+                                         m.grpptr.data(), 1, m.ngrptl,
+                                         "Constant");
+                        lmu = kmu > 0;
+                    }
+                    automd_reestim(ctx, a, na, nefobs);
+                    if (ctx.error.lfatal) return;
+                }
             }
         }
 

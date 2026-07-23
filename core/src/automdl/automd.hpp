@@ -19,8 +19,10 @@
 //    over-differencing check, tstmd2 insignificant-coefficient drop, autoer).
 //    Reaches bit-exact (rtol 1e-8) parity for both ismd0 (identified ==
 //    default airline) and non-ismd0 (non-default identified model) series --
-//    see automd_finalize.hpp for the primitives. amidot/pass2 (Lidotl-only)
-//    remain unreachable: the aictest-x11 corpus has no outlier{} spec.
+//    see automd_finalize.hpp for the primitives. At label 40 the default
+//    Lotmod forces Lidotl on (a BIGCV AO scan that finds nothing), so amidot
+//    runs in place of tstmd1 -- keeping the identified model's order. pass2
+//    (Lidotl && outliers-found) stays unreachable until a real outlier scan.
 #ifndef X13_AUTOMDL_AUTOMD_HPP
 #define X13_AUTOMDL_AUTOMD_HPP
 
