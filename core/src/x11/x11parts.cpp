@@ -766,12 +766,34 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         addmul(ststd, ststd, faccal, pos1bk, klda, muladd);
     }
     if ((adj.adjtd == 0 || opt.kswv == 0) && pri.priadj > 1) {
-        x11_not_ported(ctx, "x11pt3 prior length-of-month fold-in (Priadj>1)");
-        return;
+        // x11pt3.f:556-566 -- a prior length-of-month/leap adjustment ran
+        // without model trading day: fold those prior factors into the combined
+        // adjustment factor (ststd/D16).
+        // Begbak = Begspn shifted back Nbcst periods (editor.f:207); our driver
+        // does not persist ctx.extend.begbak, so recompute it here.
+        int begbak[2];
+        const int nbc = ctx.extend.nbcst < 0 ? 0 : ctx.extend.nbcst;
+        addate(ctx.mdldat.begspn.data(), ny, -nbc, begbak);
+        int iadj1 = 0;
+        dfdate(begbak, ctx.adj.begadj.data(), ny, iadj1);
+        iadj1 += 1;
+        for (int i = pos1bk; i <= klda; ++i) {
+            if (muladd == 1)
+                ststd[i - 1] += ctx.adj.adj(i + iadj1 - 1);
+            else
+                ststd[i - 1] *= ctx.adj.adj(i + iadj1 - 1);
+        }
     }
     if (pu.nuspad > 0 || pri.priadj > 1) {
-        x11_not_ported(ctx, "x11pt3 prior-adjustment removal (rmpadj)");
-        return;
+        // x11pt3.f:568-569 rmpadj -- remove the prior adjustment from Stci (D11).
+        // Ported for the predefined-prior case (no user permanent/temporary
+        // prior): rmpadj.f then reduces to Stci /= Sprior (mult) / Stci - Sprior
+        // (add). The Usrpad/Usrtad user-prior branches stay unported.
+        if (pu.nuspad > 0 || pu.nustad > 0) {
+            x11_not_ported(ctx, "x11pt3 rmpadj user permanent/temporary prior");
+            return;
+        }
+        divsub(stci, stci, ctx.inpt.sprior.data(), pos1bk, posffc, muladd);
     }
 
     // --- D13: final irregular ---
@@ -823,8 +845,12 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // x11pt3.f:702-784. Iyrt==0 -> ELSE just copies Stci into Stci2.
     if (frc.iyrt > 0) {
         const int lstfrc = frc.lfctfr ? posffc : posfob;  // last obs to force
-        // Target (stbase): only Iftrgt==0 (target=original) is ported; the
-        // calendar-adjusted / permanent-prior-adjusted targets are untested.
+        // Target (stbase): only Iftrgt==0 (target=original) is ported. The
+        // calendaradj/permprioradj/both targets (x11pt3.f:717-721 -> Stocal /
+        // Stopp) are transcribed but stay walled: force interacts with a prior
+        // adjustment (Priadj>1) through a still-unported path (the LOM-prior
+        // force case fails at ~2.5e-3 even for target=original), so there is no
+        // clean Stocal!=Series gate yet.
         if (frc.iftrgt != 0) {
             x11_not_ported(ctx, "x11pt3 force non-original target (Iftrgt>0)");
             return;
