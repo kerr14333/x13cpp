@@ -736,10 +736,12 @@ void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
                     }
                     if (ctx.error.lfatal) return;
                     if (L.nxtktp == SLASH) {
-                        not_ported(ctx,
-                                   "change-of-regime stock length-of-month regressors "
-                                   "(adrgim.f)");
-                        return;
+                        // adpdrg.f:777-780: change-of-regime stock length-of-month.
+                        adrgim(ctx, begsrs, nobs, havesp, "Stock Length-of-Month",
+                               prm::PRRTSL, prm::PRATSL, zeroz,
+                               /*delreg=*/!P.fullln, P.lrgmln,
+                               /*fullef=*/P.fullln, locok, inptok);
+                        if (ctx.error.lfatal) return;
                     }
                 }
                 if (zeroz == 0) P.fullln = true;
@@ -817,10 +819,22 @@ void adpdrg(X13Context& ctx, const int* begsrs, const int* endmdl, int nobs,
                         }
                     }
                     if (L.nxtktp == SLASH) {
-                        not_ported(ctx,
-                                   "change-of-regime stock trading day regressors "
-                                   "(adrgim.f)");
-                        return;
+                        // adpdrg.f:860-872: change-of-regime stock trading day.
+                        if (regidx == 17)
+                            adrgim(ctx, begsrs, nobs, havesp,
+                                   "1-Coefficient " +
+                                       tgrptl.substr(0, static_cast<std::size_t>(nchr)),
+                                   prm::PRR1ST, prm::PRA1ST, zeroz,
+                                   /*delreg=*/!P.fulltd, P.lrgmtd,
+                                   /*fullef=*/P.fulltd, locok, inptok);
+                        else
+                            adrgim(ctx, begsrs, nobs, havesp,
+                                   tgrptl.substr(0, static_cast<std::size_t>(nchr)),
+                                   prm::PRRTST, prm::PRATST, zeroz,
+                                   /*delreg=*/!P.fulltd, P.lrgmtd,
+                                   /*fullef=*/P.fulltd, locok, inptok);
+                        if (ctx.error.lfatal) return;
+                        P.tdzero = zeroz;
                     } else {
                         P.fulltd = true;
                     }

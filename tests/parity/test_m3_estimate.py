@@ -103,7 +103,7 @@ def _estimation_reproducible(spc: str) -> bool:
     # ported explicit-model aictest path; automdl+aictest stays excluded by the
     # "automdl" token below.
     for bad in ("automdl", "pickmdl", "function=auto",
-                "tdstock", "tcrate",
+                "tcrate",
                 "x11regression{", "composite{"):
         if bad in flat:
             return False
@@ -113,10 +113,11 @@ def _estimation_reproducible(spc: str) -> bool:
     m = re.search(r"variables\s*=\s*\(([^)]*)\)", txt)
     if m and "/" in m.group(1):
         # change-of-regime (regressor/date split). seasonal/td/lom/loq/lpyear
-        # regime are ported (adrgim.f); stock (lomstock/tdstock) regime and
-        # user-defined regime stay unported.
-        if not re.fullmatch(r"(seasonal|td|lom|loq|lpyear)\s*/.*",
-                            m.group(1).strip()):
+        # and stock (tdstock/lomstock) regime are ported (adrgim.f); user-defined
+        # regime stays unported.
+        if not re.fullmatch(
+                r"(seasonal|tdstock(\[\d+\])?|lomstock|td|lom|loq|lpyear)\s*/.*",
+                m.group(1).strip()):
             return False
     # Fixed coefficients (ar/ma/b = (...f)) -- a separate, unit-tested branch.
     if re.search(r"\d\s*f[\s,)]", txt):
