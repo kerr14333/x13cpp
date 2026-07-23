@@ -137,12 +137,17 @@ def test_seats_table(base: str, tag: str) -> None:
     # only == +2.1978124351562656e-06. Porting bias1c/bias2c/bias3c into
     # estbur.cpp's is_log block closed payems' s12/s13 to double-precision
     # noise -- now gated. s10 doesn't ship for unrate_seats (npsi==1, no
-    # seasonal component). Every other spec (expgs/airline_seats and the
-    # *-fixed-airline-seats variants -- real seasonal structure, npsi!=1,
-    # untested cs/cc/general-branch path) still fatals at the decomposition
-    # dispatch point and stays xfailed. Un-xfail more (base, tag) pairs
-    # (including payems' s12/s13, if/when its remaining gap closes) as they
-    # land.
+    # seasonal component). The general (non-airline) decomposition branch IS
+    # ported and bit-exact wherever the oracle ships a golden -- airline_seats,
+    # every *-fixed-airline-seats variant, and unrate_seats s11/s12/s13/s18 all
+    # gate below. The only remaining (base, tag) pairs without a golden are the
+    # inadmissible-decomposition spec (expgs_seats: negative irregular spectrum
+    # -> oracle aborts, writes no s-tables) and the no-seasonal tables
+    # (unrate_seats s10/s16); those SKIP above (no parity target), they are not
+    # an unported orchestrator. NOTE (engine faithfulness, no gate): our SEATS
+    # still emits approximated s-tables for expgs rather than aborting like the
+    # oracle -- porting the spectrum.f admissibility abort/noadmiss handling is
+    # a separate item with no table golden to verify it.
     _gated = {
         ("unrate_seats", "s11"), ("unrate_seats", "s12"),
         ("unrate_seats", "s13"), ("unrate_seats", "s18"),
@@ -190,6 +195,16 @@ def test_seats_table(base: str, tag: str) -> None:
         ("expgs_fixed-airline-seats", "s16"),
         ("expgs_fixed-airline-seats", "s18"),
     }
+    # No golden shipped => the oracle produced no such table, so there is no
+    # parity target (not an engine gap). This covers the inadmissible-
+    # decomposition specs (expgs_seats: the (2 1 0) model gives a negative
+    # irregular spectrum, so the oracle aborts with "DECOMPOSITION INVALID,
+    # IRREGULAR SPECTRUM NEGATIVE" and writes no s-tables) and the no-seasonal-
+    # component tables (unrate_seats s10/s16: npsi==1). Skip, don't xfail.
+    gold_path = os.path.join(_GOLDEN, base, base + "." + tag)
+    if not os.path.exists(gold_path):
+        pytest.skip(f"{base}.{tag}: oracle shipped no golden "
+                    "(inadmissible decomposition or no seasonal component)")
     if (base, tag) not in _gated:
         pytest.xfail("SEATS decomposition (SIGEX orchestrator) not yet ported "
                      "for this spec/table -- see tools/seats_scope.md")
