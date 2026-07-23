@@ -283,7 +283,8 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 if (out_trnsrs) *out_trnsrs = trnsrs;
             } else if (ctx.arima.itdtst > 0 || ctx.arima.lomtst > 0 ||
                        ctx.arima.leastr ||
-                       (ctx.arima.luser && ctx.usrreg.ncusrx > 0)) {
+                       (ctx.arima.luser && ctx.usrreg.ncusrx > 0) ||
+                       (ctx.arima.ch2tst && ctx.usrreg.nguhl > 0)) {
                 // Explicit-model AIC regressor test (arima.f:569-700). The td/
                 // lom/easter AIC tests estimate the model internally (with and
                 // without the regressor), keeping the lower-AICC form, so this

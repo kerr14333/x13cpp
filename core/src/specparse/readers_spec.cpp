@@ -367,24 +367,49 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                 ctx.captured.aictest_vars = tmp;
                 // getreg.f:240-277: map each aictest token to its test flag so the
                 // explicit-model aictest path (arima.f:569) can run. The automd
-                // path reads aictest_vars directly and is unaffected.
+                // path reads aictest_vars directly and is unaffected. Each family
+                // (td / easter / lom) may be specified at most once (getreg.f:
+                // 244-272).
+                const int* aep = ctx.lex.errpos.data() + 1;
+                auto& A = ctx.arima;
                 for (const auto& t0 : tmp) {
                     std::string s;
                     for (char c : t0)
                         s += static_cast<char>(
                             std::tolower(static_cast<unsigned char>(c)));
-                    if (s == "td") ctx.arima.itdtst = 1;
-                    else if (s == "tdnolpyear") ctx.arima.itdtst = 2;
-                    else if (s == "tdstock") ctx.arima.itdtst = 3;
-                    else if (s == "td1coef") ctx.arima.itdtst = 4;
-                    else if (s == "td1nolpyear") ctx.arima.itdtst = 5;
-                    else if (s == "tdstock1coef") ctx.arima.itdtst = 6;
-                    else if (s == "easter") { ctx.arima.leastr = true; ctx.arima.eastst = 1; }
-                    else if (s == "easterstock") { ctx.arima.leastr = true; ctx.arima.eastst = 2; }
-                    else if (s == "user") ctx.arima.luser = true;
-                    else if (s == "lom") ctx.arima.lomtst = 1;
-                    else if (s == "loq") ctx.arima.lomtst = 2;
-                    else if (s == "lpyear") ctx.arima.lomtst = 3;
+                    int td = 0, lom = 0, eas = 0;
+                    if (s == "td") td = 1;
+                    else if (s == "tdnolpyear") td = 2;
+                    else if (s == "tdstock") td = 3;
+                    else if (s == "td1coef") td = 4;
+                    else if (s == "td1nolpyear") td = 5;
+                    else if (s == "tdstock1coef") td = 6;
+                    else if (s == "easter") eas = 1;
+                    else if (s == "easterstock") eas = 2;
+                    else if (s == "lom") lom = 1;
+                    else if (s == "loq") lom = 2;
+                    else if (s == "lpyear") lom = 3;
+                    if (td > 0) {
+                        if (A.itdtst != 0) {
+                            inpter(ctx, PERROR, aep,
+                                   "Can only specify one type of trading day in "
+                                   "aictest."); inptok = false;
+                        } else A.itdtst = td;
+                    } else if (eas > 0) {
+                        if (A.leastr && A.eastst != 0) {
+                            inpter(ctx, PERROR, aep,
+                                   "Can only specify one of easter and easterstock "
+                                   "in aictest."); inptok = false;
+                        } else { A.leastr = true; A.eastst = eas; }
+                    } else if (lom > 0) {
+                        if (A.lomtst != 0) {
+                            inpter(ctx, PERROR, aep,
+                                   "Can only specify one of lom, loq, or lpyear in "
+                                   "aictest."); inptok = false;
+                        } else A.lomtst = lom;
+                    } else if (s == "user") {
+                        A.luser = true;
+                    }
                 }
                 if (!tmp.empty()) ctx.model.iregfx = 0;  // getreg.f:276
             }

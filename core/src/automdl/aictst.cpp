@@ -897,11 +897,34 @@ void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
     // Save the entry model so lomaic's restor branch has a valid target.
     ssprep_save(ctx);
 
+    // usraic (user-regressor AIC) and chkchi (chi-square holiday) are not
+    // ported; fail loudly rather than replace rgarma with a no-op (arima.f:644-
+    // 692). The tested td/lom/easter contract is unaffected.
+    if ((ar.luser && ctx.usrreg.ncusrx > 0) ||
+        (ar.ch2tst && ctx.usrreg.nguhl > 0)) {
+        abend(ctx);
+        return;
+    }
+
     bool lester = false;
     if (ar.itdtst > 0) {
-        // editor.f:1151-1166: aictest=td candidates Tdayvc=(0,1,4).
-        ar.ntdvec = 3;
-        ar.tdayvc(1) = 0; ar.tdayvc(2) = 1; ar.tdayvc(3) = 4;
+        // editor.f:1151-1166: build the TD candidate vector from Itdtst. ktd/
+        // kstd flag an already-present flow/stock TD group (0 for the plain
+        // aictest path). Tdayvc=(0, Itdtst[, Itdtst+3]).
+        int ktd = find_td_group(m) > 0 ? 1 : 0;
+        int kstd = 0;
+        ar.ntdvec = 2;
+        ar.tdayvc(1) = 0;
+        ar.tdayvc(2) = ar.itdtst;
+        if ((ar.itdtst <= 2 && ktd == 0) || (ar.itdtst == 3 && kstd == 0)) {
+            ar.tdayvc(3) = ar.itdtst + 3;
+            ar.ntdvec = 3;
+        }
+        if (m.isrflw == 2 && ktd == 0 && kstd == 0 && ar.itdtst <= 2) {
+            ar.tdayvc(2) = 3;
+            ar.tdayvc(3) = 6;
+            ar.itdtst = 3;
+        }
         int tdmdl1 = 0;
         tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, false, lester);
         if (ctx.error.lfatal) return;
