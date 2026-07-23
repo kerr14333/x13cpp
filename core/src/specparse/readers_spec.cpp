@@ -339,6 +339,22 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
             }
             continue;
         }
+        if (argidx == 7) {
+            // type -> Kfulsm (getx11.f:339-343). TYPDIC='sasummarytrend',
+            // Kfulsm=ivec(1)-1 (sa=0 summary=1 trend=2). The X-11 spine already
+            // branches on Kfulsm throughout (x11parts/x11drv/x11filt).
+            static const char TYPDIC[] = "sasummarytrend";
+            static const int typptr[4] = {1, 3, 10, 15};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, TYPDIC, typptr, 3,
+                   "The available adjustment types are sa, summary, or trend.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.x11opt.kfulsm = ivec[0] - 1;
+            continue;
+        }
         if (argidx == 10) {
             // calendarsigma -> Ksdev (getx11.f:381-385). xtrm honours Ksdev
             // (none=1 signif=2 all=3 select=4).

@@ -655,12 +655,14 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     int klda = posffc + ny;
     if (opt.kfulsm < 2) forcst(sts, 0, posffc, klda, ny, 1, 0.5, 1.0);
 
-    // --- D10: modified seasonally adjusted series (Kfulsm==0 base path) ---
+    // --- D10: modified seasonally adjusted series ---
     if (opt.kfulsm == 2) {
-        x11_not_ported(ctx, "x11pt3 Kfulsm==2 full-seasonal D10 branch");
-        return;
-    }
-    if (psuadd) {
+        // Trend-only (x11pt3.f:207-209): no seasonal is removed -- the modified
+        // SA is just D1 (Stcsi), and the seasonal factors collapse to the
+        // constant ebar.
+        copy(stcsi, posffc, 1, stci);
+        setdp(ebar, klda, sts);
+    } else if (psuadd) {
         // Pseudo-additive modified SA (x11pt3.f:245-249):
         // Stci = Stcsi - Stc*(Sts-1); flag any non-positive result as not-good.
         for (int i = pos1bk; i <= posffc; ++i) {
@@ -712,14 +714,11 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     if (nfcst > 0) klda = posfob + nfcst;
     const int k2 = klda - pos1bk + 1;
 
-    if (opt.kfulsm != 0) {
-        // Kfulsm==1 (summary measures) replaces D11 with D1 and re-runs vtc; the
-        // full body is unported (base gate is Kfulsm==0).
-        x11_not_ported(ctx, "x11pt3 Kfulsm==1 summary-measures branch");
-        return;
-    }
-
     // --- D12: final trend cycle via the variable trend-cycle filter ---
+    // Summary measures (Kfulsm==1, x11pt3.f:473): the trend is fit to D1
+    // (Stcsi), not to the modified SA.
+    if (opt.kfulsm == 1)
+        copy(stcsi + (pos1bk - 1), ext.nbfpob, 1, stci + (pos1bk - 1));
     vtc(ctx, stc, stci);
     // (deferred: finaltrendma savelog.)
     if (muladd == 2) {
@@ -745,8 +744,16 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         return;
     }
 
-    // --- D11: final seasonally adjusted series (x11pt3.f:450-458) ---
-    if (psuadd) {
+    // --- D11: final seasonally adjusted series (x11pt3.f:447-467, 516-522) ---
+    if (opt.kfulsm == 2) {
+        // Trend-only: the "final SA" is the original series unchanged.
+        copy(series, posffc, 1, stci);
+    } else if (opt.kfulsm == 1) {
+        // Summary measures: replace both the final SA (D11) and its snapshot
+        // (Ckhs) with A1 (the original series).
+        copy(series + (pos1bk - 1), ext.nbfpob, 1, ckhs + (pos1bk - 1));
+        copy(series + (pos1bk - 1), ext.nbfpob, 1, stci + (pos1bk - 1));
+    } else if (psuadd) {
         // Pseudo-additive: Stci = Series - Stc*(Sts-1).
         for (int i = pos1bk; i <= posffc; ++i) {
             stci[i - 1] = series[i - 1] - stc[i - 1] * (sts[i - 1] - 1.0);
@@ -756,8 +763,12 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     } else {
         divsub(stci, series, sts, pos1bk, posffc, muladd);
     }
-    // Combined factors = seasonal factors (no trading-day component on base).
-    copy(sts + (pos1bk - 1), k2, 1, ststd + (pos1bk - 1));
+    // Combined factors = seasonal factors (no trading-day component on base);
+    // for trend-only they collapse to the constant ebar (x11pt3.f:463-467).
+    if (opt.kfulsm == 2)
+        setdp(ebar, klda, ststd);
+    else
+        copy(sts + (pos1bk - 1), k2, 1, ststd + (pos1bk - 1));
 
     // Calendar / trading-day combine (x11pt3.f:525-550). Holiday combined-factor
     // rebuild: with no user holiday model (Haveum=F) this reduces to Faccal/Fachol.
