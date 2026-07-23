@@ -64,18 +64,18 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 | X-11 decomposition (B/C/D/E tables) | **Done** (17/19 specs ~5e-15) | `test_x11_tables.py` |
 | `force{}` (Denton / Cholette-Dagum / rounding) | **Done, bit-exact** | `test_force_tables.py` |
 | SEATS decomposition | **Done for corpus, bit-exact** — every SEATS corpus spec's s10–s18 tables gate (~5e-15) | `test_seats_tables.py` |
-| `slidingspans{}` | **Partial** — runs end-to-end, ~3% off on sfs/chs | `test_slidingspans_tables.py` |
-| `history{}` | **Pending** — reuses the built re-entrant span driver | — |
+| `slidingspans{}` | **Done, bit-exact** — all 4 spans, sfs+chs | `test_slidingspans_tables.py` |
+| `history{}` | **Done, bit-exact** — sar/sae/trr/tre (~7e-6 re-estimation floor) | `test_history_tables.py` |
 | Other diagnostics / less-common options | **Partial / planned** | see `tools/coverage_plan.md` |
 
 ---
 
 ## 5. Testing
 
-- **Parity suite result (current):** **542 passed · 14 skipped · 45 xfailed · 0 failed.**
-- **Corpus:** 136 spec files across 11 parity test modules, spanning the airline model, Census example series, and real economic series (unemployment, payroll employment, exports).
-- **The 49 xfails are the honest remaining-work ledger** — some model×X-11 combinations, slidingspans, and not-yet-ported spec options (the SEATS decomposition corpus is now fully bit-exact). They are not hidden or skipped; they are tracked and burn down as features land.
-- **Census bugs reproduced:** 11 (CB-1 … CB-11), each verified to match the oracle bug-for-bug.
+- **Parity suite result (current):** **788 passed · 0 failed · 0 xfailed · 17 skipped.**
+- **Corpus:** spec files across 11 parity test modules, spanning the airline model, Census example series, and real economic series (unemployment, payroll employment, exports).
+- **0 open xfails.** The X-11 decomposition spine, SEATS decomposition, the whole diagnostics front (force / slidingspans / history), the model X-11 path, and the X-11 spec-option front (type / shrink / sigmavec / x11easter / user-regression prior factor) all gate bit-exact. The 17 skips are legitimate (oracle ships no golden / no table for those specs). Remaining work is interdependent x11 factor-producer chains, not a passing/failing ledger.
+- **Census bugs reproduced:** 13 (CB-1 … CB-13), each verified to match the oracle bug-for-bug.
 - **Independent review:** completed areas are re-audited by a separate agent pass, checking port-fidelity axes (integer-power semantics, DO-loop counts, column-major indexing, 1-based↔0-based conversions) and standard C++ correctness. Findings are triaged into *real defects* vs *intentional Census-faithful* vs *unported-feature backlog*.
 
 ---
@@ -98,9 +98,9 @@ Engineering documentation is generated as a byproduct of the work, not as an aft
 |---|---|---|
 | C++ ported | **~28,800 non-blank lines**, 212 files | reproduces the behavior of the Fortran below |
 | Fortran reference | ~166,000 lines, 712 files | not all on the port's critical path |
-| Parity result | 542 pass / 14 skip / 45 xfail / **0 fail** | as of 2026-07-21 |
-| Corpus | 136 spec files, 11 test modules | real + synthetic series |
-| Census bugs catalogued | 11 (CB-1 … CB-11) | reproduced bug-for-bug |
+| Parity result | 788 pass / 0 fail / 0 xfail / 17 skip | as of 2026-07-23 |
+| Corpus | spec files across 11 test modules | real + synthetic series |
+| Census bugs catalogued | 13 (CB-1 … CB-13) | reproduced bug-for-bug |
 | Active development time | **~19h 46m** over 3 calendar days | via `worklog.py`, through last commit (2026-07-20) |
 | Commits | 171 | additional 2026-07-21 work (force completion, SEATS s11/s12, review fixes) not yet committed |
 | Measured bit-exactness | ~5e-15 on 17/19 X-11 specs | double-precision noise floor |
@@ -124,13 +124,11 @@ Engineering documentation is generated as a byproduct of the work, not as an aft
 
 ## 9. Status and what remains
 
-**Landed:** the full regARIMA → automatic-model → X-11 pipeline is bit-exact on the corpus; `force{}` is complete; SEATS has produced its first bit-exact seasonally-adjusted and trend tables (`unrate` s11/s12).
+**Landed:** the full regARIMA → automatic-model → X-11 pipeline is bit-exact on the corpus; `force{}` is complete; the SEATS decomposition corpus is fully bit-exact (all s10–s18); the whole diagnostics front (`slidingspans{}` / `history{}`) is closed; the model X-11 path and the X-11 spec-option front (`type` / `shrink` / `sigmavec` / `x11easter` / user-regression prior factor) all gate bit-exact.
 
 **In progress / next:**
 
-- SEATS s13 (irregular) — currently off only at the two series-endpoint dates; then generalize to the remaining s-tables and the seasonal component.
-- `slidingspans{}` sfs/chs bit-exactness (and `history{}`, which reuses the same span driver).
-- A small batch of parser-fidelity fixes from the code review (option flags honored, tolerance-equality corrections).
+- Remaining interdependent x11 factor-producer chains: user PRIOR factors (Nuspad/Nustad), Adjsea/Adjso regARIMA-seasonal combine, x11regression prior-TD, force non-original target (Iftrgt>0), revisions getrev.
 - **Hardening phase:** exhaustive spec-option coverage against the oracle (`coverage_plan.md`), then the R and Python library wrappers.
 
 This is a proof of concept and is tracked as one: progress is measured by the bit-exact parity frontier, and the remaining work is explicit rather than hidden.

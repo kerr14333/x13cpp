@@ -685,9 +685,11 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     // 1. Non-default-model aictest series (automd.f:378-648). The block-1 AIC tests
     //    + ismd0 a0-revert above reach parity for series whose identified model is
     //    the default airline (e.g. airline). Series that identify to a NON-default
-    //    model (expgs/payems/unrate) need the full nloop: addfix (put regressors
-    //    back), the round-2 AIC tests on the identified model, and the tstmd1
-    //    finalization -- so their aictest-x11 specs stay xfailed. rmfix/addfix +
+    //    model (expgs/payems/unrate) would need the full nloop: addfix (put
+    //    regressors back), the round-2 AIC tests on the identified model, and the
+    //    tstmd1 finalization. Those aictest-x11 specs now gate bit-exact anyway --
+    //    reached via the ismd0 ctx-snapshot revert + the amidot/Lotmod control-flow
+    //    fix (e2191ad), NOT the full nloop, which stays unported. rmfix/addfix +
     //    the fxreg dictionary + ssprep/restor are only needed for that faithful
     //    nloop (this driver uses a ctx snapshot for the ismd0 revert instead).
     //

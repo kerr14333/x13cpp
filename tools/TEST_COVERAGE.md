@@ -64,22 +64,27 @@ Priorities for the next sweep, each an oracle-vs-x13run_m3 diff like sweep_reg.p
 - **User-specified outlier regressors FATAL** — `regression{ variables=(ao1950.jan) }`
   / `ls<date>` / `tc<date>` / ramps. Automatic outlier ID works; the regression-
   spec point-outlier syntax doesn't. (FABLE_REVIEW "Found gaps".)
-- **03-automdl full estimation** — right model + transform, wrong variance until
-  the `aictest=(td easter)` regressor selection lands (in progress).
-- **usdeaths / region automdl model** — needs the automd adequacy finalization
-  (tstmd1 wired as one unit); routines banked. (automdl_scouting.md §3c.)
+- **03-automdl full estimation** — **Done, bit-exact.** `aictest=(td easter)`
+  regressor selection + adequacy finalization landed; the model X-11 path is closed.
 
-## Blocked on unported subsystems
-- **X-11 tables** (B/C/D ladder, D10/D11/D12/D13) — leaves in progress
-  (`core/src/x11`); gate on `airline_x11-default` save-table goldens once the
-  `x11pt*` spine lands. 50/76 corpus specs need this.
-- **SEATS components** (s10/s11/s12/s13, .mdc models) — leaves in progress
-  (`core/src/seats`); gate on `04-seats` / `airline_seats`.
+## Landed since this doc was first written (now bit-exact)
+- **X-11 tables** (B/C/D/E ladder, D10/D11/D12/D13/D16) — `core/src/x11`; gates via
+  `test_x11_tables.py`. Plus the spec-option front: `type` / `shrink` / `sigmavec` /
+  `x11easter` / user-regression prior factor.
+- **SEATS components** (s10–s18, .mdc models) — `core/src/seats`; the full SEATS
+  corpus gates ~5e-15 via `test_seats_tables.py`.
+- **Diagnostics** — `spectrum{}`, `history{}`/revisions, `slidingspans{}`, `force{}`
+  all bit-exact (`test_spectrum` / `test_history` / `test_slidingspans` /
+  `test_force`).
+
+## Still blocked on unported subsystems
 - **pickmdl** (X-11-ARIMA model selection) — not started (5 specs).
-- **Diagnostics** — `check{}` (Ljung-Box/normality), `spectrum{}`,
-  `history{}`/revisions, `slidingspans{}`, F2/F3 & M/Q stats. Not started.
+- **`check{}`** (Ljung-Box / normality), F2/F3 & M/Q stats — not started.
 - **Composite / indirect adjustment** (`composite{}`) — the census-examples/
   composite series are parsed but the aggregate SA is unported.
+- **Interdependent x11 factor chains** — user PRIOR factors (Nuspad/Nustad),
+  Adjsea/Adjso regARIMA-seasonal combine, x11regression prior-TD, force
+  non-original target (Iftrgt>0), revisions getrev.
 
 ## Interaction matrix worth building (once the pieces land)
 automdl × outlier × aictest (the 03-automdl class) · transform=auto × regression ·

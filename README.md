@@ -4,9 +4,10 @@ A faithful C++ port of the U.S. Census Bureau's **X-13ARIMA-SEATS** seasonal
 adjustment program (version 1.1, build 61), packaged as embeddable libraries for
 **R** and **Python**.
 
-> **Status: early development — milestone M0.** The scaffolding, oracle, and test
-> corpus are being put in place. The C++ core is not yet implemented. APIs,
-> layout, and behaviour will change.
+> **Status: active development — milestone M5 (X-11 / SEATS).** The C++ core runs
+> the full pipeline (parse → regARIMA estimate/forecast → automatic model ID →
+> X-11 decomposition → SEATS → diagnostics), bit-exact against the oracle across
+> 788 parity specs. Proof-of-concept; APIs, layout, and behaviour will change.
 
 ## What this is
 
@@ -48,7 +49,7 @@ binding layers so both ecosystems get identical numerics.
 ## Repository layout
 
 ```
-core/               C++17 core engine (in progress)
+core/               C++17 core engine (M5: full pipeline, X-11 + SEATS bit-exact)
 r-pkg/              R (Rcpp) package
 py-pkg/             Python (pybind11) package
 oracle/fortran/     Vendored Census X-13ARIMA-SEATS v1.1 b61 Fortran (parity oracle)

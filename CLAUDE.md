@@ -57,7 +57,8 @@ improvise:
 - **Python is `python`** (3.14). `python3` is a Windows App alias → "Permission
   denied".
 - **Parity tests:** `python -m pytest tests/parity -q`. Green = `NNN passed`, with
-  expected `s` skips (parse-gap specs) and `x` xfails (unported features).
+  expected `s` skips (parse-gap / no-golden specs). Currently 788 pass / 0 fail /
+  0 xfail / 17 skip.
 - After adding a `core/src/*.cpp`, the first build prints `GLOB mismatch!` and
   stops — just rerun once.
 
@@ -102,6 +103,13 @@ diagnostics front (force / slidingspans / history) is now closed.
   x11pt2/x11pt3 outlier folds (AO→D13, LS→D12 trend), the fixed-model leap-year
   Sprior population, the post-idotlr regvar rebuild, and the fcstout LOM-prior
   re-application all landed. See **`tools/x11_regeff_handoff.md`**.
-- **Still xfailed (regARIMA-estimation frontier, not X-11):** `unrate_automdl-aictest-x11`
-  (default-model seasonal-MA near-unit-root t-stat flips tstmd1) and
-  `payems_automdl-acceptdefault` (~8.5e-6 tail forecast-extension floor).
+- **X-11 spec-option front — CLOSED (bit-exact):** `type`=summary/trend, `shrink`=
+  global/local, `sigmavec`, classic `x11easter` (transparent pre-pass →
+  holday/holidy/easter → Khol prior fold; codex-hardened per xrgdrv/editor.f), and
+  the user-regression prior factor (Facusr) all gate. The x11 parse-seam is
+  exhausted; the remaining x11 stubs are interdependent chains (each needs an
+  upstream factor producer): user PRIOR factors (Nuspad/Nustad), Adjsea/Adjso
+  regARIMA-seasonal combine, x11regression prior-TD, force non-original target
+  (Iftrgt>0), and revisions getrev.
+- **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
+  aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

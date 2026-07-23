@@ -267,9 +267,11 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // trnsrs is the clean transformed series (rgarma writes residuals into
             // ctx.series.tsrs, a separate buffer). do_aictest=true enables the
             // block-1 tdaic/easaic regressor selection + ismd0 a0-revert (reaches
-            // parity for ismd0 series like airline). Still-deferred automd features
-            // (auto-transform, outlier, non-default-model nloop/tstmd1 finalization)
-            // are noted in tools/automdl_scouting.md; specs needing them stay xfailed.
+            // parity for ismd0 series like airline). Auto-transform (trnaic) and
+            // outlier ID are ported; the faithful non-default-model nloop/tstmd1
+            // finalization stays unported (tools/automdl_scouting.md), but the specs
+            // that would need it now gate bit-exact via the ismd0 snapshot revert.
+            // The suite has 0 xfails.
             if (ctx.arima.lautom) {
                 automd(ctx, trnsrs.data(), frstry, nefobs, a.data(), na,
                        /*do_aictest=*/true);
