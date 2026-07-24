@@ -318,13 +318,34 @@ bool armafl_last_residuals(X13Context& ctx, const std::vector<double>& series,
 }
 
 // bphist = phist*(1-B)^d*(1-B^mq)^bd, FCAST's own construction
-// (ansub1.f:2113-2148). Returns bpstar (bphist's length). phist (P/Bp>0)
-// not supported -- unrate_seats has p=bp=0, the only case exercised.
+// (ansub1.f:2113-2148). Returns bpstar (bphist's length). The phist AR
+// polynomial fill (P/Bp>0) is ported; a strict no-op for the airline-family
+// corpus (p=bp=0). NOTE: the general-shape SEATS decomposition is NOT yet
+// bit-exact -- the ESTBUR historical AR solve + the CALCFX general-branch
+// residual seed (calcfx_last_residuals bails for p>0) remain. See
+// tools/seats_general_scope.md.
 int build_bphist(const SeatsModelOrders& mo, std::vector<double>& bphist) {
     bphist.assign(64, 0.0);
     bphist[1] = 1.0;
     int pstar_f = mo.p + mo.bp * mo.mq;
-    // (pstar_f>0 -- phist -- unsupported this pass; unrate_seats: p=bp=0.)
+    // phist = the full AR polynomial (1 - sum phi B^i)(1 - sum bphi B^{k*mq}),
+    // ansub1.f:2116-2121 sets bphist(i+1) = -phist(i). mo.phi/mo.bphi are the
+    // standardized AR coeffs in the arp(B) = 1 + sum(mo.phi)B^i factor convention
+    // (verified: pure-AR(2) arp=[1, phi0, phi1] == the oracle's -phist), so the
+    // full AR polynomial coefficient arp(i) IS -phist(i) = bphist(i+1) directly.
+    if (pstar_f > 0) {
+        std::vector<double> nn(mo.p + 1, 0.0);
+        nn[0] = 1.0;
+        for (int i = 0; i < mo.p; ++i) nn[i + 1] = mo.phi[i];
+        std::vector<double> ss(mo.bp * mo.mq + 1, 0.0);
+        ss[0] = 1.0;
+        for (int k = 0; k < mo.bp; ++k) ss[(k + 1) * mo.mq] = mo.bphi[k];
+        std::vector<double> arp(pstar_f + 1, 0.0);
+        for (int i = 0; i < static_cast<int>(nn.size()); ++i)
+            for (int j = 0; j < static_cast<int>(ss.size()); ++j)
+                arp[i + j] += nn[i] * ss[j];
+        for (int i = 1; i <= pstar_f; ++i) bphist[i + 1] = arp[i];
+    }
     int bpstar = pstar_f + 1;
     if (mo.d != 0) {
         for (int rep = 0; rep < mo.d; ++rep) {
