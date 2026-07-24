@@ -27,6 +27,24 @@ int lpyr_index(int year);
 // leap-year prior (Priadj 4).
 double lpfac(int year, int period, int sp, bool lom);
 
+struct X13Context;
+
+// adjsrs.f -- the COMBINED prior-adjustment factor series: the predefined
+// length-of-period / leap-year prior (above) times the user's permanent prior
+// factors (getadj.f's Usrpad). `fac` is filled with `n` factors starting at
+// `begspn`, one per observation; a position the user factors do not reach keeps
+// the predefined factor alone. Sets Frstap.
+//
+// Returns false (after a clean fatal) for the parts that are not ported: the
+// addadj.f span shift, i.e. user factors that do not start exactly at the
+// analysis span's first backcast position.
+//
+// `suppress_predef` reproduces xrgdrv.f:95-97 -- the x11regression OLS prior-TD
+// path drops the length-of-month prior because the prior-TD factor already
+// carries the day-count normalization.
+bool adjsrs_factors(X13Context& ctx, const int* begspn, int sp, int n,
+                    bool suppress_predef, double* fac);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_PRIADJ_HPP

@@ -136,10 +136,26 @@ diagnostics front (force / slidingspans / history) is now closed.
   global/local, `sigmavec`, classic `x11easter` (transparent pre-pass →
   holday/holidy/easter → Khol prior fold; codex-hardened per xrgdrv/editor.f), and
   the user-regression prior factor (Facusr) all gate. The x11 parse-seam is
-  exhausted; the remaining x11 stubs are interdependent chains (each needs an
-  upstream factor producer): user PRIOR factors (Nuspad/Nustad temporary
-  adjustment), force non-original target (Iftrgt>0), and revisions getrev.
+  exhausted. Of the three remaining x11 stubs, user PRIOR factors (Nuspad/
+  Nustad) is now closed — see the next entry; still open are force non-original
+  target (Iftrgt>0) and revisions getrev.
   (Adjsea/Adjso regARIMA-seasonal combine landed, commit 970e85c.)
+- **`transform{}` user PRIOR-adjustment factors — CLOSED (bit-exact):** the
+  `data=`/`file=` prior factor series, permanent (`Usrpad`) and temporary
+  (`Usrtad`), alone or combined with the predefined `adjust=lom/loq/lpyear`
+  prior. 4 specs × d10–d13 gate at ~5e-15 (`test_prior_adj_tables.py`, corpus
+  `extra/airline_prior-*`). Ported: `adjsrs.f`'s factor combine (shared
+  `adjsrs_factors` in `regarima/priadj.cpp`), `addadj.f`'s percent→ratio and
+  tail pad-out, `getadj.f`'s `file=`/`type=`/`temppriortrend=`, and x11pt3's two
+  temporary-prior folds (`:591-604` strip from D13, `:937-946` fold into D12
+  when `Lprntr`). THREE silent-wrongness bugs this closed, all of which returned
+  `OUTCOME: OK` with wrong numbers: `transform{file=}` was parsed but never
+  read (~1.2e-1 off), the NO-MODEL path never applied any prior at all (nothing
+  upstream of run_x11 runs, so it decomposed the RAW series and then threw
+  indexing `Usrpad` at `Frstap==0`), and a multi-set prior silently used only
+  the first. Deliberately fatal, not silent: `Nprtyp>1`, `mode=diff`/additive
+  factors (`Adjmod=2`), `format=`, and the `addadj` span shift (`Frstad!=0`,
+  which the oracle rejects outright too).
 - **x11regression `tdprior` (user prior trading day, Kswv=1) — CLOSED (bit-exact):**
   a4 factor + d10-d13 gate at ~5e-15 (`test_x11_tdprior_tables.py`). pritd.f ported
   (parser + parse-time weight-standardize sum-7 + td6var/x11ref_td). The oracle runs

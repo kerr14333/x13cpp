@@ -106,24 +106,9 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     bool lom = (priadj == 2 || priadj == 3);   // adjsrs.f: lom for lom/loq
 
     // User permanent prior-adjustment factors (getadj.f/addadj.f, Usrpad). Minimal
-    // slice: factors aligned 1:1 with the span (Frstad==0). The general addadj span
-    // shift (backcasts / start!=span-start) is deferred -> fatal below.
-    const int nuspad = ctx.priusr.nuspad;
-    const bool has_user = (nuspad > 0);
-    int frstad_u = 0;
-    if (has_user) {
-        int begadj_u[2];
-        addate(begspn, sp, -ctx.extend.nbcst, begadj_u);   // adjsrs.f:39 Begadj
-        dfdate(begadj_u, ctx.priusr.bgupad.data(), sp, frstad_u);  // addadj.f:42
-        if (frstad_u != 0) {
-            errhdr(ctx);
-            writln(ctx, "ERROR: addadj user-prior span shift (Frstad!=0) not yet "
-                        "ported.", stdio::STDERR, ctx.units.mt2, true);
-            abend(ctx);
-            return false;
-        }
-        ctx.priusr.frstap = 1;   // addadj.f:92 Frstad+1
-    }
+    // slice: factors aligned 1:1 with the span (Frstad==0); adjsrs_factors fatals
+    // on the general addadj span shift.
+    const bool has_user = (ctx.priusr.nuspad > 0 || ctx.priusr.nustad > 0);
     const bool has_prior = has_predef || has_user;
 
     // Forecast-extension bookkeeping (editor.f 224-230). regvar builds
@@ -154,21 +139,11 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
          priadj > 1);
     std::vector<double> padj(static_cast<std::size_t>(nobspf));
     std::vector<double> fac(static_cast<std::size_t>(nobspf), 1.0);
-    for (int tpnt = 1; tpnt <= nobspf; ++tpnt) {
-        double a1 = aptr[tpnt - 1];
-        double f = 1.0;
-        if (has_predef && !suppress_lom_td) {
-            int idate[2];
-            addate(begspn, sp, tpnt - 1, idate);
-            f *= lpfac(idate[0], idate[1], sp, lom);   // td7var factor
-        }
-        // addadj.f:61-87 -- fold the user permanent factor (ratio mode, Frstad==0)
-        // into the combined prior; positions past the user span keep factor 1.0.
-        if (has_user && (tpnt - 1) < nuspad)
-            f *= ctx.priadj.usrpad(tpnt);
-        fac[static_cast<std::size_t>(tpnt - 1)] = f;
-        padj[static_cast<std::size_t>(tpnt - 1)] = a1 / f;   // divsub (mult mode)
-    }
+    if (!adjsrs_factors(ctx, begspn, sp, nobspf, suppress_lom_td, fac.data()))
+        return false;
+    for (int tpnt = 1; tpnt <= nobspf; ++tpnt)
+        padj[static_cast<std::size_t>(tpnt - 1)] =
+            aptr[tpnt - 1] / fac[static_cast<std::size_t>(tpnt - 1)];  // divsub
 
     // SEATS s16/s18 combined-adjustment source: stash the RAW original series
     // (a1, original units) whenever a prior or a non-mean regressor will be

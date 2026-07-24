@@ -98,15 +98,19 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     int pr_type = 0;     // 0 unset; 1 temporary, 2 permanent (TYPDIC order)
     int pr_mode = 0;     // 0 percent, 1 ratio, 2 diff (Percnt after -1); default percent
     int pr_start[2] = {prm::NOTSET, prm::NOTSET};
+    std::string pr_file;                 // file= : the factors live in a file
+    bool pr_fmt = false;                 // format= : formatted read, unported
+    bool pr_multi = false;               // more than one prior set (Nprtyp>1)
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
         // Capture the value tokens for the args whose state we set here:
         //   6 = adjust, 8 = power, 9 = function, 11 = save, 17 = aicdiff,
-        //   1 = data, 2 = start, 12 = mode, 14 = type (user prior adjustment).
+        //   1 = data, 2 = start, 4 = file, 5 = format, 12 = mode, 14 = type
+        //   (user prior adjustment).
         std::vector<std::string> cap;
         bool want = (argidx == 6 || argidx == 8 || argidx == 9 || argidx == 11 ||
-                     argidx == 17 || argidx == 1 || argidx == 2 || argidx == 12 ||
-                     argidx == 14);
+                     argidx == 17 || argidx == 1 || argidx == 2 || argidx == 4 ||
+                     argidx == 5 || argidx == 12 || argidx == 14 || argidx == 19);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
         if (argidx == 1) {                       // data= : inline prior factors
@@ -121,14 +125,25 @@ void gt_transform(X13Context& ctx, bool& inptok) {
                     pr_start[1] = static_cast<int>((d - pr_start[0]) * 100.0 + 0.5);
                 } catch (...) {}
             }
+        } else if (argidx == 4 && !cap.empty()) { // file= : prior factors on disk
+            pr_file = cap[0];
+            if (cap.size() > 1) pr_multi = true;
+        } else if (argidx == 5 && !cap.empty()) { // format= : formatted read
+            pr_fmt = true;
         } else if (argidx == 12 && !cap.empty()) { // mode= percent|ratio|diff
             if (cap[0] == "percent") pr_mode = 0;
             else if (cap[0] == "ratio") pr_mode = 1;
             else if (cap[0] == "diff") pr_mode = 2;
+            if (cap.size() > 1) pr_multi = true;
+        } else if (argidx == 19 && !cap.empty()) { // temppriortrend= yes|no
+            // getadj.f:421 -- put the temporary prior back into the final TREND
+            // (D12) as well as the SA series.
+            ctx.prior.lprntr = (cap[0] == "yes");
         } else if (argidx == 14 && !cap.empty()) { // type= temporary|permanent
             const std::string& t = cap[0];
             if (t == "temporary" || t == "temp") pr_type = 1;
             else if (t == "permanent" || t == "perm") pr_type = 2;
+            if (cap.size() > 1) pr_multi = true;
         }
         if (argidx == 6 && !cap.empty()) {
             // getadj.f adjust= mapping (ADJDIC='nonelomloqlpyear'): 1 none, 2 lom,
@@ -171,28 +186,65 @@ void gt_transform(X13Context& ctx, bool& inptok) {
             } catch (...) { /* malformed handled by the Fortran error path */ }
         }
     }
-    // getadj.f:442-580 -- store the inline user prior-adjustment factors. Minimal
-    // slice: permanent + ratio/percent mode. Temporary (Usrtad) and diff mode are
-    // not ported yet -> fatal cleanly (a spec that needs them self-skips).
+    // getadj.f:479-530 -- the factors can come from a file instead of data=. One
+    // file, one type, free format (the multi-file / multi-type form and the
+    // formatted read are not ported; both fatal rather than silently reading the
+    // wrong thing).
+    if (pr_multi) {
+        // getadj.f handles up to PNADJ prior sets (one file/type/mode each); only
+        // one is ported. Fatal rather than silently using the first: the dropped
+        // set would change every table without any sign that it was ignored.
+        inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+               "transform: more than one set of prior adjustment factors "
+               "(Nprtyp>1) not yet supported.");
+        inptok = false;
+    } else if (!pr_file.empty()) {
+        if (!pdata.empty()) {
+            inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                   "transform data= and file= cannot both be given.");
+            inptok = false;
+        } else if (pr_fmt) {
+            inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                   "transform format= (formatted prior-factor read) not yet "
+                   "supported.");
+            inptok = false;
+        } else {
+            std::vector<double> buf(prm::PLEN, 0.0);
+            int nobs = 0;
+            bool hvfreq = false, argok = true;
+            int freq = ctx.model.sp;
+            gtfldt_free(ctx, prm::PLEN, pr_file,
+                        static_cast<int>(pr_file.size()), buf.data(), nobs,
+                        hvfreq, freq, pr_start[0] != prm::NOTSET, argok, inptok);
+            if (argok && nobs > 0) pdata.assign(buf.begin(), buf.begin() + nobs);
+        }
+    }
+    // getadj.f:442-580 -- store the user prior-adjustment factors, permanent
+    // (Usrpad) or temporary (Usrtad). One set, percent or ratio mode; the diff
+    // mode (Percnt==2, additive factors) is not ported -> fatal cleanly.
     if (!pdata.empty()) {
         if (pr_type == 0) pr_type = 2;   // getadj.f:452 default: permanent
-        if (pr_type == 1 || pr_mode == 2) {
+        if (pr_mode == 2) {
             inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
-                   "transform temporary prior / diff mode not yet supported.");
+                   "transform mode=diff prior factors not yet supported.");
             inptok = false;
         } else {
             const int n = static_cast<int>(pdata.size());
-            double* up = ctx.priadj.usrpad.data();
+            const bool temp = (pr_type == 1);
+            // addadj.f:47-56 converts percent -> ratio; done here instead, which
+            // is the same single conversion (the oracle rewrites Usradj in place).
+            double* up = temp ? ctx.priadj.usrtad.data() : ctx.priadj.usrpad.data();
             for (int i = 0; i < n; ++i)
-                up[i] = (pr_mode == 0) ? pdata[i] / 100.0 : pdata[i];  // percent->ratio
-            ctx.priusr.nuspad = n;
-            ctx.priusr.npser = 7;   // "PermAdj"
+                up[i] = (pr_mode == 0) ? pdata[i] / 100.0 : pdata[i];
+            int* bgu = temp ? ctx.priusr.bgutad.data() : ctx.priusr.bgupad.data();
+            if (temp) { ctx.priusr.nustad = n; ctx.priusr.ntser = 7; }  // "TempAdj"
+            else      { ctx.priusr.nuspad = n; ctx.priusr.npser = 7; }  // "PermAdj"
             if (pr_start[0] != prm::NOTSET) {
-                ctx.priusr.bgupad(1) = pr_start[0];
-                ctx.priusr.bgupad(2) = pr_start[1];
+                bgu[0] = pr_start[0];
+                bgu[1] = pr_start[1];
             } else {                 // getadj.f:143 default = series start (Begsrs)
-                ctx.priusr.bgupad(1) = ctx.arima.begsrs(1);
-                ctx.priusr.bgupad(2) = ctx.arima.begsrs(2);
+                bgu[0] = ctx.arima.begsrs(1);
+                bgu[1] = ctx.arima.begsrs(2);
             }
         }
     }

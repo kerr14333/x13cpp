@@ -972,9 +972,17 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     if (adj.adjao == 1 && adj.nao > 0) divsub(sti, sti, facao, pos1bk, posffc, muladd);
     if (adj.adjtc == 1 && adj.ntc > 0) divsub(sti, sti, factc, pos1bk, posffc, muladd);
     if (adj.adjusr == 1) divsub(sti, sti, facusr, pos1bk, posffc, muladd);
+    // x11pt3.f:591-604 -- remove the TEMPORARY prior from the final irregular.
+    // (Unlike the permanent prior, which rmpadj takes out of D11 above, the
+    // temporary one stays in the SA series -- that is what makes it temporary --
+    // so it is stripped from D13 alone. Note the index base: Frstat+i-Pos1bk,
+    // WITHOUT rmpadj's extra Lsp-1.)
     if (pu.nustad > 0) {
-        x11_not_ported(ctx, "x11pt3 user temporary-adjustment removal (Nustad)");
-        return;
+        for (int i = pos1bk; i <= posffc; ++i) {
+            const double t = ctx.priadj.usrtad(pu.frstat + i - pos1bk);
+            if (muladd == 1) sti[i - 1] -= t;
+            else             sti[i - 1] /= t;
+        }
     }
 
     // D11 write + residual-seasonality test. Base path: no temporary constant.
@@ -1065,18 +1073,25 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // stc2 = Facls*Stc (*Factc). The internal Stc stays LS-free (Part-E's weight-
     // zero SA replacement then uses stc2); the published D12 is stc2, stored into
     // srs.stc as the final action. Base path leaves srs.stc as the published D12.
-    if (pu.nustad > 0 && pri.lprntr) {
-        x11_not_ported(ctx, "x11pt3 D12 user temporary-adjustment fold-in (Nustad)");
-        return;
-    }
+    const bool tad_in_trend = (pu.nustad > 0 && pri.lprntr);
     bool have_stc2 = false;
-    if (((!adj.finls) && adj.adjls == 1) ||
+    if (((!adj.finls) && adj.adjls == 1) || tad_in_trend ||
         ((!adj.fintc) && lttc && adj.adjtc == 1)) {
         copy(stc + (pos1bk - 1), posffc - pos1bk + 1, 1, stc2 + (pos1bk - 1));
         if ((!adj.finls) && adj.adjls == 1)
             addmul(stc2, facls, stc, pos1bk, posffc, muladd);
         if ((!adj.fintc) && lttc && adj.adjtc == 1)
             addmul(stc2, factc, stc2, pos1bk, posffc, muladd);
+        // x11pt3.f:937-946 -- transform{temppriortrend=yes}: the temporary prior
+        // was divided out before the adjustment, so put it back into the
+        // published trend as well as into the SA series.
+        if (tad_in_trend) {
+            for (int i = pos1bk; i <= posffc; ++i) {
+                const double t = ctx.priadj.usrtad(pu.frstat + i - pos1bk);
+                if (muladd == 1) stc2[i - 1] += t;
+                else             stc2[i - 1] *= t;
+            }
+        }
         have_stc2 = true;
     }
     // (deferred: D12 table/prttrn/punch/x11plt of stc2/Stc.)

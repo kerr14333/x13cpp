@@ -468,6 +468,83 @@ def spec_identify():
         "identify{} ACF/PACF over diff x sdiff grid", blocks)
 
 
+# ---------------------------------------------------------------------------
+# transform{} user prior-adjustment factors (getadj.f Usrpad/Usrtad).
+#
+# A synthetic 6-month "strike" dip in 1955 expressed as percentages: 100 = no
+# adjustment, 112.5 = the series ran 12.5% above trend that month. The same 144
+# values are used inline (data=) and, for the no-model case, read from the
+# generated prior-strike.dat -- so the two input routes gate identical
+# arithmetic.
+PRIOR_PCT = ["100.0"] * 144
+for _k in range(72, 78):                       # 1955.01 .. 1955.06
+    PRIOR_PCT[_k] = "112.5"
+PRIOR_FILE = "prior-strike.dat"
+
+
+def _prior_rows(vals):
+    return "\n".join("    " + " ".join(vals[i:i + 12])
+                     for i in range(0, len(vals), 12))
+
+
+def transform_prior(inline=True, kind="permanent", adjust=None, trend=False):
+    """transform{} carrying one set of user prior-adjustment factors."""
+    lines = ["function = log"]
+    if adjust is not None:
+        lines.append("adjust = " + adjust)
+    if inline:
+        lines.append("data = (\n" + _prior_rows(PRIOR_PCT) + "\n  )")
+    else:
+        lines.append('file = "%s"' % PRIOR_FILE)
+    lines += ["type = " + kind, "mode = percent", "start = 1949.01"]
+    if trend:
+        lines.append("temppriortrend = yes")
+    return block("transform", lines, print_all=False)
+
+
+def _prior_spec(fname, cover, model, **kw):
+    blocks = [series_airline(), transform_prior(**kw)]
+    if model:
+        blocks += [arima_airline(), estimate_block()]
+    blocks.append(block("x11", [], save_key="x11d", print_all=True, savelog=True))
+    return fname, assemble(cover, blocks)
+
+
+def spec_prior_perm_file():
+    # NO model: the only path where run_x11 has to build the /adjcmn/ record
+    # itself (adjsrs.f) and let x11int/x11pt1 remove the prior.
+    return _prior_spec(
+        "airline_prior-perm-file.spc",
+        "transform{file=} permanent user prior factors, no regARIMA model",
+        model=False, inline=False, kind="permanent")
+
+
+def spec_prior_temp():
+    # Temporary factors: stripped from the irregular (D13), kept in the SA
+    # series (D11) -- that is what makes them temporary (x11pt3.f:591-604).
+    return _prior_spec(
+        "airline_prior-temp.spc",
+        "transform{type=temporary} user prior factors (Usrtad) with a model",
+        model=True, inline=True, kind="temporary")
+
+
+def spec_prior_temp_trend():
+    # ... and folded back into the published trend as well (x11pt3.f:937-946).
+    return _prior_spec(
+        "airline_prior-temp-trend.spc",
+        "transform{temppriortrend=yes}: temporary prior folded back into D12",
+        model=True, inline=True, kind="temporary", trend=True)
+
+
+def spec_prior_lom_user():
+    # The predefined length-of-month prior COMBINED with a user permanent one:
+    # adjsrs multiplies both into the same Adj factor series.
+    return _prior_spec(
+        "airline_prior-lom-user.spc",
+        "transform{adjust=lom} predefined prior combined with a user permanent one",
+        model=True, inline=True, kind="permanent", adjust="lom")
+
+
 BUILDERS = [
     spec_spectrum,
     spec_spectrum_arspec,
@@ -487,6 +564,10 @@ BUILDERS = [
     spec_outlier_lsrun,
     spec_check,
     spec_identify,
+    spec_prior_perm_file,
+    spec_prior_temp,
+    spec_prior_temp_trend,
+    spec_prior_lom_user,
 ]
 
 
@@ -494,6 +575,11 @@ def main():
     for fn in os.listdir(HERE):
         if fn.endswith(".spc"):
             os.remove(os.path.join(HERE, fn))
+
+    # The prior-factor data file the no-model prior spec reads. Synthetic and
+    # deterministic, so it is generated here rather than committed by hand.
+    with open(os.path.join(HERE, PRIOR_FILE), "w", newline="\n") as fh:
+        fh.write("\n".join(PRIOR_PCT) + "\n")
 
     written = []
     for builder in BUILDERS:

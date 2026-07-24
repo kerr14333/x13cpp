@@ -17,6 +17,7 @@
 #include "x11/x11parts.hpp"   // x11pt1, x11pt2
 #include "x11/x11drv.hpp"     // setxpt, x11int, chkadj, regeff, extend, adjreg
 #include "regarima/regvar.hpp"   // regvar (design rebuild for regression effects)
+#include "regarima/priadj.hpp"   // adjsrs_factors (prior-adjustment factor series)
 #include "numeric/numeric.hpp"   // dpeq (tdprior weight resolution)
 #include "notset.hpp"         // prm::NOTSET
 #include "x11/slidingspans.hpp"  // ssprep_snapshot, restor_span, run_slidingspans
@@ -242,6 +243,32 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // before x11int), not later from run_slidingspans(). Cheap; harmless
     // when slidingspans{} was not requested.
     ssprep_snapshot(ctx);
+
+    // adjsrs.f on the NO-MODEL path. With a model, run_pre_model builds the prior
+    // factors and arima.f's chain (extend/adjreg -> Stcsi) carries the
+    // prior-adjusted series into X-11; with no model nothing upstream runs, so
+    // the /adjcmn/ record is built here and x11int (Adj -> Sprior) + x11pt1
+    // (Sto /= Sprior, gated on Kfmt>=1) do the removal, exactly as the oracle
+    // does on both paths. Without this the no-model run decomposed the RAW series
+    // while x11pt3 still tried to remove a prior that had never been applied --
+    // which indexed Usrpad at Frstap==0 and threw.
+    if (!has_model && (ctx.prior.priadj > 1 || ctx.priusr.nuspad > 0 ||
+                       ctx.priusr.nustad > 0)) {
+        // adjsrs.f:39-40 -- Nadj spans the backcasts, the series, and at least a
+        // full year of forecasts; Begadj is the span start shifted back Nbcst.
+        const int nadj = std::min(
+            nspobs + nbcst + std::max(sp, nfcst - fctdrp), 1020 - ctx.adj.setpri);
+        std::vector<double> fac(static_cast<std::size_t>(nadj), 1.0);
+        addate(begspn, sp, -nbcst, ctx.adj.begadj.data());
+        if (!adjsrs_factors(ctx, ctx.adj.begadj.data(), sp, nadj,
+                            /*suppress_predef=*/false, fac.data()))
+            return false;
+        for (int t = 0; t < nadj; ++t) ctx.adj.adj(t + 1) = fac[t];
+        ctx.adj.nadj = nadj;
+        dfdate(begspn, ctx.adj.begadj.data(), sp, ctx.adj.adj1st);  // adjsrs.f:108
+        ctx.adj.adj1st += 1;
+        ctx.prior.kfmt = 1;    // adjsrs.f:62,101 -- there IS a prior to remove
+    }
 
     // X-11 array initialization (x11int.f) -- once, before both the (optional)
     // Easter transparent pre-pass and the main spine, so X11hol/Faccal set by
