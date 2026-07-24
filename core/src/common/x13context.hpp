@@ -181,6 +181,12 @@ struct X13Context {
     // spcdrv). The AO/TC divsub on Stime is commented out in the oracle, so this
     // holds Sti where C17-good, ebar where extreme, with no further adjustment.
     std::vector<double> mq5a_stime = std::vector<double>(1020, 0.0);
+    // x11pt3's `ststd` (D16, the combined seasonal + calendar adjustment
+    // factors). A function-local PLEN array in the oracle; snapshotted here at
+    // the point the oracle punches D16 (x11pt3.f:1129-1146, i.e. AFTER the
+    // Khol==1 return, so a holiday-only run leaves it empty exactly as the
+    // oracle writes no D16) so the harness can emit the table.
+    std::vector<double> x11_ststd;
     // Final regARIMA residuals (arima.f's `a`, length `resid_na`) captured after
     // estimation for the residual-spectrum diagnostic (spr, spcrsd.f). Their
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).

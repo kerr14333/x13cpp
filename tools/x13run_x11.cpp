@@ -152,10 +152,24 @@ int main(int argc, char** argv) {
     // d10 seasonal factors are projected across the forecast/backcast span, so
     // they too honour appendfcst/appendbcst (the oracle saves d10 over the same
     // extended range as b1). d11/d12/d13 (SA/trend/irregular of the data) do not.
-    dump("d10", begspn, sp, b1_frst, b1_last, ctx.x11srs.sts.data());
+    // x11pt3.f:197-205 (D10) / 1132-1140 (D16) -- the seasonal-factor punch
+    // range. Savfct (series{}/x11{}/seats{} appendfcst) widens it forward to the
+    // forecast span (Posffc when Nfcst>0, else the one projected year Posfob+Ny);
+    // Savbct widens the start back to Pos1bk. Unlike b1 this is NOT model-gated:
+    // the seasonal factors are projected a year ahead regardless.
+    const int sf_frst = ctx.tbllog.savbct ? ctx.x11ptr.pos1bk : pos1ob;
+    const int sf_last = !ctx.tbllog.savfct
+                            ? posfob
+                            : (ctx.extend.nfcst > 0 ? ctx.x11ptr.posffc
+                                                    : posfob + sp);
+    dump("d10", begspn, sp, sf_frst, sf_last, ctx.x11srs.sts.data());
     dump("d11", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data());
     dump("d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
     dump("d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
+    // d16 -- combined seasonal + calendar adjustment factors (x11pt3's ststd,
+    // snapshotted onto ctx). Empty when the oracle writes no D16 (Khol==1).
+    if (!ctx.x11_ststd.empty())
+        dump("d16", begspn, sp, sf_frst, sf_last, ctx.x11_ststd.data());
 
     // a4 -- x11regression tdprior user prior trading-day factor (Kswv=1 pritd),
     // over the observed span [pos1ob,posfob]. x11_a4_prior is 0-based from pos1ob.

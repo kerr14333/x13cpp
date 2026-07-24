@@ -529,6 +529,74 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
             if (argok && nelt > 0) ctx.xtrm.ksdev = ivec[0];
             continue;
         }
+        if (argidx == 8 || argidx == 25) {
+            // appendfcst -> Savfct (getx11.f:348-352); appendbcst -> Savbct
+            // (getx11.f:452-456). Same globals series{}/seats{} set: they widen
+            // the save/punch range of the X-11 tables to the forecast (backcast)
+            // span, they do not change any arithmetic.
+            static const char YSNDIC[] = "yesno";
+            static const int ysnptr[3] = {1, 4, 6};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   argidx == 8
+                       ? "Available options for appending forecasts are yes or no."
+                       : "Available options for appending backcasts are yes or no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (argidx == 8)
+                    ctx.tbllog.savfct = (ivec[0] == 1);
+                else
+                    ctx.tbllog.savbct = (ivec[0] == 1);
+            }
+            continue;
+        }
+        if (argidx == 14) {
+            // keepholiday -> Finhol (getx11.f:258-264). NOTE the inverted sense:
+            // Finhol=ivec(1).eq.2, i.e. keepholiday=NO leaves the holiday effect
+            // in the FINAL adjustment (Fin* = "remove in the final SA").
+            static const char YSNDIC[] = "yesno";
+            static const int ysnptr[3] = {1, 4, 6};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for keepholiday are yes or no.", ivec, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.x11adj.finhol = (ivec[0] == 2);
+            continue;
+        }
+        if (argidx == 15) {
+            // final -> Finao/Finls/Finusr/Fintc (getx11.f:287-311). FINDIC is a
+            // LIST argument (up to PFIN=4 entries): each named effect is removed
+            // from the final seasonally adjusted series instead of being left in.
+            constexpr int PFIN = 4;
+            static const char FINDIC[] = "aolsusertc";
+            static const int finptr[PFIN + 1] = {1, 3, 5, 9, 11};
+            int finind[PFIN];
+            setint(prm::NOTSET, PFIN, finind);
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, PFIN, FINDIC, finptr, PFIN,
+                   "Choices for final argument are ao, ls, tc, or user.", finind,
+                   nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                for (int i = 0; i < nelt; ++i) {
+                    switch (finind[i]) {
+                    case 1: ctx.x11adj.finao = true; break;
+                    case 2: ctx.x11adj.finls = true; break;
+                    case 3: ctx.x11adj.finusr = true; break;
+                    case 4: ctx.x11adj.fintc = true; break;
+                    default: break;
+                    }
+                }
+            }
+            continue;
+        }
         std::vector<std::string> cap;
         consume_value(ctx, argidx == 1 ? &cap : nullptr);   // 1 = mode
         if (ctx.error.lfatal) return;

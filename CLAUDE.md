@@ -168,5 +168,16 @@ diagnostics front (force / slidingspans / history) is now closed.
   1729-1736 (easter present -> Sigxrg=0/Otlxrg=T, tdxtrm skipped); Cvxalf default
   = PT5 = 0.05 (not 0.5) -> Critxr 3.89; the otlvar armafl must be `!lxreg`-gated.
   See **`tools/x11regression_aictest_scope.md`**. Still follow-on: aictest td/user.
+- **BLS CES production specs — GATED bit-exact (`test_ces_tables.py`):** the real,
+  unedited BLS Current Employment Statistics specs (all-UPPERCASE keywords, the
+  axis that surfaced the case-sensitive value-match bug in 8e27426). Both
+  `tests/corpus/ces/AE1011330000{,_simple}.spc` gate b1/d10/d11/d16 at ~5e-15,
+  including the full spec's 11 user `usertype=td` regressors + AO identification
+  at `critical=10.5`. Closed here: the three unparsed `x11{}` args `appendfcst`/
+  `appendbcst` (Savfct/Savbct — they widen the d10/d16 punch range to the
+  forecast span, no arithmetic) and `final=`/`keepholiday` (Finao/Finls/Finusr/
+  Fintc/Finhol; `final=user` is inert when the user regressors are `usertype=td`,
+  since their effect lands in Factd, not Facusr), plus a d16 (`ststd`) snapshot on
+  ctx so the harness can emit the combined seasonal+calendar factors.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

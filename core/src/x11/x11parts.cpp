@@ -1100,8 +1100,14 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // (deferred: D13 table/punch/x11plt of sti2/Sti.)
 
     if (opt.khol == 1) return;
-    // (deferred: D16 table/punch of ststd; D16b Psuadd; D18 TD table -- all off
-    // base or pure deferred print.)
+    // x11pt3.f:1128-1146 -- D16, the combined seasonal + calendar adjustment
+    // factors. The table/punch itself is deferred output, but the buffer is
+    // snapshotted onto ctx here (ststd is a function-local in the oracle) so the
+    // harness can emit d16 for the parity gate. Save range mirrors the punch:
+    // frstsf=Pos1ob (Pos1bk when Savbct), lastsf=Posfob / Posffc (Savfct and
+    // Nfcst>0) / Posfob+Ny (Savfct, no forecasts) -- resolved by the caller.
+    // (deferred: D16b Psuadd; D18 TD table -- all off base or pure deferred print.)
+    ctx.x11_ststd.assign(ststd, ststd + PLEN);
 
     // --- PART E: modified original / SA / irregular series ---
     opt.kpart = 5;
