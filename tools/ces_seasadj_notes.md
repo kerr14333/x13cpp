@@ -100,9 +100,11 @@ omit `name=`, so unchanged).
 
 ## Disk
 
-`ces_series/ce.data.0.AllCESSeries` is 349 MB; only ~143 tiny NSA series are
-needed. Plan: extract those to `tests/corpus/ces/data/`, then delete the 349 MB
-file (+ the unused per-datatype metadata / xlsx) from `ces_series/`.
+`ces_series/` (337 MB, mostly `ce.data.0.AllCESSeries`) was **deleted 2026-07-24**
+on the user's say-so — only ~143 tiny NSA series are ever needed and those already
+live in `tests/corpus/ces/data/`. Re-fetch with the curl + contact-User-Agent
+recipe above when the spec generator needs the bulk file again (`ce.series`, the
+3.8 MB series-id map, comes back the same way).
 
 ## Vertical slice kept as the canonical example
 
