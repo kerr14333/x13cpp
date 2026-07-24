@@ -14,6 +14,7 @@
 // Falls back to the existing seats_not_ported() fatal for anything this
 // pass doesn't cover (p>0/bp>0, imean!=0, or the chain simply failing).
 #include "specparse/specparse.hpp"
+#include "gen/model.hpp"  // prm::PRGTCN (mean-regressor type)
 #include "seats/canonical_denoms.hpp"
 #include "seats/decompspectrum.hpp"
 #include "seats/estbur.hpp"
@@ -35,6 +36,21 @@ void seats_not_ported(X13Context& ctx, const char* what) {
            stdio::STDERR, ctx.units.mt2, true);
     abend(ctx);
 }
+
+// Imean!=0: the model carries a Constant (mean) regressor. SEATS then centers
+// the differenced series by wm (the differenced-series mean) and adds it back
+// via za in the FCAST extension + wmf/wmb in ESTBUR's general branch
+// (analts.f:1969-1979, ansub1.f:2166-2181, ansub3.f zaf/zab). None of that mean
+// path is ported yet -- fcast_extend/estbur hardcode za=wmf=wmb=0 -- so a
+// mean-carrying model would silently produce WRONG s-tables. Detect + fatal
+// cleanly instead. (d=0 additionally drops the trend unit root, a separate
+// structural gap.) See tools/seats_general_scope.md.
+bool seats_has_mean(const X13Context& ctx) {
+    const auto& M = ctx.model;
+    for (int i = 1; i <= M.nb; ++i)
+        if (M.rgvrtp(i) == prm::PRGTCN) return true;
+    return false;
+}
 }  // namespace
 
 bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string& base) {
@@ -52,6 +68,13 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     if (!run_m2_after_parse(ctx, base, /*estimate=*/true, &trnsrs, &nobspf_m))
         return false;
     if (ctx.error.lfatal) return false;
+
+    // Unported: mean-carrying models (Imean!=0). Fatal cleanly rather than emit
+    // wrong s-tables (the za/wm mean path is not ported -- see seats_has_mean).
+    if (seats_has_mean(ctx)) {
+        seats_not_ported(ctx, "SEATS with a mean/constant regressor (Imean!=0)");
+        return false;
+    }
 
     // decode -> canonical denoms -> SPECTRU -> DecompSpectrum -> ESTBUR
     // (historical span only; see estbur.hpp for exact scope/limits).

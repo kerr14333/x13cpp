@@ -3,7 +3,33 @@
 **STATUS: p>0 AND bp>0 CLOSED (bit-exact + gated). *_ar2-seats ((2 1 0)(0 1 1),
 p>0) gate s10-s18 ~5e-15 on airline/payems/unrate; *_sar-seats ((0 1 1)(1 1 0),
 bp>0) gate on all 4 series. Both bugs were AR-polynomial signs (phis=+mo.phi,
-bphis=+mo.bphi). Only imean!=0 remains open (needs a d=0-with-mean target).**
+bphis=+mo.bphi). Only imean!=0 remains open (now FATALS cleanly via
+run_seats.cpp seats_has_mean, no longer silent-wrong).**
+
+## imean!=0 runway (the last general-shape gap)
+Probed this session (scratchpad/seatprobe/im1,im2). A Constant (PRGTCN) regressor
+sets Imean=1. Measured error with the current za=0 hardcode: im1 (airline log,
+`regression{const}` + (0 1 1)(0 1 1), d=1 drift) ~16% on s11/s12; im2 (unrate,
+const + (2 0 0)(0 1 1), d=0) ~1580% on s10 -- the mean genuinely drives the
+decomposition, not accidentally-close. Now guarded (seats_has_mean -> fatal).
+
+To port (three coupled pieces):
+1. **Center the differenced series** by wm before decomposing. analts.f:1955-1979:
+   wm = mean of Wd (regular case: sum(Wd)/Nw; if d==0: sum over nn=Nw-mod(Nw,mq)
+   points / nn), then when Imean!=0 subtract wm from every Wd(j). SEATS operates
+   on the CENTERED Wd; wm is added back downstream.
+2. **za in FCAST** (fcast_extend, ansub1.f:2166-2181): za = wm*(1 - sum phist(j))
+   when Pstar>0 else wm; the extension recursion seeds `sz = za - ...` (currently
+   sz=0). wm is the differenced-series mean from step 1.
+3. **wmf/wmb (zaf/zab) in ESTBUR's general branch** (estbur.cpp, ansub3.f): the
+   AM2 rows 1..iqrow use AM2(i,irow+1)=wmf / (i,irow+2)=wmb (currently 0). These
+   are the forward/backward mean contributions.
+   Plus: **d=0 drops the trend unit root** (chi becomes [1] not (1-B)^d) -- im2's
+   giant error is mostly this structural change, a separate sub-item from the mean
+   itself. Do the d>=1 drift case (im1) first; it isolates the pure za/wm path.
+Sourcing wm in C++: the fitted Constant coefficient is a PRGTCN regressor in
+ctx.model; but the oracle's wm is the DIFFERENCED-SERIES mean (step 1), not the
+raw coefficient -- compute it from Wd, don't read the coefficient.
 
 ## What actually closed it (the real bug was ONE sign)
 The estbur general branch, the ct/cs/cc/MLTSOL solve, and the FCAST extension
