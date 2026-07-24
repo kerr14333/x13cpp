@@ -10,8 +10,8 @@
 // Constant/mean regressor with d>=1; see the mean handling below). This
 // function only signals success/failure; tools/x13run_seats.cpp re-runs the
 // same (idempotent, side-effect-free) chain to dump the tables. Falls back to
-// seats_not_ported() for the remaining gaps (imean+d==0, imean alongside other
-// regressors, or the chain simply failing).
+// seats_not_ported() for the remaining gaps (imean alongside other regressors,
+// or the chain simply failing).
 #include "specparse/specparse.hpp"
 #include "gen/model.hpp"  // prm::PRGTCN (mean-regressor type)
 #include "seats/canonical_denoms.hpp"
@@ -37,13 +37,13 @@ void seats_not_ported(X13Context& ctx, const char* what) {
     abend(ctx);
 }
 
-// Imean!=0: the model carries a Constant (mean) regressor. SEATS then centers
-// the differenced series by wm (the differenced-series mean) and adds it back
-// via za in the FCAST extension + wmf/wmb in ESTBUR's general branch
-// (analts.f:1969-1979, ansub1.f:2166-2181, ansub3.f zaf/zab). That path IS now
-// ported in estbur.cpp for the drift case (d>=1). Only d==0 remains open (it
-// additionally drops the trend unit root, a separate structural gap), so the
-// caller still fatals for mean+d==0. See tools/seats_general_scope.md.
+// Imean!=0: the model carries a Constant (mean) regressor. SEATS keeps the mean
+// IN the decomposed series and folds it back via wm-centering of the CALCFX
+// seeds + za in the FCAST extension + wmf/wmb in ESTBUR's general branch
+// (analts.f:1969-1979, ansub1.f:2166-2181, ansub3.f zaf/zab). That path IS
+// ported in estbur.cpp and is d-agnostic (gated bit-exact for BOTH d>=1 drift
+// and d==0). Only a mean ALONGSIDE other regressors remains open (needs a
+// selective add-back; the caller fatals there). See tools/seats_general_scope.md.
 bool seats_has_mean(const X13Context& ctx) {
     const auto& M = ctx.model;
     for (int i = 1; i <= M.nb; ++i)
@@ -68,18 +68,6 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         return false;
     if (ctx.error.lfatal) return false;
 
-    // Mean-carrying models (Imean!=0): the wm/za mean path IS ported for the
-    // drift case (d>=1), where SEATS keeps the mean IN the decomposed series
-    // (its differenced mean is wm) and folds the forecast/boundary back via
-    // za/wmf/wmb (estbur.cpp). The d==0 case is a SEPARATE structural gap (the
-    // trend unit root drops, ansub3.f:121-134's demeaned-z branch) -- still
-    // fatal cleanly there rather than emit wrong s-tables.
-    if (seats_has_mean(ctx) && ctx.model.nnsedf == 0) {
-        seats_not_ported(ctx,
-            "SEATS with a mean/constant regressor and d==0 (Imean!=0, no "
-            "regular differencing -- trend unit root drops)");
-        return false;
-    }
     // SEATS decomposes the series WITH the mean present (verified: the oracle's
     // z reconstructs to raw log(airline) exactly, wm=mean of its differenced
     // form). But estimation left ctx.series.tsrs = the regression-ADJUSTED

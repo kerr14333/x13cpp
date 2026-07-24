@@ -57,7 +57,7 @@ improvise:
 - **Python is `python`** (3.14). `python3` is a Windows App alias → "Permission
   denied".
 - **Parity tests:** `python -m pytest tests/parity -q`. Green = `NNN passed`, with
-  expected `s` skips (parse-gap / no-golden specs). Currently 978 pass / 0 fail /
+  expected `s` skips (parse-gap / no-golden specs). Currently 1033 pass / 0 fail /
   0 xfail / 25 skip.
 - After adding a `core/src/*.cpp`, the first build prints `GLOB mismatch!` and
   stops — just rerun once.
@@ -94,15 +94,17 @@ canonical_denoms.cpp: `phis = +mo.phi`; plus the CALCFX Pstar>0 stationary-AR
 filter for payems_ar2's near-non-invertible seasonal MA). **Seasonal-AR (bp>0)
 is also bit-exact + gated** — the `*_sar-seats` specs `(0 1 1)(1 1 0)` gate
 s10–s18 on all 4 series (same sign-fix class: `bphis = +mo.bphi`). **imean!=0
-(a Constant/mean regressor) is now bit-exact + gated for the drift case (d>=1)**
-— the `*_mean-seats` specs `(0 1 1)(0 1 1)+const` gate s10–s18 on all 4 series.
-The decisive fixes (the original plan was incomplete): (1) SEATS decomposes the
-series WITH the mean present — run_seats restores `ctx.series.tsrs` from the
-clean `trnsrs` (estimation had left the regression-ADJUSTED series, drift
-removed); (2) CALCFX seeds center the differenced series by wm (forward wm,
-backward kd·wm, kd=(-1)^(d+bd)); plus za=wm·(1-Σphist) in FCAST and wmf/wmb in
-the ESTBUR boundary. Only imean+d==0 (trend unit root drops) and imean alongside
-other regressors remain open (both fatal cleanly). **SEATS seasonal
+(a Constant/mean regressor) is now bit-exact + gated, and is d-AGNOSTIC** — both
+`*_mean-seats` `(0 1 1)(0 1 1)+const` (d>=1 drift) and `*_mean-d0-seats`
+`(2 0 0)(0 1 1)+const` (d==0) gate s10–s18 (~5e-15) on all 4 series. The decisive
+fixes (the original plan was incomplete): (1) SEATS decomposes the series WITH
+the mean present — run_seats restores `ctx.series.tsrs` from the clean `trnsrs`
+(estimation had left the regression-ADJUSTED series, drift removed); (2) CALCFX
+seeds center the differenced series by wm (forward wm, backward kd·wm,
+kd=(-1)^(d+bd)); plus za=wm·(1-Σphist) in FCAST and wmf/wmb in the ESTBUR
+boundary. (The "d==0 trend unit root drops" theory was wrong — non-mean d==0 is
+itself bit-exact, so the mean fixes cover d==0 unchanged.) Only imean alongside
+other regressors remains open (fatal cleanly). **SEATS seasonal
 decomposition corpus is
 fully bit-exact** — every SEATS corpus spec's s10–s18 tables gate (~5e-15),
 including the near-non-invertible fixed-airline variants (payems_fixed /

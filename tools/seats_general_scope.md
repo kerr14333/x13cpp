@@ -1,10 +1,14 @@
 # General-shape SEATS (p>0 / bp>0 / imean!=0) — port scope
 
-**STATUS: p>0, bp>0, AND imean!=0 (drift case, d>=1) ALL CLOSED (bit-exact +
-gated). *_ar2-seats ((2 1 0)(0 1 1), p>0) gate s10-s18 ~5e-15 on airline/payems/
-unrate; *_sar-seats ((0 1 1)(1 1 0), bp>0) gate on all 4 series; *_mean-seats
-((0 1 1)(0 1 1)+const, Imean=1) gate s10-s18 ~4e-15 on all 4 series. The p>0/
-bp>0 bugs were AR-polynomial signs (phis=+mo.phi, bphis=+mo.bphi).**
+**STATUS: p>0, bp>0, AND imean!=0 (BOTH d>=1 drift AND d==0) ALL CLOSED (bit-
+exact + gated). *_ar2-seats ((2 1 0)(0 1 1), p>0) gate s10-s18 ~5e-15 on airline/
+payems/unrate; *_sar-seats ((0 1 1)(1 1 0), bp>0) gate on all 4 series;
+*_mean-seats ((0 1 1)(0 1 1)+const, d>=1) AND *_mean-d0-seats ((2 0 0)(0 1 1)+
+const, d==0) gate s10-s18 ~5e-15 on all 4 series. The p>0/bp>0 bugs were AR-
+polynomial signs (phis=+mo.phi, bphis=+mo.bphi). imean is d-AGNOSTIC (the "d==0
+trend unit root drops" theory was WRONG -- non-mean d==0 is itself bit-exact, so
+the mean fixes cover d==0 unchanged). Only imean alongside OTHER regressors (a
+selective mean add-back onto the regression-adjusted series) remains open.**
 
 ## imean!=0 (drift, d>=1) — CLOSED. What ACTUALLY fixed it (the plan below was
 partly wrong):
@@ -26,8 +30,12 @@ wmb) needed wm. Two things the plan MISSED were the decisive fixes:
 Plus the plan's own pieces (all correct, all landed): za=wm*(1-sum phist) in
 FCAST (zab=zaf*kd), wmf=0.5*zaf / wmb=0.5*zab in the ESTBUR boundary. wm = plain
 mean of the fully-differenced series (crmean default 0; the rtval>ta residual
-correction never fires, ta default 100). STILL OPEN: imean+d==0 (trend unit root
-drops, ansub3.f:121-134) and imean alongside other regressors -- both fatal
+correction never fires, ta default 100). imean+d==0 is ALSO closed (mean-d0-
+seats, (2 0 0)(0 1 1)+const): the mean fixes are d-agnostic and d==0 needs no
+special handling (the non-mean d==0 path is itself bit-exact, ~4e-15 -- so the
+old "trend unit root drops" theory was wrong; d+bd==0's demeaned-z branch
+ansub3.f:121-134 is a DIFFERENT case, pure-stationary+mean, still unexercised).
+STILL OPEN: imean alongside other regressors (selective mean add-back) -- fatal
 cleanly in run_seats.cpp.
 
 ### (historical) original imean framing -- superseded by the note above

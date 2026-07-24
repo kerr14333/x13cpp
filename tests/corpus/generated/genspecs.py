@@ -288,6 +288,22 @@ def cfg_mean_seats(s):
     return blocks
 
 
+def cfg_mean_d0_seats(s):
+    # Constant (mean) regressor with a d==0 model (2 0 0)(0 1 1): exercises the
+    # mean path with NO regular differencing (Pstar=2 AR, kd=(-1)^(d+bd)=-1 so
+    # the backward CALCFX center / FCAST seed sign-flip). The d==0 trend has no
+    # unit root; verified the mean handling is d-agnostic (im2).
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(spec("regression", ["variables = (const)"],
+                       save_key="regression"))
+    blocks.append("arima{\n  model = (2 0 0)(0 1 1)\n}")
+    blocks.append(estimate_block())
+    blocks.append(seats_block())
+    return blocks
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -311,6 +327,7 @@ CONFIGS = [
     ("ar2-seats", cfg_ar2_seats),
     ("sar-seats", cfg_sar_seats),
     ("mean-seats", cfg_mean_seats),
+    ("mean-d0-seats", cfg_mean_d0_seats),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 

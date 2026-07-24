@@ -27,14 +27,16 @@
 // canonical_denoms.cpp (phis = +mo.phi for p>0; bphis = +mo.bphi for bp>0).
 // bp>0 (seasonal AR) is ALSO gated now: the *_sar-seats specs (0 1 1)(1 1 0)
 // gate s10-s18 bit-exact on all 4 series. imean!=0 (a Constant/mean regressor)
-// is ALSO supported + gated for the DRIFT case (d>=1): the *_mean-seats specs
-// ((0 1 1)(0 1 1)+const) gate s10-s18 bit-exact on all 4 series. The mean is
-// carried IN the decomposed series (run_seats restores the mean-inclusive
-// tsrs); wm (the differenced-series mean) centers the CALCFX-seed differenced
-// series (forward wm, backward kd*wm, kd=(-1)^(d+bd)) and folds back via za in
-// FCAST + wmf/wmb in the ESTBUR boundary. Only imean!=0 with d==0 (trend unit
-// root drops, ansub3.f:121-134) and imean alongside OTHER regressors remain
-// open (both fatal cleanly in run_seats). isCloseToTD is always false in this
+// is ALSO supported + gated, and is d-AGNOSTIC: the *_mean-seats specs
+// ((0 1 1)(0 1 1)+const, d>=1 drift) AND the *_mean-d0-seats specs
+// ((2 0 0)(0 1 1)+const, d==0) both gate s10-s18 bit-exact on all 4 series. The
+// mean is carried IN the decomposed series (run_seats restores the mean-
+// inclusive tsrs); wm (the differenced-series mean) centers the CALCFX-seed
+// differenced series (forward wm, backward kd*wm, kd=(-1)^(d+bd)) and folds back
+// via za in FCAST + wmf/wmb in the ESTBUR boundary. (d==0 needs no special
+// handling -- the non-mean d==0 path is itself bit-exact.) Only imean alongside
+// OTHER regressors remains open (fatal cleanly in run_seats). isCloseToTD is
+// always false in this
 // port. npsi!=1 (real seasonal) / ncycth!=0||ncyc!=1 (real cycle) flow through
 // correctly and now have coverage via the ar2/sar specs' structure.
 #ifndef X13_SEATS_ESTBUR_HPP
