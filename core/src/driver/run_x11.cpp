@@ -24,6 +24,7 @@
 #include "driver/run_history.hpp"  // run_history
 #include "driver/run_spectrum.hpp"  // run_spectrum
 #include "composite/agr2.hpp"       // agr2_component (composite accumulation)
+#include "composite/agr3.hpp"       // agr3, agrxpt (indirect adjustment)
 
 #include <algorithm>
 #include <string>
@@ -196,6 +197,9 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // Span pointers (setxpt.f). Base no-model: Pos1bk = Pos1ob = 1,
     // Posfob = Posffc = Nspobs.
     setxpt(ctx, nfdrp, lsadj, fctdrp);
+    // editor.f:234 -- on the composite total's run, reconcile the direct and
+    // indirect buffer geometries before anything reads the pointers.
+    if (ctx.agr.iagr == 3) agrxpt(ctx, begspn, sp);
     const int pos1ob = ctx.x11ptr.pos1ob;
     // editor.f:851 Setpri=Pos1bk -- the 1-based start of the prior-adjustment span
     // in the padded buffer. Never set in the base port (no gated prior-adj spec);
@@ -429,6 +433,23 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
                    ctx.units.mt2, ctx.units.mt2, true);
             return false;
         }
+    }
+    // x11ari.f:333-341: this run IS the composite total (Iagr==3), so after its
+    // own DIRECT adjustment above, rebuild the D-tables from the aggregated
+    // component results -- the INDIRECT adjustment. (Ixreg/Kswv are zeroed
+    // around it in the oracle; neither is set on this path.)
+    if (ctx.agr.iagr == 3) {
+        // agr3 REPLACES the D-table buffers with the indirect adjustment, so
+        // snapshot the composite total's own DIRECT d10-d13 first. Not an oracle
+        // step (the oracle has already printed/punched them by this point); this
+        // port defers all output to the caller, so the caller needs both sets.
+        constexpr int PLEN_D = 1020;
+        ctx.agr_direct_d10.assign(ctx.x11srs.sts.data(), ctx.x11srs.sts.data() + PLEN_D);
+        ctx.agr_direct_d11.assign(ctx.x11srs.stci.data(), ctx.x11srs.stci.data() + PLEN_D);
+        ctx.agr_direct_d12.assign(ctx.x11srs.stc.data(), ctx.x11srs.stc.data() + PLEN_D);
+        ctx.agr_direct_d13.assign(ctx.x11srs.sti.data(), ctx.x11srs.sti.data() + PLEN_D);
+        agr3(ctx, begspn_full);
+        if (ctx.error.lfatal) return false;
     }
 
     return !ctx.error.lfatal;

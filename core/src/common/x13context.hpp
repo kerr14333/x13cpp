@@ -187,6 +187,17 @@ struct X13Context {
     // Khol==1 return, so a holiday-only run leaves it empty exactly as the
     // oracle writes no D16) so the harness can emit the table.
     std::vector<double> x11_ststd;
+    // agr3.f locals the composite gate needs back: `stc2in` (the published
+    // INDIRECT trend -- Stc still holds the pre-level-shift filter output) and
+    // `ststd` (the indirect total adjustment factors). Function-locals in the
+    // oracle, like x11pt3's ststd above.
+    std::vector<double> agr_stc2in;
+    std::vector<double> agr_ststd;
+    // The composite total's own DIRECT d10-d13, snapshotted before agr3
+    // overwrites those buffers with the indirect adjustment. Not an oracle step:
+    // the oracle has already emitted them by then, while this port hands all
+    // output to the caller after the run.
+    std::vector<double> agr_direct_d10, agr_direct_d11, agr_direct_d12, agr_direct_d13;
     // Final regARIMA residuals (arima.f's `a`, length `resid_na`) captured after
     // estimation for the residual-spectrum diagnostic (spr, spcrsd.f). Their
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).

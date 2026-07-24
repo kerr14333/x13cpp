@@ -10,12 +10,24 @@
 #include "composite/agr.hpp"
 #include "gen/notset.hpp"
 #include "numeric/numeric.hpp"
-#include "specparse/specparse.hpp"   // addate
+#include "specparse/specparse.hpp"   // addate, copy
+#include "x11/x11filt.hpp"          // divsub, addmul
+
+#include <vector>
 
 namespace x13 {
 
 namespace {
 constexpr int YR = 1, MO = 2;   // 1-based date components (Fortran convention)
+
+// issame.f -- are all the GOOD observations in [l1,l2] equal?
+bool issame(const X13Context& ctx, const double* lsrs, int l1, int l2) {
+    const double base = lsrs[l1 - 1];
+    for (int i = l1 + 1; i <= l2; ++i) {
+        if (ctx.goodob.gudval(i) && !dpeq(lsrs[i - 1], base)) return false;
+    }
+    return true;
+}
 }  // namespace
 
 // setapt.f -- set the indirect-adjustment pointers from this component's
@@ -81,11 +93,73 @@ bool agr2_component(X13Context& ctx) {
 
     setapt(ctx, ctx.extend.nbcst, ctx.extend.nfcst, begspn, ny);
 
-    // agr2.f:267 -- the DIRECT original total. (The remaining agr() calls of
-    // agr2.f:268-281 are increment 2.)
+    // agr2.f:200-261 -- build the five per-component originals that the indirect
+    // adjustment aggregates, each a copy of a whole-buffer series with a
+    // different set of effects stripped.
+    constexpr int PLEN = 1020;
+    const int pos1bk = ptr.pos1bk, posffc = ptr.posffc;
+    const int muladd = ctx.x11opt.muladd;
+    const x11adj_cmn& adj = ctx.x11adj;
+    std::vector<double> srs1(PLEN, 0.0), srs2(PLEN, 0.0), srs3(PLEN, 0.0),
+        srs4(PLEN, 0.0), srs5(PLEN, 0.0);
+
+    // srs1 = the prior-adjusted original (agr2.f:204).
+    copy(ctx.orisrs.stoap.data(), posffc, 1, srs1.data());
+    // srs2 = the original less everything removed from the SA series
+    // (agr2.f:209-217). The Fin*/prior removals are no-ops unless those options
+    // are on; the port has no Nuspad/Priadj>1 path yet (rmpadj is unported --
+    // it is the "user PRIOR factors" stub), so guard it loudly.
+    copy(ctx.inpt.orig2.data(), posffc, 1, srs2.data());
+    if (adj.finao && adj.nao > 0)
+        divsub(srs2.data(), srs2.data(), ctx.x11fac.facao.data(), pos1bk, posffc, muladd);
+    if (adj.finls && adj.nls > 0)
+        divsub(srs2.data(), srs2.data(), ctx.x11fac.facls.data(), pos1bk, posffc, muladd);
+    if (adj.fintc && adj.ntc > 0)
+        divsub(srs2.data(), srs2.data(), ctx.x11fac.factc.data(), pos1bk, posffc, muladd);
+    if (adj.finusr)
+        divsub(srs2.data(), srs2.data(), ctx.x11fac.facusr.data(), pos1bk, posffc, muladd);
+    // srs3 = the original less LS effects (agr2.f:223-249).
+    copy(ctx.inpt.orig2.data(), posffc, 1, srs3.data());
+    if (adj.adjls == 1 && adj.nls > 0 && !adj.finls) {
+        divsub(srs3.data(), srs3.data(), ctx.x11fac.facls.data(), pos1bk, posffc, muladd);
+        ag.lindls = true;
+    }
+    // srs4 = the original less AO/TC effects (agr2.f:243-252).
+    copy(ctx.inpt.orig2.data(), posffc, 1, srs4.data());
+    if (adj.adjao == 1 && adj.nao > 0 && !adj.finao) {
+        divsub(srs4.data(), srs4.data(), ctx.x11fac.facao.data(), pos1bk, posffc, muladd);
+        ag.lindao = true;
+    }
+    if (adj.adjtc == 1 && adj.ntc > 0 && !adj.fintc) {
+        divsub(srs4.data(), srs4.data(), ctx.x11fac.factc.data(), pos1bk, posffc, muladd);
+        ag.lindao = true;
+    }
+    // srs5 = srs2 less the calendar factor (agr2.f:255-261).
+    if (ctx.x11opt.kfulsm == 1) {
+        copy(srs2.data(), posffc, 1, srs5.data());
+    } else {
+        divsub(srs5.data(), srs2.data(), ctx.x11fac.faccal.data(), pos1bk, posffc, muladd);
+        if (!ag.lindcl)
+            ag.lindcl = !issame(ctx, ctx.x11fac.faccal.data(), pos1bk, posffc);
+    }
+
+    // agr2.f:266-281 -- accumulate. `w` is by-reference in the Fortran too, so
+    // the first agr() call resolves an unset weight to 1 for all of them.
     const int ind1 = ptr.pos1ob - ag.indnbc;
-    agr(ctx.inpt.orig2.data(), ctx.agrsrs.o.data(), ag.iag, ind1, ptr.posffc,
-        ag.ind1bk, ag.w);
+    agrsrs_cmn& as = ctx.agrsrs;
+    agr(ctx.inpt.orig2.data(), as.o.data(),  ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    agr(srs1.data(),           as.o1.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    agr(srs2.data(),           as.o2.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    agr(srs3.data(),           as.o3.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    agr(srs4.data(),           as.o4.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    agr(srs5.data(),           as.o5.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    // Lx11 && X11agr: the X-11 modified original (agr2.f:273-274).
+    agr(ctx.adxser.stome.data(), as.omod.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    // The component SA (Stci) and its forced counterpart (Stci2) -- the indirect
+    // adjustment IS this sum (agr2.f:276-281). The SEATS branch (Seatsa/Setsa2)
+    // is increment 2b.
+    agr(ctx.x11srs.stci.data(),  as.ci.data(),  ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    agr(ctx.adxser.stci2.data(), as.ci2.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
 
     ag.ncomp = ag.ncomp + 1;   // agr2.f:296
     return true;

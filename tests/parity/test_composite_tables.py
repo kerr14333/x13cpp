@@ -1,5 +1,5 @@
-"""Composite (metafile / indirect adjustment) gate -- INCREMENT 1: the DIRECT
-composite total.
+"""Composite (metafile / indirect adjustment) gate -- increments 1 and 2:
+the DIRECT composite total and the INDIRECT adjustment.
 
 Composite adjustment is the one X-13 feature that does not fit in a single spec
 run: the oracle executes every spec of a metafile in ONE process so the
@@ -9,19 +9,31 @@ gets its own X13Context, with the two aggregation blocks carried from one to the
 next -- and prints the composite total's X-11 tables unprefixed, each component's
 prefixed ``<base>:``.
 
-What increment 1 gates: the aggregate `O` (agr.f/agr1.f/getcmp.f + the direct
-branch of agr2.f) is summed from the components' originals, handed to the
-``composite{}`` spec as its series, and adjusted. So **total**'s d10-d13 must be
-bit-exact. The indirect adjustment (agr3, the Ci/O1..O5 buffers) and the
-direct-vs-indirect comparison statistics are increments 2 and 3 -- see
-tools/composite_scouting.md.
+Gated here (all bit-exact, ~5e-15):
 
-The COMPONENT tables are deliberately not gated here: region_north/region_south
-run automdl{} on a synthetic series and sit ~1e-4 from the oracle, a
-model-selection/estimation-path difference that has nothing to do with
-aggregation (the aggregate is exact precisely because it is built from the raw
-originals, not from the component adjustments). That belongs to the automdl
-front, tracked separately.
+* each COMPONENT's d10-d13 (printed ``<base>:d10`` etc.),
+* the composite total's DIRECT d10-d13 -- the aggregate `O` summed from the
+  components' originals (agr.f/agr1.f/getcmp.f + agr2.f), handed to the
+  ``composite{}`` spec as its series and adjusted like any other run,
+* the composite total's INDIRECT isf/isa/itn/iir (agr3.f/agrxpt.f + the
+  O1..O5/Ci/Omod buffers) -- the seasonal adjustment rebuilt from the aggregated
+  component RESULTS rather than from the aggregate.
+
+The two are genuinely different objects: `isa` is exactly the sum of the
+components' d11 (verified to 5e-16 on both the oracle and the engine side),
+while d11 is the aggregate adjusted in its own right.
+
+The corpus case is ``census-examples/composite-fixed/`` -- the same synthetic
+data as the shipped ``composite/`` example but with a FIXED airline model on the
+components, precisely because the indirect adjustment is that sum: any component
+estimation drift lands undiluted in it. (With ``composite/``'s automdl{} both
+components sit ~1e-4 out and the indirect tables inherit exactly that -- an
+automdl-front issue, not an aggregation one. ``composite/`` stays untouched as
+the illustrative Census-style example and as an automdl identification case.)
+
+Still deferred to increment 3 (tools/composite_scouting.md): the Iagr==4
+direct-vs-indirect comparison statistics (aggmea/cmpchi), the indirect D8/D9 and
+E-tables, and the aggregate-composition header table.
 
 Run:  python -m pytest tests/parity/test_composite_tables.py -q
 """
@@ -35,15 +47,17 @@ import pytest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
-_CORPUS = os.path.join(_REPO, "tests", "corpus", "census-examples", "composite")
-_GOLDEN = os.path.join(_REPO, "tests", "golden", "census-examples", "composite",
-                       "_metafile")
+_CORPUS = os.path.join(_REPO, "tests", "corpus", "census-examples", "composite-fixed")
+_GOLDEN = os.path.join(_REPO, "tests", "golden", "census-examples",
+                       "composite-fixed")
 
 # The aggregate is a pure sum of the component originals followed by an ordinary
 # X-11 decomposition, so it reaches the arithmetic floor. Measured worst 5.1e-15.
 RTOL = 1e-12
 
-_TAGS = ["d10", "d11", "d12", "d13"]
+_TAGS = ["d10", "d11", "d12", "d13"]              # direct (aggregate adjusted)
+_IND_TAGS = ["isf", "isa", "itn", "iir"]          # indirect (sum of components)
+_COMPONENTS = ["region_north", "region_south"]
 _GOLD_RE = re.compile(r"(\d{6})\s+([+\-][0-9.EeDd+\-]+)")
 _MTA = "composite.mta"
 _TOTAL = "total"     # the last spec of the metafile: the composite total
@@ -80,7 +94,35 @@ def _read_golden(path: str) -> dict[str, float]:
 
 _HAVE = (os.path.exists(os.path.join(_CORPUS, _MTA)) and
          all(os.path.exists(os.path.join(_GOLDEN, _TOTAL, _TOTAL + "." + t))
-             for t in _TAGS))
+             for t in _TAGS + _IND_TAGS))
+
+
+def _check(run_output: str, base: str, tag: str, prefix: str) -> None:
+    """Compare one emitted table against its golden, period-key exact."""
+    produced: dict[str, float] = {}
+    want = prefix + tag
+    for ln in run_output.splitlines():
+        p = ln.split()
+        if len(p) == 3 and p[0] == want:
+            produced[p[1]] = float(p[2])
+
+    gold = _read_golden(os.path.join(_GOLDEN, base, base + "." + tag))
+    assert gold, f"{base}.{tag}: empty golden"
+
+    keys = sorted(set(gold) & set(produced))
+    assert len(keys) == len(gold), (
+        f"{base}.{tag}: produced {len(produced)} rows, golden {len(gold)}, "
+        f"overlap {len(keys)}")
+
+    worst = 0.0
+    worst_k = None
+    for k in keys:
+        g, v = gold[k], produced[k]
+        rel = abs(v - g) / abs(g) if g else abs(v - g)
+        if rel > worst:
+            worst, worst_k = rel, k
+    assert worst <= RTOL, (
+        f"{base}.{tag}: max rel err {worst:.3e} at {worst_k} (tol {RTOL:.0e})")
 
 
 @pytest.fixture(scope="module")
@@ -93,27 +135,21 @@ def run_output() -> str:
 
 @pytest.mark.skipif(not _HAVE, reason="composite metafile corpus/golden not present")
 @pytest.mark.parametrize("tag", _TAGS)
-def test_composite_total_table(run_output: str, tag: str) -> None:
-    produced: dict[str, float] = {}
-    for ln in run_output.splitlines():
-        p = ln.split()
-        if len(p) == 3 and p[0] == tag:     # unprefixed == the composite total
-            produced[p[1]] = float(p[2])
+def test_composite_total_direct(run_output: str, tag: str) -> None:
+    """The aggregate adjusted in its own right (unprefixed d10-d13)."""
+    _check(run_output, _TOTAL, tag, prefix="")
 
-    gold = _read_golden(os.path.join(_GOLDEN, _TOTAL, _TOTAL + "." + tag))
-    assert gold, f"{_TOTAL}.{tag}: empty golden"
 
-    keys = sorted(set(gold) & set(produced))
-    assert len(keys) == len(gold), (
-        f"{_TOTAL}.{tag}: produced {len(produced)} rows, golden {len(gold)}, "
-        f"overlap {len(keys)}")
+@pytest.mark.skipif(not _HAVE, reason="composite metafile corpus/golden not present")
+@pytest.mark.parametrize("tag", _IND_TAGS)
+def test_composite_total_indirect(run_output: str, tag: str) -> None:
+    """The adjustment rebuilt from the aggregated component results."""
+    _check(run_output, _TOTAL, tag, prefix="")
 
-    worst = 0.0
-    worst_k = None
-    for k in keys:
-        g, v = gold[k], produced[k]
-        rel = abs(v - g) / abs(g) if g else abs(v - g)
-        if rel > worst:
-            worst, worst_k = rel, k
-    assert worst <= RTOL, (
-        f"{_TOTAL}.{tag}: max rel err {worst:.3e} at {worst_k} (tol {RTOL:.0e})")
+
+@pytest.mark.skipif(not _HAVE, reason="composite metafile corpus/golden not present")
+@pytest.mark.parametrize("base", _COMPONENTS)
+@pytest.mark.parametrize("tag", _TAGS)
+def test_composite_component(run_output: str, base: str, tag: str) -> None:
+    """Each component's own adjustment -- what the indirect tables are built from."""
+    _check(run_output, base, tag, prefix=base + ":")

@@ -148,10 +148,29 @@ int main(int argc, char** argv) {
                                 ? posfob
                                 : (ctx.extend.nfcst > 0 ? ctx.x11ptr.posffc
                                                         : posfob + sp);
-        dump(out, prefix, "d10", begspn, sp, sf_frst, sf_last, ctx.x11srs.sts.data());
-        dump(out, prefix, "d11", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data());
-        dump(out, prefix, "d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
-        dump(out, prefix, "d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
+        if (ctx.agr.iagr == 4) {
+            // The DIRECT adjustment of the aggregate, snapshotted by run_x11
+            // before agr3 overwrote the buffers.
+            dump(out, prefix, "d10", begspn, sp, sf_frst, sf_last, ctx.agr_direct_d10.data());
+            dump(out, prefix, "d11", begspn, sp, pos1ob, posfob, ctx.agr_direct_d11.data());
+            dump(out, prefix, "d12", begspn, sp, pos1ob, posfob, ctx.agr_direct_d12.data());
+            dump(out, prefix, "d13", begspn, sp, pos1ob, posfob, ctx.agr_direct_d13.data());
+            // The composite total's run: agr3 has REPLACED the D-table buffers
+            // with the INDIRECT adjustment (Iagr 3 -> 4), so d10-d13 are gone and
+            // what is left is isf/isa/itn/iir. agr3.f:365/404/558/570 --
+            // isf=Sts (over [frstf,lastf] when appendfcst/bcst, else the observed
+            // span), isa=Stci, itn=stc2in, iir=Sti.
+            dump(out, prefix, "isf", begspn, sp, sf_frst, sf_last, ctx.x11srs.sts.data());
+            dump(out, prefix, "isa", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data());
+            if (!ctx.agr_stc2in.empty())
+                dump(out, prefix, "itn", begspn, sp, pos1ob, posfob, ctx.agr_stc2in.data());
+            dump(out, prefix, "iir", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
+        } else {
+            dump(out, prefix, "d10", begspn, sp, sf_frst, sf_last, ctx.x11srs.sts.data());
+            dump(out, prefix, "d11", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data());
+            dump(out, prefix, "d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
+            dump(out, prefix, "d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
+        }
     }
     std::printf("OUTCOME: OK\n");
     std::fputs(out.c_str(), stdout);
