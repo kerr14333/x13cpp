@@ -179,5 +179,17 @@ diagnostics front (force / slidingspans / history) is now closed.
   Fintc/Finhol; `final=user` is inert when the user regressors are `usertype=td`,
   since their effect lands in Factd, not Facusr), plus a d16 (`ststd`) snapshot on
   ctx so the harness can emit the combined seasonal+calendar factors.
+- **composite{} / indirect adjustment — increment 1 of 3 landed (bit-exact).**
+  The only multi-spec feature: the oracle runs a metafile's specs in ONE process
+  so the aggregation COMMONs persist, and `tools/x13run_composite.cpp` carries
+  `agr_cmn`/`agrsrs_cmn` between per-spec contexts to match. Ported `agr.f`,
+  `agr1.f`, `setapt.f`, real `getcmp.f`, and agr2's direct-`O` branch, so the
+  **direct composite total** gates d10–d13 at ~5e-15
+  (`test_composite_tables.py`). Surfaced two never-written main-path gaps:
+  `Lstyr/Lstmo/L0/Ly0` (editor.f:236-237/423-424 — they ARE the Itest span
+  signature) and `Orig2` (editor.f:2492 — the buffer agr2 aggregates). Next:
+  inc2 = indirect adjustment (`agr3`/`agrxpt` + the O1..O5/Ci/Omod buffers),
+  inc3 = direct-vs-indirect comparison stats (`cmpchi`). Map:
+  **`tools/composite_scouting.md`**.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

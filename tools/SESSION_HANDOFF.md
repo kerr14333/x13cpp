@@ -41,8 +41,15 @@ numbers were already exact; the only real gaps were parse routing + save extent:
 
 ## Next steps (priority order)
 
-1. **`COMPOSITE{}`** (14 of the 143 AE specs) — indirect/aggregate adjustment.
-   Verify ported / port. This is now the top CES blocker.
+1. **`COMPOSITE{}` increments 2 and 3.** Increment 1 (the DIRECT composite total)
+   landed bit-exact in `799d2f7` — see `tools/composite_scouting.md` for the full
+   map. inc2 = the indirect adjustment (`agr3.f`/`agr3s.f`/`agrxpt.f` + the
+   O1..O5/Ci/Ci2/Omod buffers of `agr2.f`); inc3 = the direct-vs-indirect
+   comparison statistics (`Iagr==4`, `cmpchi.f`, `prtagr`/`pragr2`).
+   Side note found while gating: the two composite COMPONENT specs
+   (`region_north`/`region_south`, automdl{} on a synthetic series) sit ~1e-4
+   from the oracle — an estimation-path difference unrelated to aggregation,
+   worth its own look on the automdl front.
 2. **CES extraction/spec generator** — one Python pass over `ce.data` to emit the
    ~143 NSA series `AE<code>.dat` + rewrite the DOS `FILE=` paths, then run the
    whole corpus through engine+oracle and triage. Parse is case-insensitive now,
