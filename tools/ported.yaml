@@ -8,12 +8,12 @@ acfdgn: pending
 acfhdr: pending
 addadj: pending
 addate: ported
-addeas: pending
+addeas: ported
 addfix: pending
 addlom: pending
 addmat: pending
 addmul: pending
-addotl: pending
+addotl: ported
 addsef: ported
 addsub: pending
 addtd: pending
@@ -24,7 +24,7 @@ adjsrs: pending
 adlabr: pending
 adotss: pending
 adpdrg: partial   # const/seasonal/sincos/td-family/easter/labor/thank parsed; outlier + change-of-regime branches abend (rdotlr/adrgim)
-adrgef: partial   # full except automatic-outlier date ordering (needs rdotlr)
+adrgef: gated
 adrgim: pending
 adsncs: pending
 adthnk: pending
@@ -111,7 +111,7 @@ cncrnt: pending
 cnvfil: n-a
 cnvfmt: pending
 cnvmdl: pending
-coladd: pending
+coladd: ported
 combft: pending
 compb: pending
 compcrodiag: pending
@@ -144,7 +144,7 @@ dcopy: ported
 ddot: ported
 decibl: pending
 delstr: ported
-deltst: pending
+deltst: ported
 desreg: pending
 devlpl: pending
 dfdate: ported
@@ -155,7 +155,7 @@ dinvnr: pending
 divgud: pending
 divsub: pending
 dlrgef: ported
-dlrgrw: pending
+dlrgrw: ported
 dlusrg: pending
 dot: pending
 dpeq: ported
@@ -301,7 +301,7 @@ htmlutil: n-a
 idamax: pending
 iddiff: pending
 idmdl: pending
-idotlr: pending
+idotlr: gated
 idpeak: pending
 inbtwn: ported
 indx: ported
@@ -351,7 +351,7 @@ lomaic: pending
 lstpth: pending
 m2q: pending
 makadj: pending
-makotl: pending
+makotl: ported
 makttl: pending
 map: ported
 matrix: pending
@@ -392,7 +392,7 @@ month: pending
 mstest: pending
 mulmat: pending
 mulqmat: pending
-mulref: pending
+mulref: ported
 mulsca: pending
 mult: pending
 mult0: pending
@@ -426,7 +426,7 @@ prafce: pending
 pragr2: pending
 prarma: pending
 prfcrv: pending
-pritd: pending
+pritd: ported
 prlkhd: pending
 procflts: pending
 prothd: pending
@@ -500,7 +500,7 @@ realit: pending
 regfix: pending
 reglbl: pending
 regvar: partial   # const/seasonal/td/lom-loq/lpyear/stock-td/stock-lom/easter branches + Reglom tail; sincos/labor/thank/outlier/user/regime branches abend
-regx11: pending
+regx11: ported
 replac: pending
 replyf: pending
 resid: ported
@@ -562,7 +562,7 @@ setamx: pending
 setapt: pending
 setarg: n-a
 setchr: ported
-setcv: pending
+setcv: ported
 setcvl: pending
 setdp: ported
 setint: ported
@@ -649,8 +649,8 @@ td7var: ported
 tdaic: pending
 tdftest: pending
 tdlom: pending
-tdset: pending
-tdxtrm: pending
+tdset: ported
+tdxtrm: ported
 templs: pending
 testodf: pending
 tfmts: pending
@@ -663,7 +663,7 @@ trnfcn: gated
 tstdrv: pending
 tstmd1: pending
 tstmd2: pending
-ttest: pending
+ttest: ported
 uconv: ported
 upbuf.g77: n-a
 upespm: ported
@@ -689,16 +689,16 @@ wrtotl: pending
 wrttb2: pending
 wrttbl: pending
 wtxtrm: pending
-x11aic: pending
+x11aic: gated
 x11ari: pending
 x11int: pending
-x11mdl: pending
+x11mdl: gated
 x11plt: pending
 x11pt1: pending
 x11pt2: pending
 x11pt3: pending
 x11pt4: pending
-x11ref: pending
+x11ref: gated
 x12hdr: pending
 x12run: pending
 xchng: pending
@@ -707,8 +707,8 @@ xprmx: ported
 xrgdiv: pending
 xrgdrv: pending
 xrghol: pending
-xrgtrn: pending
-xrlkhd: pending
+xrgtrn: gated
+xrlkhd: ported
 xtrm: pending
 yprmy: ported
 yrly: pending

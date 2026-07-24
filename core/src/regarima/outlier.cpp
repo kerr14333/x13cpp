@@ -616,10 +616,14 @@ void coladd(int begcol, int endcol, int nrxy, int /*peltxy*/, double* xy,
 // backward deletion). Printing, save files, the x11-regression path, and the
 // diagnostic "almost outlier" re-scan are omitted; the numeric identification
 // and the re-estimated model match the oracle.
+// x11reg.cpp: OLS re-fit for the Lxreg outlier path (forward-declared to keep the
+// regarima -> x11 dependency out of the header).
+bool regx11(X13Context& ctx, double* aout, int* naout, int* nefout);
+
 void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
             const double* critvl, double /*cvrduc*/, const int* begtst,
             const int* endtst, int& nefobs, bool lestim, int mxiter, int mxnlit,
-            bool lauto, double* a) {
+            bool lauto, double* a, bool lxreg) {
     using namespace prm;
     constexpr double ZERO = 0.0;
     constexpr int PA = PLEN + 2 * PORDER;
@@ -729,16 +733,21 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
 
         copy(D.xy.data(), nspobs * M.ncxy, 1, txa.data());
         int na = 0, info = 0;
-        armafl(ctx, nspobs, M.ncxy, false, false, txa.data(), na, PXA, info);
-        if (info > 0) {
-            ctx.error.lfatal = true;
-            return;
+        if (lxreg) {
+            // idotlr.f:340-345 -- pure OLS, use the design copy unfiltered.
+            na = nspobs;
+        } else {
+            armafl(ctx, nspobs, M.ncxy, false, false, txa.data(), na, PXA, info);
+            if (info > 0) {
+                ctx.error.lfatal = true;
+                return;
+            }
+            if (ctx.error.lfatal) return;
         }
-        if (ctx.error.lfatal) return;
 
         // Robust and normal root mean square error of the residuals.
         double rbmse = 0.0;
-        if (M.lar || M.lma)
+        if ((M.lar || M.lma) && !lxreg)
             medabs(&a[M.mxmalg], nefobs, rbmse);
         else
             medabs(&a[0], nefobs, rbmse);
@@ -762,10 +771,15 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
             if (TP(AO, t0) != 1 && TP(LS, t0) != 1 && TP(TC, t0) != 1) continue;
             int ntype = 0;
             makotl(t0, nspobs, slice(t0), otlvar.data(), ntype, M.tcalfa, sp);
-            armafl(ctx, nspobs, ntype, false, false, otlvar.data(), na, POA, info);
-            if (info > 0) {
-                ctx.error.lfatal = true;
-                return;
+            if (lxreg) {
+                na = nspobs;   // idotlr.f:415-420 -- OLS path, no ARMA filter.
+            } else {
+                armafl(ctx, nspobs, ntype, false, false, otlvar.data(), na, POA,
+                       info);
+                if (info > 0) {
+                    ctx.error.lfatal = true;
+                    return;
+                }
             }
             setint(NOTSET, POTLR, mxtype);
             ttest(txa.data(), na, oldnc, D.chlxpx.data(), otlvar.data(),
@@ -832,7 +846,13 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
         endcol = M.grp(otlgrp) - 1;
         addotl(ctx, D.begspn.data(), nspobs, 0, begcol, endcol);
         if (ctx.error.lfatal) return;
-        rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs, lautmp);
+        if (lxreg) {
+            int nn = 0;
+            regx11(ctx, a, &nn, &nefobs);   // rgtdhl is a no-op (Xhlnln=F)
+            na = nn;
+        } else {
+            rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs, lautmp);
+        }
         if (ctx.error.lfatal) return;
         if (!D.convrg) {
             ctx.error.lfatal = true;
@@ -860,7 +880,12 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
                 dlrgef(ctx, col, nspobs, 1);
                 if (ctx.error.lfatal) return;
                 int na = 0;
-                rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs, lautmp);
+                if (lxreg) {
+                    regx11(ctx, a, &na, &nefobs);   // rgtdhl no-op (Xhlnln=F)
+                } else {
+                    rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs,
+                           lautmp);
+                }
                 if (ctx.error.lfatal) return;
                 if (!D.convrg) {
                     ctx.error.lfatal = true;

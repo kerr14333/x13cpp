@@ -251,6 +251,14 @@ int main(int argc, char** argv) {
                 std::printf("\n");
             }
         }
+
+        // x11regression aictest=(easter) AICC canaries: one line per window
+        // ("aicc_xe <window> <value>", window 0 == noeaster) + the chosen window.
+        if (ctx.x11reg_xe_ran) {
+            for (const auto& wa : ctx.x11reg_aicc_xe)
+                std::printf("aicc_xe %d %.15E\n", wa.first, wa.second);
+            std::printf("aicc_xe_window %d\n", ctx.x11reg_xe_window);
+        }
     }
 
     // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one

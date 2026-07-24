@@ -1,15 +1,19 @@
 // x11reg.hpp -- x11regression{} irregular-component regression (x11mdl.f et al).
 //
-// WIP SCAFFOLDING (not yet wired into x11pt2). Ports the TD-only, multiplicative
-// path of the X-11 irregular regression: the user's trading-day regressors are
-// OLS-fit to the X-11 irregular (Sti) at the B (Kpart=2) and C (Kpart=3)
-// iterations, producing the b16/c16 TD-factor tables, and the TD effect is
-// divided out of the irregular so the seasonal adjustment re-iterates without it.
+// Wired into x11pt2 (x11mdl_td runs at the B/C iterations; gates bit-exact).
+// Ports the multiplicative path of the X-11 irregular regression: the user's
+// trading-day (and AIC-tested Easter) regressors are OLS-fit to the X-11
+// irregular (Sti) at the B (Kpart=2) and C (Kpart=3) iterations, producing the
+// b16/c16 TD-factor tables + the xrm design, and the calendar effect is divided
+// out of the irregular so the seasonal adjustment re-iterates without it.
+// Automatic AO outlier identification on the irregular runs via the shared
+// idotlr (lxreg path). tdprior (Kswv=1) and OLS prior-TD (xrgdrv) also land here.
 //
 // Faithful to x11mdl.f (orchestration) + tdset/xrgtrn/tdxtrm/dlrgrw/regx11/
-// x11ref/mulref. Reuses the already-ported olsreg/resid/regvar/daxpy. See
-// tools/x11regression_scope.md for the full routine map. Holiday/user/aictest/
-// stock-TD/pseudo-additive/log-additive/prior branches are follow-on.
+// x11ref/mulref/x11aic. Reuses the already-ported olsreg/resid/regvar/daxpy/
+// idotlr/xrlkhd/addeas. See tools/x11regression_scope.md +
+// x11regression_aictest_scope.md for the routine maps. Still follow-on:
+// stock-TD/pseudo-additive/log-additive modes, aictest td/user variants.
 #ifndef X13_X11_X11REG_HPP
 #define X13_X11_X11REG_HPP
 
@@ -40,8 +44,11 @@ void dlrgrw(double* xy, int ncxy, int nrxy, const bool* rgxcld);
 // regx11.f: OLS of the (transformed) irregular design in ctx.mdldat.xy on the TD
 // columns, with the tdxtrm-excluded rows dropped. Fills ctx.mdldat.b (coeffs) +
 // chlxpx; sets Var/Lnlkhd/Armaer. Reuses the ported olsreg/resid. Returns false
-// on a singular column (Armaer=PSNGER).
-bool regx11(X13Context& ctx);
+// on a singular column (Armaer=PSNGER). When aout is non-null, the OLS residuals
+// (nrtxy = nspobs - nxcld of them) are copied out with *naout = *nefout = nrtxy
+// less nintvl -- the residual/effective-obs count idotlr's x11reg path needs.
+bool regx11(X13Context& ctx, double* aout = nullptr, int* naout = nullptr,
+            int* nefout = nullptr);
 
 // x11ref.f (mult, TD-only): build the TD factor series ftd (and combined fcal)
 // from the fitted coeffs b x design xy over Nrxy rows, mean-normalized by Xnstar

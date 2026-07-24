@@ -57,7 +57,7 @@ improvise:
 - **Python is `python`** (3.14). `python3` is a Windows App alias → "Permission
   denied".
 - **Parity tests:** `python -m pytest tests/parity -q`. Green = `NNN passed`, with
-  expected `s` skips (parse-gap / no-golden specs). Currently 788 pass / 0 fail /
+  expected `s` skips (parse-gap / no-golden specs). Currently 829 pass / 0 fail /
   0 xfail / 17 skip.
 - After adding a `core/src/*.cpp`, the first build prints `GLOB mismatch!` and
   stops — just rerun once.
@@ -108,9 +108,9 @@ diagnostics front (force / slidingspans / history) is now closed.
   holday/holidy/easter → Khol prior fold; codex-hardened per xrgdrv/editor.f), and
   the user-regression prior factor (Facusr) all gate. The x11 parse-seam is
   exhausted; the remaining x11 stubs are interdependent chains (each needs an
-  upstream factor producer): user PRIOR factors (Nuspad/Nustad), Adjsea/Adjso
-  regARIMA-seasonal combine, force non-original target (Iftrgt>0), and revisions
-  getrev.
+  upstream factor producer): user PRIOR factors (Nuspad/Nustad temporary
+  adjustment), force non-original target (Iftrgt>0), and revisions getrev.
+  (Adjsea/Adjso regARIMA-seasonal combine landed, commit 970e85c.)
 - **x11regression `tdprior` (user prior trading day, Kswv=1) — CLOSED (bit-exact):**
   a4 factor + d10-d13 gate at ~5e-15 (`test_x11_tdprior_tables.py`). pritd.f ported
   (parser + parse-time weight-standardize sum-7 + td6var/x11ref_td). The oracle runs
@@ -129,5 +129,15 @@ diagnostics front (force / slidingspans / history) is now closed.
   both in xrgdrv.cpp (same class as the slidingspans/history per-span resets). Also
   landed the faithful Nfcstx forecast-extended factor. Still fatal: additive /
   pseudo-additive prior-TD and the regression-based aictest TD variant.
+- **x11regression `aictest=(easter)` sub-engine — CLOSED (bit-exact):** the modeled
+  `variables=(td) aictest=(easter)` spec runs x11mdl's automatic Easter AICC test on
+  the irregular (x11aic easter branch: score no-Easter vs windows {1,8,15} via
+  xrlkhd, keep lowest -> window 15) THEN automatic AO outlier identification (7 AOs)
+  via the shared `idotlr` given a new `lxreg` path (OLS regx11 re-fits, no ARMA
+  filter). Gates the 4 `aictest.xe.aicc.*` canaries + window, the 14-col xrm, and
+  b16/c16 at ~5e-15 (`test_x11regression_tables.py`). Decisive gotchas: editor.f:
+  1729-1736 (easter present -> Sigxrg=0/Otlxrg=T, tdxtrm skipped); Cvxalf default
+  = PT5 = 0.05 (not 0.5) -> Critxr 3.89; the otlvar armafl must be `!lxreg`-gated.
+  See **`tools/x11regression_aictest_scope.md`**. Still follow-on: aictest td/user.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

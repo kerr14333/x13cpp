@@ -47,13 +47,19 @@ double setcv(int nspobs, double cvalfa);
 // threshold); critvl is the per-type critical value (0-based by type-1);
 // begtst/endtst bound the test span; a is the residual work vector (from the
 // prior rgarma, updated on each re-estimation). Deferred vs the Fortran: all
-// iteration/table printing and save files, the x11-regression (lxreg) path, and
-// the diagnostic "almost outlier" reduced-critical-value re-scan (which never
-// changes the model). cvrduc is accepted for signature parity but unused here.
+// iteration/table printing and save files and the diagnostic "almost outlier"
+// reduced-critical-value re-scan (which never changes the model). cvrduc is
+// accepted for signature parity but unused here.
+//
+// lxreg selects the X-11 irregular-regression path (idotlr.f Lxreg=T): the model
+// is a pure OLS (no ARMA), so the design copy is used unfiltered (no armafl), the
+// robust mse is taken from the raw residuals, and each re-estimation is a regx11
+// OLS instead of rgarma. Requires nxcld==0 (with a holiday/AO group present the
+// upstream tdxtrm exclusion is skipped, so the excluded-row lxreg case is unported).
 void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
             const double* critvl, double cvrduc, const int* begtst,
             const int* endtst, int& nefobs, bool lestim, int mxiter, int mxnlit,
-            bool lauto, double* a);
+            bool lauto, double* a, bool lxreg = false);
 
 // makotl.f: build the outlier regressor column(s) for an effect at time t0 over
 // nr rows. ltest is the 3-element [AO,LS,TC] test-flag slice (1 = build that

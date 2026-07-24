@@ -1,19 +1,24 @@
-// x11reg.cpp -- x11regression{} irregular-component regression (WIP scaffolding).
+// x11reg.cpp -- x11regression{} irregular-component regression.
 //
-// TD-only, multiplicative path of x11mdl.f + tdset/xrgtrn/tdxtrm/dlrgrw/regx11/
-// x11ref/mulref. Not yet wired into x11pt2 (the B/C-iteration call site + the
-// b16/c16 emit + the divsub Sti fold land next). Reuses olsreg/resid/daxpy.
-// See tools/x11regression_scope.md for the routine map.
+// Multiplicative path of x11mdl.f + tdset/xrgtrn/tdxtrm/dlrgrw/regx11/x11ref/
+// mulref/x11aic, wired into x11pt2 at the B/C iterations (b16/c16 + xrm emit +
+// the divsub Sti fold). Automatic AO outlier ID runs via the shared idotlr
+// (lxreg path). Reuses olsreg/resid/daxpy/idotlr/xrlkhd/addeas.
+// See tools/x11regression_scope.md + x11regression_aictest_scope.md.
 #include "x11/x11reg.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "common/x13context.hpp"
-#include "regarima/estimate.hpp"   // olsreg, resid
+#include "regarima/estimate.hpp"   // olsreg, resid, xrlkhd
 #include "regarima/regvar.hpp"     // regvar
+#include "regarima/outlier.hpp"    // idotlr, setcv
+#include "automdl/aictst.hpp"      // addeas
 #include "numeric/numeric.hpp"     // daxpy
 #include "x11/x11filt.hpp"         // divsub
 #include "specparse/specparse.hpp" // addate
@@ -25,6 +30,13 @@ namespace {
 
 constexpr int PLEN = 1020;
 constexpr int PXPX = 3403;  // Chlxpx packed size (mdldat.cmn)
+
+// A holiday-family regressor column (x11ref.f:47-50 daxpy-into-Fhol predicate):
+// Easter, labor day, Thanksgiving, StatCan easter, user holiday.
+bool is_hol_type(int t) {
+    return t == prm::PRGTEA || t == prm::PRGTLD || t == prm::PRGTTH ||
+           t == prm::PRGTEC || t == prm::PRGTUH;
+}
 
 // A TD-family regressor column (x11ref.f:37-52 daxpy-into-Ftd predicate).
 bool is_td_type(int t) {
@@ -202,7 +214,7 @@ void dlrgrw(double* xy, int ncxy, int nrxy, const bool* rgxcld) {
 }
 
 // ---- regx11.f (reuses olsreg/resid) --------------------------------------
-bool regx11(X13Context& ctx) {
+bool regx11(X13Context& ctx, double* aout, int* naout, int* nefout) {
     auto& md = ctx.mdldat;
     auto& m = ctx.model;
     const int nspobs = md.nspobs, ncxy = m.ncxy, nb = m.nb;
@@ -222,32 +234,60 @@ bool regx11(X13Context& ctx) {
         olsreg(ctx, txy.data(), nrtxy, ncxy, ncxy, md.b.data(), md.chlxpx.data(),
                PXPX, md.sngcol);
         if (ctx.error.lfatal) return false;
-        if (md.sngcol > 0) { md.armaer = prm::PSNGER; return false; }
+        if (md.sngcol > 0) { md.convrg = false; md.armaer = prm::PSNGER; return false; }
         md.nfev += ncxy + 1;
     }
+    md.convrg = true;
     std::vector<double> a(nrtxy > 0 ? nrtxy : 1, 0.0);
     resid(ctx, txy.data(), nrtxy, ncxy, ncxy, 1, nb, -1.0, md.b.data(), a.data());
     if (ctx.error.lfatal) return false;
+    if (aout) {
+        for (int i = 0; i < nrtxy; ++i) aout[i] = a[i];
+        if (naout) *naout = nrtxy;
+        if (nefout) *nefout = static_cast<int>(dnefob);
+    }
     double apa = 0.0;
     for (int i = 0; i < nrtxy; ++i) apa += a[i] * a[i];
+    // regx11.f:88-94 -- ML variance + Gaussian log-likelihood (xrlkhd reads these
+    // for the AICC). Oracle PI is the 15-digit-truncated 3.14159265358979D0.
     md.var = apa / dnefob;
+    if (md.var < 2.0 * std::numeric_limits<double>::epsilon()) md.var = 0.0;
+    if (dpeq(md.var, 0.0)) {
+        md.lnlkhd = 0.0;
+    } else {
+        constexpr double PI = 3.14159265358979;
+        md.lnlkhd = -(dnefob * (std::log(2.0 * PI * md.var) + 1.0)) / 2.0;
+    }
     return true;
 }
 
-// ---- x11ref.f (mult, TD-only) --------------------------------------------
+// ---- x11ref.f (mult path, TD + holiday) ----------------------------------
+// Builds the TD factor Ftd and the combined calendar factor Fcal from the fitted
+// coefficients. Holiday (Easter etc.) columns accumulate into a local Fhol that
+// is folded into Fcal via mulref (x11ref.f:87-95, the mult Tdgrp>0 branch); with
+// no holiday column Fhol stays 0 and Fcal is TD-only (the pritd / bare-TD case).
+// The Bell-Hilmer nonlinear-Easter Kvec path (Xhlnln) is not reached here (the
+// x11regression easter regressor is linear, Xhlnln=F).
 void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
                int ncxy, const double* b, const double* xy, int nb,
                const int* rtype) {
     for (int i = 0; i < nrxy; ++i) { fcal[i] = 0.0; ftd[i] = 0.0; }
+    std::vector<double> fhol(nrxy > 0 ? nrxy : 1, 0.0);
     const double* xn = ctx.xtdtyp.xn.data();
     const double* xnstar = ctx.xtdtyp.xnstar.data();
-    // Raw TD factor: Ftd += B(icol) * Xy(:,icol) (column icol, stride Ncxy).
-    for (int icol = 1; icol <= nb; ++icol)
+    // Raw factors: Ftd/Fhol += B(icol) * Xy(:,icol) (column icol, stride Ncxy).
+    for (int icol = 1; icol <= nb; ++icol) {
         if (is_td_type(rtype[icol - 1]))
             daxpy(nrxy, b[icol - 1], xy + (icol - 1), ncxy, ftd, 1);
-    // Mean-normalize by Xnstar (mulref, DNOTST -> use the vector), then finish.
+        else if (is_hol_type(rtype[icol - 1]))
+            daxpy(nrxy, b[icol - 1], xy + (icol - 1), ncxy, fhol.data(), 1);
+    }
+    // Mean-normalize the TD factor by Xnstar (mulref, DNOTST -> use the vector).
     mulref(nrxy, fcal, ftd, xdev, xnstar, prm::DNOTST, false);
     mulref(nrxy, ftd, ftd, xdev, xnstar, prm::DNOTST, true);
+    // Fold the holiday factor into Fcal the same way (no-op when Fhol is all 0).
+    mulref(nrxy, fcal, fhol.data(), xdev, xnstar, prm::DNOTST, false);
+    mulref(nrxy, fhol.data(), fhol.data(), xdev, xnstar, prm::DNOTST, true);
     for (int irow = 1; irow <= nrxy; ++irow) {
         const int ir2 = irow + xdev - 1;
         ftd[irow - 1] += xn[ir2 - 1] / xnstar[ir2 - 1];
@@ -293,6 +333,99 @@ void pritd(X13Context& ctx, double* ptdfac, int nrxy, int sp, const int* begdat,
     for (int i = 0; i < nrxy; ++i) ptdfac[frstob - 1 + i] = ftd[i];
 }
 
+// ---- x11aic.f (easter branch) --------------------------------------------
+// Automatic AICC keep/drop test for the Easter holiday on the X-11 irregular
+// regression (x11mdl.f:253, B iteration only). For each window in Xeasvc
+// (Xeasvc(1)=0 == the no-Easter baseline, then 1/8/15 by default) it rebuilds
+// the design (addeas -> regvar), refits the OLS (regx11), and scores the AICC
+// (xrlkhd + the mult Jacobian -2*jadj when TD is present). The lowest-AICC
+// window wins (aicdiff=Xraicd guards the switch away from no-Easter); the model
+// is left carrying the winner so the downstream regvar/factor build picks it up.
+// Easter goes into the holiday factor (not the TD b16/c16), so the factor build
+// is unchanged here -- only the shared TD coefficients shift. Assumes TD is
+// present (this spec's variables=(td)); td/user aictest are follow-on increments.
+void x11aic_easter(X13Context& ctx, double* trnsrs, int nobspf, int nfcst,
+                   int irridx, int irrend, int muladd, bool trumlt) {
+    auto& m = ctx.model;
+    auto& ar = ctx.arima;
+    const auto& xc = ctx.xclude;
+    const int easidx = m.easidx;
+    const double xraicd = ctx.xrgmdl.xraicd;
+    const int neasvx = ctx.x11reg.neasvx;
+    const bool jac = trumlt || muladd == 2;
+
+    // AICC Jacobian adjustment (mult / log-add): sum log(Xnstar) over the rows
+    // not excluded by tdxtrm (x11aic.f:87-93). TD is present, so every easter
+    // candidate gets the same -2*jadj shift.
+    double jadj = 0.0;
+    if (jac) {
+        const double* xnstar = ctx.xtdtyp.xnstar.data();
+        for (int i = irridx; i <= irrend; ++i) {
+            bool ladj = true;
+            if (xc.nxcld > 0) ladj = !xc.rgxcld(i - irridx + 1);
+            if (ladj) jadj += std::log(xnstar[i - 1]);
+        }
+    }
+
+    auto find_easter = [&]() -> int {
+        int eg = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                        "Easter");
+        if (eg == 0)
+            eg = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+                        "StatCanEaster");
+        return eg;
+    };
+    auto del_easter = [&]() {
+        int eg = find_easter();
+        if (eg > 0) {
+            const int begcol = m.grp(eg - 1);
+            const int ncol = m.grp(eg) - begcol;
+            dlrgef(ctx, begcol, ar.nrxy, ncol);
+        }
+    };
+
+    double aicbst = prm::DNOTST;
+    int aicind = 0;
+    for (int i = 1; i <= neasvx; ++i) {
+        if (i > 2) { del_easter(); if (ctx.error.lfatal) return; }
+        if (i > 1) {
+            addeas(ctx, ctx.x11reg.xeasvc(i) + easidx, easidx, 1);
+            if (ctx.error.lfatal) return;
+        }
+        int nrxy = 0, frstry = 0;
+        regvar(ctx, trnsrs, nobspf, ar.fctdrp, nfcst, 0, ar.userx.data(),
+               ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxy,
+               ar.begxy.data(), frstry, /*xmeans=*/true, ar.elong);
+        if (ctx.error.lfatal) return;
+        ar.nrxy = nrxy;
+        if (!regx11(ctx)) return;
+        double aichol = prm::DNOTST;
+        xrlkhd(ctx, aichol, xc.nxcld);
+        if (jac) aichol -= 2.0 * jadj;   // TD present -> mult Jacobian
+        ctx.x11reg_aicc_xe.push_back({ctx.x11reg.xeasvc(i), aichol});
+        if (i == 1) {
+            aicbst = aichol;
+            aicind = ctx.x11reg.xeasvc(1);   // 0
+        } else if ((aicind == 0 && aichol + xraicd < aicbst) ||
+                   (aicind > 0 && aichol < aicbst)) {
+            aicbst = aichol;
+            aicind = ctx.x11reg.xeasvc(i);
+        }
+    }
+
+    // Leave the winning model in place (x11aic.f:424-447). If the winner is the
+    // last window tested it is already current; otherwise re-select it.
+    if (aicind < ctx.x11reg.xeasvc(neasvx)) {
+        del_easter();
+        if (ctx.error.lfatal) return;
+        if (aicind > 0) { addeas(ctx, aicind + easidx, easidx, 1); }
+        if (ctx.error.lfatal) return;
+    }
+    ar.aicind = aicind;
+    ctx.x11reg_xe_window = aicind;
+    ctx.x11reg_xe_ran = true;
+}
+
 // ---- x11mdl.f orchestration (TD-only mult path) --------------------------
 void x11mdl_td(X13Context& ctx, int kpart) {
     auto& md = ctx.mdldat;
@@ -305,7 +438,11 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     const int muladd = ctx.x11opt.muladd;
     double* sti = ctx.x11srs.sti.data();
 
-    const double sigxrg = 2.5;   // editor.f:1733 TD-only default
+    // editor.f:1729-1736: the 2.5-sigma tdxtrm exclusion is used only for a
+    // TD-only irregular regression with no easter/holiday/AO group; when easter
+    // (etc.) is present the extreme values are handled by automatic AO outlier
+    // identification instead (Otlxrg), so Sigxrg stays 0 and tdxtrm is skipped.
+    const double sigxrg = ctx.x11log.xeastr ? 0.0 : 2.5;
     int nfcst = ctx.extend.nfcst;
     // x11mdl.f:120-134: on the final (C) iteration, restore the X-11-regression
     // forecast horizon (Nfcstx >= 1 seasonal year) so the design & TD factor span
@@ -335,8 +472,25 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     if (muladd == 0 || muladd == 2)
         xrgtrn_td(ctx, trnsrs.data(), irridx, irrend);
 
-    // Extreme-value exclusion on the RAW irregular.
-    tdxtrm_td(ctx, sti, sigxrg, kpart, irridx, irrend);
+    // Extreme-value exclusion on the RAW irregular (tdxtrm); skipped when the
+    // AO-outlier method is active (Sigxrg==0), leaving no rows excluded until the
+    // outlier ID step (a later increment) runs.
+    if (sigxrg > 0.0) {
+        tdxtrm_td(ctx, sti, sigxrg, kpart, irridx, irrend);
+    } else {
+        for (int i = 1; i <= PLEN; ++i) ctx.xclude.rgxcld(i) = false;
+        ctx.xclude.nxcld = 0;
+    }
+
+    // Automatic Easter AICC test on the irregular (x11mdl.f:253, B iteration).
+    // Leaves the winning Easter window in the model so the design build below
+    // (and the C iteration) carries it. TD is present on this path.
+    if (kpart == 2 && ctx.x11log.xeastr) {
+        const bool trumlt = (muladd == 0);   // !Psuadd && Muladd==0 (mult path)
+        x11aic_easter(ctx, trnsrs.data(), nobspf, nfcst, irridx, irrend, muladd,
+                      trumlt);
+        if (ctx.error.lfatal) return;
+    }
 
     // Build the design and solve the OLS.
     int nrxy = 0, frstry = 0;
@@ -345,7 +499,44 @@ void x11mdl_td(X13Context& ctx, int kpart) {
            ar.begxy.data(), frstry, /*xmeans=*/true, ar.elong);
     if (ctx.error.lfatal) return;
     ar.nrxy = nrxy;
-    if (!regx11(ctx)) return;
+    // Initial OLS fit; capture the residuals + effective-obs count so the
+    // outlier-ID robust mse has its starting values (x11mdl.f:416 regx11(a)).
+    std::vector<double> aotl(PLEN, 0.0);
+    int naotl = 0, nefotl = 0;
+    if (!regx11(ctx, aotl.data(), &naotl, &nefotl)) return;
+
+    // editor.f:1734-1757 -- with a holiday group present (here: the AIC-tested
+    // Easter) the extreme-value method for the irregular regression is automatic
+    // AO outlier identification (Otlxrg), with the AO critical value set from the
+    // outlier-span length. AO-only, add-one, over the full model span.
+    if (ctx.x11log.xeastr) ctx.x11log.otlxrg = true;
+    if (ctx.x11log.otlxrg && ctx.xclude.nxcld == 0) {
+        int begxot[2] = {md.begspn(1), md.begspn(2)};
+        int endxot[2];
+        addate(begxot, sp, nspobs - 1, endxot);
+        int nobxot = 0;
+        dfdate(endxot, begxot, sp, nobxot);
+        nobxot += 1;
+        // Default (Ljung) critical value; the Cvxtyp corrected variant is deferred.
+        const double critxr = setcv(nobxot, 0.05);   // Cvxalf default = PT5 = 0.05
+        double cvec[3] = {critxr, critxr, critxr};
+        int nefobs = nefotl;
+        idotlr(ctx, /*ltstao=*/true, /*ltstls=*/false, /*ltsttc=*/false,
+               /*ladd1=*/true, cvec, /*cvrduc=*/0.5, begxot, endxot, nefobs,
+               ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
+               /*lauto=*/false, aotl.data(), /*lxreg=*/true);
+        if (ctx.error.lfatal) return;
+        // x11mdl.f:452 -- rebuild the Nobspf-row design so the inserted AO columns
+        // carry their forecast-region values (idotlr fills only the Nspobs span).
+        // The coefficients from idotlr's final regx11 stand (no re-fit here).
+        int nrxy2 = 0, frstry2 = 0;
+        regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst, 0, ar.userx.data(),
+               ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxy2,
+               ar.begxy.data(), frstry2, /*xmeans=*/true, ar.elong);
+        if (ctx.error.lfatal) return;
+        nrxy = nrxy2;
+        ar.nrxy = nrxy;
+    }
 
     // Build the TD factor series and copy into Factd/Faccal.
     std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);

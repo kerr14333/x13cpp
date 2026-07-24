@@ -197,6 +197,13 @@ struct X13Context {
     std::vector<double> x11reg_xrm;
     int x11reg_xrm_ncol = 0;
     bool x11reg_ran = false;
+    // x11regression{ aictest=(easter) } AICC test (x11aic.f easter branch): one
+    // (window, AICC) pair per candidate over Xeasvc (window 0 == "noeaster"),
+    // plus the chosen window (Aicind; 0 == easter rejected). Populated at the B
+    // iteration of x11mdl_td when ctx.x11log.xeastr is set.
+    std::vector<std::pair<int, double>> x11reg_aicc_xe;
+    int x11reg_xe_window = -1;
+    bool x11reg_xe_ran = false;
     // x11regression{} user prior trading-day factor (a4 save): the Kswv=1 pritd
     // factor over the observed span [Pos1ob,Posfob]. Bit-exact vs the oracle a4.
     std::vector<double> x11_a4_prior;

@@ -72,7 +72,7 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 ## 5. Testing
 
-- **Parity suite result (current):** **788 passed · 0 failed · 0 xfailed · 17 skipped.**
+- **Parity suite result (current):** **829 passed · 0 failed · 0 xfailed · 17 skipped.**
 - **Corpus:** spec files across 11 parity test modules, spanning the airline model, Census example series, and real economic series (unemployment, payroll employment, exports).
 - **0 open xfails.** The X-11 decomposition spine, SEATS decomposition, the whole diagnostics front (force / slidingspans / history), the model X-11 path, and the X-11 spec-option front (type / shrink / sigmavec / x11easter / user-regression prior factor) all gate bit-exact. The 17 skips are legitimate (oracle ships no golden / no table for those specs). Remaining work is interdependent x11 factor-producer chains, not a passing/failing ledger.
 - **Census bugs reproduced:** 13 (CB-1 … CB-13), each verified to match the oracle bug-for-bug.

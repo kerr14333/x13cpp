@@ -2314,6 +2314,28 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                        "Must have seven prior trading day weights.");
                 inptok = false;
             }
+        } else if (argidx == 19) {   // aictest (gtxreg.f:387-411)
+            std::vector<std::string> toks;
+            consume_value(ctx, &toks);
+            if (ctx.error.lfatal) return;
+            for (const auto& t0 : toks) {
+                std::string s;
+                for (char c : t0)
+                    s += static_cast<char>(
+                        std::tolower(static_cast<unsigned char>(c)));
+                if (s == "easter") {   // gtxreg.f:395-397: Xeastr=T, Havxhl=T
+                    ctx.x11log.xeastr = true;
+                    // editor.f:1577-1590: no explicit Easter group in the model
+                    // -> the default window set {0,1,8,15} to AIC-test over.
+                    ctx.x11reg.xeasvc(1) = 0;
+                    ctx.x11reg.xeasvc(2) = 1;
+                    ctx.x11reg.xeasvc(3) = 8;
+                    ctx.x11reg.xeasvc(4) = 15;
+                    ctx.x11reg.neasvx = 4;
+                }
+                // td / tdstock / user aictest tokens: deferred (follow-on
+                // increment; this gate is aictest=(easter)).
+            }
         } else {
             consume_value(ctx, nullptr);
             if (ctx.error.lfatal) return;
