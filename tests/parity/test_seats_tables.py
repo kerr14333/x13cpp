@@ -104,8 +104,11 @@ CASES = _discover()
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
 def test_seats_table(base: str, tag: str) -> None:
-    # SEATS decomposition (SIGEX/ESTBUR/AUTOCOMP) is not yet ported for the
-    # general case -- see tools/seats_scope.md. Session 12 landed the
+    # SEATS decomposition (SIGEX/ESTBUR/AUTOCOMP) is bit-exact across the
+    # airline family AND the general shape (p>0 ar2-seats / bp>0 sar-seats);
+    # only imean!=0 remains unported (guarded-fatal). Historical trail below
+    # for the session-by-session close -- see tools/seats_scope.md. Session 12
+    # landed the
     # historical-span ESTBUR general-branch solve for the additive/no-
     # seasonal/no-cycle case (unrate_seats): s11 (SA)/s12 (trend) gate
     # bit-exact. Session 13 added the log back-transform and s10/s16/s18
@@ -238,8 +241,9 @@ def test_seats_table(base: str, tag: str) -> None:
         pytest.skip(f"{base}.{tag}: oracle shipped no golden "
                     "(inadmissible decomposition or no seasonal component)")
     if (base, tag) not in _gated:
-        pytest.xfail("SEATS decomposition (SIGEX orchestrator) not yet ported "
-                     "for this spec/table -- see tools/seats_scope.md")
+        pytest.xfail("SEATS (base, tag) not in the gated allowlist -- a spec "
+                     "whose golden is not yet blessed/verified here; see "
+                     "tools/seats_scope.md")
     spec = os.path.join(_CORPUS, base + ".spc")
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.returncode == 0, f"{base}: harness exit {r.returncode}\n{r.stderr}"
@@ -305,8 +309,7 @@ def test_seats_model_decode(base: str) -> None:
     `DECODE_ARIMAMDL: ...`, formatted exactly like the oracle's `arimamdl`
     .udg key (mkmdsn.f's "(p d q)(P D Q)" shape, seasonal group omitted when
     all-zero). NOT xfailed: this is a real, currently-passing gate for all 8
-    SEATS corpus specs, independent of the (still not ported) canonical
-    decomposition itself.
+    SEATS corpus specs, independent of the canonical decomposition itself.
     """
     gold = _read_golden_arimamdl(base)
     if gold is None:

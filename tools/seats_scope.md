@@ -1,5 +1,15 @@
 # SEATS decomposition engine — scope + gate + first increment
 
+## CURRENT STATUS (2026-07-24): SEATS corpus FULLY bit-exact + general-shape CLOSED
+payems_seats' s12/s13 floor (the session-15 hard-stop below) was later closed by
+the SEATS multiplicative bias correction (sigsub.f, log path) -- all SEATS corpus
+specs gate. General-shape decomposition is now bit-exact + gated too: p>0
+(`*_ar2-seats`) and bp>0 (`*_sar-seats`) both ~5e-15, closed by the AR/seasonal-AR
+polynomial sign fix in canonical_denoms.cpp (phis=+mo.phi, bphis=+mo.bphi) plus
+the CALCFX Pstar>0 residual seed. Only imean!=0 remains (guarded-fatal in
+run_seats). Parity 923 pass / 0 fail / 0 xfail / 25 skip. General-shape runway +
+imean scope: tools/seats_general_scope.md. Session-by-session history follows.
+
 ## LATEST STATUS (session 15): payems_seats' s12/s13 floor precisely localized to a TREND-ONLY, uniform log-domain bias EXTERNAL to ESTBUR -- NOT the residual-precision gap the mandate assumed; HARD-STOP, not gated
 
 **Mandate**: close the remaining `payems_seats` s12/s13 residual floor (~2.2e-6

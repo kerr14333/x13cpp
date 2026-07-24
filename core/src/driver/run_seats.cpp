@@ -28,8 +28,9 @@
 namespace x13 {
 
 namespace {
-// Signal that SEATS decomposition itself is not yet ported (mirrors
-// x11parts.cpp's local x11_not_ported).
+// Signal that a specific SEATS path is not yet ported (imean!=0, or the
+// decomposition chain failing) -- most of SEATS is ported and gates bit-exact
+// (mirrors x11parts.cpp's local x11_not_ported).
 void seats_not_ported(X13Context& ctx, const char* what) {
     errhdr(ctx);
     writln(ctx, std::string("ERROR: ") + what + " not yet ported (SEATS decomposition).",

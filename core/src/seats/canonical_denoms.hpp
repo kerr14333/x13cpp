@@ -7,13 +7,11 @@
 // oracle/fortran/analts.f:2926, "call SIGEX(...,phis,bphis,ths,bths,...)"),
 // root-find phis via RPQ when p>0, then run seats_init_denoms + F1RST.
 //
-// STATUS: this is the first time RPQ + seats_init_denoms + F1RST run
-// together on a real DECODED model rather than synthetic unit-test inputs
-// (tools/seats_scope.md next-increment #2). It is a standalone, independently
-// testable building block -- NOT wired into core/src/driver/run_seats.cpp's
-// main driver, since the next real consumer downstream (SPECTRU,
-// spectrum.f:558) is still unported and nothing yet reads chins/chis/etc.
-// past this point.
+// STATUS: RPQ + seats_init_denoms + F1RST on a real DECODED model. Wired into
+// core/src/driver/run_seats.cpp's main driver: the downstream consumers
+// (SPECTRU spectrum.f:558 -> DecompSpectrum -> ESTBUR) are all ported and gate
+// bit-exact, including the general-shape (p>0/bp>0) path -- the AR/seasonal-AR
+// polynomial signs here (phis=+mo.phi, bphis=+mo.bphi) were the decisive fix.
 #ifndef X13_SEATS_CANONICAL_DENOMS_HPP
 #define X13_SEATS_CANONICAL_DENOMS_HPP
 

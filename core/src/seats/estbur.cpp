@@ -351,9 +351,10 @@ bool armafl_last_residuals(X13Context& ctx, const std::vector<double>& series,
 // bphist = phist*(1-B)^d*(1-B^mq)^bd, FCAST's own construction
 // (ansub1.f:2113-2148). Returns bpstar (bphist's length). The phist AR
 // polynomial fill (P/Bp>0) is ported; a strict no-op for the airline-family
-// corpus (p=bp=0). NOTE: the general-shape SEATS decomposition is NOT yet
-// bit-exact -- the ESTBUR historical AR solve + the CALCFX general-branch
-// residual seed (calcfx_last_residuals bails for p>0) remain. See
+// corpus (p=bp=0). The general-shape (p>0/bp>0) decomposition is bit-exact +
+// gated (the *_ar2-seats / *_sar-seats specs); the CALCFX general-branch
+// residual seed is ported too (calcfx_last_residuals Pstar>0). Only imean!=0
+// remains unported (guarded-fatal in run_seats). See
 // tools/seats_general_scope.md.
 int build_bphist(const SeatsModelOrders& mo, std::vector<double>& bphist) {
     bphist.assign(64, 0.0);

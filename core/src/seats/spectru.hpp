@@ -105,7 +105,7 @@ void addj(const double* a, int mplus1, double d1, const double* b, int nplus1,
 // SPECTRU's outputs: the admissibility number qt1, the per-component
 // spectrum-floor values, the isUgly/root-classification flags it can flip,
 // and the harmonic-function COMMON state (Ut/Uc/V/Ff/Fh/...) later pieces
-// of the canonical decomposition (DecompSpectrum, not yet ported) consume.
+// of the canonical decomposition (DecompSpectrum) consume.
 struct SpectruResult {
     SpectruHarmonics h;
     double qt1 = 0.0;

@@ -63,7 +63,7 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 | Automatic model ID + AIC tests | **Done for corpus** | `test_m4_aictest.py`, `test_m4_iddiff.py`, `test_m4_trnaic.py` |
 | X-11 decomposition (B/C/D/E tables) | **Done** (17/19 specs ~5e-15) | `test_x11_tables.py` |
 | `force{}` (Denton / Cholette-Dagum / rounding) | **Done, bit-exact** | `test_force_tables.py` |
-| SEATS decomposition | **Done for corpus, bit-exact** — every SEATS corpus spec's s10–s18 tables gate (~5e-15) | `test_seats_tables.py` |
+| SEATS decomposition | **Done, bit-exact** — every SEATS corpus spec's s10–s18 gate (~5e-15), plus general-shape p>0 (`ar2-seats`) and bp>0 (`sar-seats`); only `imean!=0` unported (guarded-fatal) | `test_seats_tables.py` |
 | `slidingspans{}` | **Done, bit-exact** — all 4 spans, sfs+chs | `test_slidingspans_tables.py` |
 | `history{}` | **Done, bit-exact** — sar/sae/trr/tre (~7e-6 re-estimation floor) | `test_history_tables.py` |
 | Other diagnostics / less-common options | **Partial / planned** | see `tools/coverage_plan.md` |
@@ -72,7 +72,7 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 ## 5. Testing
 
-- **Parity suite result (current):** **829 passed · 0 failed · 0 xfailed · 17 skipped.**
+- **Parity suite result (current):** **923 passed · 0 failed · 0 xfailed · 25 skipped.**
 - **Corpus:** spec files across 11 parity test modules, spanning the airline model, Census example series, and real economic series (unemployment, payroll employment, exports).
 - **0 open xfails.** The X-11 decomposition spine, SEATS decomposition, the whole diagnostics front (force / slidingspans / history), the model X-11 path, and the X-11 spec-option front (type / shrink / sigmavec / x11easter / user-regression prior factor) all gate bit-exact. The 17 skips are legitimate (oracle ships no golden / no table for those specs). Remaining work is interdependent x11 factor-producer chains, not a passing/failing ledger.
 - **Census bugs reproduced:** 13 (CB-1 … CB-13), each verified to match the oracle bug-for-bug.
@@ -98,11 +98,11 @@ Engineering documentation is generated as a byproduct of the work, not as an aft
 |---|---|---|
 | C++ ported | **~28,800 non-blank lines**, 212 files | reproduces the behavior of the Fortran below |
 | Fortran reference | ~166,000 lines, 712 files | not all on the port's critical path |
-| Parity result | 788 pass / 0 fail / 0 xfail / 17 skip | as of 2026-07-23 |
+| Parity result | 923 pass / 0 fail / 0 xfail / 25 skip | as of 2026-07-24 |
 | Corpus | spec files across 11 test modules | real + synthetic series |
 | Census bugs catalogued | 13 (CB-1 … CB-13) | reproduced bug-for-bug |
 | Active development time | **~19h 46m** over 3 calendar days | via `worklog.py`, through last commit (2026-07-20) |
-| Commits | 171 | additional 2026-07-21 work (force completion, SEATS s11/s12, review fixes) not yet committed |
+| Commits | 239 | through 2026-07-24 (SEATS general-shape p>0/bp>0 close) |
 | Measured bit-exactness | ~5e-15 on 17/19 X-11 specs | double-precision noise floor |
 
 *Note on time: `worklog.py` measures committed activity through 2026-07-20. The most recent session (completing `force{}`, moving SEATS s11/s12 to bit-exact, and applying a batch of review fixes) is additional and not reflected in that figure.*
@@ -124,7 +124,7 @@ Engineering documentation is generated as a byproduct of the work, not as an aft
 
 ## 9. Status and what remains
 
-**Landed:** the full regARIMA → automatic-model → X-11 pipeline is bit-exact on the corpus; `force{}` is complete; the SEATS decomposition corpus is fully bit-exact (all s10–s18); the whole diagnostics front (`slidingspans{}` / `history{}`) is closed; the model X-11 path and the X-11 spec-option front (`type` / `shrink` / `sigmavec` / `x11easter` / user-regression prior factor) all gate bit-exact.
+**Landed:** the full regARIMA → automatic-model → X-11 pipeline is bit-exact on the corpus; `force{}` is complete; the SEATS decomposition is fully bit-exact — the whole corpus (all s10–s18) plus the general-shape p>0 (`ar2-seats`) and bp>0 (`sar-seats`) models (only `imean!=0` unported, and guarded-fatal); the whole diagnostics front (`slidingspans{}` / `history{}`) is closed; the model X-11 path and the X-11 spec-option front (`type` / `shrink` / `sigmavec` / `x11easter` / user-regression prior factor) all gate bit-exact.
 
 **In progress / next:**
 
