@@ -148,7 +148,10 @@ int main(int argc, char** argv) {
                                 ? posfob
                                 : (ctx.extend.nfcst > 0 ? ctx.x11ptr.posffc
                                                         : posfob + sp);
-        if (ctx.agr.iagr == 4) {
+        // The composite total is the run that produced an indirect adjustment.
+        // (Iagr no longer says so: agr2's Iagr==4 branch clears it at the end of
+        // the run, exactly as the oracle does.)
+        if (!ctx.agr_direct_d11.empty()) {
             // The DIRECT adjustment of the aggregate, snapshotted by run_x11
             // before agr3 overwrote the buffers.
             dump(out, prefix, "d10", begspn, sp, sf_frst, sf_last, ctx.agr_direct_d10.data());
@@ -165,6 +168,31 @@ int main(int argc, char** argv) {
             if (!ctx.agr_stc2in.empty())
                 dump(out, prefix, "itn", begspn, sp, pos1ob, posfob, ctx.agr_stc2in.data());
             dump(out, prefix, "iir", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
+            // The savelog canaries the oracle writes to the .udg: agr3's
+            // Henderson length and agr2's direct-vs-indirect roughness
+            // percentage changes (agr2.f:174-181, di(5)/(6), (11)/(12),
+            // (17)/(18), (23)/(24)).
+            char cbuf[160];
+            std::snprintf(cbuf, sizeof cbuf, "indtrendma %d\n", ctx.agr_indtrendma);
+            out += cbuf;
+            if (ctx.agr_cmpstat.size() > 24) {
+                const double* di = ctx.agr_cmpstat.data();
+                static const char* const kNames[4] = {"r1mse", "r1rmse", "r2mse",
+                                                      "r2rmse"};
+                static const int kIdx[4] = {5, 11, 17, 23};
+                for (int t = 0; t < 4; ++t) {
+                    std::snprintf(cbuf, sizeof cbuf, "%s %.15E %.15E\n", kNames[t],
+                                  di[kIdx[t]], di[kIdx[t] + 1]);
+                    out += cbuf;
+                }
+                // ... and the whole di(1..24), which is the printed roughness
+                // table: direct full/last-3 then indirect full/last-3 then the
+                // two percentage changes, four rows of six.
+                for (int k = 1; k <= 24; ++k) {
+                    std::snprintf(cbuf, sizeof cbuf, "cmpstat %d %.15E\n", k, di[k]);
+                    out += cbuf;
+                }
+            }
         } else {
             dump(out, prefix, "d10", begspn, sp, sf_frst, sf_last, ctx.x11srs.sts.data());
             dump(out, prefix, "d11", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data());

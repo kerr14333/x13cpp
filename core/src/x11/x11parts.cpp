@@ -704,7 +704,10 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     double* stime = ctx.mq5a_stime.data();  // /mq5a/ Stime (E3 modified irregular),
                           // ctx-persistent so run_spectrum can read it (spcdrv
                           // differences E2/E3, computed here in Part E below).
-    double ckhs[PLEN];    // /kcser/ Ckhs   (SA snapshot; dead on the base path)
+    // /kcser/ Ckhs -- ctx-persistent (ctx.kcser_ckhs): a COMMON in the oracle
+    // because agr3.f reads this SA snapshot after x11pt3 returns, to filter the
+    // DIRECT trend the composite comparison statistics use. Dead otherwise.
+    double* ckhs = ctx.kcser_ckhs.data();
     double ststd[PLEN];   // ststd          (D16 combined factors)
     double biasfc[PLEN];  // biasfc         (logadd trend bias-correction factors)
     double sp2[PLEN];     // sp2            (Sprior snapshot; dead on the base path)
@@ -823,7 +826,9 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     opt.muladd = opt.tmpma;  // restore the model's adjustment mode (x11pt3.f:376)
     muladd = opt.tmpma;      // keep the local in sync (logadd: back to 2 for vtc)
 
-    // Snapshot the modified SA for the summary-only path (dead on the base path).
+    // x11pt3.f:379 -- snapshot the SA series here, before the D11 Fin*/Adj* folds
+    // below rewrite Stci. Read back by the summary-only path and, for a composite
+    // total, by agr3 (the DIRECT trend behind the R1/R2 comparison statistics).
     copy(stci + (pos1bk - 1), ext.nbfpob, 1, ckhs + (pos1bk - 1));
 
     klda = posfob + ny;

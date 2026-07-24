@@ -1,11 +1,15 @@
 // agr3.cpp -- agrxpt.f + the indirect-adjustment core of agr3.f.
 //
-// INCREMENT 2 (tools/composite_scouting.md): produce the four indirect tables
-// isf/isa/itn/iir (indirect seasonal / seasonally adjusted / trend / irregular)
-// from the buffers agr2 accumulated. Deferred to increment 3: the title page and
-// component table (Prttab(LCMPAH)), the D8/D9 indirect SI diagnostics, the E-table
-// family (x11pt4 on the indirect side), the forced/rounded indirect series, and
-// the Iagr==4 direct-vs-indirect comparison statistics (aggmea/cmpchi).
+// Produces the four indirect tables isf/isa/itn/iir (indirect seasonal /
+// seasonally adjusted / trend / irregular) from the buffers agr2 accumulated,
+// plus the DIRECT series/trend pair (Orig2/Tem) that agr2's Iagr==4 branch
+// compares them against.
+//
+// Not ported here, and none of it composite-specific (tools/composite_scouting.md):
+// the title page and component table (Prttab(LCMPAH)) and the indirect D8/D9 SI
+// diagnostics -- whose ftest/kwtest/mstest/combft are deferred no-ops on the
+// DIRECT side too -- and the E-table family, since x11pt4 is unported for both
+// adjustments. The forced/rounded indirect series is likewise still open.
 #include "composite/agr3.hpp"
 
 #include "common/x13context.hpp"
@@ -80,12 +84,25 @@ void agr3(X13Context& ctx, const int* begspn) {
     double* tempo = ctx.inpt.orig2.data();     // == Orig2
     double* stexx = as.omod.data();            // == Omod
 
-    // agr3.f:100-108 -- stash the DIRECT seasonally adjusted series into Orig2.
-    // (The companion `Stci(i)=Ckhs(i)` + its Henderson pass feed only `Tem`, the
-    // direct trend used by the increment-3 comparison statistics; /kcser/ Ckhs is
-    // not carried by this port yet, so that pair is deferred with Tem.)
-    for (int i = ptr.pos1bk; i <= ptr.posffc; ++i) tempo[i - 1] = ctx.x11srs.stci(i);
+    // agr3.f:100-108 -- stash the DIRECT seasonally adjusted series into Orig2,
+    // and put x11pt3's pre-fold SA snapshot (/kcser/ Ckhs) back into Stci: the
+    // comparison statistics filter the DIRECT trend out of THAT, not out of the
+    // published D11.
+    for (int i = ptr.pos1bk; i <= ptr.posffc; ++i) {
+        tempo[i - 1] = ctx.x11srs.stci(i);
+        ctx.x11srs.stci(i) = ctx.kcser_ckhs[i - 1];
+    }
     ag.iagr = 4;
+
+    // agr3.f:110-143 -- the DIRECT trend for the comparison statistics: a 13-term
+    // (5 quarterly) Henderson, insisted on regardless of what the direct run
+    // chose. Stashed in `Tem`; agr2's Iagr==4 branch pairs it with Orig2 above.
+    // (Nterm is reported as `indtrendma` here, which is the direct filter -- but
+    // Ktcopt pins it to 13/5, so the label is the only thing that is off.)
+    opt.ktcopt = (ny == 4) ? 5 : 13;
+    vtc(ctx, ctx.x11srs.stc.data(), ctx.x11srs.stci.data());
+    ctx.agr_indtrendma = opt.nterm;
+    for (int i = ptr.pos1bk; i <= ptr.posffc; ++i) as.tem(i) = ctx.x11srs.stc(i);
 
     // agr3.f:146-159 -- swap the run onto the INDIRECT geometry.
     ptr.pos1bk = ag.ind1bk;

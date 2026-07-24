@@ -198,6 +198,17 @@ struct X13Context {
     // the oracle has already emitted them by then, while this port hands all
     // output to the caller after the run.
     std::vector<double> agr_direct_d10, agr_direct_d11, agr_direct_d12, agr_direct_d13;
+    // /kcser/ Ckhs -- x11pt3's snapshot of the final SA series (D11) taken at
+    // x11pt3.f:379, BEFORE the Fin*/Adj* folds rewrite Stci. A COMMON in the
+    // oracle because agr3.f reads it after x11pt3 has returned: it is the series
+    // the DIRECT trend used by the composite comparison statistics is filtered
+    // from. Dead on every non-composite path.
+    std::vector<double> kcser_ckhs = std::vector<double>(1020, 0.0);
+    // The Iagr==4 direct-vs-indirect comparison statistics (agr2.f:87-181), in
+    // the oracle's `di(1..24)` layout, plus the Henderson length agr3 reports as
+    // `indtrendma`. Empty unless a composite total actually ran.
+    std::vector<double> agr_cmpstat;
+    int agr_indtrendma = 0;
     // Final regARIMA residuals (arima.f's `a`, length `resid_na`) captured after
     // estimation for the residual-spectrum diagnostic (spr, spcrsd.f). Their
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).

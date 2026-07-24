@@ -179,7 +179,7 @@ diagnostics front (force / slidingspans / history) is now closed.
   Fintc/Finhol; `final=user` is inert when the user regressors are `usertype=td`,
   since their effect lands in Factd, not Facusr), plus a d16 (`ststd`) snapshot on
   ctx so the harness can emit the combined seasonal+calendar factors.
-- **composite{} / indirect adjustment — increments 1 AND 2 landed (bit-exact).**
+- **composite{} / indirect adjustment — CLOSED for X-11 (bit-exact), incs 1-3.**
   The only multi-spec feature: the oracle runs a metafile's specs in ONE process
   so the aggregation COMMONs persist, and `tools/x13run_composite.cpp` carries
   `agr_cmn`/`agrsrs_cmn` between per-spec contexts to match. Ported `agr.f`,
@@ -192,8 +192,19 @@ diagnostics front (force / slidingspans / history) is now closed.
   `Lstyr/Lstmo/L0/Ly0` (editor.f:236-237/423-424 — they ARE the Itest span
   signature) and `Orig2` (editor.f:2492 — the buffer agr2 aggregates). NOTE the
   faithful aliasing: agr3.f EQUIVALENCEs its `tempo`/`stexx` scratch onto
-  Orig2/Omod. Next: inc3 = direct-vs-indirect comparison stats (`aggmea`/
-  `cmpchi`) + the indirect D8/D9/E-tables. Map:
+  Orig2/Omod. Increment 3 added the direct-vs-indirect COMPARISON STATISTICS —
+  `aggmea.f` + agr2's `Iagr==4` branch, plus the two pieces agr3 had deferred:
+  `/kcser/ Ckhs` (x11pt3.f:379; a COMMON exactly because agr3 reads it after
+  x11pt3 returns) and the `Tem` direct trend, a forced 13/5-term Henderson on
+  Ckhs. All 24 `di()` roughness values match the oracle's printed table and all
+  four savelog canaries (`r1mse`/`r1rmse`/`r2mse`/`r2rmse`) + `indtrendma` match
+  `total.udg`, gated at the oracle's own 3-decimal print precision. What is left
+  under the old inc3 heading is NOT composite-specific — the indirect E/F tables
+  need `x11pt4`, and the indirect D8/D9 F-tests need `ftest`/`kwtest`/`mstest`/
+  `combft`, both unported on the DIRECT side too; `prtagr`/`pragr2` are print
+  surface this port defers by design. (`cmpchi.f`/`cmpstr.f` were misfiled in the
+  scouting inventory: neither is composite.) Still open for composite: the SEATS
+  branch (`agr3s.f`) and pseudo-additive. Map:
   **`tools/composite_scouting.md`**.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

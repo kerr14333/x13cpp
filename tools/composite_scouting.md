@@ -65,10 +65,14 @@ buffers.
 | `agr3.f`    | 618 | indirect X-11 tables | 2 |
 | `agr3s.f`   | 481 | indirect SEATS tables | 2 |
 | `agrxpt.f`  | 60  | indirect pointer setup | 2 |
+| `aggmea.f`  | 47  | R1/R2 measures of roughness | 3 |
 | `prtagr.f`  | 38  | "how the aggregate was formed" table | 3 (print) |
 | `pragr2.f`  | 46  | indirect E-table print wrapper | 3 (print) |
-| `cmpchi.f`  | 642 | direct-vs-indirect chi-square / F diagnostics | 3 |
-| `cmpstr.f`  | 34  | component-label helper | 3 |
+
+(`cmpchi.f` and `cmpstr.f` were listed here in the first draft on the strength of
+their names. Neither is composite: `cmpchi` is the regression-GROUP chi-square
+test called from `prtmdl.f:709`/`prtxrg.f:552`, and `cmpstr` is the lexer's
+token-aware string compare. Nothing in the composite path calls either.)
 
 `composite{}` ARGDIC (`getcmp.f:60-64`, PARG=13): `name title print save decimals
 modelspan saveprecision savelog yr2000 indoutlier appendfcst appendbcst type`.
@@ -103,8 +107,40 @@ want the direct aggregate.
 (and `agr3s` if a SEATS composite spec shows up). Gates the indirect
 seasonal/SA/trend tables.
 
-**inc3 — comparison diagnostics.** `Iagr==4` stats, `cmpchi`, `prtagr`/`pragr2`.
-Mostly print surface; gate via the `.udg`/savelog canaries.
+**inc3 — comparison diagnostics.** `Iagr==4` stats (`aggmea`), the direct-trend
+`Tem` / `Ckhs` pair agr3 needs to feed them, and the pointer restore back onto
+the direct geometry. Gate via the `.udg`/savelog canaries.
+
+### inc3 status: LANDED (bit-exact)
+
+`aggmea.f` + `agr2.f:66-192` are ported (`core/src/composite/agr2.cpp`
+`agr2_compare`), together with the two pieces agr3 had deferred: `/kcser/ Ckhs`
+(now `ctx.kcser_ckhs`, written at x11pt3.f:379 — a COMMON precisely because agr3
+reads it after x11pt3 returns) and the `Tem` direct trend, a 13-term (5
+quarterly) Henderson forced onto Ckhs. All 24 `di()` values reproduce the
+oracle's MEASURES OF ROUGHNESS table and all four savelog canaries
+(`r1mse`/`r1rmse`/`r2mse`/`r2rmse`) plus `indtrendma` match `total.udg` — gated
+in `tests/parity/test_composite_tables.py` at the oracle's own printed precision
+(3 decimals), which is all either output carries.
+
+One label oddity, harmless: agr3.f:113-118 writes `indtrendma: Nterm` right after
+filtering the DIRECT trend. `Ktcopt` pins Nterm to 13/5 there, so the number is
+right either way and it is not worth a `CB-N`.
+
+**What is left is NOT composite-specific.** The remaining items under the old
+inc3 heading are all shared with the direct path or are pure output:
+
+- the indirect E/F tables (`x11pt4` on the indirect side) and the `if2.*`/`im*`/
+  `iq*` .udg families — `x11pt4` is unported for BOTH adjustments, so this is the
+  general E/F-table gap, not a composite one;
+- the indirect D8/D9 SI diagnostics (agr3.f:290-350) — same story: `ftest`/
+  `kwtest`/`mstest`/`combft` are deferred no-ops on the direct side too
+  (`x11parts.hpp:47`);
+- `prtagr`/`pragr2` and the aggregate-composition header — print surface, which
+  this port defers to the caller by design.
+
+Still genuinely open for composite: the SEATS branch (`agr3s.f`, `Seatsa`/
+`Setsa2`) and pseudo-additive (`Psuadd`).
 
 ## Harness / gate notes
 

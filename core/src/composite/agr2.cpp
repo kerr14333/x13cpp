@@ -1,9 +1,9 @@
 // agr2.cpp -- setapt.f + the per-component accumulation branch of agr2.f.
 //
-// INCREMENT 1 (see tools/composite_scouting.md): only the DIRECT composite total
-// `O` is accumulated. The indirect buffers (O1..O5 from the Fin*/prior/LS/AO/TC/
-// calendar-stripped originals, Ci/Ci2 from the component SA, Omod from Stome) and
-// the Iagr==4 direct-vs-indirect comparison statistics are increments 2 and 3.
+// setapt.f + BOTH agr2.f branches: the per-component accumulation (the direct
+// total `O`, the indirect buffers O1..O5/Ci/Ci2/Omod) and, once agr3 has built
+// the indirect adjustment, the Iagr==4 direct-vs-indirect comparison statistics
+// (aggmea.f). See tools/composite_scouting.md.
 #include "composite/agr2.hpp"
 
 #include "common/x13context.hpp"
@@ -13,6 +13,7 @@
 #include "specparse/specparse.hpp"   // addate, copy
 #include "x11/x11filt.hpp"          // divsub, addmul
 
+#include <cmath>
 #include <vector>
 
 namespace x13 {
@@ -163,6 +164,98 @@ bool agr2_component(X13Context& ctx) {
 
     ag.ncomp = ag.ncomp + 1;   // agr2.f:296
     return true;
+}
+
+namespace {
+
+// aggmea.f -- the measures of roughness of one seasonally adjusted series `a`
+// against its trend `b`, over [i1,i2].
+//   R1 = mean square (and root mean square) of the FIRST DIFFERENCES of `a`;
+//   R2 = the variance (and standard deviation) of the SA/trend ratio (muladd==0)
+//        or difference, about its own mean.
+// Note the divisors: R1 divides by i2-i1 (the number of differences), R2 by
+// i2-i1+1 (the number of observations) -- aggmea.f reuses `div`, adding one.
+void aggmea(const double* a, const double* b, double& w, double& x, double& y,
+            double& z, int i1, int i2, int muladd, bool x11agr) {
+    w = 0.0; x = 0.0; y = 0.0; z = 0.0;
+    for (int i = i1; i <= i2 - 1; ++i) {
+        const double d = a[i] - a[i - 1];   // a(i+1)-a(i), 1-based
+        w += d * d;
+    }
+    double div = static_cast<double>(i2 - i1);
+    w /= div;
+    x = std::sqrt(w);
+    if (!x11agr) return;
+    double cbar = 0.0;
+    for (int i = i1; i <= i2; ++i)
+        cbar += (muladd == 0) ? (a[i - 1] / b[i - 1]) : (a[i - 1] - b[i - 1]);
+    div += 1.0;
+    cbar /= div;
+    for (int i = i1; i <= i2; ++i) {
+        const double c =
+            ((muladd == 0) ? (a[i - 1] / b[i - 1]) : (a[i - 1] - b[i - 1])) - cbar;
+        y += c * c;
+    }
+    y /= div;
+    z = std::sqrt(y);
+}
+
+}  // namespace
+
+// agr2.f:66-192 -- the end of the indirect adjustment.
+void agr2_compare(X13Context& ctx, const int* begspn) {
+    agr_cmn& ag = ctx.agr;
+    x11ptr_cmn& ptr = ctx.x11ptr;
+    extend_cmn& ext = ctx.extend;
+    const int ny = ctx.x11opt.ny;
+    const int muladd = ctx.x11opt.muladd;
+    // X11agr: the composite is adjusted by X-11 (the SEATS composite runs agr3s
+    // and is not ported), so the R2 half of the statistics is always computed.
+    const bool x11agr = true;
+
+    ag.iagr = 0;
+    if (ctx.hiddn.issap > 0 || ctx.hiddn.irev > 0) ag.iagr = 5;
+    if (ctx.hiddn.issap == 0 && ctx.hiddn.irev == 0) ag.ncomp = 0;
+
+    // agr2.f:88-119 -- four aggmea calls: DIRECT (Orig2 = the SA agr3 stashed,
+    // Tem = its forced-Henderson trend) and INDIRECT (Stci/Stc), each over the
+    // full series and over the last three years.
+    const int pos1ob = ptr.pos1ob, posfob = ptr.posfob;
+    const int kfda = posfob - ny * 3 + 1;
+    const double* dirsa = ctx.inpt.orig2.data();
+    const double* dirtr = ctx.agrsrs.tem.data();
+    const double* indsa = ctx.x11srs.stci.data();
+    const double* indtr = ctx.x11srs.stc.data();
+
+    std::vector<double> di(25, 0.0);   // 1-based di(1..24)
+    double a1, a2, a3, a4;
+    aggmea(dirsa, dirtr, a1, a2, a3, a4, pos1ob, posfob, muladd, x11agr);
+    di[1] = a1; di[7] = a2; if (x11agr) { di[13] = a3; di[19] = a4; }
+    aggmea(dirsa, dirtr, a1, a2, a3, a4, kfda, posfob, muladd, x11agr);
+    di[2] = a1; di[8] = a2; if (x11agr) { di[14] = a3; di[20] = a4; }
+    aggmea(indsa, indtr, a1, a2, a3, a4, pos1ob, posfob, muladd, x11agr);
+    di[3] = a1; di[9] = a2; if (x11agr) { di[15] = a3; di[21] = a4; }
+    aggmea(indsa, indtr, a1, a2, a3, a4, kfda, posfob, muladd, x11agr);
+    di[4] = a1; di[10] = a2; if (x11agr) { di[16] = a3; di[22] = a4; }
+
+    // agr2.f:120-125 -- di(i+4)/di(i+5) are the direct->indirect PERCENTAGE
+    // changes; positive means the indirect adjustment is the smoother one.
+    const int i2 = x11agr ? 19 : 7;
+    for (int i = 1; i <= i2; i += 6) {
+        di[i + 4] = (di[i] - di[i + 2]) * 100.0 / di[i];
+        di[i + 5] = (di[i + 1] - di[i + 3]) * 100.0 / di[i + 1];
+    }
+    ctx.agr_cmpstat.assign(di.begin(), di.end());
+
+    // agr2.f:183-190 -- put the pointers back on the DIRECT geometry that agr3
+    // swapped away from.
+    ptr.pos1bk = ptr.pos1ob - ag.dirnbc;
+    ptr.posffc = ptr.posfob + ag.dirnfc;
+    ext.nofpob = ext.nofpob - ext.nfcst + ag.dirnfc;
+    ext.nbfpob = ext.nbfpob - ext.nfcst + ag.dirnfc - ext.nbcst + ag.dirnbc;
+    ext.nfcst = ag.dirnfc;
+    ext.nbcst = ag.dirnbc;
+    addate(begspn, ny, -ext.nbcst, ext.begbak.data());
 }
 
 }  // namespace x13

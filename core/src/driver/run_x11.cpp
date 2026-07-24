@@ -23,7 +23,7 @@
 #include "x11/x11easter.hpp"      // holday (classic X-11 Easter estimation)
 #include "driver/run_history.hpp"  // run_history
 #include "driver/run_spectrum.hpp"  // run_spectrum
-#include "composite/agr2.hpp"       // agr2_component (composite accumulation)
+#include "composite/agr2.hpp"       // agr2_component / agr2_compare (composite)
 #include "composite/agr3.hpp"       // agr3, agrxpt (indirect adjustment)
 
 #include <algorithm>
@@ -460,6 +460,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
         ctx.agr_direct_d13.assign(ctx.x11srs.sti.data(), ctx.x11srs.sti.data() + PLEN_D);
         agr3(ctx, begspn_full);
         if (ctx.error.lfatal) return false;
+        // x11ari.f:372-373: agr3 leaves Iagr==4, which routes the SAME agr2 call
+        // into its comparison-statistics branch -- direct vs indirect roughness,
+        // and the restore of the direct pointer geometry.
+        agr2_compare(ctx, begspn_full);
     }
 
     return !ctx.error.lfatal;

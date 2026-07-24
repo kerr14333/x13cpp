@@ -31,9 +31,16 @@ components sit ~1e-4 out and the indirect tables inherit exactly that -- an
 automdl-front issue, not an aggregation one. ``composite/`` stays untouched as
 the illustrative Census-style example and as an automdl identification case.)
 
-Still deferred to increment 3 (tools/composite_scouting.md): the Iagr==4
-direct-vs-indirect comparison statistics (aggmea/cmpchi), the indirect D8/D9 and
-E-tables, and the aggregate-composition header table.
+Increment 3 adds the direct-vs-indirect COMPARISON STATISTICS (agr2.f's Iagr==4
+branch + aggmea.f): the R1/R2 measures of roughness of both adjustments, over the
+full series and the last three years, plus the percentage change between them.
+Those are gated here two ways -- the whole di(1..24) against the printed
+roughness table in ``total.out``, and the four savelog canaries against
+``total.udg`` -- at the oracle's own printed precision (3 decimals), which is all
+either output carries.
+
+Still deferred (tools/composite_scouting.md): cmpchi's chi-square/F diagnostics,
+the indirect D8/D9 and E-tables, and the aggregate-composition header table.
 
 Run:  python -m pytest tests/parity/test_composite_tables.py -q
 """
@@ -153,3 +160,71 @@ def test_composite_total_indirect(run_output: str, tag: str) -> None:
 def test_composite_component(run_output: str, base: str, tag: str) -> None:
     """Each component's own adjustment -- what the indirect tables are built from."""
     _check(run_output, base, tag, prefix=base + ":")
+
+
+# --- increment 3: the direct-vs-indirect comparison statistics ----------------
+#
+# Both the printed table and the savelog carry these at 3 decimals, so they are
+# compared as the oracle formats them: same rounded string, which pins the value
+# to +/-5e-4 absolute. That is the tightest statement either output supports.
+_ROWS = {                       # printed label -> the di() indices on that row
+    "R1-MEAN SQUARE ERROR": range(1, 7),
+    "R1-ROOT MEAN SQUARE ERROR": range(7, 13),
+    "R2-MEAN SQUARE ERROR": range(13, 19),
+    "R2-ROOT MEAN SQUARE ERROR": range(19, 25),
+}
+_NUM_RE = re.compile(r"-?\d+\.\d+")
+_HAVE_STATS = _HAVE and os.path.exists(os.path.join(_GOLDEN, _TOTAL, _TOTAL + ".out"))
+
+
+def _emitted_scalars(run_output: str, tag: str) -> dict[str, str]:
+    """`<tag> <key> <value>` lines -> {key: value}."""
+    out = {}
+    for ln in run_output.splitlines():
+        p = ln.split()
+        if len(p) == 3 and p[0] == tag:
+            out[p[1]] = p[2]
+    return out
+
+
+@pytest.mark.skipif(not _HAVE_STATS, reason="composite golden .out not present")
+def test_composite_roughness_table(run_output: str) -> None:
+    """di(1..24) against the MEASURES OF ROUGHNESS table in total.out."""
+    got = _emitted_scalars(run_output, "cmpstat")
+    assert len(got) == 24, f"harness emitted {len(got)} cmpstat values, want 24"
+
+    with open(os.path.join(_GOLDEN, _TOTAL, _TOTAL + ".out"),
+              encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+
+    seen = 0
+    for label, idx in _ROWS.items():
+        row = next((ln for ln in lines if ln.strip().startswith(label)), None)
+        assert row is not None, f"{label} row missing from total.out"
+        nums = _NUM_RE.findall(row[len(label) + row.index(label):])
+        assert len(nums) == 6, f"{label}: parsed {nums}"
+        for k, want in zip(idx, nums):
+            assert f"{float(got[str(k)]):.3f}" == f"{float(want):.3f}", (
+                f"di({k}) = {got[str(k)]}, oracle prints {want} ({label})")
+            seen += 1
+    assert seen == 24
+
+
+@pytest.mark.skipif(not _HAVE_STATS, reason="composite golden .udg not present")
+def test_composite_savelog_canaries(run_output: str) -> None:
+    """indtrendma + r1mse/r1rmse/r2mse/r2rmse against total.udg."""
+    udg = {}
+    with open(os.path.join(_GOLDEN, _TOTAL, _TOTAL + ".udg"),
+              encoding="utf-8", errors="replace") as f:
+        for ln in f:
+            if ":" in ln:
+                k, _, v = ln.partition(":")
+                udg[k.strip()] = v.split()
+
+    lines = {p[0]: p[1:] for p in (ln.split() for ln in run_output.splitlines())}
+    assert lines.get("indtrendma") == udg["indtrendma"], "indirect Henderson length"
+    for key in ("r1mse", "r1rmse", "r2mse", "r2rmse"):
+        assert key in udg, f"{key} missing from total.udg"
+        got = [f"{float(v):.3f}" for v in lines[key]]
+        want = [f"{float(v):.3f}" for v in udg[key]]
+        assert got == want, f"{key}: {got} vs oracle {want}"

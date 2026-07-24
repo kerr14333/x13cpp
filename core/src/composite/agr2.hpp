@@ -16,5 +16,12 @@ void setapt(X13Context& ctx, int nb, int nf, const int* begspn, int sp);
 // Increment 1 accumulates the direct original `O` only.
 bool agr2_component(X13Context& ctx);
 
+// agr2.f, the Iagr==4 path (agr2.f:66-192): once agr3 has produced the indirect
+// adjustment, compare it against the direct one -- the R1/R2 measures of
+// roughness (aggmea.f) over the full series and the last three years -- then put
+// the run's pointers back on the DIRECT geometry and clear Iagr. Fills
+// ctx.agr_cmpstat with the oracle's di(1..24).
+void agr2_compare(X13Context& ctx, const int* begspn);
+
 }  // namespace x13
 #endif  // X13_COMPOSITE_AGR2_HPP
