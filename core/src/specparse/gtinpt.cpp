@@ -515,6 +515,14 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             ctx.arima.fctdrp = 0;
         }
 
+        // gtinpt.f:1201: if a regARIMA model is estimated AND an irregular-
+        // component x11regression was requested (Ixreg==1), promote to Ixreg==2 --
+        // the TD/holiday regressors become a PRIOR adjustment (estimated by
+        // xrgdrv's transparent SA and applied before the model), not an in-line
+        // irregular regression. Drives run_pre_model's xrgdrv call + the main
+        // x11pt1 Ixreg==3 fold.
+        if (lmodel && ctx.hiddn.ixreg == 1) ctx.hiddn.ixreg = 2;
+
         // gtinpt.f 1142-1167: default Nbcst / Nfcst.
         if (ctx.extend.nbcst == prm::NOTSET) ctx.extend.nbcst = 0;
         if (ctx.extend.nfcst == prm::NOTSET) {
@@ -530,6 +538,17 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             } else {
                 ctx.extend.nfcst = 0;
             }
+        }
+
+        // gtinpt.f 1172-1181: if an X-11 regression is done, set its forecast
+        // horizon (Nfcstx) to at least one seasonal year. The transparent xrgdrv
+        // pass (and the main run's Faccal fold at x11pt3) span [Pos1bk,Posffc]
+        // using Nfcstx, so the calendar factor must extend a full year even when
+        // the model forecast count is smaller.
+        if (ctx.hiddn.ixreg > 0) {
+            ctx.xrgfct.nfcstx = ctx.extend.nfcst;
+            ctx.xrgfct.nbcstx = ctx.extend.nbcst;
+            if (ctx.extend.nfcst < ctx.model.sp) ctx.xrgfct.nfcstx = ctx.model.sp;
         }
         return;
     }

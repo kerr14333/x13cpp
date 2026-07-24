@@ -170,6 +170,17 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
     // Prior calendar adjustment (X-11 regression / X-11 Easter or user holiday).
     int phol = posffc;
     if (posfob == posffc) phol = posfob + ny;
+    // Ixreg==3 main run: the OLS prior-TD factor was estimated by xrgdrv's
+    // transparent pass and stashed over the forecast-extended span [Pos1ob,Posffc]
+    // (this main run's x11int wiped /x11fac/), so restore Faccal before the divide
+    // below folds the observed part out of Sto and x11pt3 folds the whole span
+    // (incl. the forecast region c16.A) into D11/D16. Empty on every other path.
+    if (ctx.hiddn.ixreg == 3 && ctx.x11log.axrgtd &&
+        !ctx.x11_faccal_prior.empty()) {
+        const int nfp = static_cast<int>(ctx.x11_faccal_prior.size());
+        for (int k = 0; k < nfp; ++k)
+            fac.faccal(pos1ob + k) = ctx.x11_faccal_prior[static_cast<std::size_t>(k)];
+    }
     if (((ctx.x11log.axrghl || ctx.x11log.axrgtd) && ctx.hiddn.ixreg == 3) ||
         opt.khol > 1) {
         if (opt.khol > 1)
@@ -181,15 +192,16 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
             setmv(os.sto.data(), mvind, ctx.missng.mvval, pos1ob, posfob);
     }
 
-    // Prior trading-day adjustment (user-specified or via X-11 regression).
-    if (opt.kswv != 0 || (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd)) {
-        // Only the user-weight prior-TD path (Kswv==1, x11regression tdprior),
-        // multiplicative (logadd already mapped to 0 above), non-pseudo-additive,
-        // no classic X-11 Easter (Khol<2), is ported. The x11-regression-estimated
-        // prior TD (Ixreg>=2 & Axrgtd) and the additive / pseudo-additive weight
-        // paths stay fatal.
-        if (opt.kswv != 1 || (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd) ||
-            muladd != 0 || ctx.x11msc.psuadd || opt.khol >= 2) {
+    // Prior trading-day adjustment. Two ported producers:
+    //   Kswv==1  -- user prior weights (x11regression tdprior): pritd builds the
+    //               a4 factor here and folds it into Faccal.
+    //   Ixreg>=2 & Axrgtd -- OLS-estimated prior TD (xrgdrv): the factor is built
+    //               by xrgdrv's transparent x11pt2 into Faccal and folded via the
+    //               Ixreg==3 divide above, so NOTHING is generated here for it.
+    // Additive / pseudo-additive weights stay fatal; the classic X-11 Easter
+    // (Khol>=2) user-weight combine stays fatal.
+    if (opt.kswv == 1) {
+        if (muladd != 0 || ctx.x11msc.psuadd || opt.khol >= 2) {
             x11_not_ported(ctx, "x11pt1 prior trading-day adjustment (pritd/ssrit)");
             return;
         }
@@ -223,6 +235,11 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
         addmul(fac.faccal.data(), fac.faccal.data(), stptd, pos1bk, phol, muladd);
         if (ctx.missng.missng)
             setmv(os.sto.data(), mvind, ctx.missng.mvval, pos1ob, lastpr);
+    } else if ((opt.kswv != 0 || (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd)) &&
+               (muladd != 0 || ctx.x11msc.psuadd)) {
+        // OLS prior-TD (Ixreg>=2) additive / pseudo-additive weights unported.
+        x11_not_ported(ctx, "x11pt1 additive/pseudo-additive prior trading-day");
+        return;
     }
 
     // (deferred: lmodel pre-ARIMA prior-adjusted-series prints A3/A3P/A4D.)
@@ -422,9 +439,14 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // the AO/LS/TC factors they only build deferred A8/A18/A19 tables in
         // x11pt2; the user effect is removed at adjreg (-> B1) and restored/
         // finalized by the x11pt3 D11 Finusr / D13 Adjusr folds.
+        // Axrgtd is handled for Ixreg==1 (in-line x11mdl_td below), Ixreg==2
+        // (xrgdrv transparent pass -- x11mdl_td builds Faccal here) and Ixreg==3
+        // (main run -- the prior Faccal passes through, adjtd==0 so the :358 fold
+        // is skipped), so none of those fatal. Ixreg==0 with Axrgtd cannot occur.
         if (adj.adjso == 1 || adj.adjsea == 1 ||
             adj.adjcyc == 1 || xl.axrghl ||
-            (xl.axrgtd && ctx.hiddn.ixreg != 1)) {
+            (xl.axrgtd && ctx.hiddn.ixreg != 1 && ctx.hiddn.ixreg != 2 &&
+             ctx.hiddn.ixreg != 3)) {
             x11_not_ported(ctx, "x11pt2 user/seasonal/cycle/x11reg factor combine+emit");
             return;
         }
@@ -540,10 +562,13 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         divsub(sti, stci, stc, pos1bk, posffc, muladd);
         // (deferred: B10/C10 seasonal, B11/C11 SA, B13/C13 irregular tables.)
 
-        // X-11 regression on the irregular (x11pt2.f:711 -> x11mdl), Ixreg==1:
-        // regress the TD design on Sti (B13/C13), snapshot b16/c16, and divide
-        // the TD effect out of Sti so the iteration continues without it.
-        if (ctx.hiddn.ixreg == 1 && (kpart == 2 || kpart == 3)) {
+        // X-11 regression on the irregular (x11pt2.f:711 -> x11mdl), Ixreg==1
+        // (in-line) or Ixreg==2 (xrgdrv transparent pass): regress the TD design
+        // on Sti (B13/C13), snapshot b16/c16, and divide the TD effect out of Sti
+        // so the iteration continues without it. Ixreg==3 (main run after xrgdrv)
+        // does NOT re-estimate -- the TD was already removed as a prior.
+        if ((ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2) &&
+            (kpart == 2 || kpart == 3)) {
             // x11pt2.f:720/724: swap the x11reg regressors into the working model
             // for the irregular OLS, then save the estimated betas back.
             loadxr(ctx, /*toxreg=*/false);
@@ -587,7 +612,7 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // here (verified: rebuilding from Series gave identical results). Outlier/
         // user x11reg specs would need the full :851-859 prior divsubs.
         for (int i = pos1bk; i <= posffc; ++i) STCSI(i) = STO(i);
-        if (ctx.hiddn.ixreg == 1 && ctx.x11log.axrgtd)
+        if ((ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2) && ctx.x11log.axrgtd)
             divsub(stcsi, stcsi, ctx.x11fac.faccal.data(), pos1bk, posffc, muladd);
 
         // Modify the (calendar-adjusted) original to remove the extremes.

@@ -19,6 +19,7 @@ estimate{
 }
 x11{
   print = all
+  save = (d10 d11 d12 d13)
   savelog = all
 }
 x11regression{

@@ -300,13 +300,24 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     auto& ar = ctx.arima;
     const int sp = m.sp;
     const int pos1ob = ctx.x11ptr.pos1ob, posfob = ctx.x11ptr.posfob;
-    const int pos1bk = ctx.x11ptr.pos1bk, posffc = ctx.x11ptr.posffc;
+    int pos1bk = ctx.x11ptr.pos1bk, posffc = ctx.x11ptr.posffc;
     const int nspobs = md.nspobs;
     const int muladd = ctx.x11opt.muladd;
     double* sti = ctx.x11srs.sti.data();
 
     const double sigxrg = 2.5;   // editor.f:1733 TD-only default
-    const int nfcst = ctx.extend.nfcst;
+    int nfcst = ctx.extend.nfcst;
+    // x11mdl.f:120-134: on the final (C) iteration, restore the X-11-regression
+    // forecast horizon (Nfcstx >= 1 seasonal year) so the design & TD factor span
+    // the forecast region. The OLS estimate itself still uses only the Nspobs data
+    // rows (regx11) and mulref normalizes per-row (own Xnstar), so the observed
+    // factor is UNCHANGED -- this only appends the forecast-region factor (c16.A),
+    // which the main run's x11pt3 D11/D16 fold needs over [Pos1bk,Posffc].
+    if (kpart == 3 && (ctx.xrgfct.nfcstx > 0 || ctx.xrgfct.nbcstx > 0)) {
+        nfcst = ctx.xrgfct.nfcstx;
+        posffc = posfob + nfcst;
+        pos1bk = pos1ob - ctx.xrgfct.nbcstx;
+    }
     const int nbeg = 0, irridx = pos1ob + nbeg;
     // The design/factors span the forecast-extended buffer [pos1ob, posffc] so
     // Factd/Faccal cover the whole [pos1bk,posffc] used by the Stcsi feedback and

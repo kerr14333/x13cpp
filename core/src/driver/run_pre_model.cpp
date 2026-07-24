@@ -13,6 +13,7 @@
 #include "regarima/priadj.hpp"
 #include "regarima/regvar.hpp"
 #include "x11/x11reg.hpp"            // pritd, tdset_td (x11regression tdprior)
+#include "x11/xrgdrv.hpp"            // xrgdrv (x11regression OLS prior TD, Ixreg>=2)
 #include "regarima/estimate.hpp"
 #include "regarima/forecast.hpp"
 #include "regarima/outlier.hpp"     // idotlr, setcv
@@ -140,12 +141,20 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
 
     // The prior-adjusted series over the span + forecast-period data
     // (== a1 with no prior). a2/a3 save the span rows only.
+    // x11regression OLS prior-TD (Ixreg>=2) with picktd: suppress the length-of-
+    // month / leap-year prior in the estimation input -- the prior-TD factor
+    // (Faccal = c16) already carries the day-count normalization (Xn/Xnstar in
+    // x11ref), so applying the LOM prior too double-adjusts February. Mirrors
+    // xrgdrv.f:95-97 (Picktd & Priadj>1 -> Priadj=0, Sprior=base).
+    const bool suppress_lom_td =
+        (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd && ctx.picktd.picktd &&
+         priadj > 1);
     std::vector<double> padj(static_cast<std::size_t>(nobspf));
     std::vector<double> fac(static_cast<std::size_t>(nobspf), 1.0);
     for (int tpnt = 1; tpnt <= nobspf; ++tpnt) {
         double a1 = aptr[tpnt - 1];
         double f = 1.0;
-        if (has_predef) {
+        if (has_predef && !suppress_lom_td) {
             int idate[2];
             addate(begspn, sp, tpnt - 1, idate);
             f *= lpfac(idate[0], idate[1], sp, lom);   // td7var factor
@@ -174,6 +183,22 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
         if (ctx.error.lfatal) return false;
         for (int t = 0; t < nobspf; ++t)
             padj[static_cast<std::size_t>(t)] /= stptd[static_cast<std::size_t>(t)];
+    }
+
+    // x11regression OLS-estimated prior trading day (Ixreg>=2, xrgdrv): estimate
+    // the TD via a transparent pre-model seasonal adjustment, then divide the
+    // estimation input by the resulting Faccal -- the oracle fits arima on the
+    // prior-TD-adjusted series (x11ari.f runs xrgdrv + x11pt1 BEFORE arima). Same
+    // inversion as the tdprior divide above; the main x11pt1 restores the same
+    // Faccal for its Ixreg==3 fold. The stashed Faccal is forecast-extended
+    // (spans [Pos1ob, Posfob+Nfcstx] per x11mdl.f:124-134); here we consume only
+    // the leading nobspf rows the estimation input needs (min-guarded on nfac).
+    if (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd && ctx.x11opt.muladd == 0) {
+        if (!xrgdrv(ctx)) return false;
+        const std::vector<double>& xrgfac = ctx.x11_faccal_prior;
+        const int nfac = static_cast<int>(xrgfac.size());
+        for (int t = 0; t < nobspf && t < nfac; ++t)
+            padj[static_cast<std::size_t>(t)] /= xrgfac[static_cast<std::size_t>(t)];
     }
 
     // adjsrs.f also records the prior-factor series in the /adjcmn/ Adj array and

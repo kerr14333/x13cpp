@@ -265,7 +265,12 @@ def spec_x11regression():
         transform_log(),
         arima_airline(),
         estimate_block(),
-        x11_block(),
+        # Modeled -td: gtinpt promotes Ixreg 1->2, so the oracle runs the
+        # transparent prior-TD pass (xrgdrv) and fits the model to the
+        # TD-adjusted series. Save d10-d13 to gate the whole OLS-prior-TD chain
+        # bit-exact (test_x11regression_tables.py), alongside the xrm/b16/c16
+        # regression outputs.
+        block("x11", [], save_key="x11d", print_all=True, savelog=True),
         block("x11regression", ["variables = (td)"],
               save_key="x11reg", print_all=True),
     ]

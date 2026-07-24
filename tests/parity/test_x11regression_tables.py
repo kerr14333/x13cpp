@@ -1,17 +1,28 @@
-"""M5 x11regression{} gate: the irregular-component trading-day regression.
+"""M5 x11regression{} gate: OLS-estimated prior trading day (Ixreg>=2 / xrgdrv).
 
-x11regression{} regresses user-chosen calendar effects (here: trading day) on the
-X-11 irregular and removes them. The compute is in progress; this gate currently
-locks the parts that are bit-exact:
+`x11regression{}` with a modeled `-td` variable regresses trading-day contrasts on
+the X-11 irregular and removes them as a prior calendar factor. Because the spec
+also carries an arima model, gtinpt.f:1201 promotes Ixreg 1->2, and the oracle runs
+a transparent (model-free) X-11 pass -- xrgdrv.f, ahead of x11pt1/arima -- whose
+x11mdl OLS estimates the TD on the irregular, builds Faccal, and sets Ixreg=3. The
+main x11pt1 then divides the series by Faccal, so the regARIMA model fits the
+TD-adjusted series (converged nonseasonal MA1 ~= 0.2607, vs bare-airline ~0.40).
 
+The C++ runs regARIMA in an earlier phase (run_pre_model) than the main X-11
+(run_x11), so xrgdrv is hoisted ahead of the estimate: run_pre_model divides the
+estimation input by the stashed Faccal, and x11pt1 restores Faccal for the Ixreg==3
+divide. The whole chain is bit-exact -- including the two /x11/ state vars the
+transparent pass must NOT leak into the main run (Lterm, which drives the editor's
+per-period seasonal-filter re-resolution, and the Bundesbank Ksdev spread; both are
+saved/restored in xrgdrv.cpp, same class as the slidingspans/history per-span reset).
+
+GATED here, all bit-exact:
   * xrm -- the regression DESIGN matrix (the Nb trading-day contrast columns over
-    the forecast-extended span). Pure integer/arithmetic day contrasts, so it
-    matches the oracle exactly.
-
-The estimated factor tables (b16/c16) and the TD-adjusted D-tables are NOT gated
-here yet: they still carry a ~1.5e-3 leap-February coefficient residual (the
-single-pass tdxtrm-exclusion coupling documented in tools/x11regression_scope.md).
-They land once that residual closes.
+    the forecast-extended span). Pure integer/arithmetic day contrasts (1e-12).
+  * d10/d11/d12/d13 -- the final seasonal / SA / trend / irregular decomposition on
+    the OLS-prior-TD-adjusted series. These ride the estimated Faccal and the
+    regARIMA fit end to end, so they gate the whole feature (estimation floor, 1e-6;
+    measured ~5e-15).
 
 Run:  python -m pytest tests/parity/test_x11regression_tables.py -q
 """
@@ -31,6 +42,12 @@ _GOLDEN = os.path.join(_REPO, "tests", "golden", "extra")
 # The xrm design is exact integer day-contrast columns; gate at the arithmetic
 # floor (three orders over text-truncation noise).
 RTOL_XRM = 1e-12
+# d10-d13 ride the OLS-estimated prior-TD Faccal + the regARIMA fit -> estimation
+# floor (measured ~5e-15, gated looser for optimizer portability, matching the
+# other model-X11 table gates).
+RTOL_DTBL = 1e-6
+
+_DTABLES = ("d10", "d11", "d12", "d13")
 
 
 def _find_binary() -> str:
@@ -50,6 +67,8 @@ BIN = _find_binary()
 
 # Golden .xrm row: "YYYYMM<TAB>col1<TAB>col2..." (D/E exponent, CRLF tolerated).
 _XRM_ROW = re.compile(r"^(\d{6})\t(.+)$")
+# Golden d-table row: "YYYYMM  <signed value>".
+_DROW = re.compile(r"^(\d{6})\s+([+\-][0-9.EeDd+\-]+)")
 
 
 def _read_golden_xrm(path: str) -> dict[str, list[float]]:
@@ -65,6 +84,24 @@ def _read_golden_xrm(path: str) -> dict[str, list[float]]:
     return out
 
 
+def _read_golden_dtable(path: str) -> dict[str, float]:
+    out: dict[str, float] = {}
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for ln in f:
+            m = _DROW.match(ln.strip())
+            if m:
+                out[m.group(1)] = float(m.group(2).replace("D", "E").replace("d", "e"))
+    return out
+
+
+def _run(base: str) -> str:
+    spec = os.path.join(_CORPUS, base + ".spc")
+    r = subprocess.run([BIN, spec], cwd=_CORPUS, capture_output=True, text=True)
+    assert r.returncode == 0, f"{base}: harness exit {r.returncode}\n{r.stderr}"
+    assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]
+    return r.stdout
+
+
 CASES = [
     b for b in ("airline_x11regression-td",)
     if os.path.exists(os.path.join(_CORPUS, b + ".spc"))
@@ -75,13 +112,10 @@ CASES = [
 @pytest.mark.skipif(not CASES, reason="no x11regression spec ships the xrm golden")
 @pytest.mark.parametrize("base", CASES)
 def test_x11regression_xrm(base: str) -> None:
-    spec = os.path.join(_CORPUS, base + ".spc")
-    r = subprocess.run([BIN, spec], capture_output=True, text=True)
-    assert r.returncode == 0, f"{base}: harness exit {r.returncode}\n{r.stderr}"
-    assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]
+    stdout = _run(base)
 
     produced: dict[str, list[float]] = {}
-    for ln in r.stdout.splitlines():
+    for ln in stdout.splitlines():
         p = ln.split()
         if p and p[0] == "xrm":
             produced[p[1]] = [float(x) for x in p[2:]]
@@ -104,3 +138,36 @@ def test_x11regression_xrm(base: str) -> None:
                 worst, worst_k = rel, k
     assert worst <= RTOL_XRM, (
         f"{base}.xrm: max rel err {worst:.3e} at {worst_k} (tol {RTOL_XRM:.0e})")
+
+
+@pytest.mark.skipif(not CASES, reason="no x11regression spec ships the xrm golden")
+@pytest.mark.parametrize("base", CASES)
+@pytest.mark.parametrize("tag", _DTABLES)
+def test_x11regression_dtable(base: str, tag: str) -> None:
+    goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
+    if not os.path.exists(goldpath):
+        pytest.skip(f"{base}: no {tag} golden")
+
+    stdout = _run(base)
+    produced: dict[str, float] = {}
+    for ln in stdout.splitlines():
+        p = ln.split()
+        if len(p) == 3 and p[0] == tag:
+            produced[p[1]] = float(p[2])
+
+    gold = _read_golden_dtable(goldpath)
+    assert gold, f"{base}.{tag}: empty golden"
+
+    keys = sorted(set(gold) & set(produced))
+    assert len(keys) == len(gold), (
+        f"{base}.{tag}: produced {len(produced)} rows, golden {len(gold)}, "
+        f"overlap {len(keys)}")
+
+    worst, worst_k = 0.0, None
+    for k in keys:
+        g, v = gold[k], produced[k]
+        rel = abs(v - g) / abs(g) if g else abs(v - g)
+        if rel > worst:
+            worst, worst_k = rel, k
+    assert worst <= RTOL_DTBL, (
+        f"{base}.{tag}: max rel err {worst:.3e} at {worst_k} (tol {RTOL_DTBL:.0e})")

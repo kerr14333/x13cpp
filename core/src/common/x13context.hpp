@@ -200,6 +200,13 @@ struct X13Context {
     // x11regression{} user prior trading-day factor (a4 save): the Kswv=1 pritd
     // factor over the observed span [Pos1ob,Posfob]. Bit-exact vs the oracle a4.
     std::vector<double> x11_a4_prior;
+    // x11regression{} OLS-estimated prior trading-day factor (Ixreg>=2, xrgdrv):
+    // the transparent-SA-estimated Faccal over the observed span, 1-based at
+    // Pos1ob. Stashed by xrgdrv (pre-model phase) so run_pre_model can divide the
+    // estimation input by it (the oracle fits arima on the prior-TD-adjusted
+    // series) and the main x11pt1 can restore it for the Ixreg==3 fold after
+    // x11int wipes /x11fac/. Empty when no Ixreg>=2 x11regression was requested.
+    std::vector<double> x11_faccal_prior;
     // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
     // scale point forecast + confidence interval, plus the transformed-scale
     // forecast/SE. Stored on the context (no auto file output); a thin driver

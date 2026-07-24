@@ -116,7 +116,18 @@ diagnostics front (force / slidingspans / history) is now closed.
   (parser + parse-time weight-standardize sum-7 + td6var/x11ref_td). The oracle runs
   x11pt1 pre-model (x11ari.f:99-133) so regARIMA fits the prior-adjusted series; the
   C++ mirrors by dividing the pre-model estimation input (`run_pre_model`) AND the
-  X-11 buffer (`x11pt1`) by the pritd factor. Still fatal: the OLS-estimated prior
-  TD (Ixreg>=2 & Axrgtd) and additive / pseudo-additive weights.
+  X-11 buffer (`x11pt1`) by the pritd factor.
+- **x11regression OLS-estimated prior TD (Ixreg>=2 / xrgdrv) — CLOSED (bit-exact):**
+  the modeled `-td` spec is promoted Ixreg 1->2 (gtinpt.f:1201), so the oracle runs a
+  transparent (model-free) X-11 pass (`xrgdrv`) whose x11mdl OLS estimates the TD on
+  the irregular, builds Faccal, sets Ixreg=3; x11pt1 divides Sto by Faccal so regARIMA
+  fits the TD-adjusted series. C++ hoists `core/src/x11/xrgdrv.cpp` ahead of the
+  estimate (run_pre_model divides the estimation input by the stashed Faccal). xrm +
+  d10-d13 gate at ~5e-15 (`test_x11regression_tables.py`). KEY bug: the transparent
+  pass must NOT leak `Lterm` (drives the editor's per-period seasonal-filter
+  re-resolution) or the Bundesbank `Ksdev` spread into the main run — save/restore
+  both in xrgdrv.cpp (same class as the slidingspans/history per-span resets). Also
+  landed the faithful Nfcstx forecast-extended factor. Still fatal: additive /
+  pseudo-additive prior-TD and the regression-based aictest TD variant.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
