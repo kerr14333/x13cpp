@@ -18,11 +18,17 @@
 // boundary -- seeded by armafl()-derived residuals (session 9/10,
 // armafl-reuse validated to ~1.5e-6 relative against golden `varres`).
 //
-// UNSUPPORTED THIS PASS (unrate_seats only): p>0/bp>0 (phist!=0 in FCAST's
-// bphist construction), imean!=0 (za!=0), isCloseToTD (always false in this
-// port). npsi!=1 (real seasonal) and ncycth!=0||ncyc!=1 (real cycle) DO
-// flow through the general ct/cs/cc/MLTSOL machinery correctly (gs/gc solve
-// alongside gt), but are untested -- no corpus spec exercises them yet.
+// GENERAL-SHAPE (p>0) IS NOW SUPPORTED + GATED: the *_ar2-seats corpus specs
+// ((2 1 0)(0 1 1)) gate s10-s18 bit-exact (~5e-15) on airline/payems/unrate.
+// The AR roots flow through FCAST's bphist phist fill (build_bphist), the
+// CALCFX stationary-AR filter (calcfx_last_residuals Pstar>0 branch, needed
+// for payems_ar2's near-non-invertible seasonal MA ~0.985), and the ESTBUR
+// general ct/cs/cc/MLTSOL solve. The one port bug was the AR-polynomial sign
+// in canonical_denoms.cpp (phis = +mo.phi). bp>0 (seasonal AR) and imean!=0
+// (za!=0) remain unported (no admissible corpus target yet); isCloseToTD is
+// always false in this port. npsi!=1 (real seasonal) / ncycth!=0||ncyc!=1
+// (real cycle) flow through correctly and now HAVE coverage via the ar2
+// specs' seasonal structure.
 #ifndef X13_SEATS_ESTBUR_HPP
 #define X13_SEATS_ESTBUR_HPP
 

@@ -145,6 +145,12 @@ def arima_airline():
     return "arima{\n  model = (0 1 1)(0 1 1)\n}"
 
 
+def arima_ar2():
+    # General-shape SEATS probe: a nonseasonal AR(2) (p>0), the first non-
+    # airline-family model the SEATS canonical decomposition gates on.
+    return "arima{\n  model = (2 1 0)(0 1 1)\n}"
+
+
 def forecast_block(period):
     maxlead = 12 if period == 12 else 8
     return spec("forecast", ["maxlead = %d" % maxlead], save_key="forecast")
@@ -236,6 +242,18 @@ def cfg_fixed_airline_seats(s):
     return blocks
 
 
+def cfg_ar2_seats(s):
+    # Explicit nonseasonal-AR(2) model -> general-shape SEATS decomposition
+    # (p>0). No forecast block: SEATS does its own FCAST extension internally.
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(arima_ar2())
+    blocks.append(estimate_block())
+    blocks.append(seats_block())
+    return blocks
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -256,6 +274,7 @@ CONFIGS = [
     ("automdl-x11", cfg_automdl_x11),
     ("fixed-airline-x11", cfg_fixed_airline_x11),
     ("fixed-airline-seats", cfg_fixed_airline_seats),
+    ("ar2-seats", cfg_ar2_seats),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 

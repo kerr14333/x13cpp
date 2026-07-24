@@ -194,6 +194,23 @@ def test_seats_table(base: str, tag: str) -> None:
         ("expgs_fixed-airline-seats", "s13"),
         ("expgs_fixed-airline-seats", "s16"),
         ("expgs_fixed-airline-seats", "s18"),
+        # *_ar2-seats: explicit nonseasonal-AR(2) model -- the first
+        # GENERAL-SHAPE (p>0) SEATS decomposition to gate, beyond the airline
+        # family. The AR roots land in the canonical TRANSITORY denominator
+        # (oracle "STATIONARY AUTOREGRESSIVE TRANSITORY COMPONENT"); the only
+        # port bug was the AR-polynomial sign in canonical_denoms.cpp (phis =
+        # +mo.phi, mirroring the MA-side session-5 correction). All s10-s18
+        # bit-exact (~5e-15) on airline/payems/unrate; expgs (quarterly) AR(2)
+        # is inadmissible (negative irregular spectrum) -> no golden -> skips.
+        ("airline_ar2-seats", "s10"), ("airline_ar2-seats", "s11"),
+        ("airline_ar2-seats", "s12"), ("airline_ar2-seats", "s13"),
+        ("airline_ar2-seats", "s16"), ("airline_ar2-seats", "s18"),
+        ("payems_ar2-seats", "s10"), ("payems_ar2-seats", "s11"),
+        ("payems_ar2-seats", "s12"), ("payems_ar2-seats", "s13"),
+        ("payems_ar2-seats", "s16"), ("payems_ar2-seats", "s18"),
+        ("unrate_ar2-seats", "s10"), ("unrate_ar2-seats", "s11"),
+        ("unrate_ar2-seats", "s12"), ("unrate_ar2-seats", "s13"),
+        ("unrate_ar2-seats", "s16"), ("unrate_ar2-seats", "s18"),
     }
     # No golden shipped => the oracle produced no such table, so there is no
     # parity target (not an engine gap). This covers the inadmissible-

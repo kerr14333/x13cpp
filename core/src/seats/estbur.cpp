@@ -82,9 +82,13 @@ namespace {
 // from CALCFX's raw STEP-8 innovation in the startup. Reproducing CALCFX
 // exactly closes that gap.
 //
-// Only Pstar==0 (p==bp==0) is ported -- every SEATS corpus spec's model is
-// airline-family (no AR). Returns false for Pstar>0 so the caller falls back
-// to armafl_last_residuals (which is exact for the simple cases anyway).
+// The general Pstar>0 (AR present) branch IS ported: STEP 1B/2 build the
+// stationary AR filter Phist and u = (1 - sum Phist B^j) Wd (ansub1.f:5006-
+// 5007), np = Nw - Pstar. This matters for near-non-invertible seasonal MAs
+// combined with AR (e.g. payems_ar2-seats, seasonal MA ~0.985), where armafl's
+// startup residuals diverge ~1.6e-5 at the tail; the faithful CALCFX seeds
+// close it to double-precision noise. Airline-family (pstar=0) collapses to
+// u == Wd exactly as before.
 //
 // out[k] = -a(n-k) (n=nw+Qstar), matching armafl_last_residuals' negation
 // convention that fcast_extend expects.
@@ -94,16 +98,15 @@ bool calcfx_last_residuals(const SeatsModelOrders& mo,
                            std::vector<double>& out) {
     out.assign(std::max(count, 0), 0.0);
     if (count <= 0) return true;
-    if (mo.p != 0 || mo.bp != 0) return false;  // Pstar>0 unported
     const int Q = mo.q, Bq = mo.bq, Mq = mo.mq;
     const int Qstar = Q + Bq * Mq;
     if (Qstar <= 0 || cd.qstar < Qstar) return false;
 
-    // ---- Difference series -> Wd (Pstar=0, so u == Wd). Faithful to the
-    // oracle's order (analts.f:1933-1947): SEASONAL (1-B^mq)^bd FIRST, then
-    // REGULAR (1-B)^d. The two commute algebraically but the FP subtraction
-    // tree differs, so the order must match for bit-exactness. Forward
-    // difference keeps the most-recent value last. ----
+    // ---- Difference series -> Wd. Faithful to the oracle's order
+    // (analts.f:1933-1947): SEASONAL (1-B^mq)^bd FIRST, then REGULAR (1-B)^d.
+    // The two commute algebraically but the FP subtraction tree differs, so
+    // the order must match for bit-exactness. Forward difference keeps the
+    // most-recent value last. ----
     std::vector<double> w(series);  // 0-indexed working copy
     int len = static_cast<int>(w.size());
     for (int rep = 0; rep < mo.bd; ++rep) {
@@ -115,12 +118,40 @@ bool calcfx_last_residuals(const SeatsModelOrders& mo,
         --len;
     }
     const int nw = len;
-    if (nw <= Qstar) return false;
-    const int np = nw;             // Pstar=0
-    const int n = nw + Qstar;      // Pstar=0
-    // 1-indexed u[1..np] = Wd.
+
+    // ---- STEP 1B/2 (ansub1.f:5006-5007): the STATIONARY AR filter. Pstar
+    // here is the STATIONARY AR order (p+bp*mq), NOT cd.pstar (which folds in
+    // the differencing). Phist = the stationary AR polynomial's coefficients
+    // in the u = (1 - sum Phist B^j) Wd convention -- i.e. Phist(j) = -arp(j)
+    // where arp = (1 + sum phi B^i)(1 + sum bphi B^{k*mq}) is the true-sign AR
+    // polynomial build_bphist forms (arp(j) == -phist(j), ansub1.f:2116-2121).
+    // For pstar=0 (airline family) this collapses to u == Wd, np == nw. ----
+    const int Pstar = mo.p + mo.bp * Mq;
+    std::vector<double> Phist(Pstar + 1, 0.0);
+    if (Pstar > 0) {
+        std::vector<double> nn(mo.p + 1, 0.0);
+        nn[0] = 1.0;
+        for (int i = 0; i < mo.p; ++i) nn[i + 1] = mo.phi[i];
+        std::vector<double> ss(mo.bp * Mq + 1, 0.0);
+        ss[0] = 1.0;
+        for (int k = 0; k < mo.bp; ++k) ss[(k + 1) * Mq] = mo.bphi[k];
+        std::vector<double> arp(Pstar + 1, 0.0);
+        for (int i = 0; i < static_cast<int>(nn.size()); ++i)
+            for (int j = 0; j < static_cast<int>(ss.size()); ++j)
+                arp[i + j] += nn[i] * ss[j];
+        for (int j = 1; j <= Pstar; ++j) Phist[j] = -arp[j];
+    }
+    const int np = nw - Pstar;
+    if (np <= Qstar) return false;
+    const int n = np + Qstar;
+    // 1-indexed u[1..np] = (1 - sum Phist B^j) Wd, aligned to end at Wd(nw).
     std::vector<double> u(np + 1, 0.0);
-    for (int i = 1; i <= np; ++i) u[i] = w[i - 1];
+    for (int i = 1; i <= np; ++i) {
+        double sum = w[i + Pstar - 1];  // Wd(i+Pstar), 0-indexed
+        for (int j = 1; j <= Pstar; ++j)
+            sum -= Phist[j] * w[i + Pstar - j - 1];  // Wd(i+Pstar-j)
+        u[i] = sum;
+    }
 
     // ---- Thstar (STEP 3B, ansub1.f:1179-1197). The SEATS CALCFX operates on
     // the CANONICAL/approximated model -- the SEATS-CAPPED MA (bth snapped to

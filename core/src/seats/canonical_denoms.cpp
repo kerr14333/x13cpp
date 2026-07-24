@@ -12,11 +12,19 @@ void seats_canonical_denoms(const SeatsModelOrders& mo, double rmod,
                              double epsphi, SeatsCanonicalDenoms& out) {
     out = SeatsCanonicalDenoms{};
 
-    // phis(1)=1; phis(i+1)=-Phi(i) -- analts.f:2848-2853, the SAME array
-    // SIGEX receives as its `phi` argument (analts.f:2926-2927).
+    // phis(1)=1; phis(i+1)=Phi(i) -- analts.f:2848-2853 literally reads
+    // phis(i+1)=-Phi(i), but this port's mo.phi are ALREADY the true-sign
+    // polynomial coefficients (model_decode.cpp: raw=-arimap, so mo.phi =
+    // -(reported AR) = the +coeff in (1 - phi1 B - ...) written true-sign),
+    // exactly mirroring the MA-side session-5 correction below (ths(i+1)=
+    // +Th(i)). VERIFIED on the (2 1 0)(0 1 1) probe: -mo.phi gave cyc =
+    // [1,-0.3616,-0.0637] and Totden [1,-1.3616,...] vs oracle transitory AR
+    // [1,+0.3616,+0.0637] / Totden [1,-0.6384,-0.2979,-0.0637,...]; +mo.phi
+    // reproduces the oracle. (p=0 for every airline-family corpus spec, so
+    // this sign never had a data point until the general-shape probe.)
     double phis[66] = {};
     phis[0] = 1.0;
-    for (int i = 0; i < mo.p; ++i) phis[i + 1] = -mo.phi[i];
+    for (int i = 0; i < mo.p; ++i) phis[i + 1] = mo.phi[i];
     int nphi = mo.p + 1;
 
     if (mo.p > 0) {

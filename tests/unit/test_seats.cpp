@@ -843,8 +843,11 @@ TEST("seats_canonical_denoms: expgs-style AR(2), d=1, bp=0 -- Chi*Psi*Cyc reprod
     seats_canonical_denoms(mo, /*rmod=*/0.5, /*epsphi=*/2.0, out);
 
     // RPQ found mo.p roots (2 real or a conjugate pair).
-    // Expected: conv((1-B)^d, phis).
-    double phis[3] = {1.0, -mo.phi[0], -mo.phi[1]};
+    // Expected: conv((1-B)^d, phis). phis is the true-sign AR polynomial the
+    // (oracle-verified, general-shape) canonical_denoms now root-classifies:
+    // [1, +mo.phi[0], +mo.phi[1]] -- NOT negated (see canonical_denoms.cpp's
+    // phis note; the (2 1 0)(0 1 1) probe pinned this sign to the oracle).
+    double phis[3] = {1.0, mo.phi[0], mo.phi[1]};
     double onemb[2] = {1.0, -1.0};
     double expect[8] = {0};
     int nexpect = 0;

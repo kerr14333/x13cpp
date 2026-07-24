@@ -135,9 +135,6 @@ int main(int argc, char** argv) {
             // shape the golden .mdc file uses (MDC_ prefixed) so the pytest
             // gate can parse both with one regex.
             x13::decomp_spectrum(sr, cd, cd.is_close_to_td, comp);
-            std::fprintf(stderr, "ZCPP_ncs %d\n", comp.ncs);
-            for (int i = 0; i < comp.ncs; ++i)
-                std::fprintf(stderr, "ZCPP_cs %d %.18e\n", i + 1, comp.cs[i]);
 
             // snum/sden/svar <- THETS/PSI/VARWNS (ShowComp's "npsi!=1"
             // guard, spectrum.f:2593-2607 -- only emitted when the model has
@@ -219,6 +216,9 @@ int main(int argc, char** argv) {
         dump("s10", begspn, sp, n, est.seasonal_add.data());
         dump("s16", begspn, sp, n, est.seasonal_add.data());
         dump("s18", begspn, sp, n, est.seasonal_factor.data());
+        // s14 -- transitory component (SEATS). Non-trivial only for AR/cycle
+        // models; airline-family est.cycle is all-1 (no transitory).
+        dump("s14", begspn, sp, n, est.cycle.data());
     }
     return 0;
 }

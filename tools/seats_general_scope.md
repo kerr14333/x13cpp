@@ -1,7 +1,24 @@
 # General-shape SEATS (p>0 / bp>0 / imean!=0) — port scope
 
-**STATUS: OPEN — multi-session. Down-payment landed (build_bphist phist fill);
-the decomposition is NOT yet bit-exact for AR models.**
+**STATUS: p>0 CLOSED (bit-exact + gated). The *_ar2-seats corpus specs
+((2 1 0)(0 1 1)) gate s10-s18 at ~5e-15 on airline/payems/unrate. bp>0 (seasonal
+AR) and imean!=0 remain open (no admissible corpus target).**
+
+## What actually closed it (the real bug was ONE sign)
+The estbur general branch, the ct/cs/cc/MLTSOL solve, and the FCAST extension
+were ALREADY correct for p>0. The dominant ~10% error traced to a single sign in
+`canonical_denoms.cpp`: `phis[i+1] = -mo.phi[i]` should be `+mo.phi[i]` (mo.phi is
+already the true-sign AR polynomial coefficient, mirroring the MA-side session-5
+correction `ths=+Th`). Verified on the (2 1 0)(0 1 1) probe: with -mo.phi, cyc =
+[1,-0.3616,-0.0637] / Totden = [1,-1.3616,...]; with +mo.phi both reproduce the
+oracle's transitory AR [1,+0.3616,+0.0637] / Totden [1,-0.6384,-0.2979,-0.0637,...].
+Then the CALCFX Pstar>0 branch (calcfx_last_residuals: stationary AR filter u =
+(1 - sum Phist B^j) Wd, np = Nw-Pstar, ansub1.f:5006-5007) closed payems_ar2's
+near-non-invertible seasonal MA (~0.985), where the armafl seed fallback diverged
+~1.6e-5 at the tail. sub-gaps #1/#2/#3 below are all DONE. #4 (imean) still open.
+
+---
+### ORIGINAL PLAN (historical; superseded by the note above)
 
 ## Goal
 Gate SEATS s10-s18 bit-exact for models beyond the airline family. Every current
