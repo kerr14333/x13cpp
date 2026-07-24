@@ -124,6 +124,8 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.model.tcalfa = prm::DNOTST;   // gtinpt.f: Tcalfa=DNOTST
     ctx.arima.traicd = prm::DNOTST;   // gtinpt.f:293: Traicd=DNOTST (aicdiff);
                                       // editor.f defaults it to -2 (monthly/qtly)
+    for (int i = 1; i <= 7; ++i)
+        ctx.x11reg.dwt(i) = prm::DNOTST;   // gtinpt.f:470 setdp(DNOTST,7,Dwt)
     ctx.picktd.tdzero = 0;
     ctx.picktd.lnzero = 0;
     setint(prm::NOTSET, 2, ctx.picktd.tddate.data());
@@ -415,6 +417,34 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
         ctx.arima.fcntyp = fcntyp;
         ctx.x11opt.muladd = muladd;
         ctx.x11opt.tmpma = muladd;   // gtinpt.f:970 Tmpma=Muladd
+
+        // editor.f:1484-1536 -- prior trading-day weight (x11regression tdprior)
+        // resolution. Kswv=1 when any of the seven Dwt weights is nonzero; the
+        // mult / log-additive path standardizes them to sum 7.0 (the only ported
+        // branch -- additive / pseudo-additive tdprior and the Lxrneg negative-
+        // weight clamp stay deferred). Resolved here at parse (Muladd is final) so
+        // the pre-model estimation input (run_pre_model) and the X-11 fold (x11pt1)
+        // both see the standardized weights.
+        {
+            x11reg_cmn& xr = ctx.x11reg;
+            const bool psuadd = ctx.x11msc.psuadd;
+            ctx.x11opt.kswv = 0;
+            if (dpeq(xr.dwt(1), prm::DNOTST)) {
+                for (int i = 1; i <= 7; ++i) xr.dwt(i) = 0.0;
+            } else {
+                for (int i = 1; i <= 7; ++i)
+                    if (!dpeq(xr.dwt(i), 0.0)) ctx.x11opt.kswv = 1;
+                if (ctx.x11opt.kswv == 1) {
+                    if ((!psuadd && muladd == 0) || muladd == 2) {
+                        double tmp = 0.0;
+                        for (int i = 1; i <= 7; ++i) tmp += xr.dwt(i);
+                        for (int i = 1; i <= 7; ++i) xr.dwt(i) *= 7.0 / tmp;
+                    }
+                } else if (muladd == 0) {
+                    for (int i = 1; i <= 7; ++i) xr.dwt(i) = 1.0;
+                }
+            }
+        }
 
         // --- gtinpt.f ~989-1067: td/lom prior-adjustment setup (Picktd) ---
         // With a log transform, the td (or td1coef) regressor's leap-year

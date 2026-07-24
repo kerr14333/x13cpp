@@ -197,6 +197,9 @@ struct X13Context {
     std::vector<double> x11reg_xrm;
     int x11reg_xrm_ncol = 0;
     bool x11reg_ran = false;
+    // x11regression{} user prior trading-day factor (a4 save): the Kswv=1 pritd
+    // factor over the observed span [Pos1ob,Posfob]. Bit-exact vs the oracle a4.
+    std::vector<double> x11_a4_prior;
     // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
     // scale point forecast + confidence interval, plus the transformed-scale
     // forecast/SE. Stored on the context (no auto file output); a thin driver

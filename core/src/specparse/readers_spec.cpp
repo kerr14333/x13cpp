@@ -2302,6 +2302,18 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                    ctx.arima.nobs, havsrs, havesp, /*x11reg=*/true, havtd, havhol,
                    havln, havlp, locok, inptok);
             if (ctx.error.lfatal) return;
+        } else if (argidx == 20) {   // tdprior -> Dwt (gtxreg.f:416-423)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            int neltdw = 0;
+            bool argok = true;
+            gtdpvc(ctx, LPAREN, true, 7, ctx.x11reg.dwt.data(), neltdw, argok,
+                   inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && neltdw != 7) {
+                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                       "Must have seven prior trading day weights.");
+                inptok = false;
+            }
         } else {
             consume_value(ctx, nullptr);
             if (ctx.error.lfatal) return;

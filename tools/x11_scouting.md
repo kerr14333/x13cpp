@@ -21,8 +21,9 @@
 > **Tier 6 spine STARTED: `x11pt1` DONE** (→ B1 input) in new
 > `core/src/x11/x11parts.cpp`. Base + prior-adj (Sprior) + prior calendar/holiday
 > (Faccal/X11hol) paths ported with ported leaves (copy/divsub/addmul/setmv); the
-> prior-TD / x11-regression-TD branch (Kswv/Axrgtd) fatals via a local
-> not_ported (needs unported `pritd`/`ssrit`; off for airline). Prints dropped.
+> user prior-TD branch (Kswv==1, `tdprior`) now ports `pritd` bit-exact (a4 +
+> d10-d13); the OLS-estimated x11-regression-TD branch (Ixreg>=2 & Axrgtd) still
+> fatals via a local not_ported. Prints dropped.
 > **NEXT: `x11pt2` (954 lines) — the B1→D7 iterated MA decomposition heart**,
 > where si/vtc/sfmsr/vsf*/xtrm/replac get wired into the B/C/D passes. Port in
 > sections (B pass → C pass → D pass). Then `x11pt3` (D8–D16 finals), `x11pt4`

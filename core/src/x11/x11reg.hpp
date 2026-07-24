@@ -51,6 +51,13 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
                int ncxy, const double* b, const double* xy, int nb,
                const int* rtype);
 
+// pritd.f (Kswv=1 user-weight prior trading day): build the prior-TD factors from
+// the seven tdprior weights (ctx.x11reg.dwt) via td6var + x11ref_td. begdat is the
+// series-origin date (Begbk2), frstob = Pos1bk. Fills ptdfac at absolute positions
+// [frstob, frstob+nrxy-1]. Requires xtdtyp populated (tdset_td) over that span.
+void pritd(X13Context& ctx, double* ptdfac, int nrxy, int sp, const int* begdat,
+           int frstob);
+
 // x11mdl.f orchestration (TD-only mult path): regress the X-11 irregular Sti on
 // the TD design at the B (kpart=2) or C (kpart=3) iteration, snapshot the TD
 // factors into ctx.x11reg_b16/c16 (b16/c16), and divide the TD effect out of

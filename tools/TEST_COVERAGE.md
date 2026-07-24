@@ -83,8 +83,9 @@ Priorities for the next sweep, each an oracle-vs-x13run_m3 diff like sweep_reg.p
 - **Composite / indirect adjustment** (`composite{}`) — the census-examples/
   composite series are parsed but the aggregate SA is unported.
 - **Interdependent x11 factor chains** — user PRIOR factors (Nuspad/Nustad),
-  Adjsea/Adjso regARIMA-seasonal combine, x11regression prior-TD, force
-  non-original target (Iftrgt>0), revisions getrev.
+  Adjsea/Adjso regARIMA-seasonal combine, OLS-estimated x11regression prior-TD
+  (Ixreg>=2; the user-weight `tdprior` Kswv=1 path is DONE bit-exact -- a4+d10-d13),
+  force non-original target (Iftrgt>0), revisions getrev.
 
 ## Interaction matrix worth building (once the pieces land)
 automdl × outlier × aictest (the 03-automdl class) · transform=auto × regression ·

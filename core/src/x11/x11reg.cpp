@@ -6,7 +6,9 @@
 // See tools/x11regression_scope.md for the routine map.
 #include "x11/x11reg.hpp"
 
+#include <algorithm>
 #include <cmath>
+#include <memory>
 #include <vector>
 
 #include "common/x13context.hpp"
@@ -251,6 +253,44 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
         ftd[irow - 1] += xn[ir2 - 1] / xnstar[ir2 - 1];
         fcal[irow - 1] += xn[ir2 - 1] / xnstar[ir2 - 1];
     }
+}
+
+// ---- pritd.f (Kswv=1 user-weight prior trading day, mult/log-add path) ----
+// Prior trading-day adjustment factors from the seven user weights (the
+// x11regression tdprior argument). Reuses td6var (the six day-of-week contrast
+// regressors) + x11ref_td (the multiplicative TD factor build). The caller must
+// have populated xtdtyp (Xn/Xnstar) via tdset_td over the factor span first
+// (editor.f:2240). Ptdfac is filled at absolute positions [Frstob, Frstob+Nrxy-1].
+void pritd(X13Context& ctx, double* ptdfac, int nrxy, int sp, const int* begdat,
+           int frstob) {
+    const int ncxy = 6;
+    // setlg(T,PLEN,begrgm): every row is in-regime (no change-of-regime).
+    std::unique_ptr<bool[]> begrgm(new bool[PLEN]);
+    std::fill(begrgm.get(), begrgm.get() + PLEN, true);
+    const bool* begrgm_p = begrgm.get();
+    // Pridat = the calendar date at the first factor row (absolute pos Frstob).
+    int pridat[2];
+    if (frstob > 1) addate(begdat, sp, frstob - 1, pridat);
+    else { pridat[0] = begdat[0]; pridat[1] = begdat[1]; }
+    // Six raw day-of-week trading-day contrasts.
+    std::vector<double> tdxy(static_cast<std::size_t>(PLEN) * ncxy, 0.0);
+    td6var(ctx, pridat, sp, nrxy, ncxy, 1, ncxy, 0, tdxy.data(), begrgm_p, false);
+    if (ctx.error.lfatal) return;
+    // X-11 style weights -> regression coefficients (Dwt-1), all trading-day type.
+    double btd[6];
+    int rtype[6];
+    for (int i = 0; i < 6; ++i) {
+        btd[i] = ctx.x11reg.dwt(i + 1) - 1.0;
+        rtype[i] = prm::PRGTTD;
+    }
+    // Build the factor over rows [1,Nrxy] (Ftd is the prior-TD factor), reading
+    // Xn/Xnstar at absolute [Frstob, Frstob+Nrxy-1] via Xdev=Frstob.
+    std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);
+    std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
+    x11ref_td(ctx, fcal.data(), ftd.data(), frstob, nrxy, ncxy, btd, tdxy.data(),
+              6, rtype);
+    // pritd.f:47-51 -- shift the [1,Nrxy] factors up to absolute [Frstob, ...].
+    for (int i = 0; i < nrxy; ++i) ptdfac[frstob - 1 + i] = ftd[i];
 }
 
 // ---- x11mdl.f orchestration (TD-only mult path) --------------------------

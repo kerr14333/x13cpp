@@ -77,6 +77,8 @@ SAVE = {
                 "sfr", "sfe"],
     "sspans": ["sfs", "ads", "chs"],
     "x11reg": ["xrm", "b16", "c16"],
+    "x11d": ["d10", "d11", "d12", "d13"],
+    "tdprior": ["a4"],
     "force": ["saa", "ffc", "rnd"],
     "force_full": ["saa", "rnd", "e6a", "p6a", "e6r", "p6r", "cr", "rr", "ffc"],
 }
@@ -289,6 +291,24 @@ def spec_x11regression_aictest():
         "x11regression{} fixed TD + AIC-tested Easter on the irregular", blocks)
 
 
+def spec_x11regression_tdprior():
+    # tdprior: seven user prior trading-day weights (Mon..Sun, standardized to
+    # sum 7.0). Gates the a4 prior-TD factor bit-exact (pritd.f: td6var contrasts
+    # x weights / Xnstar). The d10-d13 goldens ride along for the future pre-model
+    # plumbing gate (the oracle fits the model to the prior-adjusted series).
+    blocks = [
+        series_airline(),
+        transform_log(),
+        arima_airline(),
+        estimate_block(),
+        block("x11", [], save_key="x11d", print_all=True, savelog=True),
+        block("x11regression", ["tdprior = (1.4 1.4 1.4 1.4 1.4 0.5 0.5)"],
+              save_key="tdprior", print_all=True),
+    ]
+    return "airline_x11regression-tdprior.spc", assemble(
+        "x11regression{} user prior trading-day weights (tdprior, Kswv=1)", blocks)
+
+
 def spec_force_denton():
     blocks = [
         series_airline(),
@@ -451,6 +471,7 @@ BUILDERS = [
     spec_slidingspans_cutseas,
     spec_x11regression,
     spec_x11regression_aictest,
+    spec_x11regression_tdprior,
     spec_force_denton,
     spec_force_regress,
     spec_force_automdl_x11,

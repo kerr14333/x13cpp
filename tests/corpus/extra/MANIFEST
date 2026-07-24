@@ -1,5 +1,5 @@
 # Extra spec inventory -- produced by genextra.py
-# 17 specs covering blocks absent from generated/
+# 18 specs covering blocks absent from generated/
 airline_automdl-x11-force.spc
 airline_check.spc
 airline_force-denton.spc
@@ -16,4 +16,5 @@ airline_spectrum-arspec.spc
 airline_spectrum.spc
 airline_x11regression-aictest.spc
 airline_x11regression-td.spc
+airline_x11regression-tdprior.spc
 payems_outlier-lsrun.spc

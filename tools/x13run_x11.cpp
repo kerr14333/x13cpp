@@ -157,6 +157,17 @@ int main(int argc, char** argv) {
     dump("d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
     dump("d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
 
+    // a4 -- x11regression tdprior user prior trading-day factor (Kswv=1 pritd),
+    // over the observed span [pos1ob,posfob]. x11_a4_prior is 0-based from pos1ob.
+    if (!ctx.x11_a4_prior.empty()) {
+        for (std::size_t k = 0; k < ctx.x11_a4_prior.size(); ++k) {
+            int idate[2];
+            x13::addate(begspn, sp, static_cast<int>(k), idate);
+            std::printf("a4 %04d%02d %.15E\n", idate[0], idate[1],
+                        ctx.x11_a4_prior[k]);
+        }
+    }
+
     // Force yearly totals (force{} spec, Iyrt>0): D11A forced SA series (saa =
     // Stci2, left by x11pt3's qmap benchmarking) and the per-obs forcing factor
     // (ffc = Stci/Stci2 mult, Stci-Stci2 add). saa is printed over [pos1ob,

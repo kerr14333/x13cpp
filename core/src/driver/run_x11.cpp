@@ -17,6 +17,7 @@
 #include "x11/x11parts.hpp"   // x11pt1, x11pt2
 #include "x11/x11drv.hpp"     // setxpt, x11int, chkadj, regeff, extend, adjreg
 #include "regarima/regvar.hpp"   // regvar (design rebuild for regression effects)
+#include "numeric/numeric.hpp"   // dpeq (tdprior weight resolution)
 #include "notset.hpp"         // prm::NOTSET
 #include "x11/slidingspans.hpp"  // ssprep_snapshot, restor_span, run_slidingspans
 #include "x11/x11easter.hpp"      // holday (classic X-11 Easter estimation)
@@ -187,6 +188,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // required now that the aictest leap-year prior gives Nadj>0, so x11int and the
     // x11pt2 makadj/tdlom Sprior copies index correctly.
     ctx.adj.setpri = ctx.x11ptr.pos1bk;
+
+    // (tdprior weight resolution / Kswv now happens at parse -- gtinpt.f:1484-1536
+    // editor slice -- so both the pre-model estimation input and x11pt1 see the
+    // standardized weights.)
 
     // Populate the X-11 input buffers. x11pt1 reads Series (-> Stcsi/Stoap/Stopp/
     // Stocal) and Orig (-> Sto), both 1-based starting at Pos1ob. With no model

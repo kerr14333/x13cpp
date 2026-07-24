@@ -17,8 +17,12 @@ struct X13Context;
 // any user prior-adjustment (Sprior), prior calendar/holiday (Faccal/X11hol), and
 // prior trading-day factors, then sets Stcsi to the prior-adjusted series. lmodel
 // gates only deferred pre-ARIMA prints; lgraf/lgrfxr are deferred graph/save
-// flags. The prior-TD / x11-regression-TD branch (Kswv!=0 or Ixreg>=2 & Axrgtd)
-// needs the unported pritd/ssrit and fatals if reached.
+// flags. The user-weight prior-TD branch (Kswv==1, x11regression tdprior, mult)
+// builds the a4 factor via pritd and folds it into Sto/Faccal (bit-exact a4 +
+// d10-d13); the regARIMA model sees the same prior-TD-adjusted series because
+// run_pre_model divides the estimation input by the pritd factor too (the oracle
+// runs x11pt1 pre-model, x11ari.f:99-133). The x11-regression-estimated prior TD
+// (Ixreg>=2 & Axrgtd) and additive/pseudo-additive weights still fatal.
 void x11pt1(X13Context& ctx, bool lmodel, bool lgraf, bool lgrfxr);
 
 // x11pt2.f: X-11 PARTS B1->D7 -- the iterated B/C/D moving-average decomposition.

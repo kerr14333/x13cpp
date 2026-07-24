@@ -12,6 +12,7 @@
 #include "transform/trnaic.hpp"     // trnaic (automatic transform selection)
 #include "regarima/priadj.hpp"
 #include "regarima/regvar.hpp"
+#include "x11/x11reg.hpp"            // pritd, tdset_td (x11regression tdprior)
 #include "regarima/estimate.hpp"
 #include "regarima/forecast.hpp"
 #include "regarima/outlier.hpp"     // idotlr, setcv
@@ -155,6 +156,24 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             f *= ctx.priadj.usrpad(tpnt);
         fac[static_cast<std::size_t>(tpnt - 1)] = f;
         padj[static_cast<std::size_t>(tpnt - 1)] = a1 / f;   // divsub (mult mode)
+    }
+
+    // x11regression tdprior (Kswv=1): prior trading-day pre-adjustment of the
+    // estimation input. In the oracle x11pt1 runs BEFORE arima (x11ari.f:99-133),
+    // so the regARIMA likelihood sees the prior-TD-adjusted Sto (x11pt1.f:265-266
+    // divsub -> arima.f:157 trnsrs). The C++ runs X-11 as a later phase, so mirror
+    // that division onto the pre-model padj series here; x11pt1 independently
+    // rebuilds the same pritd factor for its own X-11 buffer + the D16 fold. Kept
+    // separate from `fac`/Adj (the LOM/leap prior) -- prior TD is a distinct factor
+    // (the a4 table), not the tdlom prior. Mult only (Kswv==1 implies muladd==0/2;
+    // muladd==2 logadd exp-domain fold is deferred with the x11pt1 guard).
+    if (ctx.x11opt.kswv == 1 && ctx.x11opt.muladd == 0) {
+        std::vector<double> stptd(static_cast<std::size_t>(prm::PLEN), 0.0);
+        tdset_td(ctx, begspn, 1, nobspf, sp);
+        pritd(ctx, stptd.data(), nobspf, sp, begspn, 1);
+        if (ctx.error.lfatal) return false;
+        for (int t = 0; t < nobspf; ++t)
+            padj[static_cast<std::size_t>(t)] /= stptd[static_cast<std::size_t>(t)];
     }
 
     // adjsrs.f also records the prior-factor series in the /adjcmn/ Adj array and

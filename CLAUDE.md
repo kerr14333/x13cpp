@@ -109,7 +109,14 @@ diagnostics front (force / slidingspans / history) is now closed.
   the user-regression prior factor (Facusr) all gate. The x11 parse-seam is
   exhausted; the remaining x11 stubs are interdependent chains (each needs an
   upstream factor producer): user PRIOR factors (Nuspad/Nustad), Adjsea/Adjso
-  regARIMA-seasonal combine, x11regression prior-TD, force non-original target
-  (Iftrgt>0), and revisions getrev.
+  regARIMA-seasonal combine, force non-original target (Iftrgt>0), and revisions
+  getrev.
+- **x11regression `tdprior` (user prior trading day, Kswv=1) — CLOSED (bit-exact):**
+  a4 factor + d10-d13 gate at ~5e-15 (`test_x11_tdprior_tables.py`). pritd.f ported
+  (parser + parse-time weight-standardize sum-7 + td6var/x11ref_td). The oracle runs
+  x11pt1 pre-model (x11ari.f:99-133) so regARIMA fits the prior-adjusted series; the
+  C++ mirrors by dividing the pre-model estimation input (`run_pre_model`) AND the
+  X-11 buffer (`x11pt1`) by the pritd factor. Still fatal: the OLS-estimated prior
+  TD (Ixreg>=2 & Axrgtd) and additive / pseudo-additive weights.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

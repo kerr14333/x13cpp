@@ -181,12 +181,48 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
             setmv(os.sto.data(), mvind, ctx.missng.mvval, pos1ob, posfob);
     }
 
-    // Prior trading-day adjustment (user-specified or via X-11 regression). The
-    // factor generation (pritd) and sliding-spans capture (ssrit) are unported;
-    // this branch is inactive for the base decomposition (Kswv=0, Ixreg=0).
+    // Prior trading-day adjustment (user-specified or via X-11 regression).
     if (opt.kswv != 0 || (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd)) {
-        x11_not_ported(ctx, "x11pt1 prior trading-day adjustment (pritd/ssrit)");
-        return;
+        // Only the user-weight prior-TD path (Kswv==1, x11regression tdprior),
+        // multiplicative (logadd already mapped to 0 above), non-pseudo-additive,
+        // no classic X-11 Easter (Khol<2), is ported. The x11-regression-estimated
+        // prior TD (Ixreg>=2 & Axrgtd) and the additive / pseudo-additive weight
+        // paths stay fatal.
+        if (opt.kswv != 1 || (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd) ||
+            muladd != 0 || ctx.x11msc.psuadd || opt.khol >= 2) {
+            x11_not_ported(ctx, "x11pt1 prior trading-day adjustment (pritd/ssrit)");
+            return;
+        }
+        // pritd.f + fold (x11pt1.f:229-273). (deferred: A3/A3P/A4 prints/punch.)
+        int n2 = ctx.extend.nbfpob;
+        if (ctx.extend.nfcst == 0) n2 += ny;
+        double stptd[PLEN];
+        setdp(0.0, PLEN, stptd);
+        // editor.f:2240 tdset -> Xn/Xnstar over the factor span, keyed on the date
+        // at Pos1bk (= Begspn; the oracle's Begbak/Begbk2 backcast-origin dates are
+        // not populated on this port path -- for the ported no-backcast prior-TD
+        // case Pos1bk==Pos1ob, so the span origin is Begspn). pritd's begdat is the
+        // date at absolute position 1 (Begbk2), = Begspn shifted back Pos1bk-1.
+        int begd1[2];
+        addate(ctx.mdldat.begspn.data(), ny, -(pos1bk - 1), begd1);
+        tdset_td(ctx, ctx.mdldat.begspn.data(), pos1bk, posffc, ny);
+        pritd(ctx, stptd, n2, ny, begd1, pos1bk);
+        if (ctx.error.lfatal) return;
+        // Stash the prior-TD factor (A4) over the observed span for the harness
+        // dump / result object (bit-exact vs the oracle a4 table).
+        ctx.x11_a4_prior.assign(stptd + (pos1ob - 1),
+                                stptd + (pos1ob - 1) + (posfob - pos1ob + 1));
+        // Sliding-spans capture of the prior-TD factor (Issap==2, Ixreg!=2).
+        if (ctx.hiddn.issap == 2 && ctx.hiddn.ixreg != 2)
+            ssrit(ctx, stptd, pos1ob, posfob, 1, in.series.data());
+        // Divide the prior-adjusted series by the prior-TD factors; fold into
+        // the combined calendar factor Faccal (Kswv==1).
+        double stdbuf[PLEN];
+        copy(stptd + (pos1ob - 1), ctx.extend.nbfpob, -1, stdbuf + (pos1ob - 1));
+        divsub(os.sto.data(), os.sto.data(), stdbuf, pos1ob, lastpr, muladd);
+        addmul(fac.faccal.data(), fac.faccal.data(), stptd, pos1bk, phol, muladd);
+        if (ctx.missng.missng)
+            setmv(os.sto.data(), mvind, ctx.missng.mvval, pos1ob, lastpr);
     }
 
     // (deferred: lmodel pre-ARIMA prior-adjusted-series prints A3/A3P/A4D.)
