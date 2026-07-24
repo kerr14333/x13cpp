@@ -1,10 +1,36 @@
 # General-shape SEATS (p>0 / bp>0 / imean!=0) — port scope
 
-**STATUS: p>0 AND bp>0 CLOSED (bit-exact + gated). *_ar2-seats ((2 1 0)(0 1 1),
-p>0) gate s10-s18 ~5e-15 on airline/payems/unrate; *_sar-seats ((0 1 1)(1 1 0),
-bp>0) gate on all 4 series. Both bugs were AR-polynomial signs (phis=+mo.phi,
-bphis=+mo.bphi). Only imean!=0 remains open (now FATALS cleanly via
-run_seats.cpp seats_has_mean, no longer silent-wrong).**
+**STATUS: p>0, bp>0, AND imean!=0 (drift case, d>=1) ALL CLOSED (bit-exact +
+gated). *_ar2-seats ((2 1 0)(0 1 1), p>0) gate s10-s18 ~5e-15 on airline/payems/
+unrate; *_sar-seats ((0 1 1)(1 1 0), bp>0) gate on all 4 series; *_mean-seats
+((0 1 1)(0 1 1)+const, Imean=1) gate s10-s18 ~4e-15 on all 4 series. The p>0/
+bp>0 bugs were AR-polynomial signs (phis=+mo.phi, bphis=+mo.bphi).**
+
+## imean!=0 (drift, d>=1) — CLOSED. What ACTUALLY fixed it (the plan below was
+partly wrong):
+The original plan assumed z stayed raw and only the forecast/boundary (za/wmf/
+wmb) needed wm. Two things the plan MISSED were the decisive fixes:
+1. **z must be the MEAN-INCLUSIVE series.** After estimation ctx.series.tsrs =
+   the regression-ADJUSTED series (y - X*b), which for a Constant regressor has
+   the mean's DRIFT REMOVED. But the oracle decomposes the series WITH the mean
+   (verified: oracle z reconstructs to raw log(airline) EXACTLY, via z =
+   log(s11)+log(s10)). Fix: run_seats.cpp restores ctx.series.tsrs from the
+   clean trnsrs for the Constant-only case (= raw log; a mean alongside TD/
+   outliers needs a selective add-back, still fatal). This alone cut the error
+   from ~16% (growing drift) to ~4e-4.
+2. **CALCFX seeds center the differenced series by wm** (analts.f:1972). The
+   exact-ML residuals are computed on the CENTERED Wd. calcfx_last_residuals
+   gained a `center` param: wm (forward), kd*wm (backward, kd=(-1)^(d+bd) since
+   the oracle reverses the already-centered Wd, analts.f:2793-2805). This closed
+   the last ~4e-4 to ~4e-15.
+Plus the plan's own pieces (all correct, all landed): za=wm*(1-sum phist) in
+FCAST (zab=zaf*kd), wmf=0.5*zaf / wmb=0.5*zab in the ESTBUR boundary. wm = plain
+mean of the fully-differenced series (crmean default 0; the rtval>ta residual
+correction never fires, ta default 100). STILL OPEN: imean+d==0 (trend unit root
+drops, ansub3.f:121-134) and imean alongside other regressors -- both fatal
+cleanly in run_seats.cpp.
+
+### (historical) original imean framing -- superseded by the note above
 
 ## imean!=0 runway (the last general-shape gap)
 Probed this session (scratchpad/seatprobe/im1,im2). A Constant (PRGTCN) regressor

@@ -95,7 +95,7 @@ namespace {
 bool calcfx_last_residuals(const SeatsModelOrders& mo,
                            const SeatsCanonicalDenoms& cd,
                            const std::vector<double>& series, int count,
-                           std::vector<double>& out) {
+                           std::vector<double>& out, double center = 0.0) {
     out.assign(std::max(count, 0), 0.0);
     if (count <= 0) return true;
     const int Q = mo.q, Bq = mo.bq, Mq = mo.mq;
@@ -118,6 +118,15 @@ bool calcfx_last_residuals(const SeatsModelOrders& mo,
         --len;
     }
     const int nw = len;
+
+    // MEAN-CORRECT the differenced series (analts.f:1972 Wd(j)=Wd(j)-wmDifXL)
+    // when imean!=0: the exact-ML residuals CALCFX seeds are computed on the
+    // CENTERED differenced series. `center` is wm for the forward series and
+    // kd*wm (kd=(-1)^(d+bd)) for the backward -- the oracle reverses the
+    // already-centered Wd with sign kd (analts.f:2793-2804), so the backward
+    // Wd's mean is kd*wm. 0 when imean=0 (inert).
+    if (center != 0.0)
+        for (int t = 0; t < nw; ++t) w[t] -= center;
 
     // ---- STEP 1B/2 (ansub1.f:5006-5007): the STATIONARY AR filter. Pstar
     // here is the STATIONARY AR order (p+bp*mq), NOT cd.pstar (which folds in
@@ -404,17 +413,18 @@ int build_bphist(const SeatsModelOrders& mo, std::vector<double>& bphist) {
     return bpstar;
 }
 
-// FCAST's own forward recursion (ansub1.f:2183-2201), za=0 (imean=0
-// scope). Extends `series` (length nz) by `steps` points using the raw
-// (unswitched) model MA coefficients cd.thstar[1..qstar_f] and the seed
-// residuals `last_resids` (last_resids[m] == a(Na-m), the trailing
-// historical exact-ML residuals -- session 14: ALL of them are needed when
-// qstar_f>=2, not just a(Na), see armafl_last_residuals's comment).
+// FCAST's own forward recursion (ansub1.f:2183-2201). Extends `series`
+// (length nz) by `steps` points using the raw (unswitched) model MA
+// coefficients cd.thstar[1..qstar_f] and the seed residuals `last_resids`
+// (last_resids[m] == a(Na-m), the trailing historical exact-ML residuals --
+// session 14: ALL of them are needed when qstar_f>=2, not just a(Na), see
+// armafl_last_residuals's comment). `za` is the mean seed (ansub1.f:2166-
+// 2180): 0 when imean=0, else wm (Pstar=0) or wm*(1-sum phist) (Pstar>0).
 std::vector<double> fcast_extend(const SeatsModelOrders& mo,
                                   const double* thstar,
                                   const std::vector<double>& series,
                                   const std::vector<double>& last_resids,
-                                  int steps) {
+                                  int steps, double za) {
     std::vector<double> bphist;
     int bpstar = build_bphist(mo, bphist);
     int qstar_f = mo.q + mo.bq * mo.mq;
@@ -427,7 +437,7 @@ std::vector<double> fcast_extend(const SeatsModelOrders& mo,
         aext[qstar_f - m] = last_resids[m];
     std::vector<double> zext(steps, 0.0);
     for (int i = 1; i <= steps; ++i) {
-        double sz = 0.0;  // za=0 (imean=0)
+        double sz = za;  // mean seed (0 when imean=0)
         for (int j = 1; j <= qstar_f; ++j)
             sz -= thstar[j] * aext[qstar_f + i - j];
         for (int j = 1; j <= bpstar; ++j) {
@@ -453,6 +463,58 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
     std::vector<double> z(nz), bz(nz);
     for (int i = 0; i < nz; ++i) z[i] = ctx.series.tsrs(i + 1);
     for (int i = 0; i < nz; ++i) bz[i] = z[nz - 1 - i];  // plain reversal
+
+    // Mean seed (imean!=0). A Constant (PRGTCN) regressor sets Imean=1; SEATS
+    // then centers the DIFFERENCED series by wm (analts.f:1955-1979) and adds
+    // it back via za in FCAST (ansub1.f:2166-2180) + wmf/wmb in ESTBUR's
+    // general branch (ansub3.f:243-244). wm = plain mean of the fully-
+    // differenced series over ALL Nw points (crmean default 0). The residual
+    // t-value correction (analts.f:2417-2460, wm += first*rmean) never fires:
+    // its gate is rtval>ta with ta default 100 (ansub9.f:1626). The
+    // demeaned-series d+bd==0 branch (ansub3.f:121-134, zmean=DMEAN(z)) is the
+    // separate d=0 gap -- run_seats still fatals mean+d==0; here d+bd>0 so
+    // zaf/zab = za and zmean=0.
+    bool imean = false;
+    {
+        const auto& M = ctx.model;
+        for (int i = 1; i <= M.nb; ++i)
+            if (M.rgvrtp(i) == prm::PRGTCN) { imean = true; break; }
+    }
+    // wm = mean of the fully-differenced series (crmean default 0 -> plain mean
+    // over all Nw points). Forward CALCFX centers Wd by wm; the backward Wd is
+    // the sign-flipped reversal (kd=(-1)^(d+bd)), so its center is kd*wm and
+    // its FCAST seed zab = zaf*kd (analts.f:2793-2805). All 0 when imean=0.
+    double wm = 0.0, za = 0.0;
+    const double kd = ((mo.d + mo.bd) % 2 == 0) ? 1.0 : -1.0;
+    if (imean) {
+        std::vector<double> wd(z);           // fully-differenced series
+        int nw = nz;
+        for (int s = 0; s < mo.bd; ++s) {    // seasonal diffs (lag mq)
+            nw -= mo.mq;
+            for (int j = 0; j < nw; ++j) wd[j] = wd[j + mo.mq] - wd[j];
+        }
+        for (int s = 0; s < mo.d; ++s) {     // regular diffs (lag 1)
+            nw -= 1;
+            for (int j = 0; j < nw; ++j) wd[j] = wd[j + 1] - wd[j];
+        }
+        for (int j = 0; j < nw; ++j) wm += wd[j];
+        if (nw > 0) wm /= nw;
+        // za = wm*(1 - sum phist), phist = the STATIONARY AR poly coeffs
+        // (Pstar = p + bp*mq); za = wm for Pstar==0 (ansub1.f:2168-2180).
+        const int Pstar = mo.p + mo.bp * mo.mq;
+        double sum_phist = 0.0;
+        if (Pstar > 0) {
+            std::vector<double> nn(mo.p + 1, 0.0); nn[0] = 1.0;
+            for (int i = 0; i < mo.p; ++i) nn[i + 1] = mo.phi[i];
+            std::vector<double> ss(mo.bp * mo.mq + 1, 0.0); ss[0] = 1.0;
+            for (int k = 0; k < mo.bp; ++k) ss[(k + 1) * mo.mq] = mo.bphi[k];
+            std::vector<double> arp(Pstar + 1, 0.0);
+            for (int i = 0; i < (int)nn.size(); ++i)
+                for (int j = 0; j < (int)ss.size(); ++j) arp[i + j] += nn[i] * ss[j];
+            for (int j = 1; j <= Pstar; ++j) sum_phist += -arp[j];  // phist=-arp
+        }
+        za = wm * (1.0 - sum_phist);
+    }
 
     // pstar/qstar/Totden/Thstr0: cd's own fields DIRECTLY (session 12 --
     // confirmed against an oracle instrumentation dump AND a direct probe
@@ -511,12 +573,12 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
         // faithful CALCFX seeds that compensation is wrong -- use cd.thstar
         // consistently.)
         std::vector<double> aFwd, aBwd;
-        if (!calcfx_last_residuals(mo, cd, z, qstar_f, aFwd) &&
+        if (!calcfx_last_residuals(mo, cd, z, qstar_f, aFwd, wm) &&
             !armafl_last_residuals(ctx, z, qstar_f, aFwd)) return;
-        if (!calcfx_last_residuals(mo, cd, bz, qstar_f, aBwd) &&
+        if (!calcfx_last_residuals(mo, cd, bz, qstar_f, aBwd, kd * wm) &&
             !armafl_last_residuals(ctx, bz, qstar_f, aBwd)) return;
-        zextFwd = fcast_extend(mo, cd.thstar, z, aFwd, lext);
-        zextBwd = fcast_extend(mo, cd.thstar, bz, aBwd, lext);
+        zextFwd = fcast_extend(mo, cd.thstar, z, aFwd, lext, za);
+        zextBwd = fcast_extend(mo, cd.thstar, bz, aBwd, lext, kd * za);
     }
     auto EXTZ = [&](int idx) -> double {  // 1-indexed
         if (idx <= nz) return z[idx - 1];
@@ -578,7 +640,9 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
     } else {
         // General branch (ansub3.f:238-341).
         int irow = pstar + qstar - 2;
-        double wmf = 0.0, wmb = 0.0;  // zaf=zab=0 (imean=0 scope)
+        // wmf=0.5*zaf, wmb=0.5*zab (ansub3.f:243-244); zaf=za, zab=kd*za
+        // (analts.f:2805). za=0 when imean=0 (inert).
+        double wmf = 0.5 * za, wmb = 0.5 * kd * za;
         std::vector<double> am2(60 * 66, 0.0);
         auto AM2 = [&](int i, int j) -> double& {
             return am2[(j - 1) * 60 + (i - 1)];

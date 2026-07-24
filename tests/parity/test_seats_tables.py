@@ -229,6 +229,26 @@ def test_seats_table(base: str, tag: str) -> None:
         ("unrate_sar-seats", "s10"), ("unrate_sar-seats", "s11"),
         ("unrate_sar-seats", "s12"), ("unrate_sar-seats", "s13"),
         ("unrate_sar-seats", "s16"), ("unrate_sar-seats", "s18"),
+        # *_mean-seats: a Constant (mean) regressor -> Imean=1. SEATS decomposes
+        # the series WITH the mean present (its differenced mean is wm); the
+        # drift folds back via the wm centering of the CALCFX-seed differenced
+        # series + za/wmf/wmb (estbur.cpp) -- and, decisively, ctx.series.tsrs
+        # is restored to the mean-inclusive series in run_seats (estimation had
+        # left the regression-ADJUSTED series, drift removed). airline (0 1 1)
+        # (0 1 1)+const isolates the pure drift case (d>=1, Pstar=0); all s10-
+        # s18 bit-exact (~4e-15) on all 4 series.
+        ("airline_mean-seats", "s10"), ("airline_mean-seats", "s11"),
+        ("airline_mean-seats", "s12"), ("airline_mean-seats", "s13"),
+        ("airline_mean-seats", "s16"), ("airline_mean-seats", "s18"),
+        ("payems_mean-seats", "s10"), ("payems_mean-seats", "s11"),
+        ("payems_mean-seats", "s12"), ("payems_mean-seats", "s13"),
+        ("payems_mean-seats", "s16"), ("payems_mean-seats", "s18"),
+        ("unrate_mean-seats", "s10"), ("unrate_mean-seats", "s11"),
+        ("unrate_mean-seats", "s12"), ("unrate_mean-seats", "s13"),
+        ("unrate_mean-seats", "s16"), ("unrate_mean-seats", "s18"),
+        ("expgs_mean-seats", "s10"), ("expgs_mean-seats", "s11"),
+        ("expgs_mean-seats", "s12"), ("expgs_mean-seats", "s13"),
+        ("expgs_mean-seats", "s16"), ("expgs_mean-seats", "s18"),
     }
     # No golden shipped => the oracle produced no such table, so there is no
     # parity target (not an engine gap). This covers the inadmissible-

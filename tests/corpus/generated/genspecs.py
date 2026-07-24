@@ -272,6 +272,22 @@ def cfg_sar_seats(s):
     return blocks
 
 
+def cfg_mean_seats(s):
+    # Constant (mean) regressor -> Imean=1: SEATS keeps the mean in the
+    # decomposed series and folds its drift back via the wm centering + za/
+    # wmf/wmb path (estbur.cpp). The airline (0 1 1)(0 1 1) shape isolates the
+    # pure drift case (d>=1, Pstar=0).
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(spec("regression", ["variables = (const)"],
+                       save_key="regression"))
+    blocks.append(arima_airline())
+    blocks.append(estimate_block())
+    blocks.append(seats_block())
+    return blocks
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -294,6 +310,7 @@ CONFIGS = [
     ("fixed-airline-seats", cfg_fixed_airline_seats),
     ("ar2-seats", cfg_ar2_seats),
     ("sar-seats", cfg_sar_seats),
+    ("mean-seats", cfg_mean_seats),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 
