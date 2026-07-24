@@ -1,8 +1,9 @@
 # General-shape SEATS (p>0 / bp>0 / imean!=0) — port scope
 
-**STATUS: p>0 CLOSED (bit-exact + gated). The *_ar2-seats corpus specs
-((2 1 0)(0 1 1)) gate s10-s18 at ~5e-15 on airline/payems/unrate. bp>0 (seasonal
-AR) and imean!=0 remain open (no admissible corpus target).**
+**STATUS: p>0 AND bp>0 CLOSED (bit-exact + gated). *_ar2-seats ((2 1 0)(0 1 1),
+p>0) gate s10-s18 ~5e-15 on airline/payems/unrate; *_sar-seats ((0 1 1)(1 1 0),
+bp>0) gate on all 4 series. Both bugs were AR-polynomial signs (phis=+mo.phi,
+bphis=+mo.bphi). Only imean!=0 remains open (needs a d=0-with-mean target).**
 
 ## What actually closed it (the real bug was ONE sign)
 The estbur general branch, the ct/cs/cc/MLTSOL solve, and the FCAST extension

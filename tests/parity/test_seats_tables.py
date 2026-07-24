@@ -211,6 +211,21 @@ def test_seats_table(base: str, tag: str) -> None:
         ("unrate_ar2-seats", "s10"), ("unrate_ar2-seats", "s11"),
         ("unrate_ar2-seats", "s12"), ("unrate_ar2-seats", "s13"),
         ("unrate_ar2-seats", "s16"), ("unrate_ar2-seats", "s18"),
+        # *_sar-seats: seasonal-AR model (0 1 1)(1 1 0) -- the Bp>0 branch. Same
+        # sign-fix class as ar2 (bphis = +mo.bphi in canonical_denoms.cpp). All
+        # 4 series admissible; all s10-s18 bit-exact (~5e-15).
+        ("airline_sar-seats", "s10"), ("airline_sar-seats", "s11"),
+        ("airline_sar-seats", "s12"), ("airline_sar-seats", "s13"),
+        ("airline_sar-seats", "s16"), ("airline_sar-seats", "s18"),
+        ("expgs_sar-seats", "s10"), ("expgs_sar-seats", "s11"),
+        ("expgs_sar-seats", "s12"), ("expgs_sar-seats", "s13"),
+        ("expgs_sar-seats", "s16"), ("expgs_sar-seats", "s18"),
+        ("payems_sar-seats", "s10"), ("payems_sar-seats", "s11"),
+        ("payems_sar-seats", "s12"), ("payems_sar-seats", "s13"),
+        ("payems_sar-seats", "s16"), ("payems_sar-seats", "s18"),
+        ("unrate_sar-seats", "s10"), ("unrate_sar-seats", "s11"),
+        ("unrate_sar-seats", "s12"), ("unrate_sar-seats", "s13"),
+        ("unrate_sar-seats", "s16"), ("unrate_sar-seats", "s18"),
     }
     # No golden shipped => the oracle produced no such table, so there is no
     # parity target (not an engine gap). This covers the inadmissible-

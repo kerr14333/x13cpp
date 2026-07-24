@@ -23,12 +23,13 @@
 // The AR roots flow through FCAST's bphist phist fill (build_bphist), the
 // CALCFX stationary-AR filter (calcfx_last_residuals Pstar>0 branch, needed
 // for payems_ar2's near-non-invertible seasonal MA ~0.985), and the ESTBUR
-// general ct/cs/cc/MLTSOL solve. The one port bug was the AR-polynomial sign
-// in canonical_denoms.cpp (phis = +mo.phi). bp>0 (seasonal AR) and imean!=0
-// (za!=0) remain unported (no admissible corpus target yet); isCloseToTD is
-// always false in this port. npsi!=1 (real seasonal) / ncycth!=0||ncyc!=1
-// (real cycle) flow through correctly and now HAVE coverage via the ar2
-// specs' seasonal structure.
+// general ct/cs/cc/MLTSOL solve. Both port bugs were AR-polynomial signs in
+// canonical_denoms.cpp (phis = +mo.phi for p>0; bphis = +mo.bphi for bp>0).
+// bp>0 (seasonal AR) is ALSO gated now: the *_sar-seats specs (0 1 1)(1 1 0)
+// gate s10-s18 bit-exact on all 4 series. Only imean!=0 (za!=0) remains
+// unported; isCloseToTD is always false in this port. npsi!=1 (real seasonal)
+// / ncycth!=0||ncyc!=1 (real cycle) flow through correctly and now have
+// coverage via the ar2/sar specs' structure.
 #ifndef X13_SEATS_ESTBUR_HPP
 #define X13_SEATS_ESTBUR_HPP
 

@@ -31,14 +31,18 @@ void seats_canonical_denoms(const SeatsModelOrders& mo, double rmod,
         rpq(phis, nphi, out.rez, out.imz, out.modul, out.ar, out.pr, 1, 1);
     }
 
-    // bphis(1)=1; bphis(Mq*j+1)=-Bphi(j), all other slots in [.,Mq*j] zero --
-    // analts.f:2860-2868. SEATS restricts Bp<=1 (seatsdenoms.hpp), so the
+    // bphis(1)=1; bphis(Mq*j+1)=+Bphi(j), all other slots in [.,Mq*j] zero.
+    // analts.f:2860-2868 literally reads -Bphi, but mo.bphi is ALREADY the
+    // true-sign seasonal-AR coefficient (same convention as mo.phi -- see the
+    // phis note above and build_bphist's `ss[(k+1)*mq] = mo.bphi[k]`). The
+    // -bphi form gave ~3-5% error on bp>0 probes ((0 1 1)(1 1 0) etc); +bphi
+    // reproduces the oracle. SEATS restricts Bp<=1 (seatsdenoms.hpp), so the
     // general j-loop is future-proofing, not exercised past j=1 today.
     double bphis[66] = {};
     bphis[0] = 1.0;
     for (int j = 1; j <= mo.bp; ++j) {
         for (int i = (j - 1) * mo.mq + 1; i < j * mo.mq; ++i) bphis[i] = 0.0;
-        bphis[j * mo.mq] = -mo.bphi[j - 1];
+        bphis[j * mo.mq] = mo.bphi[j - 1];
     }
 
     seats_init_denoms(mo.d, mo.bd, mo.bp, bphis, mo.mq, out.chins, out.nchins,

@@ -151,6 +151,12 @@ def arima_ar2():
     return "arima{\n  model = (2 1 0)(0 1 1)\n}"
 
 
+def arima_sar():
+    # Seasonal-AR probe: Bp>0 (a seasonal AR(1) in place of the seasonal MA).
+    # Exercises the seasonal-AR branch of the SEATS canonical decomposition.
+    return "arima{\n  model = (0 1 1)(1 1 0)\n}"
+
+
 def forecast_block(period):
     maxlead = 12 if period == 12 else 8
     return spec("forecast", ["maxlead = %d" % maxlead], save_key="forecast")
@@ -254,6 +260,18 @@ def cfg_ar2_seats(s):
     return blocks
 
 
+def cfg_sar_seats(s):
+    # Explicit seasonal-AR model (0 1 1)(1 1 0) -> the Bp>0 branch of the SEATS
+    # canonical decomposition. Complements ar2-seats (p>0) with seasonal AR.
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(arima_sar())
+    blocks.append(estimate_block())
+    blocks.append(seats_block())
+    return blocks
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -275,6 +293,7 @@ CONFIGS = [
     ("fixed-airline-x11", cfg_fixed_airline_x11),
     ("fixed-airline-seats", cfg_fixed_airline_seats),
     ("ar2-seats", cfg_ar2_seats),
+    ("sar-seats", cfg_sar_seats),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 

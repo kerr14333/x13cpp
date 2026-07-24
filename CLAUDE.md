@@ -57,7 +57,7 @@ improvise:
 - **Python is `python`** (3.14). `python3` is a Windows App alias → "Permission
   denied".
 - **Parity tests:** `python -m pytest tests/parity -q`. Green = `NNN passed`, with
-  expected `s` skips (parse-gap / no-golden specs). Currently 872 pass / 0 fail /
+  expected `s` skips (parse-gap / no-golden specs). Currently 923 pass / 0 fail /
   0 xfail / 25 skip.
 - After adding a `core/src/*.cpp`, the first build prints `GLOB mismatch!` and
   stops — just rerun once.
@@ -91,8 +91,10 @@ regressor-free automdl paths. **General-shape SEATS (p>0) is now bit-exact +
 gated** — the `*_ar2-seats` specs `(2 1 0)(0 1 1)` gate s10–s18 at ~5e-15 on
 airline/payems/unrate (the only port bug was the AR-polynomial sign in
 canonical_denoms.cpp: `phis = +mo.phi`; plus the CALCFX Pstar>0 stationary-AR
-filter for payems_ar2's near-non-invertible seasonal MA). bp>0/imean!=0 remain
-open (no admissible corpus target). **SEATS seasonal decomposition corpus is
+filter for payems_ar2's near-non-invertible seasonal MA). **Seasonal-AR (bp>0)
+is also bit-exact + gated** — the `*_sar-seats` specs `(0 1 1)(1 1 0)` gate
+s10–s18 on all 4 series (same sign-fix class: `bphis = +mo.bphi`). Only imean!=0
+remains open. **SEATS seasonal decomposition corpus is
 fully bit-exact** — every SEATS corpus spec's s10–s18 tables gate (~5e-15),
 including the near-non-invertible fixed-airline variants (payems_fixed /
 expgs_fixed, closed via a faithful CALCFX forecast-residual port in
