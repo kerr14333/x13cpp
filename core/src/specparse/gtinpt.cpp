@@ -10,6 +10,7 @@
 #include "notset.hpp"
 #include "gen/model.hpp"
 #include "numeric/numeric.hpp"   // dpeq (dpeq.f tolerance equality)
+#include "composite/agr.hpp"      // agr1 (composite aggregation init)
 
 #include <algorithm>
 #include <cstring>
@@ -186,6 +187,10 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             case 1:  // series
                 getsrs(ctx, havsrs, havesp, lagr, ldata, dtafil, inptok);
                 if (ctx.error.lfatal) return;
+                // gtinpt.f:591-594 -- series{comptype=...} on the FIRST component
+                // of a composite run (lagr) initializes the aggregation state
+                // (agr1 with Iagr==0 zeroes the /agreg/ buffers and sets Iagr=1).
+                if (lagr) agr1(ctx, ctx.arima.y.data(), ctx.arima.nobs);
                 ctx.captured.spec_order.push_back("series");
                 break;
             case 2:  // transform

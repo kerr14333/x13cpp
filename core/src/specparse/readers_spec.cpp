@@ -13,6 +13,7 @@
 #include "srslen.hpp"
 #include "model.hpp"   // prm::POTLR
 #include "x11/loadxr.hpp"   // loadxr, xrg_clear_working (x11regression model store)
+#include "composite/agr.hpp"   // agr1 (composite{} hands the aggregate over as the series)
 
 #include <cctype>
 #include <cmath>
@@ -2067,16 +2068,219 @@ void gt_identify(X13Context& ctx, bool& inptok) {
     gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
 }
 
-// ---- composite{} (getcmp.f) : consume args; component aggregation deferred --
+// ---- composite{} (getcmp.f) ----------------------------------------------
+// The composite spec REPLACES series{} in the last spec of a metafile run: its
+// data is the aggregate the component runs accumulated into `O`. So this reader
+// parses its options, derives the span from Itest(1..5) (stamped by the first
+// component -- see composite/agr2.cpp), and then agr1() hands `O` over as the
+// series. `lagr` is getcmp's Locok out-parameter (gtinpt.f:790 uses it to set
+// havsrs), NOT the series{} comptype flag.
 void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok) {
-    (void)havsrs; (void)lagr;
+    LexState& L = ctx.lex;
     constexpr int PARG = 13;
     static const char ARGDIC[] =
         "nametitleprintsavedecimalsmodelspansaveprecisionsavelogyr2000"
         "indoutlierappendfcstappendbcsttype";
     static const int argptr[PARG + 1] = {1, 5, 10, 15, 19, 27, 36, 49, 56, 62, 72,
         82, 92, 96};
-    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+    static const char YSNDIC[] = "yesno";
+    static const int ysnptr[3] = {1, 4, 6};
+    static const char TYPDIC[] = "flowstock";
+    static const int typptr[3] = {1, 5, 10};
+
+    constexpr int YR = 1, MO = 2;   // 1-based date components (Fortran order)
+    bool havesp = true;             // the span comes from Itest, always known
+    int& sp = ctx.model.sp;
+    double* y = ctx.arima.y.data();
+    int& nobs = ctx.arima.nobs;
+    int* start = ctx.arima.begsrs.data();
+    int* begspn = ctx.mdldat.begspn.data();
+    int& nspobs = ctx.mdldat.nspobs;
+    int* begmdl = ctx.arima.begmdl.data();
+    int* endmdl = ctx.arima.endmdl.data();
+
+    bool locok = true;
+    int spnmdl[4], endspn[2];
+    setint(prm::NOTSET, 4, spnmdl);
+    setint(prm::NOTSET, 2, endspn);
+    int arglog[2 * PARG];
+    setint(prm::NOTSET, 2 * PARG, arglog);
+
+    std::string srsttl(prm::PSRSCR, ' ');
+    std::string srsnam(64, ' ');
+    int nttlcr = 0, nser = 0;
+    int tmpptr[2];
+    int ivec[1];
+    int nelt = 0;
+    bool argok = false;
+    bool hvnam = false;
+
+    int argidx;
+    while (true) {
+        if (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
+            if (ctx.error.lfatal) return;
+            switch (argidx) {
+            case 1:  // name (getcmp.f:79-83)
+                gtnmvc(ctx, LPAREN, true, 1, srsnam, tmpptr, nelt, 64, argok, locok);
+                if (ctx.error.lfatal) return;
+                if (argok) { eltlen(ctx, 1, tmpptr, nelt, nser); hvnam = true; }
+                break;
+            case 2:  // title (getcmp.f:87-91)
+                getttl(ctx, LPAREN, true, 1, srsttl, tmpptr, nelt, argok, locok);
+                if (!ctx.error.lfatal && argok && nelt == 1)
+                    eltlen(ctx, 1, tmpptr, nelt, nttlcr);
+                if (ctx.error.lfatal) return;
+                break;
+            case 3:  // print
+                getprt(ctx, 0, 10, locok);
+                break;
+            case 4:  // save
+                getsav(ctx, 0, 10, locok);
+                break;
+            case 5:  // decimals (getcmp.f:104-116)
+                getivc(ctx, LPAREN, true, 1, ivec, nelt, argok, locok);
+                if (ctx.error.lfatal) return;
+                if (argok) {
+                    if (ivec[0] < 0 || ivec[0] > 5) {
+                        inpter(ctx, PERROR, L.errpos.data() + 1,
+                               "Number of output decimals must be between 0 and 5, inclusive.");
+                        locok = false;
+                    } else {
+                        ctx.x11opt.kdec = ivec[0];
+                    }
+                }
+                break;
+            case 6:  // modelspan (getcmp.f:120-128)
+                gtdtvc(ctx, havesp, sp, LPAREN, false, 2, spnmdl, nelt, argok, inptok);
+                if (ctx.error.lfatal) return;
+                if (nelt == 1) {
+                    inpter(ctx, PERROR, L.errpos.data() + 1,
+                           "Need two dates for the model span or use a comma as place holder.");
+                    inptok = false;
+                }
+                break;
+            case 7:  // saveprecision (getcmp.f:132-144)
+                getivc(ctx, LPAREN, true, 1, ivec, nelt, argok, locok);
+                if (ctx.error.lfatal) return;
+                if (argok && nelt > 0) {
+                    if (ivec[0] <= 0 || ivec[0] > 15) {
+                        inpter(ctx, PERROR, L.errpos.data() + 1,
+                               "Value of saveprecision must be greater than zero and less than 15.");
+                        inptok = false;
+                    } else {
+                        ctx.savcmn.svprec = ivec[0];
+                    }
+                }
+                break;
+            case 8:  // savelog
+                getsvl(ctx, 0, 10, locok);
+                break;
+            case 9:  // yr2000 (getcmp.f:151-158)
+                gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                       "Available options for yr2000 are yes or no.", ivec, nelt,
+                       argok, inptok);
+                if (ctx.error.lfatal) return;
+                if (argok && nelt > 0) ctx.x11msc.yr2000 = (ivec[0] == 1);
+                break;
+            case 10:  // indoutlier (getcmp.f:162-169)
+                gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                       "Available options for indoutlier are yes or no.", ivec,
+                       nelt, argok, inptok);
+                if (ctx.error.lfatal) return;
+                if (argok && nelt > 0) ctx.agr.lindot = (ivec[0] == 1);
+                break;
+            case 11:  // appendfcst (getcmp.f:173-180) -- same Savfct as x11{}
+                gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                       "Available options for appending forecasts are yes or no.",
+                       ivec, nelt, argok, inptok);
+                if (ctx.error.lfatal) return;
+                if (argok && nelt > 0) ctx.tbllog.savfct = (ivec[0] == 1);
+                break;
+            case 12:  // appendbcst (getcmp.f:184-191)
+                gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                       "Available options for appending backcasts are yes or no.",
+                       ivec, nelt, argok, inptok);
+                if (ctx.error.lfatal) return;
+                if (argok && nelt > 0) ctx.tbllog.savbct = (ivec[0] == 1);
+                break;
+            case 13:  // type (getcmp.f:195-201)
+                gtdcvc(ctx, LPAREN, true, 1, TYPDIC, typptr, 2,
+                       "Available options for type are flow or stock.", ivec,
+                       nelt, argok, inptok);
+                if (ctx.error.lfatal) return;
+                if (argok && nelt > 0) ctx.model.isrflw = ivec[0];
+                break;
+            default:
+                break;
+            }
+            if (ctx.error.lfatal) return;
+            continue;   // GO TO 140
+        }
+        if (ctx.error.lfatal) return;
+
+        // --- End of argument loop (getcmp.f:205-247) ---
+        // The span comes from Itest(1..5) = (Sp, BegMo, EndMo, BegYr, EndYr),
+        // stamped by the first component series.
+        start[YR - 1] = ctx.agr.itest(4);
+        start[MO - 1] = ctx.agr.itest(2);
+        begspn[YR - 1] = ctx.agr.itest(4);
+        begspn[MO - 1] = ctx.agr.itest(2);
+        endspn[YR - 1] = ctx.agr.itest(5);
+        endspn[MO - 1] = ctx.agr.itest(3);
+        sp = ctx.agr.itest(1);
+        dfdate(endspn, begspn, sp, nspobs);
+        nspobs = nspobs + 1;
+        nobs = nspobs;
+
+        if (spnmdl[YR - 1] == prm::NOTSET) {
+            cpyint(begspn, 2, 1, begmdl);
+        } else {
+            cpyint(spnmdl, 2, 1, begmdl);
+        }
+        if (spnmdl[2 + YR - 1] == prm::NOTSET || spnmdl[2 + YR - 1] == 0) {
+            addate(begspn, sp, nspobs - 1, endmdl);
+            if (spnmdl[2 + YR - 1] == 0) {
+                endmdl[MO - 1] = spnmdl[2 + MO - 1];
+                if (endmdl[MO - 1] > endspn[MO - 1]) endmdl[YR - 1] -= 1;
+            }
+        } else {
+            cpyint(spnmdl + 2, 2, 1, endmdl);
+        }
+        int nobmdl = 0;
+        dfdate(endmdl, begmdl, sp, nobmdl);
+        nobmdl = nobmdl + 1;
+        if (!chkcvr(begspn, nspobs, begmdl, nobmdl, sp)) {
+            inpter(ctx, PERRNP, L.errpos.data() + 1,
+                   "Model span is not within the span of available data.");
+            if (ctx.error.lfatal) return;
+            inptok = false;
+        }
+        // getcmp.f:241 -- hand the accumulated composite total over as the series.
+        if (locok) {
+            agr1(ctx, y, nobs);
+            havsrs = true;
+        }
+        if (ctx.model.isrflw == prm::NOTSET) ctx.model.isrflw = 0;
+
+        // --- capture for the gate (mirrors getsrs) ---
+        if (havsrs) {
+            ctx.captured.has_series = true;
+            ctx.captured.period = sp;
+            ctx.captured.nobs = nobs;
+            ctx.captured.series_start = {start[0], start[1]};
+            ctx.captured.span_start = {begspn[0], begspn[1]};
+            ctx.captured.span_end = {endspn[0], endspn[1]};
+            std::string t = srsttl.substr(0, static_cast<std::size_t>(nttlcr > 0 ? nttlcr : 0));
+            if (!t.empty()) ctx.captured.title = t;
+            if (hvnam) {
+                std::string nm = srsnam.substr(0, static_cast<std::size_t>(nser > 0 ? nser : 0));
+                if (!nm.empty()) ctx.captured.series_name = nm;
+            }
+        }
+        lagr = locok;              // getcmp's Locok out-parameter
+        inptok = inptok && locok;
+        return;
+    }
 }
 
 // ---- metadata{} (gtmtdt.f) ------------------------------------------------

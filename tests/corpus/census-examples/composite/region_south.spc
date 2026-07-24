@@ -10,4 +10,6 @@ transform{
   function = log
 }
 automdl{ }
-x11{ }
+x11{
+  save = (d10 d11 d12 d13)
+}

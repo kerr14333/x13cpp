@@ -23,6 +23,7 @@
 #include "x11/x11easter.hpp"      // holday (classic X-11 Easter estimation)
 #include "driver/run_history.hpp"  // run_history
 #include "driver/run_spectrum.hpp"  // run_spectrum
+#include "composite/agr2.hpp"       // agr2_component (composite accumulation)
 
 #include <algorithm>
 #include <string>
@@ -146,6 +147,19 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // convert padded-buffer positions back to calendar dates per span.
     ctx.x11opt.ny = sp;
     ctx.x11opt.lyr = begspn[0];
+    // editor.f:236-237 Lstyr/Lstmo = Endspn(1)/Endspn(2), and editor.f:423-424
+    // L0=1 / Ly0=Lyr. Together with Ny and Begspn(MO) these five are exactly the
+    // Itest(1..5) span signature composite adjustment matches components on
+    // (composite/agr2.cpp); slidingspans' replay driver computes its own
+    // per-span values, so this is the main run's.
+    {
+        int endspn[2];
+        addate(begspn, sp, nspobs - 1, endspn);
+        ctx.x11opt.lstyr = endspn[0];
+        ctx.x11opt.lstmo = endspn[1];
+    }
+    ctx.lzero.l0 = 1;
+    ctx.lzero.ly0 = ctx.x11opt.lyr;
     ctx.xtrm.kersa = 0;
     // gtinpt.f: Cnstnt defaults to DNOTST (no user constant). x11pt3 keys its
     // constant-removal branch on Cnstnt != DNOTST, so the zero-init default must
@@ -200,6 +214,11 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     const int norig = ctx.arima.nomnfy;
     for (int i = 0; i < nspobs; ++i) ctx.inpt.series(pos1ob + i) = aptr[i];
     for (int i = 0; i < norig; ++i)  ctx.inpt.orig(pos1ob + i) = aptr[i];
+    // editor.f:2492 -- Orig2 gets the same copy. It is the buffer composite
+    // adjustment aggregates (agr2.f:267), and arima.f:1432-1441 later overlays
+    // the untransformed forecasts/backcasts onto its extension region (increment
+    // 2; with no extension it is exactly Orig).
+    for (int i = 0; i < norig; ++i)  ctx.inpt.orig2(pos1ob + i) = aptr[i];
 
     // ssprep.f: snapshot the model's converged parameters + the (still
     // unresolved, sentinel==6) x11 seasonal-filter settings BEFORE the main
@@ -397,6 +416,20 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // span concurrent-vs-final revisions analysis, built on the same re-entrant
     // driver (driver/run_history.hpp). No-op when history{} was absent.
     if (!run_history(ctx, trnsrs, begspn_full, nspobs, nfcst)) return false;
+
+    // composite{} (x11ari.f:372-373): if this run is a COMPONENT of a composite
+    // adjustment (series{comptype=...} set Iag>=0 and the metafile driver carried
+    // Iagr>0 in), accumulate it into the aggregation buffers. Iagr==3 means this
+    // run IS the composite total, which accumulates nothing. No-op for every
+    // single-series run (Iag<0). See tools/composite_scouting.md.
+    if (ctx.agr.iagr > 0 && ctx.agr.iagr != 3 && ctx.agr.iag >= 0) {
+        if (!agr2_component(ctx)) {
+            writln(ctx, "ERROR: Component series has a non-overlapping time "
+                        "span.  Aggregation not computed.",
+                   ctx.units.mt2, ctx.units.mt2, true);
+            return false;
+        }
+    }
 
     return !ctx.error.lfatal;
 }

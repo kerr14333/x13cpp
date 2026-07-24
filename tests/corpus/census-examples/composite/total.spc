@@ -6,4 +6,6 @@
 composite{
   title  = "Total Sales (North + South)"
 }
-x11{ }
+x11{
+  save = (d10 d11 d12 d13)
+}

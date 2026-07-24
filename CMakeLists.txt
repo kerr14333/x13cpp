@@ -105,6 +105,15 @@ add_executable(x13run_x11 tools/x13run_x11.cpp)
 target_link_libraries(x13run_x11 PRIVATE x13core)
 
 # ---------------------------------------------------------------------------
+# x13run_composite -- composite/metafile harness: run every spec of a .mta in
+# order carrying the aggregation COMMONs across the runs (the persistence IS
+# the feature), printing the composite total's X-11 tables for the gate.
+# See tools/composite_scouting.md.
+# ---------------------------------------------------------------------------
+add_executable(x13run_composite tools/x13run_composite.cpp)
+target_link_libraries(x13run_composite PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
 # x13run_seats -- SEATS harness (scoping pass): parse + estimate the model,
 # then dispatch to x13::run_seats. The decomposition is not yet ported (see
 # tools/seats_scope.md), so this currently prints OUTCOME: FATAL for every
