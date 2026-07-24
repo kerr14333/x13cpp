@@ -214,6 +214,18 @@ struct X13Context {
     // series) and the main x11pt1 can restore it for the Ixreg==3 fold after
     // x11int wipes /x11fac/. Empty when no Ixreg>=2 x11regression was requested.
     std::vector<double> x11_faccal_prior;
+    // SEATS combined-adjustment source (s16/s18): the RAW original series in
+    // ORIGINAL units (a1 -- mean, calendar/outlier regression effects AND the
+    // lom/leap prior all IN), 0-based over the historical span [1,nspobs]. The
+    // decomposition operates on the LINEARIZED series ctx.series.tsrs (non-mean
+    // regression effects removed, prior applied); s10 (seasonal factor) =
+    // linearized/sa, but s16/s18 (COMBINED adjustment factors) = a1/sa refold
+    // BOTH the removed regression effects and the prior (s16 = s10 x td-factor x
+    // lom/leap prior). Filled by run_pre_model when a prior or a non-mean
+    // regressor is present; empty otherwise, so estbur falls back to the
+    // linearized series and s10==s16==s18 (the no-regressor / Constant-only
+    // corpus stays bit-identical).
+    std::vector<double> seats_combined_orig;
     // M3 forecast-output results (fcstout / prtfct LFOROS path): the original-
     // scale point forecast + confidence interval, plus the transformed-scale
     // forecast/SE. Stored on the context (no auto file output); a thin driver

@@ -103,8 +103,19 @@ the mean present — run_seats restores `ctx.series.tsrs` from the clean `trnsrs
 seeds center the differenced series by wm (forward wm, backward kd·wm,
 kd=(-1)^(d+bd)); plus za=wm·(1-Σphist) in FCAST and wmf/wmb in the ESTBUR
 boundary. (The "d==0 trend unit root drops" theory was wrong — non-mean d==0 is
-itself bit-exact, so the mean fixes cover d==0 unchanged.) Only imean alongside
-other regressors remains open (fatal cleanly). **SEATS seasonal
+itself bit-exact, so the mean fixes cover d==0 unchanged.) **imean ALONGSIDE
+other regressors (TD) is now bit-exact + gated too** — `*_mean-td-seats`
+`(0 1 1)(0 1 1)+const+td` gate s10–s18 on all 4 series. Two pieces: (1) the
+decomposition input keeps the mean but removes TD — add back only the Constant's
+contribution `b_const·Xconst` (the regvar case-10 ones/Diff(B) drift ramp, via
+ratpos) onto the fully-adjusted `ctx.series.tsrs`; (2) s10 = seasonal-only
+(linearized/sa) but s16/s18 = COMBINED = **raw a1/sa**, refolding BOTH the removed
+TD effect AND the automatic lom/leap prior (`td`+log → `prioradj: lpyear`). The
+`trn` base is prior-adjusted, so the combined factor needs the RAW a1 —
+run_pre_model stashes it into `ctx.seats_combined_orig`, estbur forms
+`combined_factor`/`combined_add` (empty ⇒ s10==s16==s18, no-reg corpus untouched).
+Trap avoided: `z = trn − log(td_SAVE)` mismatches every February; use the design
+βX / raw a1, never the save table. **SEATS seasonal
 decomposition corpus is
 fully bit-exact** — every SEATS corpus spec's s10–s18 tables gate (~5e-15),
 including the near-non-invertible fixed-airline variants (payems_fixed /

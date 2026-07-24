@@ -34,9 +34,13 @@
 // inclusive tsrs); wm (the differenced-series mean) centers the CALCFX-seed
 // differenced series (forward wm, backward kd*wm, kd=(-1)^(d+bd)) and folds back
 // via za in FCAST + wmf/wmb in the ESTBUR boundary. (d==0 needs no special
-// handling -- the non-mean d==0 path is itself bit-exact.) Only imean alongside
-// OTHER regressors remains open (fatal cleanly in run_seats). isCloseToTD is
-// always false in this
+// handling -- the non-mean d==0 path is itself bit-exact.) A mean ALONGSIDE
+// OTHER regressors (TD/outliers) is ALSO gated now (the *_mean-td-seats specs):
+// the Constant's fitted contribution is added back onto the regression-adjusted
+// series (run_seats.cpp) while the other effects stay removed, and s16/s18 (the
+// COMBINED adjustment factors = raw a1/sa) refold both the removed regression
+// effects and the lom/leap prior via combined_factor/combined_add
+// (run_pre_model seats_combined_orig). isCloseToTD is always false in this
 // port. npsi!=1 (real seasonal) / ncycth!=0||ncyc!=1 (real cycle) flow through
 // correctly and now have coverage via the ar2/sar specs' structure.
 #ifndef X13_SEATS_ESTBUR_HPP
@@ -80,6 +84,15 @@ struct EstburResult {
     // z/sa ratio) only in the additive case. For log specs the two arrays are
     // identical.
     std::vector<double> seasonal_add;
+    // s16/s18 COMBINED adjustment factors = original / sa (the removed calendar/
+    // outlier effects refolded on top of the seasonal). Equal to seasonal_add/
+    // seasonal_factor when no regression effect was stripped from the
+    // decomposition input (ctx.seats_combined_orig empty -> s10==s16==s18);
+    // differ once TD/holiday/outliers are present (the original series carries
+    // them, the linearized decomposition input does not). combined_factor is the
+    // z/sa RATIO (s18); combined_add is z/sa (log/mult) or z-sa (additive) (s16).
+    std::vector<double> combined_factor;
+    std::vector<double> combined_add;
     bool ok = false;
 };
 

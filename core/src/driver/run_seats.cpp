@@ -6,14 +6,18 @@
 // STATUS: the historical-span decomposition (decode -> canonical denoms ->
 // SPECTRU -> DecompSpectrum -> ESTBUR's general-branch solve, see
 // core/src/seats/estbur.cpp) is wired and gates bit-exact for the whole SEATS
-// corpus, including general-shape p>0/bp>0 AND the imean!=0 drift case (a
-// Constant/mean regressor with d>=1; see the mean handling below). This
-// function only signals success/failure; tools/x13run_seats.cpp re-runs the
-// same (idempotent, side-effect-free) chain to dump the tables. Falls back to
-// seats_not_ported() for the remaining gaps (imean alongside other regressors,
-// or the chain simply failing).
+// corpus, including general-shape p>0/bp>0, the imean!=0 drift case (a
+// Constant/mean regressor, d-agnostic), AND a mean ALONGSIDE other regressors
+// (TD/outliers): the mean is added back onto the regression-adjusted series
+// while the other effects stay removed (see the mean handling below), and the
+// s16/s18 combined-adjustment factors refold the removed effects + lom/leap
+// prior (run_pre_model seats_combined_orig -> estbur combined_*). This function
+// only signals success/failure; tools/x13run_seats.cpp re-runs the same
+// (idempotent, side-effect-free) chain to dump the tables. Falls back to
+// seats_not_ported() only when the decomposition chain itself fails.
 #include "specparse/specparse.hpp"
-#include "gen/model.hpp"  // prm::PRGTCN (mean-regressor type)
+#include "gen/model.hpp"       // prm::PRGTCN (mean-regressor type), prm::DIFF
+#include "regarima/regvar.hpp" // ratpos (rebuild the undifferenced Constant column)
 #include "seats/canonical_denoms.hpp"
 #include "seats/decompspectrum.hpp"
 #include "seats/estbur.hpp"
@@ -27,9 +31,9 @@
 namespace x13 {
 
 namespace {
-// Signal that a specific SEATS path is not yet ported (imean!=0, or the
-// decomposition chain failing) -- most of SEATS is ported and gates bit-exact
-// (mirrors x11parts.cpp's local x11_not_ported).
+// Signal that a specific SEATS path is not yet ported (the decomposition chain
+// failing) -- most of SEATS is ported and gates bit-exact (mirrors
+// x11parts.cpp's local x11_not_ported).
 void seats_not_ported(X13Context& ctx, const char* what) {
     errhdr(ctx);
     writln(ctx, std::string("ERROR: ") + what + " not yet ported (SEATS decomposition).",
@@ -42,8 +46,9 @@ void seats_not_ported(X13Context& ctx, const char* what) {
 // seeds + za in the FCAST extension + wmf/wmb in ESTBUR's general branch
 // (analts.f:1969-1979, ansub1.f:2166-2181, ansub3.f zaf/zab). That path IS
 // ported in estbur.cpp and is d-agnostic (gated bit-exact for BOTH d>=1 drift
-// and d==0). Only a mean ALONGSIDE other regressors remains open (needs a
-// selective add-back; the caller fatals there). See tools/seats_general_scope.md.
+// and d==0). A mean ALONGSIDE other regressors (TD/outliers) is also gated: the
+// Constant's contribution is added back onto the fully-adjusted series while the
+// other effects stay removed (below). See tools/seats_general_scope.md.
 bool seats_has_mean(const X13Context& ctx) {
     const auto& M = ctx.model;
     for (int i = 1; i <= M.nb; ++i)
@@ -68,29 +73,37 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         return false;
     if (ctx.error.lfatal) return false;
 
-    // SEATS decomposes the series WITH the mean present (verified: the oracle's
-    // z reconstructs to raw log(airline) exactly, wm=mean of its differenced
-    // form). But estimation left ctx.series.tsrs = the regression-ADJUSTED
-    // series (y - X*b), which for a Constant regressor has the mean's drift
-    // removed. Restore the mean-inclusive series for the decomposition. For a
-    // Constant-ONLY model that is exactly the clean transformed series trnsrs
-    // (raw log); a mean alongside OTHER regressors (TD/outliers, which SEATS
-    // *does* remove) needs a selective add-back not yet ported -- fatal there.
+    // Imean!=0: SEATS decomposes the series with the mean (drift) kept IN, but
+    // with every OTHER regression effect (TD / holiday / outliers) removed --
+    // the linearized series arima.f:1337 hands to SEATS (Orixs = orixmv), where
+    // chkadj/regeff/adjreg strip the calendar/outlier effects and the Constant
+    // regressor is excluded by construction (regeff has no PRGTCN branch). After
+    // estimation ctx.series.tsrs = trnsrs - X*b has ALL effects removed,
+    // including the Constant's drift. Add the Constant's fitted contribution
+    // b_const * Xconst back -- Xconst is the regvar.cpp case-10 column, a column
+    // of ones filtered by 1/Diff(B) (i.e. the drift ramp) -- to restore exactly
+    // the mean while leaving the other regressors removed. For a Constant-only
+    // model this reproduces the clean transformed series trnsrs (raw log);
+    // alongside TD/outliers it keeps those removed. d-agnostic: the drift ramp +
+    // the wm centering in estbur carry the mean regardless of d.
     if (seats_has_mean(ctx)) {
-        bool only_mean = true;
-        for (int i = 1; i <= ctx.model.nb; ++i)
-            if (ctx.model.rgvrtp(i) != prm::PRGTCN) { only_mean = false; break; }
-        if (!only_mean) {
-            seats_not_ported(ctx,
-                "SEATS with a mean/constant regressor alongside other "
-                "regressors (mean add-back onto the regression-adjusted "
-                "series not yet ported)");
-            return false;
-        }
-        int ncp = ctx.mdldat.nspobs;
-        if (ncp > static_cast<int>(trnsrs.size())) ncp = static_cast<int>(trnsrs.size());
-        for (int i = 0; i < ncp; ++i) ctx.series.tsrs(i + 1) = trnsrs[i];
+        auto& M = ctx.model;
+        auto& D = ctx.mdldat;
+        int icon = 0;
+        for (int i = 1; i <= M.nb; ++i)
+            if (M.rgvrtp(i) == prm::PRGTCN) { icon = i; break; }
+        const int nsp = D.nspobs;
+        // Xconst = 1/Diff(B) applied to a column of ones (regvar.cpp:159-162).
+        std::vector<double> xc(static_cast<std::size_t>(nsp), 1.0);
+        ratpos(nsp, D.arimap.data(), M.arimal.data(), M.opr.data(),
+               M.mdl(prm::DIFF - 1), M.mdl(prm::DIFF) - 1, nsp, xc.data());
+        const double bcon = (icon > 0) ? D.b.data()[icon - 1] : 0.0;
+        for (int i = 0; i < nsp; ++i)
+            ctx.series.tsrs(i + 1) += bcon * xc[i];
     }
+    // (ctx.seats_combined_orig -- the raw original series feeding the s16/s18
+    // combined-adjustment factors -- is stashed in run_pre_model, where the raw
+    // untransformed a1 and the lom/leap prior are directly available.)
 
     // decode -> canonical denoms -> SPECTRU -> DecompSpectrum -> ESTBUR
     // (historical span only; see estbur.hpp for exact scope/limits).

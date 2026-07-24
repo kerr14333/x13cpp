@@ -304,6 +304,26 @@ def cfg_mean_d0_seats(s):
     return blocks
 
 
+def cfg_mean_td_seats(s):
+    # Constant (mean) regressor ALONGSIDE trading-day regressors: SEATS
+    # decomposes the series with the TD regression effect (and the automatic
+    # lom/leap prior that `td`+log triggers) removed but the mean (drift) kept
+    # in. s10 = the seasonal-only factor (linearized/sa, bit-exact); s16/s18 =
+    # the COMBINED adjustment factor (raw a1/sa) refold the removed TD regression
+    # AND the lom/leap prior. Exercises the mean add-back on the regression-
+    # ADJUSTED series plus the s16/s18 combined-factor path (run_seats /
+    # run_pre_model seats_combined_orig, estbur.cpp).
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(spec("regression", ["variables = (const td)"],
+                       save_key="regression"))
+    blocks.append(arima_airline())
+    blocks.append(estimate_block())
+    blocks.append(seats_block())
+    return blocks
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -328,6 +348,7 @@ CONFIGS = [
     ("sar-seats", cfg_sar_seats),
     ("mean-seats", cfg_mean_seats),
     ("mean-d0-seats", cfg_mean_d0_seats),
+    ("mean-td-seats", cfg_mean_td_seats),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 

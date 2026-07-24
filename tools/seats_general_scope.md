@@ -1,14 +1,35 @@
 # General-shape SEATS (p>0 / bp>0 / imean!=0) — port scope
 
-**STATUS: p>0, bp>0, AND imean!=0 (BOTH d>=1 drift AND d==0) ALL CLOSED (bit-
-exact + gated). *_ar2-seats ((2 1 0)(0 1 1), p>0) gate s10-s18 ~5e-15 on airline/
-payems/unrate; *_sar-seats ((0 1 1)(1 1 0), bp>0) gate on all 4 series;
-*_mean-seats ((0 1 1)(0 1 1)+const, d>=1) AND *_mean-d0-seats ((2 0 0)(0 1 1)+
-const, d==0) gate s10-s18 ~5e-15 on all 4 series. The p>0/bp>0 bugs were AR-
-polynomial signs (phis=+mo.phi, bphis=+mo.bphi). imean is d-AGNOSTIC (the "d==0
-trend unit root drops" theory was WRONG -- non-mean d==0 is itself bit-exact, so
-the mean fixes cover d==0 unchanged). Only imean alongside OTHER regressors (a
-selective mean add-back onto the regression-adjusted series) remains open.**
+**STATUS: p>0, bp>0, imean!=0 (BOTH d>=1 drift AND d==0), AND imean ALONGSIDE
+OTHER regressors (TD) ALL CLOSED (bit-exact + gated). *_ar2-seats ((2 1 0)(0 1 1),
+p>0) gate s10-s18 ~5e-15 on airline/payems/unrate; *_sar-seats ((0 1 1)(1 1 0),
+bp>0) gate on all 4 series; *_mean-seats ((0 1 1)(0 1 1)+const, d>=1) AND
+*_mean-d0-seats ((2 0 0)(0 1 1)+const, d==0) gate s10-s18 ~5e-15 on all 4 series;
+*_mean-td-seats ((0 1 1)(0 1 1)+const+td) gate s10-s18 on all 4. The p>0/bp>0
+bugs were AR-polynomial signs (phis=+mo.phi, bphis=+mo.bphi). imean is
+d-AGNOSTIC.**
+
+## imean ALONGSIDE other regressors (TD) — CLOSED. Two decoupled pieces:
+1. **Decomposition input z (s10-s13).** SEATS decomposes the series with the mean
+   (drift) kept IN but the OTHER regression effects removed. After estimation
+   ctx.series.tsrs = trnsrs - X*b has ALL effects removed (incl the Constant's
+   drift). Add back ONLY the Constant's fitted contribution b_const * Xconst,
+   where Xconst is the regvar.cpp case-10 column (ones filtered by 1/Diff(B), the
+   drift ramp, rebuilt via ratpos). This unifies with the Constant-only case
+   (Xconst-only -> z == trnsrs) and keeps TD removed. s10-s13 bit-exact ~5e-15.
+2. **Combined-adjustment factors s16/s18.** s10 = seasonal-only = linearized/sa,
+   but s16/s18 = COMBINED = raw a1/sa: they refold BOTH the removed TD regression
+   effect AND the automatic lom/leap PRIOR that `td`+log triggers (prioradj:
+   lpyear). Decisive: `trn` (the decomposition base) is the PRIOR-adjusted log
+   series, but s16 = raw-a1/SA (verified: log s16 = log(a1) - log(s11)). So the
+   combined factor needs the RAW original series, not trn. run_pre_model stashes
+   the raw a1 (original units) into ctx.seats_combined_orig when a prior or a
+   non-mean regressor is present; estbur computes combined_factor/combined_add =
+   a1/sa from it (falls back to the linearized z -> s10==s16==s18 when empty, so
+   the no-reg / Constant-only corpus stays bit-identical). WRONG TURN avoided:
+   `z = trnsrs - log(td_SAVE_table)` mismatches every February (the td save table
+   folds in the lom/leap term the design column βX_td does not) -- use the design
+   effect (add-back / raw a1), never the save table.
 
 ## imean!=0 (drift, d>=1) — CLOSED. What ACTUALLY fixed it (the plan below was
 partly wrong):

@@ -743,6 +743,14 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
     out.ir.resize(nz);
     out.seasonal_factor.resize(nz);
     out.seasonal_add.resize(nz);
+    out.combined_factor.resize(nz);
+    out.combined_add.resize(nz);
+    // s16/s18 refold the removed calendar/outlier effects: they are the original
+    // series (calendar+mean inclusive) over sa, not the linearized z over sa
+    // (=s10). ctx.seats_combined_orig carries that raw transformed series when
+    // regressors were stripped; when empty, s16/s18 collapse onto s10.
+    const std::vector<double>& corig = ctx.seats_combined_orig;
+    const bool have_corig = static_cast<int>(corig.size()) >= nz;
     if (is_log) {
         // SEATS multiplicative bias correction (sigsub.f:1539-1585, bias==1 --
         // the default for the log path per ansub9.f:1118). bias1c = mean of the
@@ -770,8 +778,15 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
             out.ir[i] = (denom != 0.0) ? out.sa[i] / denom : 1.0;
             out.seasonal_factor[i] =
                 (out.sa[i] != 0.0) ? zorig / out.sa[i] : 1.0;
-            // s10/s16 == s18 == z/sa in the log/multiplicative convention.
+            // s10 == z/sa in the log/multiplicative convention.
             out.seasonal_add[i] = out.seasonal_factor[i];
+            // s16/s18 == a1/sa (regression + prior refolded); == s10 when
+            // nothing was stripped (corig empty -> zc == zorig). corig is the
+            // raw series in ORIGINAL units, so no exp() here.
+            double zc = have_corig ? corig[i] : zorig;
+            out.combined_factor[i] =
+                (out.sa[i] != 0.0) ? zc / out.sa[i] : 1.0;
+            out.combined_add[i] = out.combined_factor[i];
         }
     } else {
         for (int i = 0; i < nz; ++i) {
@@ -786,6 +801,11 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
             out.seasonal_factor[i] =
                 (sa_i[i] != 0.0) ? z[i] / sa_i[i] : 1.0;
             out.seasonal_add[i] = z[i] - sa_i[i];
+            // s16/s18 == original/sa (ratio) and original-sa (additive);
+            // == s10 when no regressor was stripped (corig empty -> zc == z).
+            double zc = have_corig ? corig[i] : z[i];
+            out.combined_factor[i] = (sa_i[i] != 0.0) ? zc / sa_i[i] : 1.0;
+            out.combined_add[i] = zc - sa_i[i];
         }
     }
     out.ok = true;

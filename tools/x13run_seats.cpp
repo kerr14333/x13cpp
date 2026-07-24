@@ -209,13 +209,14 @@ int main(int argc, char** argv) {
         dump("s11", begspn, sp, n, est.sa.data());
         dump("s12", begspn, sp, n, est.trend.data());
         dump("s13", begspn, sp, n, est.ir.data());
-        // s10/s16/s18 -- session 13: all three save tags are the SAME
-        // seasonal-factor array (z/sa) for every corpus spec checked (see
-        // estbur.hpp's comment); dump all three from the one computed
-        // array.
+        // s10 = seasonal-only factor (linearized/sa); s16/s18 = combined
+        // adjustment factors (original/sa, calendar/outliers refolded). They
+        // coincide for a no-regressor or Constant-only model (est.combined_*
+        // collapses onto seasonal_*), and diverge once TD/holiday/outliers are
+        // stripped from the decomposition input (estbur.hpp / run_seats wiring).
         dump("s10", begspn, sp, n, est.seasonal_add.data());
-        dump("s16", begspn, sp, n, est.seasonal_add.data());
-        dump("s18", begspn, sp, n, est.seasonal_factor.data());
+        dump("s16", begspn, sp, n, est.combined_add.data());
+        dump("s18", begspn, sp, n, est.combined_factor.data());
         // s14 -- transitory component (SEATS). Non-trivial only for AR/cycle
         // models; airline-family est.cycle is all-1 (no transitory).
         dump("s14", begspn, sp, n, est.cycle.data());

@@ -167,6 +167,24 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
         padj[static_cast<std::size_t>(tpnt - 1)] = a1 / f;   // divsub (mult mode)
     }
 
+    // SEATS s16/s18 combined-adjustment source: stash the RAW original series
+    // (a1, original units) whenever a prior or a non-mean regressor will be
+    // stripped from the SEATS decomposition input. The decomposition runs on the
+    // linearized/prior-adjusted series, so s10 = linearized/sa but s16/s18 =
+    // a1/sa refold the removed regression effects AND the lom/leap prior (see
+    // estbur.cpp / x13context.hpp seats_combined_orig). Left empty when only a
+    // mean / no regressor is present, so s10==s16==s18 and the no-regressor /
+    // Constant-only SEATS corpus stays bit-identical.
+    if (ctx.captured.has_seats) {
+        bool nonmean_reg = false;
+        for (int i = 1; i <= ctx.model.nb; ++i)
+            if (ctx.model.rgvrtp(i) != prm::PRGTCN) { nonmean_reg = true; break; }
+        if (has_prior || nonmean_reg) {
+            ctx.seats_combined_orig.assign(static_cast<std::size_t>(nspobs), 0.0);
+            for (int i = 0; i < nspobs; ++i) ctx.seats_combined_orig[i] = aptr[i];
+        }
+    }
+
     // x11regression tdprior (Kswv=1): prior trading-day pre-adjustment of the
     // estimation input. In the oracle x11pt1 runs BEFORE arima (x11ari.f:99-133),
     // so the regARIMA likelihood sees the prior-TD-adjusted Sto (x11pt1.f:265-266

@@ -266,6 +266,25 @@ def test_seats_table(base: str, tag: str) -> None:
         ("expgs_mean-d0-seats", "s10"), ("expgs_mean-d0-seats", "s11"),
         ("expgs_mean-d0-seats", "s12"), ("expgs_mean-d0-seats", "s13"),
         ("expgs_mean-d0-seats", "s16"), ("expgs_mean-d0-seats", "s18"),
+        # mean-td-seats: a Constant (mean) regressor ALONGSIDE trading-day
+        # regressors -- the mean is kept in the decomposition (add-back onto the
+        # regression-adjusted series, run_seats.cpp) while the TD regression
+        # effect AND the automatic lom/leap prior are removed. s10 (seasonal-only
+        # factor) is bit-exact; s16/s18 (combined adjustment factor = raw a1/sa)
+        # refold BOTH the TD regression effect and the lom/leap prior
+        # (run_pre_model seats_combined_orig, estbur.cpp combined_*).
+        ("airline_mean-td-seats", "s10"), ("airline_mean-td-seats", "s11"),
+        ("airline_mean-td-seats", "s12"), ("airline_mean-td-seats", "s13"),
+        ("airline_mean-td-seats", "s16"), ("airline_mean-td-seats", "s18"),
+        ("payems_mean-td-seats", "s10"), ("payems_mean-td-seats", "s11"),
+        ("payems_mean-td-seats", "s12"), ("payems_mean-td-seats", "s13"),
+        ("payems_mean-td-seats", "s16"), ("payems_mean-td-seats", "s18"),
+        ("unrate_mean-td-seats", "s10"), ("unrate_mean-td-seats", "s11"),
+        ("unrate_mean-td-seats", "s12"), ("unrate_mean-td-seats", "s13"),
+        ("unrate_mean-td-seats", "s16"), ("unrate_mean-td-seats", "s18"),
+        ("expgs_mean-td-seats", "s10"), ("expgs_mean-td-seats", "s11"),
+        ("expgs_mean-td-seats", "s12"), ("expgs_mean-td-seats", "s13"),
+        ("expgs_mean-td-seats", "s16"), ("expgs_mean-td-seats", "s18"),
     }
     # No golden shipped => the oracle produced no such table, so there is no
     # parity target (not an engine gap). This covers the inadmissible-
