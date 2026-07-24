@@ -14,6 +14,7 @@
 #include "model.hpp"   // prm::POTLR
 #include "x11/loadxr.hpp"   // loadxr, xrg_clear_working (x11regression model store)
 
+#include <cctype>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -21,6 +22,23 @@
 namespace x13 {
 
 using namespace lexprm;
+
+// Push one captured value token, case-folding bare NAME tokens to lowercase.
+// X-13 spec input is case-insensitive (the Fortran folds keyword/enumerated-value
+// tokens before the ARGDIC/gtdcvc dictionary lookups), so uppercase specs -- e.g.
+// the BLS CES specs' `FUNCTION = LOG`, `SEASONALMA = (S3X5)`, `SAVE = (D10)` --
+// must map to the same options as lowercase. The raw `cap[0] == "log"` comparisons
+// in the readers below are case-sensitive, so fold NAME tokens here (the single
+// capture seam) rather than at every comparison site. QUOTE tokens (file paths,
+// titles, series names) are preserved verbatim -- those are genuinely
+// case-sensitive; INTGR/DBL are numeric.
+static void push_tok(const X13Context& ctx, std::vector<std::string>* cap) {
+    std::string s = cur_tok(ctx);
+    if (ctx.lex.nxtktp == NAME)
+        for (char& c : s) c = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(c)));
+    cap->push_back(std::move(s));
+}
 
 // Consume one argument value (the '=' was already eaten by gtarg). Mirrors the
 // token consumption of skparg.f; optionally records scalar/list element tokens.
@@ -33,13 +51,13 @@ static void consume_value(X13Context& ctx, std::vector<std::string>* cap) {
         while (L.nxtktp != clsgtp && L.nxtktp != EOFTOK) {
             if (cap && (L.nxtktp == NAME || L.nxtktp == QUOTE ||
                         L.nxtktp == INTGR || L.nxtktp == DBL))
-                cap->push_back(cur_tok(ctx));
+                push_tok(ctx, cap);
             lex(ctx);
         }
         lex(ctx);   // consume the closing bracket
     } else if (L.nxtktp == DBL || L.nxtktp == INTGR || L.nxtktp == NAME ||
                L.nxtktp == QUOTE) {
-        if (cap) cap->push_back(cur_tok(ctx));
+        if (cap) push_tok(ctx, cap);
         lex(ctx);
     } else {
         inpter(ctx, PERROR, L.lstpos.data() + 1,

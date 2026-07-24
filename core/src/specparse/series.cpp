@@ -365,6 +365,12 @@ void getsrs(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr, bool ldata,
             if (!t.empty()) ctx.captured.title = t;
             std::string fn = file.substr(0, static_cast<std::size_t>(nflchr > 0 ? nflchr : 0));
             ctx.captured.data_file = fn;
+            // series{ name = ... }: the oracle uses it as the save-table column
+            // header (Serlbl); absent, headers fall back to the run base name.
+            if (hvnam) {
+                std::string nm = srsnam.substr(0, static_cast<std::size_t>(nser > 0 ? nser : 0));
+                if (!nm.empty()) ctx.captured.series_name = nm;
+            }
         }
 
         inptok = inptok && locok;

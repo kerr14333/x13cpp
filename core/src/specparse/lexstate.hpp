@@ -113,6 +113,7 @@ struct ParseSettings {
     bool has_series = false;
     std::string data_file;
     std::string title;
+    std::string series_name;            // series{ name = ... } -- oracle save-table header label (Serlbl)
     std::string transform_function;     // transform{ function = ... }
     double transform_power = -999.0;     // transform{ power = ... } (DNOTST sentinel)
     std::vector<std::string> save_tables;   // all requested save=(...) extensions

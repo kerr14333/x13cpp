@@ -84,11 +84,14 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // avec must be 1-based over the span: avec[tpnt-1] == y(offset+tpnt).
     const double* aptr = ctx.arima.y.data() + offset;
 
-    // x12run.f: Serno (the header label) is the base name capped at 16 chars;
-    // the on-disk filename (Cursrs) keeps the full base name.
-    int nser = static_cast<int>(base.size());
+    // x12run.f: Serno (the header label) is the series{ name=... } field when
+    // present (the oracle's Serlbl), else the run base name; capped at 16 chars.
+    // The on-disk filename (Cursrs) keeps the full base name regardless.
+    const std::string& serlbl =
+        ctx.captured.series_name.empty() ? base : ctx.captured.series_name;
+    int nser = static_cast<int>(serlbl.size());
     if (nser > 16) nser = 16;
-    savtbl(ctx, LSRSSP, begspn, 1, nspobs, sp, aptr, base, base, nser);
+    savtbl(ctx, LSRSSP, begspn, 1, nspobs, sp, aptr, base, serlbl, nser);
     if (ctx.error.lfatal) return false;
 
     // Prior adjustment (adjsrs.f / prtadj.f, predefined lom/loq/lpyear priors).
@@ -239,12 +242,12 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
 
     // Table a2 (LTRNPA): the combined prior-adjustment factors (Sprior).
     if (has_prior && wants_save(ctx, "a2")) {
-        savtbl(ctx, LTRNPA, begspn, 1, nspobs, sp, fac.data(), base, base, nser);
+        savtbl(ctx, LTRNPA, begspn, 1, nspobs, sp, fac.data(), base, serlbl, nser);
         if (ctx.error.lfatal) return false;
     }
     // Table a3 (LTRNA3): the prior-adjusted data (Sto after divsub).
     if (has_prior && wants_save(ctx, "a3")) {
-        savtbl(ctx, LTRNA3, begspn, 1, nspobs, sp, padj.data(), base, base, nser);
+        savtbl(ctx, LTRNA3, begspn, 1, nspobs, sp, padj.data(), base, serlbl, nser);
         if (ctx.error.lfatal) return false;
     }
 
@@ -309,7 +312,7 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
         }
     }
     if (wants_save(ctx, "trn")) {
-        savtbl(ctx, LTRNDT, begspn, 1, nspobs, sp, trnsrs.data(), base, base, nser);
+        savtbl(ctx, LTRNDT, begspn, 1, nspobs, sp, trnsrs.data(), base, serlbl, nser);
         if (ctx.error.lfatal) return false;
     }
 
