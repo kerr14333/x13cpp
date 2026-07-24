@@ -292,7 +292,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                     }
                     inptok = false;
                 }
-                gt_composite(ctx, havsrs, lagr, inptok);
+                gt_composite(ctx, havsrs, havesp, lagr, inptok);
                 if (ctx.error.lfatal) return;
                 l1stcomp = true;
                 ctx.captured.spec_order.push_back("composite");

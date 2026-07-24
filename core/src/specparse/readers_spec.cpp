@@ -2075,7 +2075,8 @@ void gt_identify(X13Context& ctx, bool& inptok) {
 // component -- see composite/agr2.cpp), and then agr1() hands `O` over as the
 // series. `lagr` is getcmp's Locok out-parameter (gtinpt.f:790 uses it to set
 // havsrs), NOT the series{} comptype flag.
-void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok) {
+void gt_composite(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr,
+                  bool& inptok) {
     LexState& L = ctx.lex;
     constexpr int PARG = 13;
     static const char ARGDIC[] =
@@ -2089,7 +2090,6 @@ void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok) {
     static const int typptr[3] = {1, 5, 10};
 
     constexpr int YR = 1, MO = 2;   // 1-based date components (Fortran order)
-    bool havesp = true;             // the span comes from Itest, always known
     int& sp = ctx.model.sp;
     double* y = ctx.arima.y.data();
     int& nobs = ctx.arima.nobs;
@@ -2228,6 +2228,11 @@ void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok) {
         endspn[YR - 1] = ctx.agr.itest(5);
         endspn[MO - 1] = ctx.agr.itest(3);
         sp = ctx.agr.itest(1);
+        // getcmp.f:213 Havesp=T -- the composite spec supplies the seasonal
+        // period (from Itest) for every LATER spec in the file. Without this a
+        // composite total carrying x11{seasonalma=} fatals with "No seasonal
+        // period specified in series spec": there is no series{} to set it.
+        havesp = true;
         dfdate(endspn, begspn, sp, nspobs);
         nspobs = nspobs + 1;
         nobs = nspobs;

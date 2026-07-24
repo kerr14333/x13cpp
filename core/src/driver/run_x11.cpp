@@ -219,10 +219,20 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     for (int i = 0; i < nspobs; ++i) ctx.inpt.series(pos1ob + i) = aptr[i];
     for (int i = 0; i < norig; ++i)  ctx.inpt.orig(pos1ob + i) = aptr[i];
     // editor.f:2492 -- Orig2 gets the same copy. It is the buffer composite
-    // adjustment aggregates (agr2.f:267), and arima.f:1432-1441 later overlays
-    // the untransformed forecasts/backcasts onto its extension region (increment
-    // 2; with no extension it is exactly Orig).
+    // adjustment aggregates (agr2.f:267).
     for (int i = 0; i < norig; ++i)  ctx.inpt.orig2(pos1ob + i) = aptr[i];
+    // arima.f:1433-1441 -- overlay the UNTRANSFORMED forecasts (and backcasts)
+    // onto Orig2's extension region. Only the composite path reads this far out:
+    // it is what makes the aggregated O2/O5 (hence the indirect seasonal factors)
+    // defined over the appended forecast span. Without it those rows aggregate
+    // zeros. ctx.forecasts.fcst IS untfct (the original-scale point forecast).
+    if (nfcst > 0 && !ctx.forecasts.fcst.empty()) {
+        const int n = static_cast<int>(ctx.forecasts.fcst.size());
+        for (int i = ctx.x11ptr.posfob + 1; i <= ctx.x11ptr.posffc; ++i) {
+            const int k = i - ctx.x11ptr.posfob;      // 1-based into untfct
+            if (k <= n) ctx.inpt.orig2(i) = ctx.forecasts.fcst[k - 1];
+        }
+    }
 
     // ssprep.f: snapshot the model's converged parameters + the (still
     // unresolved, sentinel==6) x11 seasonal-filter settings BEFORE the main

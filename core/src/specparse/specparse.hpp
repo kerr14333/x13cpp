@@ -295,7 +295,8 @@ void gt_slidingspans(X13Context& ctx, bool& havesp, bool& inptok); // slidingspa
 void gt_history(X13Context& ctx, bool& havesp, bool& inptok);      // history{} (gtrvst)
 void gt_check(X13Context& ctx, bool& inptok);        // check{} (getchk)
 void gt_identify(X13Context& ctx, bool& inptok);     // identify{} (getid)
-void gt_composite(X13Context& ctx, bool& havsrs, bool& lagr, bool& inptok); // composite{}
+void gt_composite(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr,
+                  bool& inptok);   // composite{}
 void gt_metadata(X13Context& ctx, bool& inptok);     // metadata{} (gtmtdt)
 void gt_spectrum(X13Context& ctx, bool& inptok);     // spectrum{} (gtspec)
 void gt_pickmdl(X13Context& ctx, bool& inptok);      // pickmdl{} (gtautx)
