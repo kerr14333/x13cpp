@@ -407,5 +407,54 @@ diagnostics front (force / slidingspans / history) is now closed.
   (`sumry`/`vars`/`varlog`/`avedur` -> `f2.a*`/`b*`/`c*`/`d`/`e`/`f`/`g`, MCD,
   I/C + I/S ratios) and `f3cal.f` (M1-M11, Q, QM2); then the E tables (E1-E8,
   E11, E18), which need `change.f` and the Gudval good-obs machinery.
+- **The `seats{}` OPTION SURFACE — swept, and the sweep found real wrongness.**
+  `tools/spec_sweep.py --suite seats` showed only 6 of 22 parsed seats options
+  were ever read; 11 were parsed, stored, and silently ignored. Three parallel
+  worktree agents closed the front. **What generalizes: a "parsed but unread"
+  option is not automatically a wrong-numbers bug, and the difference is only
+  knowable by measurement.** Each flag was first proven to move the ORACLE
+  (on vs off) before any porting; the outcomes split three ways.
+  - **`imean` — CLOSED bit-exact.** The `ansub9.f:1072-1080` bridge DERIVES
+    `L_IMEAN` from the presence of a `Constant` regressor group; the missing
+    piece was `gtseat.f:124`'s explicit override (`Kmean=2-ivec(1)`). Key
+    distinction: `L_IMEAN` gates only whether SEATS MODELS a mean (the wm
+    centering, `za` in FCAST, `wmf/wmb` in ESTBUR) — it does NOT change which
+    series is decomposed, so run_seats' Constant add-back stays keyed on the
+    regressor. Oracle deltas 3.5e-4..8.5e-1; engine ~5e-15 both directions.
+  - **`hpcycle`/`hplan`/`hptarget`/`hprmls` — bridge CLOSED + gated, FILTER
+    walled, and NOT a wrongness bug.** s10-s18 are bit-identical under EVERY HP
+    setting (measured 0.000e+00); the entire blast radius is `.cyc`/`.ltt`,
+    which the port simply does not write. So no fatal guard was added — there
+    was nothing silently wrong to guard. The filter itself needs `HPTRCOMP` over
+    `1..Nz+lfor`, i.e. the unported SEATS forecast decomposition
+    (`ansub3.f:356-678`); map in **`tools/seats_hp_scouting.md`**.
+  - **`finite` (`Lfinit`) — decomposition invariance CLOSED + gated, output
+    surface scouted.** Measured over 24 oracle configurations: never moves any
+    table. What it DOES gate is ten save tables (`faf/fac/ftf/ftc/gaf/gac/gtf/
+    gtc/tac/ttc`) that the oracle otherwise **accepts the `save=` token for and
+    writes no file** — behind `sigex.f:1502 IF(Lfinit) CALL getDiag`, a ~7.6
+    kloc closure with no C++ at all. Deliberately not read; that IS faithful.
+  - **`noadmiss` — the one that WAS silently wrong.** The port applied the
+    inadmissibility verdict *nowhere* and decomposed anyway. On `expgs`+automdl
+    the oracle writes **0 rows**; the engine emitted 1902. Now fatals via the
+    two oracle tests (SPECTRU `qt1<0`, DecompSpectrum cycle `varwnc<0`).
+    `statseas` is walled by a ported CHANGEMODEL *predicate* rather than a
+    blanket fatal — and the trap there was that `analts.f:1125-1136` NEGATES
+    `Phi/Th/Bth(1)/Bphi(1)` before the call, so the naive sign fired on exactly
+    the complement of the oracle's real model rewrites.
+  - **CB-14** `seats{bias=0}` is validated, accepted, then overwritten with 1
+    (`analts.f:1647-1653`); **CB-15** `seats{hplan=}` silently re-enables an
+    explicit `hpcycle=no`; **CB-16** `finite=yes` zeroes `pctreductionyr1..5`
+    off an uninitialised COMMON.
+  - **Merge lesson:** three agents editing `seatopts.{hpp,cpp}` conflicted only
+    additively EXCEPT that a naive "keep both sides" resolution spliced one
+    agent's `seats_resolve_options` tail into the middle of another's
+    `seats_decomp_unported_reason` — after its `return`. Check FUNCTION
+    BOUNDARIES after resolving, not just that the markers are gone. All three
+    also independently claimed `CB-14`; renumber on merge.
+  - **`tests/corpus/generated/MANIFEST` covers ONLY genspecs.py's own output**
+    (21 configs x 4 series = 84), not the ~164 hand-authored specs in the same
+    directory. It does not need regenerating when specs are hand-added — and
+    running the generator to "refresh" it deletes them (the standing hazard).
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
