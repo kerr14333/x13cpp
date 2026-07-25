@@ -108,6 +108,13 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     // decode -> canonical denoms -> SPECTRU -> DecompSpectrum -> ESTBUR
     // (historical span only; see estbur.hpp for exact scope/limits).
     try {
+        // NOTE opts.finite (seats{finite=}, /setopt/ Lfinit) is deliberately NOT
+        // read here. It gates getDiag (sigex.f:1502) -- the finite-sample
+        // filter/gain/time-shift save tables, the SEATS savelog keys and the
+        // out=0 error-analysis print tables -- but never the decomposition:
+        // every table written in both modes is byte-identical across a 24-
+        // configuration oracle probe, gated by *_finite-seats. See the
+        // measurement note in seats/seatopts.hpp and tools/census_bugs.md CB-14.
         SeatsOptions opts = seats_resolve_options(ctx);
         SeatsModelOrders mo;
         if (seats_decode_model(ctx, opts.xl, mo)) {

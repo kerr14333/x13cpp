@@ -14,6 +14,9 @@ SeatsOptions seats_resolve_options(const X13Context& ctx) {
     if (!dpeq(o.epsiv2, prm::DNOTST)) r.epsiv = o.epsiv2;
     if (o.maxit2 != prm::NOTSET) r.maxit = o.maxit2;
     if (o.qmax2 != prm::NOTSET) r.qmax = o.qmax2;
+    // Lfinit is a plain LOGICAL in /setopt/ (no NOTSET sentinel): gtinpt.f:537
+    // seeds it F and gtseat.f:303 overwrites it only when the argument parses.
+    r.finite = o.lfinit;
     return r;
 }
 
