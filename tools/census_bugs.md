@@ -291,3 +291,28 @@ it. `Mtype==7` (3-term) is special-cased to `wtx11=1/3` and avoids the access.
 - **Port:** `core/src/x11/shrink.cpp` transcribes `lx11[mtype-1]` verbatim
   (same latent OOB for `mtype==6`), commented at the access site. Reproduce the
   bug if a shrink+stable path is ever gated.
+
+---
+
+## CB-14 — `seats{bias=0}` is validated, accepted, then silently overwritten with 1
+
+- **Where:** `oracle/fortran/analts.f:1647-1653`, on the SEATS options path
+  (`gtseat.f:280-293` → `Bias2` → `ansub9.f:1118-1122` → `L_Bias` → `Bias`).
+- **Severity:** `active` — every `seats{bias=0}` run is affected.
+- **Symptom:** `gtseat.f` explicitly validates the argument against `-1, 0, 1`
+  ("Bias must be either -1, 0, or 1.") and stores 0 in `Bias2`; `ansub9.f`
+  faithfully carries it into `L_Bias`. Then, before the decomposition,
+  `analts.f` does `IF (Bias .eq. 0) THEN Bias = 1` and prints
+  `BIAS SET EQUAL TO 1` into the `.out`. So the documented "no bias correction"
+  setting is unreachable: `sigsub.f:1535-1585`'s `bias1c = bias3c = 1` branch —
+  the one `bias=0` exists to select — is dead for user input, and
+  `seats{bias=0}` produces exactly the same s10–s18 as the `bias=1` default.
+  Only `bias=-1` (BIASCORR, `ansub4.f:1244-1581`) actually changes anything.
+- **Port:** reproduced verbatim in `core/src/seats/seatopts.cpp`
+  (`seats_resolve_options`: `r.bias = (bias2==NOTSET) ? 1 : bias2;` then
+  `if (r.bias == 0) r.bias = 1;`). Pinned by
+  `tests/parity/test_seats_tables.py`, corpus
+  `generated/{airline,payems,expgs,unrate}_bias0-seats` — those specs carry
+  `seats{bias=0}` and gate s10–s18 bit-exact (~5e-15) against goldens that are
+  numerically identical to the no-`bias` baseline. If someone ever "fixes" this
+  by making `bias=0` skip the `bias1c/bias2c/bias3c` correction, all four fail.

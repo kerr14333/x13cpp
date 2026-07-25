@@ -52,6 +52,7 @@
 #include "seats/canonical_denoms.hpp"
 #include "seats/decompspectrum.hpp"
 #include "seats/model_decode.hpp"
+#include "seats/seatopts.hpp"
 
 namespace x13 {
 
@@ -99,10 +100,13 @@ struct EstburResult {
 // estbur_historical -- z = ctx.series.tsrs(1..nspobs); bz = plain reversal.
 // mo/cd/comp must already be populated (seats_decode_model ->
 // seats_canonical_denoms -> spectru -> decomp_spectrum, the existing
-// x13run_seats.cpp probe chain).
+// x13run_seats.cpp probe chain). `opts` supplies L_IMEAN (the wm centering /
+// FCAST mean seed gate) -- resolved by seats_resolve_options, which honours an
+// explicit seats{imean=} override on top of the Constant-regressor derivation.
 void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
                         const SeatsCanonicalDenoms& cd,
-                        const SeatsComponentModels& comp, EstburResult& out);
+                        const SeatsComponentModels& comp,
+                        const SeatsOptions& opts, EstburResult& out);
 
 }  // namespace x13
 

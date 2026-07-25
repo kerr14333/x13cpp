@@ -455,7 +455,8 @@ std::vector<double> fcast_extend(const SeatsModelOrders& mo,
 
 void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
                         const SeatsCanonicalDenoms& cd,
-                        const SeatsComponentModels& comp, EstburResult& out) {
+                        const SeatsComponentModels& comp,
+                        const SeatsOptions& opts, EstburResult& out) {
     out = EstburResult{};
     int nz = ctx.mdldat.nspobs;
     if (nz <= 0) return;
@@ -474,12 +475,13 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
     // demeaned-series d+bd==0 branch (ansub3.f:121-134, zmean=DMEAN(z)) is the
     // separate d=0 gap -- run_seats still fatals mean+d==0; here d+bd>0 so
     // zaf/zab = za and zmean=0.
-    bool imean = false;
-    {
-        const auto& M = ctx.model;
-        for (int i = 1; i <= M.nb; ++i)
-            if (M.rgvrtp(i) == prm::PRGTCN) { imean = true; break; }
-    }
+    //
+    // L_IMEAN itself comes from seats_resolve_options (ansub9.f:1072-1080):
+    // the Constant-regressor derivation is the DEFAULT, but an explicit
+    // seats{imean=yes/no} overrides it in either direction -- the series SEATS
+    // decomposes is unchanged (regeff/adjreg never strip the Constant), only
+    // whether SEATS models it as having a mean.
+    const bool imean = opts.imean != 0;
     // wm = mean of the fully-differenced series (crmean default 0 -> plain mean
     // over all Nw points). Forward CALCFX centers Wd by wm; the backward Wd is
     // the sign-flipped reversal (kd=(-1)^(d+bd)), so its center is kd*wm and

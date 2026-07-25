@@ -25,6 +25,7 @@
 #include "seats/seatopts.hpp"
 #include "seats/spectru.hpp"
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -49,6 +50,15 @@ void seats_not_ported(X13Context& ctx, const char* what) {
 // and d==0). A mean ALONGSIDE other regressors (TD/outliers) is also gated: the
 // Constant's contribution is added back onto the fully-adjusted series while the
 // other effects stay removed (below). See tools/seats_general_scope.md.
+//
+// NOTE this is deliberately NOT L_IMEAN (SeatsOptions::imean). L_IMEAN decides
+// whether SEATS MODELS a mean (the wm centering / za seed inside estbur), and
+// seats{imean=yes/no} can override it in either direction; what SERIES gets
+// decomposed is settled upstream in regARIMA (chkadj/regeff/adjreg never strip
+// the Constant), so the add-back below stays keyed on the model actually
+// carrying a Constant regressor. Both mismatched combinations gate bit-exact
+// (*_imean-yes-seats: no Constant, L_IMEAN=1; *_imean-no-seats: Constant
+// present, L_IMEAN=0).
 bool seats_has_mean(const X13Context& ctx) {
     const auto& M = ctx.model;
     for (int i = 1; i <= M.nb; ++i)
@@ -111,6 +121,16 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         SeatsOptions opts = seats_resolve_options(ctx);
         SeatsModelOrders mo;
         if (seats_decode_model(ctx, opts.xl, mo)) {
+            // seats{} option scope guards (seatopts.cpp): CHANGEMODEL's model
+            // rewrite and seats{bias=-1}'s BIASCORR are unported, so fatal
+            // rather than decompose the wrong thing behind an OUTCOME: OK.
+            const bool is_log = std::fabs(ctx.arima.lam) < 1e-9;
+            if (const char* why =
+                    seats_model_unported_reason(opts, mo, is_log)) {
+                seats_not_ported(ctx, why);
+                return false;
+            }
+
             SeatsCanonicalDenoms cd;
             seats_canonical_denoms(mo, opts.rmod, opts.epsphi, cd);
 
@@ -122,8 +142,18 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
             SeatsComponentModels comp;
             decomp_spectrum(sr, cd, cd.is_close_to_td, comp);
 
+            // The admissibility verdict (seats{noadmiss=}): with an
+            // inadmissible decomposition the oracle either aborts SEATS
+            // outright (noadmiss=no) or APPROXIMATEs + re-estimates the model
+            // (noadmiss=yes). Both fatal here.
+            if (const char* why = seats_decomp_unported_reason(
+                    opts, sr.qt1, sr.ncycth, cd.ncyc, comp.varwnc)) {
+                seats_not_ported(ctx, why);
+                return false;
+            }
+
             EstburResult est;
-            estbur_historical(ctx, mo, cd, comp, est);
+            estbur_historical(ctx, mo, cd, comp, opts, est);
             if (est.ok) return true;
         }
     } catch (const std::exception&) {
