@@ -422,13 +422,27 @@ diagnostics front (force / slidingspans / history) is now closed.
   x11pt3 returns) and the `Tem` direct trend, a forced 13/5-term Henderson on
   Ckhs. All 24 `di()` roughness values match the oracle's printed table and all
   four savelog canaries (`r1mse`/`r1rmse`/`r2mse`/`r2rmse`) + `indtrendma` match
-  `total.udg`, gated at the oracle's own 3-decimal print precision. What is left
-  under the old inc3 heading is NOT composite-specific — the indirect E/F tables
-  need `x11pt4`, and the indirect D8/D9 F-tests need `ftest`/`kwtest`/`mstest`/
-  `combft`, both unported on the DIRECT side too; `prtagr`/`pragr2` are print
-  surface this port defers by design. (`cmpchi.f`/`cmpstr.f` were misfiled in the
-  scouting inventory: neither is composite.) Still open for composite: the SEATS
-  branch (`agr3s.f`) and pseudo-additive. Map:
+  `total.udg`, gated at the oracle's own 3-decimal print precision.
+  **Increment 4 closes the INDIRECT DIAGNOSTICS front, which x11pt4 had been
+  blocking** — `agr3.f:288-350`'s indirect D8/D9 SI ratios and seasonality test
+  battery, plus the second `x11pt4` pass at `x11ari.f:341`. Two Iagr==4 branches
+  inside x11pt4 had to land: `O5` (the aggregate with the indirect combined
+  calendar factor divided out, rebuilt at x11pt4.f:168) is the calendar-adjusted
+  original behind E8, and `O` rather than `Series` is the numerator of E18/EB.
+  Note that the D8 battery is **not** print surface here: ftest/kwtest/mstest/
+  combft write `/tests/ Test1,Test2`, which ARE the M7 inputs the indirect
+  `f3cal` reads, and vsfa's `Ratis` is `if2.is`. Gated two ways: the whole
+  `if2.*`/`if3.*` block against `total.udg` at its printed precision (**zero new
+  goldens** — it already shipped all of it, including `if2.fsb1`, which has no
+  indirect counterpart and is the DIRECT Fpres reprinted, a premise the gate
+  asserts), and 16 new save tables (`id8 id9 ie1 ie2 ie3 ie5 ip5 ie6 ip6 ie7 ip7
+  ie8 ip8 iee i18 ita`) at ~5e-15. Harness gotcha found here: `x13run_composite`'s
+  `dump()` anchored its dates on the RANGE START, which is wrong for the change
+  tables (they begin at `Pos1ob+1`) — it now takes a separate `anchor`, the same
+  fix `x13run_x11` needed for appendbcst. `prtagr`/`pragr2` are print surface this
+  port defers by design. (`cmpchi.f`/`cmpstr.f` were misfiled in the scouting
+  inventory: neither is composite.) Still open for composite: the SEATS branch
+  (`agr3s.f`), pseudo-additive, and the forced/rounded indirect series. Map:
   **`tools/composite_scouting.md`**.
 - **x11pt4 increment 1 — the F2 SEASONALITY TEST BATTERY — CLOSED (bit-exact).**
   `x11pt4.f` was never ported at all, so the whole diagnostics front the .udg

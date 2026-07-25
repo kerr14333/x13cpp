@@ -5,11 +5,14 @@
 // plus the DIRECT series/trend pair (Orig2/Tem) that agr2's Iagr==4 branch
 // compares them against.
 //
+// Also here: the indirect D8/D9 SI ratios and the seasonality test battery
+// (agr3.f:288-350). Those are NOT print surface -- ftest/kwtest/mstest/combft
+// write /tests/ Test1,Test2, which are the M7 inputs the x11pt4 pass that runs
+// next (x11ari.f:341) reads for the indirect Q, and vsfa's Ratis is `if2.is`.
+//
 // Not ported here, and none of it composite-specific (tools/composite_scouting.md):
-// the title page and component table (Prttab(LCMPAH)) and the indirect D8/D9 SI
-// diagnostics -- whose ftest/kwtest/mstest/combft are deferred no-ops on the
-// DIRECT side too -- and the E-table family, since x11pt4 is unported for both
-// adjustments. The forced/rounded indirect series is likewise still open.
+// the title page and component table (Prttab(LCMPAH)). The forced/rounded
+// indirect series is likewise still open.
 #include "composite/agr3.hpp"
 
 #include "common/x13context.hpp"
@@ -18,6 +21,11 @@
 #include "specparse/specparse.hpp"   // addate, copy, setdp
 #include "x11/x11drv.hpp"            // vtc
 #include "x11/x11filt.hpp"           // divsub, addmul
+#include "x11/x11seas.hpp"           // vsfa (the I/S ratios behind if2.is)
+#include "x11/x11tests.hpp"          // ftest, kwtest, mstest, combft
+
+#include <cmath>
+#include <vector>
 
 namespace x13 {
 
@@ -171,9 +179,56 @@ void agr3(X13Context& ctx, const int* begspn) {
            pos1bk, posffc, muladd);
     divsub(ctx.x11fac.faccal.data(), as.o2.data(), as.o5.data(), pos1bk, posffc, muladd);
 
+    // --- agr3.f:288-334 -- the indirect D8 SI ratios and the seasonality test
+    // battery. These are NOT print surface: ftest/kwtest/mstest write /tests/,
+    // combft turns that into Test1/Test2, and Test1/Test2 ARE the M7 inputs that
+    // x11pt4's f3cal reads for the indirect Q. vsfa's Ratis is `if2.is`.
+    double* stsie = ctx.work3_stsie.data();
+    divsub(stsie, ctx.inpt.series.data(), stc2in.data(), pos1ob, posfob, muladd);
+    divsub(ctx.x11srs.stsi.data(), stsie, stexx, pos1ob, posfob, muladd);
+
+    // agr3.f:298-302 -- the D8 tests run on the SI with any indirect AO outlier
+    // taken back out. kwtest SORTS its argument in place, so the moving-
+    // seasonality input is rebuilt from scratch afterwards (agr3.f:324), not
+    // reused.
+    std::vector<double> temp4(PLEN, 0.0);
+    if (ag.lindot && ag.lindao)
+        divsub(temp4.data(), stsie, faoind.data(), pos1bk, posffc, muladd);
+    else
+        copy(stsie, posffc, 1, temp4.data());
+    ftest(ctx, temp4.data(), pos1ob, posfob, ny, 0);
+    kwtest(ctx, temp4.data(), pos1ob, posfob, ny);
+    divsub(temp4.data(), ctx.inpt.series.data(), stc2in.data(), pos1ob, posfob,
+           muladd);
+    mstest(ctx, temp4.data(), pos1ob, posfob, ny);
+    combft(ctx);
+
+    // agr3.f:334 -- the I/S ratios. NB the range is Pos1ob..Posfob here, where
+    // x11pt3's own vsfa call uses Pos1bk..Posfob.
+    vsfa(ctx.x11srs.stsi.data(), pos1ob, posfob, ny, muladd, ctx.x11msc.psuadd,
+         opt.rati.data(), opt.ratis);
+
+    // agr3.f:340-350 -- the D9 final replacement values: the modified SI, but
+    // only where the extreme-value factor actually moved the unmodified SI by at
+    // least 1e-4 in relative terms. Everywhere else the table is blank (DNOTST).
+    // Nothing downstream reads this; it is the id8/id9 save pair.
+    ctx.agr_id8.assign(stsie, stsie + PLEN);
+    ctx.agr_id9.assign(PLEN, prm::DNOTST);
+    const double ebar = 1.0 - static_cast<double>(muladd);
+    for (int i = pos1ob; i <= posfob; ++i) {
+        double tmpe = stexx[i - 1] - ebar;
+        if (dpeq(tmpe, 0.0)) continue;
+        tmpe = tmpe / stsie[i - 1];
+        if (std::abs(tmpe) >= 0.0001)
+            ctx.agr_id9[static_cast<std::size_t>(i - 1)] = ctx.x11srs.stsi(i);
+    }
+
     // The published indirect trend lives in stc2in, not Stc (which still holds
     // the pre-level-shift filter output). Hand it to the caller.
     ctx.agr_stc2in.assign(stc2in.begin(), stc2in.end());
+    // agr3.f:598 -- and publish it into Stc2 as well, because the x11pt4 pass
+    // x11ari.f:341 runs next reads Stc2 for the indirect E7.
+    copy(stc2in.data(), posffc, -1, ctx.x11srs.stc2.data());
 }
 
 }  // namespace x13

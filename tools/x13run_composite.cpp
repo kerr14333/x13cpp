@@ -49,12 +49,18 @@ std::string trim(const std::string& s) {
 // Emit one table section over [first,last] (1-based positions into arr) into
 // `out`. Buffered rather than printed so `OUTCOME:` can lead the output the way
 // every other harness does -- the outcome is only known after the last spec.
+// `anchor` is the buffer position that corresponds to begspn; it differs from the
+// range start whenever the range does not begin at Pos1ob (the change tables start
+// one period in, backcast-widened ranges one or more periods before it). Defaults
+// to the range start, which is the ordinary case.
 void dump(std::string& out, const std::string& prefix, const char* tag,
-          const int* begspn, int sp, int pos1ob, int last, const double* arr) {
+          const int* begspn, int sp, int pos1ob, int last, const double* arr,
+          int anchor = -1) {
     char buf[128];
+    if (anchor < 0) anchor = pos1ob;
     for (int i = pos1ob; i <= last; ++i) {
         int idate[2];
-        x13::addate(begspn, sp, i - pos1ob, idate);
+        x13::addate(begspn, sp, i - anchor, idate);
         std::snprintf(buf, sizeof buf, "%s %04d%02d %.15E\n", tag, idate[0],
                       idate[1], arr[i - 1]);
         out += prefix;
@@ -192,6 +198,146 @@ int main(int argc, char** argv) {
                     std::snprintf(cbuf, sizeof cbuf, "cmpstat %d %.15E\n", k, di[k]);
                     out += cbuf;
                 }
+            }
+            // The INDIRECT D8/D9 SI ratios (agr3.f:288-350) and the indirect
+            // Part-E family (the same x11pt4_etables, run over agr3's buffers).
+            // Names follow filext.var's indirect block: id8/id9, ie1-ie3, the
+            // ie5-ie8 change tables with their ip* percent twins, iee (E11),
+            // i18 (E18) and ita (the total adjustment factors, EB).
+            if (!ctx.agr_id8.empty()) {
+                dump(out, prefix, "id8", begspn, sp, pos1ob, posfob, ctx.agr_id8.data());
+                dump(out, prefix, "id9", begspn, sp, pos1ob, posfob, ctx.agr_id9.data());
+            }
+            if (ctx.x11_etables_set) {
+                dump(out, prefix, "ie1", begspn, sp, pos1ob, posfob,
+                     ctx.adxser.stome.data());
+                dump(out, prefix, "ie2", begspn, sp, pos1ob, posfob,
+                     ctx.adxser.stcime.data());
+                dump(out, prefix, "ie3", begspn, sp, pos1ob, posfob,
+                     ctx.mq5a_stime.data());
+                // The change tables start one period in (x11pt4.f's mfda), and
+                // each has a percent twin that is the SAME series scaled x100 in
+                // multiplicative/log-additive mode and unscaled in additive mode
+                // (pragr2.f passes Muladd.ne.1 as punch's percent flag).
+                const int chg1 = pos1ob + 1;
+                const double pscale = (ctx.x11opt.muladd != 1) ? 100.0 : 1.0;
+                struct { const char* t; const char* p; const std::vector<double>* v; }
+                    chg[] = {{"ie5", "ip5", &ctx.x11_e5}, {"ie6", "ip6", &ctx.x11_e6},
+                             {"ie7", "ip7", &ctx.x11_e7}, {"ie8", "ip8", &ctx.x11_e8}};
+                for (const auto& c : chg) {
+                    if (c.v->empty()) continue;
+                    dump(out, prefix, c.t, begspn, sp, chg1, posfob, c.v->data(),
+                         pos1ob);
+                    for (int i = chg1; i <= posfob; ++i) {
+                        int idate[2];
+                        x13::addate(begspn, sp, i - pos1ob, idate);
+                        std::snprintf(cbuf, sizeof cbuf, "%s%s %04d%02d %.15E\n",
+                                      prefix.c_str(), c.p, idate[0], idate[1],
+                                      (*c.v)[i - 1] * pscale);
+                        out += cbuf;
+                    }
+                }
+                dump(out, prefix, "iee", begspn, sp, pos1ob, posfob,
+                     ctx.x11_e11.data());
+                const int e18_frst = ctx.tbllog.savbct ? ctx.x11ptr.pos1bk : pos1ob;
+                const int e18_last = ctx.tbllog.savfct ? ctx.x11ptr.posffc : posfob;
+                dump(out, prefix, "i18", begspn, sp, e18_frst, e18_last,
+                     ctx.x11_e18.data(), pos1ob);
+                dump(out, prefix, "ita", begspn, sp, e18_frst, e18_last,
+                     ctx.x11_eb.data(), pos1ob);
+            }
+            // The INDIRECT x11pt4 diagnostics (x11ari.f:341) -- the .udg's
+            // `if2.*` / `if3.*` block. Same field layout as the direct `f2.*` /
+            // `f3.*` in tools/x13run_x11.cpp; only the source snapshot differs.
+            if (ctx.agr_f3_set) {
+                const x13::tests_cmn& t = ctx.agr_f2tests;
+                const x13::inpt2_cmn& q = ctx.agr_f2inpt2;
+                const x13::work2_cmn& w = ctx.agr_f2work2;
+                // Fpres/P3 is the B1 F-test from x11pt2, which has no indirect
+                // counterpart: the oracle prints the DIRECT value under `if2.fsb1`.
+                std::snprintf(cbuf, sizeof cbuf, "if2.fsb1 %.3f %.2f\n", t.fpres, t.p3);
+                out += cbuf;
+                std::snprintf(cbuf, sizeof cbuf, "if2.fsd8 %.3f %.2f\n", t.fstabl, t.p1);
+                out += cbuf;
+                std::snprintf(cbuf, sizeof cbuf, "if2.kw %.3f %.2f\n", t.chikw, t.p5);
+                out += cbuf;
+                std::snprintf(cbuf, sizeof cbuf, "if2.msf %.3f %.2f\n", t.fmove, t.p2);
+                out += cbuf;
+                std::snprintf(cbuf, sizeof cbuf, "if2.idseasonal %s\n",
+                              t.iqfail == 1 ? "yes" : "no");
+                out += cbuf;
+                std::string line;
+                for (int i = 1; i <= sp; ++i) {
+                    std::snprintf(cbuf, sizeof cbuf, "if2.a%02d", i);
+                    line = cbuf;
+                    const double v[11] = {q.obar(i), q.cibar(i), q.ibar(i), q.cbar(i),
+                                          q.sbar(i), w.pbar(i), q.tdbar(i), q.smbar(i),
+                                          q.ombar(i), q.cimbar(i), q.imbar(i)};
+                    for (double d : v) {
+                        std::snprintf(cbuf, sizeof cbuf, " %.15E", d);
+                        line += cbuf;
+                    }
+                    out += line + "\n";
+                }
+                for (int i = 1; i <= sp; ++i) {
+                    std::snprintf(cbuf, sizeof cbuf, "if2.b%02d", i);
+                    line = cbuf;
+                    const double v[6] = {q.isq(i), q.csq(i), q.ssq(i), w.psq(i),
+                                         q.tdsq(i), q.osq2(i)};
+                    for (double d : v) {
+                        std::snprintf(cbuf, sizeof cbuf, " %.15E", d);
+                        line += cbuf;
+                    }
+                    out += line + "\n";
+                }
+                for (int i = 1; i <= sp; ++i) {
+                    std::snprintf(cbuf, sizeof cbuf, "if2.c%02d", i);
+                    line = cbuf;
+                    const double v[12] = {q.obar2(i), q.osd(i), q.ibar2(i), q.isd(i),
+                                          q.cbar2(i), q.csd(i), q.sbar2(i), q.ssd(i),
+                                          q.cibar2(i), q.cisd(i), q.smbar2(i), q.smsd(i)};
+                    for (double d : v) {
+                        std::snprintf(cbuf, sizeof cbuf, " %.15E", d);
+                        line += cbuf;
+                    }
+                    out += line + "\n";
+                }
+                std::snprintf(cbuf, sizeof cbuf, "if2.d %.15E %.15E %.15E %.15E\n",
+                              q.adrci, q.adri, q.adrc, q.adrmcd);
+                out += cbuf;
+                line = "if2.e";
+                for (int i = 1; i <= sp; ++i) {
+                    std::snprintf(cbuf, sizeof cbuf, " %.15E", q.smic(i));
+                    line += cbuf;
+                }
+                out += line + "\n";
+                std::snprintf(cbuf, sizeof cbuf, "if2.mcd %d\n", ctx.agr_f2mcd);
+                out += cbuf;
+                std::snprintf(cbuf, sizeof cbuf,
+                              "if2.f %.15E %.15E %.15E %.15E %.15E %.15E\n",
+                              q.vi, q.vc, q.vs, q.vp, q.vtd, q.rv);
+                out += cbuf;
+                line = "if2.g";
+                for (int i = 1; i <= sp + 2; ++i) {
+                    std::snprintf(cbuf, sizeof cbuf, " %.15E", w.autoc(i));
+                    line += cbuf;
+                }
+                out += line + "\n";
+                std::snprintf(cbuf, sizeof cbuf, "if2.ic %.15E\n", ctx.agr_f2ratic);
+                out += cbuf;
+                std::snprintf(cbuf, sizeof cbuf, "if2.is %.15E\n", ctx.agr_f2ratis);
+                out += cbuf;
+                for (int i = 1; i <= w.nn; ++i) {
+                    if (i == 6 && ctx.x11opt.kfulsm >= 2) continue;
+                    std::snprintf(cbuf, sizeof cbuf, "if3.m%02d %.15E\n", i, w.qu(i));
+                    out += cbuf;
+                }
+                std::snprintf(cbuf, sizeof cbuf, "if3.q %.15E\n", w.qual);
+                out += cbuf;
+                std::snprintf(cbuf, sizeof cbuf, "if3.qm2 %.15E\n", w.q2m2);
+                out += cbuf;
+                std::snprintf(cbuf, sizeof cbuf, "if3.fail %d\n", w.kfail);
+                out += cbuf;
             }
         } else {
             dump(out, prefix, "d10", begspn, sp, sf_frst, sf_last, ctx.x11srs.sts.data());

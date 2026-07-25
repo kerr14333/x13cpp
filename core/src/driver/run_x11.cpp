@@ -593,6 +593,24 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
         ctx.agr_direct_d13.assign(ctx.x11srs.sti.data(), ctx.x11srs.sti.data() + PLEN_D);
         agr3(ctx, begspn_full);
         if (ctx.error.lfatal) return false;
+        // x11ari.f:341 -- the SAME x11pt4 over the indirect buffers agr3 just
+        // installed, producing the `if2.*`/`if3.*` diagnostics block. Its inputs
+        // are the indirect analogues: Sti is already the final indirect irregular
+        // and Stc the pre-level-shift trend filter output (Stc2 the folded,
+        // published one), so there is no internal-vs-published split to undo the
+        // way x11pt3 needs on the direct side. The direct block was snapshotted
+        // above, so overwriting /inpt2/, /work2/ and Mcd here is safe.
+        x11pt4_etables(ctx, ctx.x11srs.stc.data(), ctx.x11srs.stc2.data(),
+                       /*lttc=*/false);
+        if (x11pt4_partf(ctx, ctx.x11srs.sti.data(), ctx.x11srs.stc.data())) {
+            ctx.agr_f2inpt2 = ctx.inpt2;
+            ctx.agr_f2work2 = ctx.work2;
+            ctx.agr_f2tests = ctx.tests;
+            ctx.agr_f2mcd = ctx.x11opt.mcd;
+            ctx.agr_f2ratic = ctx.x11opt.ratic;
+            ctx.agr_f2ratis = ctx.x11opt.ratis;
+            ctx.agr_f3_set = true;
+        }
         // x11ari.f:372-373: agr3 leaves Iagr==4, which routes the SAME agr2 call
         // into its comparison-statistics branch -- direct vs indirect roughness,
         // and the restore of the direct pointer geometry.

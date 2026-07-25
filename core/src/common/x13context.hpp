@@ -250,6 +250,21 @@ struct X13Context {
     // `indtrendma`. Empty unless a composite total actually ran.
     std::vector<double> agr_cmpstat;
     int agr_indtrendma = 0;
+    // The INDIRECT x11pt4 diagnostics (x11ari.f:341's second x11pt4 call, run on
+    // the buffers agr3 installs) -- the .udg's `if2.*` / `if3.*` block. Same
+    // snapshot discipline as the x11_f2* direct set: they share the live /inpt2/,
+    // /work2/, /tests/ and Mcd/Ratic/Ratis, and the indirect pass overwrites them.
+    inpt2_cmn agr_f2inpt2{};
+    work2_cmn agr_f2work2{};
+    tests_cmn agr_f2tests{};
+    int agr_f2mcd = 0;
+    double agr_f2ratic = 0.0;
+    double agr_f2ratis = 0.0;
+    bool agr_f3_set = false;
+    // The indirect D8 / D9 SI-ratio tables (agr3.f:288-350): the unmodified SI and
+    // the final replacement values. Save surface only -- nothing downstream reads
+    // them (the tests above run on their own AO-adjusted copy).
+    std::vector<double> agr_id8, agr_id9;
     // Final regARIMA residuals (arima.f's `a`, length `resid_na`) captured after
     // estimation for the residual-spectrum diagnostic (spr, spcrsd.f). Their
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).

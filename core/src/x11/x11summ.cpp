@@ -324,12 +324,23 @@ void x11pt4_etables(X13Context& ctx, const double* stc_int,
     const double* stcime = ctx.adxser.stcime.data();
     bool* gudval = ctx.goodob.gudval.data();
 
+    // x11pt4.f:168 -- on the INDIRECT pass the calendar-adjusted original is not
+    // Stocal (that belongs to the direct run) but the aggregate O with the
+    // indirect combined calendar factor divided out, rebuilt into O5 here.
+    const bool cmp = (ctx.agr.iagr >= 4);
+    if (ctx.agr.iagr == 4)
+        divsub(ctx.agrsrs.o5.data(), ctx.agrsrs.o.data(),
+               ctx.x11fac.faccal.data(), pos1ob, posffc, muladd);
+    // The calendar-adjusted original, whichever of the two that is: it is both
+    // chkzro's fifth series and E8's input.
+    const double* stocal = cmp ? ctx.agrsrs.o5.data() : ctx.orisrs.stocal.data();
+
     // x11pt4.f:169-176 -- with percent changes to compute and a pseudo-additive
     // adjustment or a user constant in play, re-check for zeroes first (a zero
     // denominator would make every change DNOTST from that point on).
     if (muladd != 1 && (ctx.x11msc.psuadd || !dpeq(ctx.adj.cnstnt, prm::DNOTST)))
         chkzro(series, stci, ctx.adxser.stci2.data(), ctx.adxser.stcirn.data(),
-               ctx.orisrs.stocal.data(), pos1bk, posffc, opt.kfulsm, frc.iyrt,
+               stocal, pos1bk, posffc, opt.kfulsm, frc.iyrt,
                frc.lrndsa, gudval);
 
     const int mfda = pos1ob + 1;
@@ -370,9 +381,9 @@ void x11pt4_etables(X13Context& ctx, const double* stc_int,
         (lttc && adj.adjtc == 1 && !adj.fintc);
     change(e7_from_stc2 ? stc2_int : stc_int, ctx.x11_e7.data(), mfda, posfob,
            muladd, gudval);
-    // E8: changes in the calendar-adjusted original series.
-    change(ctx.orisrs.stocal.data(), ctx.x11_e8.data(), mfda, posfob, muladd,
-           gudval);
+    // E8: changes in the calendar-adjusted original series (x11pt4.f:256-260 --
+    // O5 on the indirect pass, Stocal on the direct one).
+    change(stocal, ctx.x11_e8.data(), mfda, posfob, muladd, gudval);
 
     // x11pt4.f:265-268 -- with a user constant, every observation counts as good
     // from here on (the constant shifts the series away from zero). gudbak is
@@ -395,7 +406,6 @@ void x11pt4_etables(X13Context& ctx, const double* stc_int,
     // which is what makes the oracle also emit the total-factor table below.
     ctx.x11_e18.assign(PLEN, 0.0);
     bool pre18b = false;
-    const bool cmp = (ctx.agr.iagr >= 4);
     const double* obs = cmp ? ctx.agrsrs.o.data() : series;
     for (int i = pos1ob; i <= posffc; ++i) {
         const double thisob = obs[i - 1];
