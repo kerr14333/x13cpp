@@ -10,7 +10,7 @@
 
 #include "common/x13context.hpp"
 #include "x11/x11filt.hpp"          // divsub, addmul, setmv, logar, averag
-#include "x11/x11seas.hpp"          // vsfa, vsfb
+#include "x11/x11seas.hpp"          // vsfa, vsfb, vsfc
 #include "x11/x11reg.hpp"           // x11mdl_td (x11regression irregular regression)
 #include "x11/loadxr.hpp"           // loadxr (regARIMA <-> x11reg model swap)
 #include "x11/x11xtrm.hpp"          // xtrm, vtest, entsch
@@ -800,11 +800,25 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
             addmul(sts, ctx.x11fac.facsea.data(), sts, pos1bk, posffc, muladd);
         if (adj.adjso == 1)
             addmul(sts, ctx.x11fac.facso.data(), sts, pos1bk, posffc, muladd);
+        // x11pt3.f:280 -- x11{centerseasonal=yes}: re-center the COMBINED
+        // seasonal (X-11 seasonal + the regARIMA seasonal/SO factors just folded
+        // in) with a 2xNy moving average. vsfc itself was already ported (it is
+        // vsfb's own tail); only this call site was missing, so the argument was
+        // accepted and silently dropped. Reachable only from inside this
+        // Adjsea/Adjso block, which is why it stayed invisible: without a
+        // seasonal or seasonal-outlier regressor the oracle does not center
+        // either, and on/off are identical.
+        // NOT GATED, and currently UNREACHABLE. Adjsea/Adjso==1 needs a seasonal
+        // or SO regressor (chkadj.f:165), and every such spec fatals earlier on
+        // the separate "x11pt2 user/seasonal/cycle/x11reg factor combine+emit"
+        // wall -- so there is no spec that both makes Lcentr live in the oracle
+        // (measured: 2.06e-3 in d10/d11/d13/d16 with so1955.1) and runs here.
+        // The transcription is a direct one of x11pt3.f:280 against a vsfc that
+        // is itself already gated via vsfb; treat it as unverified until that
+        // x11pt2 wall lifts, at which point it needs a real gate.
         if (ctx.x11msc.lcentr) {
-            // vsfc centering of the combined seasonal (x11pt3.f:280) -- deferred:
-            // no gated spec sets seasonalcentering, so keep it walled for now.
-            x11_not_ported(ctx, "x11pt3 combined-seasonal centering (Lcentr)");
-            return;
+            std::vector<double> temp(static_cast<std::size_t>(PLEN), 0.0);
+            vsfc(sts, pos1bk, posffc, ny, opt.lter.data(), temp.data(), muladd);
         }
     }
     if (opt.ishrnk > 0) {
