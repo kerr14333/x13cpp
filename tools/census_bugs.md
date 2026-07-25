@@ -500,3 +500,46 @@ needs `Muladd != 1` plus `x11{constant=}`, and is unreachable in this port.
 
 - **Port:** `core/src/x11/x11summ.cpp`, `x11pt4_partf`, the E2 restore block.
   Transcribed verbatim with the reversal commented.
+
+## CB-20 — the `.tdh` (R 9.B) save rows write their separators into the wrong buffer
+
+`revdrv.f`'s trading-day-coefficient history builds each save row's *values* in
+`outARMA` but each row's *tab separators* in `outTDrg`, then writes `outARMA`
+(`revdrv.f:1172-1191`):
+
+```fortran
+         CALL itoc(rdbdat,outARMA,ipos)
+         DO k=1,NrvTDrg
+          outTDrg(ipos:ipos)=TABCHR      ! <-- separator into outTDrg ...
+          ipos=ipos+1
+          CALL dtoc(CncTDrg(k,Revptr),outARMA,ipos)   ! ... value into outARMA
+         END DO
+         WRITE(fh,1120)outARMA(1:ipos-1)
+```
+
+`ipos` still advances, so the emitted row has a one-character gap where each tab
+belongs, filled with whatever `outARMA` happened to hold. The header row two
+lines above is written from `outTDrg` and *is* fully tab-separated, so the file's
+columns do not line up with its own header. Measured on
+`tests/corpus/extra/airline_history-model` and a `estimates=(td)`-only variant of
+it:
+
+- with `estimates=(aic arma td)`, the R 9.A block ran first and left tabs in
+  `outARMA`, so the row reads `195501<TAB>-0.8246...E-02 -0.1155...E-02 ...` —
+  one inherited tab, then single spaces.
+- with `estimates=(td)` alone `outARMA` was never touched, and the same row reads
+  `195501<NUL>-0.8246...E-02 ...` — a literal NUL byte.
+
+So the separator in a `.tdh` file depends on which *other* history tables were
+requested. The values themselves are correct and in the right order.
+
+Reachability: any `history{estimates=(td) save=(tdh)}` run.
+
+- **Port:** not reproduced, and deliberately so. This is a defect in the Fortran's
+  assembly of an output FILE's character buffer, and this port writes no save
+  files (results live on the result object; the harness formats them). The
+  numbers and their column order are ported faithfully in
+  `core/src/driver/run_history.cpp`'s `rvtdrg`; the gate
+  (`tests/parity/test_history_tables.py::test_history_model_table`) therefore
+  takes the column COUNT from the golden's tab-separated header and reads the
+  data rows by whitespace split.

@@ -327,3 +327,96 @@ def test_history_fcst_meanssfe(base: str) -> None:
         assert err <= _FCST_RTOL_MEAN, (
             f"{base}: meanssfe lead {k} rel err {err:.3e} "
             f"(tol {_FCST_RTOL_MEAN:.0e})")
+
+
+# ---------------------------------------------------------------------------
+# history{estimates=(aic arma td)}: the three MODEL histories, all captured at
+# revdrv.f:670-690 straight after each span's rgarma.
+#
+#   * lkh -- (Olkhd, Aicc): the transform-Jacobian-adjusted log likelihood and
+#     the corrected AIC of the span's fit (prlkhd). NB Olkhd is NOT the .udg's
+#     `loglikelihood`, which is the un-Jacobian-adjusted Lnlkhd.
+#   * amh -- the FREE ARMA coefficients in Mdl/Opr order (rvarma.f).
+#   * tdh -- the FREE trading-day / length-of-period / user-TD coefficients, each
+#     TD group followed by its implied contrast column -sum(b) (rvtdrg.f).
+#
+# All three share the model-history row range i=Begrev..Endrev, one row per span,
+# which is one row LONGER than the revision tables above.
+#
+# TOLERANCE, and the split between the two is the interesting part. The first
+# span is bit-exact in all three; after that every span re-converges its own
+# optimization (71 of them here), and the LIKELIHOOD and the COEFFICIENTS drift
+# by wildly different amounts: lkh agrees to 2.6e-9 relative while amh/tdh only
+# agree to ~8e-4. That is not inconsistency -- it is the flat optimum. Near the
+# maximum the likelihood surface is quadratic and nearly level, so a parameter
+# difference of 1e-3 buys a likelihood difference of ~1e-9. The measured spread
+# is smooth (median 4e-5, worst 2.5e-4 on the nonseasonal MA, no outlier span),
+# i.e. optimizer path noise rather than a divergent span.
+#
+# The coefficient tables are therefore gated on an absolute floor scaled to each
+# column's own magnitude -- the tdh columns are near-zero daily-weight contrasts
+# that cross zero, so relative error is meaningless on them.
+_MDL_RTOL = 1e-7          # lkh: log likelihood + AICC
+_MDL_COEF_TOL = 2e-3      # amh/tdh, as a fraction of the column's own scale
+_MDL_TAGS = [("lkh", 2), ("amh", 0), ("tdh", 0)]   # 0 = read width from header
+
+
+def _discover_model() -> list[str]:
+    specs: list[str] = []
+    if not os.path.isdir(_CORPUS):
+        return specs
+    for fn in sorted(os.listdir(_CORPUS)):
+        if not fn.endswith(".spc"):
+            continue
+        base = fn[:-4]
+        if "history{" not in _spec_text(base):
+            continue
+        gdir = os.path.join(_GOLDEN, base)
+        if any(os.path.exists(os.path.join(gdir, base + "." + t))
+               for t, _ in _MDL_TAGS):
+            specs.append(base)
+    return specs
+
+
+MODEL_CASES = _discover_model()
+
+
+@pytest.mark.skipif(not MODEL_CASES, reason="no history spec ships lkh/amh/tdh")
+@pytest.mark.parametrize("base", MODEL_CASES)
+@pytest.mark.parametrize("tag,ncol_fixed", _MDL_TAGS)
+def test_history_model_table(base: str, tag: str, ncol_fixed: int) -> None:
+    goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
+    if not os.path.exists(goldpath):
+        pytest.skip(f"{base} does not produce the {tag} table")
+
+    ncol = ncol_fixed
+    if ncol == 0:
+        # The .tdh header row is fully tab-separated while its DATA rows are not
+        # (CB-20 in tools/census_bugs.md), so the width comes from the header and
+        # the values are read by whitespace split -- which is what _read_golden
+        # does for every table here anyway.
+        with open(goldpath, encoding="utf-8", errors="replace") as f:
+            ncol = len(f.readline().split("\t")) - 1
+    assert ncol > 0, f"{base}.{tag}: could not read the golden header"
+
+    gold = _read_golden(goldpath, ncol)
+    assert gold, f"{base}.{tag}: empty golden"
+
+    prod = _read_produced(_run(base), tag, ncol)
+    assert prod, f"{base}.{tag}: produced no rows ({tag} history likely inert)"
+    missing = set(gold) - set(prod)
+    assert not missing, (
+        f"{base}.{tag}: missing {len(missing)} rows, e.g. {sorted(missing)[:5]}")
+
+    tol = _MDL_RTOL if tag == "lkh" else _MDL_COEF_TOL
+    # Absolute floor per column, from that column's own scale in the golden.
+    scale = [max(abs(gold[d][c]) for d in gold) for c in range(ncol)]
+    for d, gv in gold.items():
+        for c in range(ncol):
+            diff = abs(gv[c] - prod[d][c])
+            if diff <= tol * scale[c]:
+                continue
+            err = diff / abs(gv[c]) if gv[c] else diff
+            assert err <= tol, (
+                f"{base}.{tag}: rel err {err:.3e} at {d} col {c} "
+                f"(tol {tol:.0e})")

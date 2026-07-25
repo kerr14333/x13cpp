@@ -7,7 +7,7 @@
 
 #include "common/x13context.hpp"
 #include "specparse/specparse.hpp"   // dfdate, addate, copy
-#include "regarima/estimate.hpp"     // rgarma
+#include "regarima/estimate.hpp"     // rgarma, prlkhd
 #include "regarima/forecast.hpp"     // fcstout
 #include "regarima/regvar.hpp"       // regvar
 #include "x11/x11parts.hpp"          // x11pt1, x11pt2, x11pt3
@@ -124,6 +124,15 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         if (ctx.error.lfatal) return false;
         (void)na;
         (void)nefobs;
+
+        // arima.f:742 -- the span's likelihood statistics (Olkhd/Aicc/...). The
+        // oracle calls prlkhd on every estimation pass, and history{
+        // estimates=(aic)} reads exactly this. It OVERWRITES the main run's
+        // /lkhd/, which is why run_x11.cpp save/restores it around the span
+        // drivers (the oracle writes its own .udg before revdrv runs).
+        prlkhd(ctx, aptr, &ctx.adj.adj(ctx.adj.adj1st), ctx.adj.adjmod,
+               ctx.arima.fcntyp, ctx.arima.lam);
+        if (ctx.error.lfatal) return false;
 
         if (nfcst > 0) {
             fcstout(ctx, nfcst, ctx.arima.fctdrp, ctx.arima.ciprob,

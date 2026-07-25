@@ -33,8 +33,14 @@
 //     on the transformed scale) is ported; the eltfcn Facxhl/X11hol/Stptd folds
 //     prtfct applies to untfct when the fct table is NOT printed are not -- the
 //     port always has the full fcstout result, which is that same value.
-//     AICC (Lrvaic) / ARMA-coeff / TD-coeff histories are out of scope. The
-//     additive-mode negative-value ceasing branch of putrev (Muladd==1) is also
+//   * aic / arma / td (Lrvaic/Lrvarma/Lrvtdrg: lkh, amh, tdh) -- the three MODEL
+//     histories, all captured at revdrv.f:670-690 right after each span's
+//     rgarma: the span's (Olkhd, Aicc), its FREE ARMA coefficients in Mdl/Opr
+//     order (rvarma.f), and its FREE trading-day / length-of-period / user-TD
+//     regression coefficients plus each TD group's implied contrast column
+//     -sum(b) (rvtdrg.f). Their row range is i=Begrev..Endrev -- one row longer
+//     than the revision tables, which stop at Endtbl-1.
+//     The additive-mode negative-value ceasing branch of putrev (Muladd==1) is
 //     out of scope (this spec is multiplicative).
 //   * No revision targets (Ntarsa==Ntartr==0 -> only the Fin(0,.) concurrent-
 //     vs-final column), no regression{}/outlier{}/x11regression{}, model
@@ -105,6 +111,20 @@ struct HistoryOutput {
     std::vector<double> fch_fcst;    // nfctlg per row
     std::vector<double> fch_err;     // nfctlg per row
     std::vector<double> meanssfe;    // nfctlg savelog canaries (final row)
+    // The three MODEL histories (revdrv.f:670-690 capture, :873-1190 output).
+    // They share one row range -- i = Begrev..Endrev, one row per span, labelled
+    // from Rvstrt -- which is one row LONGER than the revision tables above
+    // (those stop at Endtbl-1), so they carry their own `mdates`.
+    std::vector<int> mdates;         // YYYYMM per model-history row
+    bool have_aic = false;           // aic  -> lkh
+    std::vector<double> lkh_lkhd;    // Olkhd (log likelihood)
+    std::vector<double> lkh_aicc;    // Aicc
+    bool have_arma = false;          // arma -> amh
+    int nrvarma = 0;
+    std::vector<double> amh;         // nrvarma per row, Mdl/Opr order
+    bool have_tdrg = false;          // td   -> tdh
+    int nrvtdrg = 0;
+    std::vector<double> tdh;         // nrvtdrg per row
 };
 
 // Run the revisions-history analysis. No-op (returns true, leaves

@@ -153,7 +153,35 @@ diagnostics front (force / slidingspans / history) is now closed.
   `test_history_tables.py` (fce/fch + the meanssfe/rvfcstlag canaries), corpus
   `extra/airline_history-fcst` (explicit `fstep=(1 12)`) and
   `extra/airline_history-fcst-trans` (default lag list + `transformfcst=yes`).
-  Still open on this front: `aic` (lkh), `arma` (amh) and `td` (tdh) histories.
+- **The three MODEL histories `estimates=(aic arma td)` — CLOSED, and
+  `history{}`'s whole `estimates=` surface is now covered.** Same silent-drop
+  class as fcst above. All three are captured at `revdrv.f:670-690`, straight
+  after each span's rgarma: `lkh` = the span's `(Olkhd, Aicc)`, `amh` = its FREE
+  ARMA coefficients in Mdl/Opr order (`rvarma.f`), `tdh` = its FREE trading-day /
+  length-of-period / user-TD coefficients with each TD group followed by its
+  implied contrast column `-sum(b)` (`rvtdrg.f`). They share a row range
+  `i=Begrev..Endrev` that is one row LONGER than the revision tables (which stop
+  at `Endtbl-1`), hence a separate `mdates`. **The one real engine gap this
+  found:** `run_x11_span` never called `prlkhd`, so `ctx.lkhd` still held the
+  MAIN run's values and every `lkh` row printed the same number (aicc 976.5274 on
+  all 71 rows, exactly the main run's `.udg`). `arima.f:742` calls prlkhd on every
+  estimation pass; it is now called per span, with `run_x11.cpp` save/restoring
+  `/lkhd/` around both span drivers — the oracle has the same overwrite but
+  writes its `.udg` before revdrv runs, whereas this harness dumps at exit (the
+  x11_f2tests / xtrm.ksdev snapshot class again). **What the tolerances say:** the
+  first span is bit-exact and then `lkh` agrees to 2.6e-9 relative while
+  `amh`/`tdh` only agree to ~8e-4 — the flat optimum, not an inconsistency. Near
+  the maximum the surface is nearly level, so a 1e-3 parameter difference buys a
+  1e-9 likelihood difference; the spread is smooth (median 4e-5, worst 2.5e-4 on
+  the nonseasonal MA, no outlier span), i.e. optimizer path noise over 71
+  independent re-convergences. **CB-20**: the `.tdh` save rows write their values
+  into `outARMA` but their tab separators into `outTDrg`, so the emitted row's
+  separator is whatever `outARMA` held — an inherited TAB when the `amh` block
+  ran first, a literal NUL byte when it did not — and the file's columns do not
+  line up with its own tab-separated header. Not reproduced (it is a save-FILE
+  character-buffer defect and this port writes no save files); the values and
+  their order are. Gated by `test_history_tables.py`, corpus
+  `extra/airline_history-model`.
 - **Model X-11 path — CLOSED.** The `*-aictest-x11` (airline/expgs/payems) and all
   four `*-fixed-airline-x11` specs gate bit-exact on X-11 **and** on the fct forecast:
   automd aictest selection + finalization, x11pt2's model factor combine, the

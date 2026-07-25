@@ -430,6 +430,24 @@ int main(int argc, char** argv) {
             for (int k = 0; k < nl; ++k) std::printf(" %.15E", ho.meanssfe[k]);
             std::printf("\n");
         }
+        // aic/arma/td model histories: their own (one-longer) date range.
+        for (std::size_t r = 0; r < ho.mdates.size(); ++r) {
+            if (ho.have_aic)
+                std::printf("lkh %06d %.15E %.15E\n", ho.mdates[r],
+                            ho.lkh_lkhd[r], ho.lkh_aicc[r]);
+            if (ho.have_arma) {
+                std::printf("amh %06d", ho.mdates[r]);
+                for (int k = 0; k < ho.nrvarma; ++k)
+                    std::printf(" %.15E", ho.amh[r * ho.nrvarma + k]);
+                std::printf("\n");
+            }
+            if (ho.have_tdrg) {
+                std::printf("tdh %06d", ho.mdates[r]);
+                for (int k = 0; k < ho.nrvtdrg; ++k)
+                    std::printf(" %.15E", ho.tdh[r * ho.nrvtdrg + k]);
+                std::printf("\n");
+            }
+        }
     }
     return 0;
 }

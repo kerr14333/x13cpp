@@ -549,12 +549,20 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // absent (ctx.spcout.requested false).
     if (!run_spectrum(ctx)) return false;
 
+    // Both span drivers re-estimate the model per span, so each span's prlkhd
+    // overwrites /lkhd/ (the reported log likelihood + AIC/AICC/BIC/HQ). The
+    // oracle has the same overwrite but writes its .udg before revdrv runs,
+    // whereas this harness dumps at exit -- so keep the main run's values.
+    const lkhd_cmn lkhd_main = ctx.lkhd;
+
     if (!run_slidingspans(ctx, trnsrs)) return false;
 
     // history{} (revchk.f/setrvp.f/revdrv.f/getrev.f/prtrev.f): the expanding-
     // span concurrent-vs-final revisions analysis, built on the same re-entrant
     // driver (driver/run_history.hpp). No-op when history{} was absent.
     if (!run_history(ctx, trnsrs, begspn_full, nspobs, nfcst)) return false;
+
+    ctx.lkhd = lkhd_main;
 
     // composite{} (x11ari.f:372-373): if this run is a COMPONENT of a composite
     // adjustment (series{comptype=...} set Iag>=0 and the metafile driver carried
