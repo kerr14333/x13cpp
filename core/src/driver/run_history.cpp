@@ -27,6 +27,8 @@
 #include "x11/slidingspans.hpp"      // restor_span
 #include "specparse/specparse.hpp"   // dfdate, addate
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace x13 {
@@ -41,7 +43,29 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const bool lrvch = rev.lrvch;                  // sadjchng (chr/che)
     const bool lrvsf = rev.lrvsf;                  // seasonal (sfr/sfe)
     const bool lrvtch = rev.lrvtch;                // trendchng (tcr/tce)
-    if (!(lrvsa || lrvtrn || lrvch || lrvsf || lrvtch))
+    // revchk.f:424-467 -- the forecast-error history needs forecasts to exist,
+    // and its lag list has its own defaults/validation.
+    bool lrvfct = rev.lrvfct;
+    int nfctlg = rev.nfctlg;
+    int rfctlg[4] = {rev.rfctlg(1), rev.rfctlg(2), rev.rfctlg(3), rev.rfctlg(4)};
+    if (lrvfct) {
+        if (nfcst_full == 0) {
+            lrvfct = false;                        // "no forecasts specified"
+            for (int& v : rfctlg) v = 0;
+            nfctlg = 0;
+        } else if (nfctlg == 0) {
+            nfctlg = 2;
+            rfctlg[0] = 1;
+            if (nfcst_full >= ctx.model.sp)   rfctlg[1] = ctx.model.sp;
+            else if (nfcst_full > 1)          rfctlg[1] = nfcst_full;
+            else                              nfctlg = 1;
+        } else {
+            for (int i = 0; i < nfctlg; ++i)
+                if (rfctlg[i] > nfcst_full) lrvfct = false;  // lag past maxlead
+            if (lrvfct) std::sort(rfctlg, rfctlg + nfctlg);
+        }
+    }
+    if (!(lrvsa || lrvtrn || lrvch || lrvsf || lrvtch || lrvfct))
         return true;                               // nothing this driver emits
 
     const int ny = ctx.model.sp;
@@ -52,6 +76,16 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     int rvend[2] = {rev.rvend(1), rev.rvend(2)};
     if (rvend[1] == 0 && rvend[0] == 0)            // default = end of series
         addate(begspn_full, ny, nspobs_full - 1, rvend);
+
+    // revchk.f:1025-1045 -- a forecast lead longer than the revision span has no
+    // row to land in; drop it from the TOP of the (sorted) list.
+    if (lrvfct && nfctlg > 0) {
+        int nyrev = 0;
+        dfdate(rvend, rvstrt, ny, nyrev);
+        for (int i = nfctlg; i >= 1; --i)
+            if (nyrev < rfctlg[i - 1]) { rfctlg[i - 1] = 0; nfctlg -= 1; }
+        if (nfctlg == 0) return true;              // revchk sets Irev=0
+    }
 
     const int lfda = 1;                            // main run Pos1ob (no backcast)
     const int llda = nspobs_full;                  // main run Posfob
@@ -95,6 +129,12 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     std::vector<double> cncsf(nspan + 1, 0.0);     // concurrent seasonal factor (x100)
     std::vector<double> projsf(revnum + 1, 0.0);   // projected SF, by output revptr
     const double sfsc = (ctx.x11opt.muladd != 1) ? 100.0 : 1.0;  // putrev Itype=0
+    // prtfct.f:613 -- Cncfct(k,Revptr+Rfctlg(k)): the ORIGINAL-scale forecast a
+    // span made for the date it lands on. Indexed [k][output revptr].
+    std::vector<std::vector<double>> cncfct;
+    if (lrvfct)
+        cncfct.assign(static_cast<std::size_t>(nfctlg),
+                      std::vector<double>(static_cast<std::size_t>(nspan) + 1, 0.0));
 
     for (int i = beglup; i <= endrev; ++i) {
         const int revptr = i - begrev + 1;         // <=0 for the pre-Begrev spans
@@ -128,6 +168,21 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
                 const double a = ctx.x11srs.stc(posfob);
                 const double b = ctx.x11srs.stc(posfob - 1);
                 cnctch[revptr] = ((a - b) / b) * 100.0;
+            }
+            if (lrvfct) {
+                // prtfct.f:628-641. ctx.forecasts.fcst IS prtfct's untfct: the
+                // original-scale point forecast with the length-of-period /
+                // leap-year prior reapplied (fcstout mirrors the LFOROS path,
+                // which is the branch prtfct takes whenever the fct table is
+                // printed or saved -- and the eltfcn folds its no-table branch
+                // adds are already inside that same value).
+                const auto& fc = ctx.forecasts.fcst;
+                for (int k = 1; k <= nfctlg; ++k) {
+                    const int lag = rfctlg[k - 1];
+                    const int outr = revptr + lag;
+                    if (outr <= nspan && lag <= static_cast<int>(fc.size()))
+                        cncfct[static_cast<std::size_t>(k - 1)][outr] = fc[lag - 1];
+                }
             }
         }
         // getrev Itype=0: at a year-boundary span (Posfob a multiple of Ny =
@@ -228,6 +283,75 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.tce_fin.push_back(fin);
             out.tcr.push_back(fin - cnc);
         }
+    }
+
+    // --- prfcrv.f: the forecast-error history -------------------------------
+    // Its own row range: i = Begrev+Rfctlg(1)..Endrev, labelled from
+    // begfct = Rvstrt + Rfctlg(1). fctss is the EVOLVING (running) sum of
+    // squares, so it carries across rows.
+    if (lrvfct) {
+        out.have_fct = true;
+        out.nfctlg = nfctlg;
+        for (int k = 1; k <= nfctlg; ++k) out.fctlag.push_back(rfctlg[k - 1]);
+        int begfct[2];
+        addate(rvstrt, ny, rfctlg[0], begfct);
+        // Rvtrfc (history{transformfcst=yes}): difference on the TRANSFORMED
+        // scale instead of the original one.
+        const double lam = ctx.arima.lam;
+        const int fcntyp = ctx.arima.fcntyp;
+        const bool trnfct = rev.rvtrfc && lam != 1.0;
+        std::vector<double> fctss(static_cast<std::size_t>(nfctlg), 0.0);
+        int j = 0, lastptr = 0;
+        for (int i = begrev + rfctlg[0]; i <= endrev; ++i) {
+            const int revptr = i - begrev + 1;
+            j += 1;
+            lastptr = revptr;
+            int idate[2];
+            addate(begfct, ny, j - 1, idate);
+            out.fdates.push_back(idate[0] * 100 + idate[1]);
+            for (int k = 1; k <= nfctlg; ++k) {
+                // prfcrv's ndef cut: with more than one lag, lag k only has a
+                // stored forecast once j has reached it. Undefined lags are
+                // written as an exact 0 in the save file.
+                const bool defined = (nfctlg == 1) || (rfctlg[k - 1] <= j);
+                if (!defined) {
+                    out.fce.push_back(0.0);
+                    out.fch_fcst.push_back(0.0);
+                    out.fch_err.push_back(0.0);
+                    continue;
+                }
+                const double obs = ctx.inpt.orig(i);
+                const double cnc = cncfct[static_cast<std::size_t>(k - 1)][revptr];
+                double err, shown;
+                if (trnfct) {
+                    if (lam == 0.0) {
+                        err = std::log(obs) - std::log(cnc);
+                        shown = std::log(cnc);
+                    } else if (fcntyp == 3) {      // logistic
+                        const double t1 = std::log(obs / (1.0 - obs));
+                        const double t2 = std::log(cnc / (1.0 - cnc));
+                        err = t1 - t2;
+                        shown = t2;
+                    } else {
+                        const double t1 = lam * lam + (std::pow(obs, lam) - 1.0) / lam;
+                        const double t2 = lam * lam + (std::pow(cnc, lam) - 1.0) / lam;
+                        err = t1 - t2;
+                        shown = t2;
+                    }
+                } else {
+                    err = obs - cnc;
+                    shown = cnc;
+                }
+                fctss[static_cast<std::size_t>(k - 1)] += err * err;
+                out.fce.push_back(fctss[static_cast<std::size_t>(k - 1)]);
+                out.fch_fcst.push_back(shown);
+                out.fch_err.push_back(err);
+            }
+        }
+        // meanssfe: fctss(k)/(Revptr-Rfctlg(k)) at the last row (prfcrv.f:213).
+        for (int k = 1; k <= nfctlg; ++k)
+            out.meanssfe.push_back(fctss[static_cast<std::size_t>(k - 1)] /
+                                   static_cast<double>(lastptr - rfctlg[k - 1]));
     }
     return true;
 }

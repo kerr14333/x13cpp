@@ -192,3 +192,138 @@ def test_history_table(base: str, tag: str, ncol: int, kind: str) -> None:
             if err > worst:
                 worst, worst_key = err, (d, c)
         assert worst <= tol, f"{base}.{tag}: worst {kind} err {worst} at {worst_key}"
+
+
+# ---------------------------------------------------------------------------
+# history{estimates=(fcst)}: the out-of-sample forecast-error history.
+#
+# prtfct.f:613 stores each span's original-scale forecast at the requested leads
+# into Cncfct(k, Revptr+lag) -- i.e. into the row of the date it predicts --
+# and prfcrv.f then differences it against the raw series there:
+#
+#   * fce -- the EVOLVING sum of squared forecast errors, one column per lead
+#   * fch -- the concurrent forecast and its error, two columns per lead
+#   * meanssfe -- the .udg savelog canary, fctss(k)/(Revptr-Rfctlg(k)) at the
+#     last row (one value per lead)
+#
+# A lead has no stored forecast until the table has advanced that far (prfcrv's
+# ndef cut); those cells are an exact 0 on both sides.
+#
+# TOLERANCE. This family sits at the loosest end of the port because it AMPLIFIES
+# the per-span re-estimation floor three times over, and each step is measurable:
+#   fch forecast columns  -- the forecast LEVEL, measured worst 1.8e-5 relative
+#     (a forecast extrapolates the coefficient difference, so it runs a bit above
+#     the 1e-5 in-sample level floor the sae/tre tables gate at).
+#   fch error columns     -- actual minus forecast, i.e. an O(270) cancellation
+#     leaving O(10), which turns that 1.8e-5 into ~2e-4 relative. Gated
+#     absolutely (worst 4.8e-3) -- the error crosses zero.
+#   fce                   -- those errors SQUARED and accumulated, so ~4e-4
+#     relative (worst measured 3.0e-4).
+# The first spans are bit-exact; the drift grows with the span count.
+_FCST_RTOL_LEVEL = 5e-5   # fch forecast columns
+_FCST_ATOL_ERR = 1e-2     # fch error columns (zero-crossing)
+_FCST_RTOL_SS = 1e-3      # fce, the accumulated sum of squares
+_FCST_RTOL_MEAN = 1e-4    # meanssfe (that sum divided by its count)
+
+
+def _discover_fcst() -> list[str]:
+    specs: list[str] = []
+    if not os.path.isdir(_CORPUS):
+        return specs
+    for fn in sorted(os.listdir(_CORPUS)):
+        if not fn.endswith(".spc"):
+            continue
+        base = fn[:-4]
+        if "history{" not in _spec_text(base):
+            continue
+        if os.path.exists(os.path.join(_GOLDEN, base, base + ".fce")):
+            specs.append(base)
+    return specs
+
+
+FCST_CASES = _discover_fcst()
+
+
+def _read_udg_scalars(path: str, key: str) -> list[float]:
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for ln in f:
+            if ln.startswith(key + ":"):
+                return [_num(v) if _NUM_RE.match(v) else float(v)
+                        for v in ln.split(":", 1)[1].split()]
+    return []
+
+
+@pytest.mark.skipif(not FCST_CASES, reason="no history spec ships the fce golden")
+@pytest.mark.parametrize("base", FCST_CASES)
+@pytest.mark.parametrize("tag", ["fce", "fch"])
+def test_history_fcst_table(base: str, tag: str) -> None:
+    goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
+    if not os.path.exists(goldpath):
+        pytest.skip(f"{base} does not produce the {tag} table")
+
+    # Column count comes from the golden's own header, so the test follows
+    # whatever fstep= the spec asked for.
+    with open(goldpath, encoding="utf-8", errors="replace") as f:
+        ncol = len(f.readline().split("\t")) - 1
+    assert ncol > 0, f"{base}.{tag}: could not read the golden header"
+
+    gold = _read_golden(goldpath, ncol)
+    assert gold, f"{base}.{tag}: empty golden"
+
+    prod = _read_produced(_run(base), tag, ncol)
+    assert prod, f"{base}.{tag}: produced no rows (fcst history likely inert)"
+    missing = set(gold) - set(prod)
+    assert not missing, (
+        f"{base}.{tag}: missing {len(missing)} rows, e.g. {sorted(missing)[:5]}")
+
+    worst, worst_key, worst_kind = 0.0, None, None
+    for d, gv in gold.items():
+        pv = prod[d]
+        for c in range(ncol):
+            # fch alternates (forecast, error) per lead: the odd columns are the
+            # near-zero error, gated absolutely.
+            is_err = (tag == "fch" and c % 2 == 1)
+            if is_err or not gv[c]:
+                err, tol, kind = abs(gv[c] - pv[c]), _FCST_ATOL_ERR, "abs"
+            else:
+                rtol = _FCST_RTOL_SS if tag == "fce" else _FCST_RTOL_LEVEL
+                err, tol, kind = abs(gv[c] - pv[c]) / abs(gv[c]), rtol, "rel"
+            if err > tol:
+                assert False, (f"{base}.{tag}: {kind} err {err:.3e} at "
+                               f"{d} col {c} (tol {tol:.0e})")
+            if err > worst:
+                worst, worst_key, worst_kind = err, (d, c), kind
+    assert worst_key is not None or not gold
+
+
+@pytest.mark.skipif(not FCST_CASES, reason="no history spec ships the fce golden")
+@pytest.mark.parametrize("base", FCST_CASES)
+def test_history_fcst_meanssfe(base: str) -> None:
+    """The .udg `meanssfe` / `rvfcstlag` savelog canaries (prfcrv.f:207-214)."""
+    udg = os.path.join(_GOLDEN, base, base + ".udg")
+    if not os.path.exists(udg):
+        pytest.skip(f"{base} ships no .udg golden")
+    want = _read_udg_scalars(udg, "meanssfe")
+    want_lags = _read_udg_scalars(udg, "rvfcstlag")
+    assert want, f"{base}: golden .udg has no meanssfe line"
+
+    out = _run(base)
+    got, got_lags = [], []
+    for ln in out.splitlines():
+        p = ln.split()
+        if p and p[0] == "meanssfe":
+            got = [float(v) for v in p[1:]]
+        elif p and p[0] == "rvfcstlag":
+            got_lags = [float(v) for v in p[1:]]
+    assert got, f"{base}: engine emitted no meanssfe line"
+    assert got_lags == want_lags, (
+        f"{base}: rvfcstlag {got_lags} != golden {want_lags}")
+    assert len(got) == len(want), (
+        f"{base}: meanssfe has {len(got)} leads, golden {len(want)}")
+    for k, (g, w) in enumerate(zip(got, want)):
+        # The .udg prints E17.10, so the golden pins ~11 significant digits --
+        # well below the per-span re-estimation floor that dominates here.
+        err = abs(g - w) / abs(w) if w else abs(g - w)
+        assert err <= _FCST_RTOL_MEAN, (
+            f"{base}: meanssfe lead {k} rel err {err:.3e} "
+            f"(tol {_FCST_RTOL_MEAN:.0e})")

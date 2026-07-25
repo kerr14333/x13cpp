@@ -126,6 +126,34 @@ expgs_fixed, closed via a faithful CALCFX forecast-residual port in
 re-estimation floor ~7e-6; `core/src/driver/run_history.cpp`, reusing the
 re-entrant span driver + a per-span `Lterm`/`Nterm` reset). The whole X-11
 diagnostics front (force / slidingspans / history) is now closed.
+- **`history{estimates=(fcst)}` — the out-of-sample FORECAST-ERROR history —
+  CLOSED (at the per-span floor).** It was **accepted and silently dropped**:
+  `gt_history` parses all nine `estimates=` tokens and sets `Lrvfct`, but
+  `run_history`'s "anything to do" gate listed only the five sadj/trend/seasonal
+  flags, so a spec asking for forecast history got `OUTCOME: OK` and no fce/fch
+  at all. Ported: `revchk.f:424-467`'s lag-list defaults and validation
+  (`Nfctlg==0` ⇒ leads `(1, Ny)`, or `(1, Nfcst)` when `Nfcst<Ny`; a lead past
+  `maxlead` disables the whole analysis) plus `revchk.f:1025-1045`'s drop of any
+  lead longer than the revision span; `prtfct.f:613-643`'s per-span store
+  `Cncfct(k, Revptr+Rfctlg(k))` — the forecast is filed under the row of the DATE
+  IT PREDICTS, not the span that made it; and `prfcrv.f`'s arithmetic (running
+  sum of squares `fce`, the `(forecast, error)` pairs `fch`, and the `meanssfe`
+  savelog canaries `fctss(k)/(Revptr-Rfctlg(k))`). `transformfcst=yes` (`Rvtrfc`,
+  errors differenced on the transformed scale) is ported too. Two things worth
+  knowing: (1) `ctx.forecasts.fcst` IS prtfct's `untfct` — prtfct only rebuilds
+  it (with the `eltfcn` Facxhl/X11hol/Stptd folds) on the branch where the fct
+  table is neither printed nor saved, and that branch reconstructs the same
+  value the LFOROS path already has. (2) **This family AMPLIFIES the per-span
+  re-estimation floor three times over**, which is why its tolerances are the
+  loosest in the port and each step is measured: the forecast level runs 1.8e-5
+  relative (a forecast extrapolates the coefficient difference, so above the
+  1e-5 in-sample floor sae/tre gate at); `actual - forecast` is an O(270)
+  cancellation leaving O(10), turning that into ~2e-4; `fce` then squares and
+  accumulates it to ~3e-4. The first spans are bit-exact. Gated by
+  `test_history_tables.py` (fce/fch + the meanssfe/rvfcstlag canaries), corpus
+  `extra/airline_history-fcst` (explicit `fstep=(1 12)`) and
+  `extra/airline_history-fcst-trans` (default lag list + `transformfcst=yes`).
+  Still open on this front: `aic` (lkh), `arma` (amh) and `td` (tdh) histories.
 - **Model X-11 path — CLOSED.** The `*-aictest-x11` (airline/expgs/payems) and all
   four `*-fixed-airline-x11` specs gate bit-exact on X-11 **and** on the fct forecast:
   automd aictest selection + finalization, x11pt2's model factor combine, the

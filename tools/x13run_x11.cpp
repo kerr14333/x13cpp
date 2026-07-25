@@ -408,6 +408,28 @@ int main(int argc, char** argv) {
                             ho.tce_cnc[r], ho.tce_fin[r]);
             }
         }
+        // fcst history: fce/fch carry nfctlg columns per row and their own date
+        // range, so they are emitted from ho.fdates rather than ho.dates.
+        if (ho.have_fct) {
+            const int nl = ho.nfctlg;
+            for (std::size_t r = 0; r < ho.fdates.size(); ++r) {
+                std::printf("fce %06d", ho.fdates[r]);
+                for (int k = 0; k < nl; ++k)
+                    std::printf(" %.15E", ho.fce[r * nl + k]);
+                std::printf("\n");
+                std::printf("fch %06d", ho.fdates[r]);
+                for (int k = 0; k < nl; ++k)
+                    std::printf(" %.15E %.15E", ho.fch_fcst[r * nl + k],
+                                ho.fch_err[r * nl + k]);
+                std::printf("\n");
+            }
+            std::printf("rvfcstlag");
+            for (int k = 0; k < nl; ++k) std::printf(" %d", ho.fctlag[k]);
+            std::printf("\n");
+            std::printf("meanssfe");
+            for (int k = 0; k < nl; ++k) std::printf(" %.15E", ho.meanssfe[k]);
+            std::printf("\n");
+        }
     }
     return 0;
 }

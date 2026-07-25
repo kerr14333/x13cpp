@@ -24,9 +24,18 @@
 //   * trendchng (Lrvtch: tcr/tce) -- the month-to-month trend %-change history,
 //     the chr/che pattern on Stc (Itype=2): conc/final = (Stc(i)-Stc(i-1))/
 //     Stc(i-1)*100, revision = Final - Conc (Tbltyp=5 forces Rvper=F).
-//     AICC (Lrvaic) / forecast (Lrvfct) / ARMA-coeff / TD-coeff histories are
-//     out of scope. The additive-mode negative-value ceasing branch of putrev
-//     (Muladd==1) is also out of scope (this spec is multiplicative).
+//   * fcst (Lrvfct: fce/fch + the meanssfe savelog canaries) -- the out-of-
+//     sample forecast-error history. prtfct.f:613 stores each span's
+//     original-scale forecast at the requested leads into Cncfct(k,Revptr+lag);
+//     prfcrv.f then differences it against the raw series at that date and
+//     accumulates the sum of squares. Needs forecast{maxlead=} (revchk.f:424
+//     switches Lrvfct off with no forecasts). transformfcst=yes (Rvtrfc, errors
+//     on the transformed scale) is ported; the eltfcn Facxhl/X11hol/Stptd folds
+//     prtfct applies to untfct when the fct table is NOT printed are not -- the
+//     port always has the full fcstout result, which is that same value.
+//     AICC (Lrvaic) / ARMA-coeff / TD-coeff histories are out of scope. The
+//     additive-mode negative-value ceasing branch of putrev (Muladd==1) is also
+//     out of scope (this spec is multiplicative).
 //   * No revision targets (Ntarsa==Ntartr==0 -> only the Fin(0,.) concurrent-
 //     vs-final column), no regression{}/outlier{}/x11regression{}, model
 //     re-estimated each span (Revfix=F -- restor_span resets Arimap to the main
@@ -80,6 +89,22 @@ struct HistoryOutput {
     std::vector<double> tcr;         // trend-change revision
     std::vector<double> tce_cnc;     // Conc_TRND_change
     std::vector<double> tce_fin;     // Final_TRND_change
+    // fcst (Lrvfct): the out-of-sample forecast-error history (prfcrv.f). The
+    // forecast-history rows are their OWN date range -- i = Begrev+Rfctlg(1) ..
+    // Endrev, labelled from begfct = Rvstrt+Rfctlg(1) -- not the revision-table
+    // range above, so they carry a separate `fdates`. Each row holds nfctlg
+    // values per table, row-major: `fce` the EVOLVING sum of squared forecast
+    // errors, `fch_fcst`/`fch_err` the concurrent forecast and its error. A lag
+    // not yet defined on a row (prfcrv's ndef cut) is written as an exact 0,
+    // which is what the oracle's save file puts there.
+    bool have_fct = false;
+    int nfctlg = 0;
+    std::vector<int> fctlag;         // Rfctlg(1..Nfctlg), sorted
+    std::vector<int> fdates;         // YYYYMM per forecast-history row
+    std::vector<double> fce;         // nfctlg per row
+    std::vector<double> fch_fcst;    // nfctlg per row
+    std::vector<double> fch_err;     // nfctlg per row
+    std::vector<double> meanssfe;    // nfctlg savelog canaries (final row)
 };
 
 // Run the revisions-history analysis. No-op (returns true, leaves
