@@ -215,9 +215,16 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // that division onto the pre-model padj series here; x11pt1 independently
     // rebuilds the same pritd factor for its own X-11 buffer + the D16 fold. Kept
     // separate from `fac`/Adj (the LOM/leap prior) -- prior TD is a distinct factor
-    // (the a4 table), not the tdlom prior. Mult only (Kswv==1 implies muladd==0/2;
-    // muladd==2 logadd exp-domain fold is deferred with the x11pt1 guard).
-    if (ctx.x11opt.kswv == 1 && ctx.x11opt.muladd == 0) {
+    // (the a4 table), not the tdlom prior. Applies to log-additive (muladd==2)
+    // exactly as to multiplicative: x11pt1.f:52 forces Muladd=0 for the whole
+    // prior-adjustment stage, so the oracle divides in both modes and does not
+    // reach the logadd exp-domain at all here. (This used to be gated on
+    // muladd==0 as "deferred with the x11pt1 guard" -- but that guard tests
+    // muladd AFTER the 2->0 collapse, so it never fired for logadd either, and a
+    // tdprior+mode=logadd spec came back OUTCOME: OK with the prior TD missing
+    // from B1 and d10-d13 entirely, ~2e-2 to 3.8e-2. Additive and pseudo-additive
+    // are rejected at parse instead -- pritd.f:34-40.)
+    if (ctx.x11opt.kswv == 1) {
         std::vector<double> stptd(static_cast<std::size_t>(prm::PLEN), 0.0);
         tdset_td(ctx, begspn, 1, nobspf, sp);
         pritd(ctx, stptd.data(), nobspf, sp, begspn, 1);

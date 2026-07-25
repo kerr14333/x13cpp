@@ -453,13 +453,50 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             if (dpeq(xr.dwt(1), prm::DNOTST)) {
                 for (int i = 1; i <= 7; ++i) xr.dwt(i) = 0.0;
             } else {
-                for (int i = 1; i <= 7; ++i)
-                    if (!dpeq(xr.dwt(i), 0.0)) ctx.x11opt.kswv = 1;
+                for (int i = 1; i <= 7; ++i) {
+                    // editor.f:1494-1500 -- a negative weight is meaningless for
+                    // a multiplicative adjustment.
+                    if (xr.dwt(i) < 0.0 && muladd == 0) {
+                        writln(ctx, "ERROR: Prior Trading Day weights cannot be "
+                               "less than zero for a", stdio::STDERR, ctx.units.mt2,
+                               true);
+                        writln(ctx, "       multiplicative seasonal adjustment.",
+                               stdio::STDERR, ctx.units.mt2, false);
+                        inptok = false;
+                    } else if (!dpeq(xr.dwt(i), 0.0)) {
+                        ctx.x11opt.kswv = 1;
+                    }
+                }
                 if (ctx.x11opt.kswv == 1) {
                     if ((!psuadd && muladd == 0) || muladd == 2) {
                         double tmp = 0.0;
-                        for (int i = 1; i <= 7; ++i) tmp += xr.dwt(i);
+                        for (int i = 1; i <= 7; ++i) {
+                            if (xr.dwt(i) < 0.0 && ctx.x11log.lxrneg) xr.dwt(i) = 0.0;
+                            tmp += xr.dwt(i);
+                        }
                         for (int i = 1; i <= 7; ++i) xr.dwt(i) *= 7.0 / tmp;
+                    } else {
+                        // editor.f:1518-1530 -- additive / pseudo-additive prior
+                        // TD weights are REJECTED, not merely unported: the
+                        // weights are a multiplicative device. Porting this is
+                        // what makes the x11pt1 `muladd != 0` fatal unreachable
+                        // for anything except a mode the oracle already refuses.
+                        if (ctx.arima.fcntyp == 0) {
+                            writln(ctx, "ERROR: Prior Trading Day weights cannot "
+                                   "be specified when automatic", stdio::STDERR,
+                                   ctx.units.mt2, true);
+                            writln(ctx, "       transformation selection is "
+                                   "performed.", stdio::STDERR, ctx.units.mt2,
+                                   false);
+                        } else {
+                            writln(ctx, "ERROR: Prior Trading Day weights can only "
+                                   "be specified for a", stdio::STDERR,
+                                   ctx.units.mt2, true);
+                            writln(ctx, "       multiplicative or log-additive "
+                                   "seasonal adjustment.", stdio::STDERR,
+                                   ctx.units.mt2, false);
+                        }
+                        inptok = false;
                     }
                 } else if (muladd == 0) {
                     for (int i = 1; i <= 7; ++i) xr.dwt(i) = 1.0;

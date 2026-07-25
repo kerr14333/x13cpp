@@ -73,7 +73,16 @@ def _read_golden(path: str) -> dict[str, float]:
 
 
 CASES = [
-    b for b in ("airline_x11regression-tdprior",)
+    b for b in ("airline_x11regression-tdprior",
+                # x11{mode=logadd}. editor.f:1507 allows the weights for
+                # multiplicative OR log-additive, and x11pt1.f:52 collapses
+                # Muladd 2->0 for the prior stage, so logadd takes the identical
+                # divide. run_pre_model had gated its half on muladd==0 and
+                # x11pt1's own guard tests muladd AFTER that collapse, so logadd
+                # fell through both and returned OUTCOME: OK with the prior TD
+                # missing from B1 and d10-d13 -- off by exactly a factor of a4
+                # (~2e-2..3.8e-2), while a4 itself stayed bit-exact.
+                "airline_x11regression-tdprior-logadd")
     if os.path.exists(os.path.join(_CORPUS, b + ".spc"))
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".a4"))
 ]

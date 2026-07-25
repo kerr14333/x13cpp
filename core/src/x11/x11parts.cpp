@@ -199,8 +199,16 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
     //   Ixreg>=2 & Axrgtd -- OLS-estimated prior TD (xrgdrv): the factor is built
     //               by xrgdrv's transparent x11pt2 into Faccal and folded via the
     //               Ixreg==3 divide above, so NOTHING is generated here for it.
-    // Additive / pseudo-additive weights stay fatal; the classic X-11 Easter
-    // (Khol>=2) user-weight combine stays fatal.
+    // NB `muladd` is already past x11pt1.f:52's Muladd 2->0 collapse, so
+    // log-additive reaches here as 0 and takes the same divide as multiplicative
+    // (gated by *_x11regression-tdprior-logadd; that fall-through used to be a
+    // silent wrong-numbers bug -- see run_pre_model.cpp). Additive and
+    // pseudo-additive weights never get this far: editor.f:1518-1530 rejects
+    // them at parse, ported in gtinpt.cpp, so the muladd/psuadd arms below are
+    // belt-and-braces. The classic X-11 Easter (Khol>=2) user-weight combine is
+    // a real unported branch -- but note the oracle does not fatal on it either,
+    // it SKIPS the whole prior-TD block unless (Axrghl||Axrgtd)&&Ixreg==3
+    // (x11pt1.f:229-230), which this guard does not yet distinguish.
     if (opt.kswv == 1) {
         if (muladd != 0 || ctx.x11msc.psuadd || opt.khol >= 2) {
             x11_not_ported(ctx, "x11pt1 prior trading-day adjustment (pritd/ssrit)");
@@ -374,7 +382,29 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
                      sprior + (adjc.setpri - 1));
                 ctx.prior.priadj = -ctx.prior.priadj;
             } else {
-                // Adjtd==0 branch (tdlom.f:44-59): unported (no gated spec).
+                // Adjtd==0 branch (tdlom.f:44-59): unported, and MEASURED
+                // unreachable -- it needs Adjtd cleared while Nflwtd>0 and
+                // Priadj>1 still hold, and the oracle rejects or bails out of
+                // every route to that state:
+                //   * chkadj.f:209 (a transform that is neither log nor
+                //     identity) -- but the automatic lom/leap prior that makes
+                //     Priadj>1 is only created under `td`+log, and an EXPLICIT
+                //     transform{adjust=lom|lpyear} alongside
+                //     regression{variables=(td)} is rejected outright ("Cannot
+                //     include a length-of-month type variable as both a
+                //     regression variable and a prior adjustment");
+                //   * editor.f:2277 (.not.Lmodel) -- regression{} with no
+                //     arima{}/automdl{} is rejected outright ("A spec that
+                //     requires modeling was found ... but no provision for an
+                //     ARIMA model");
+                //   * x11ari.f:110 (a constant series) -- the oracle refuses
+                //     the run and writes no tables at all, so there is nothing
+                //     to gate against;
+                //   * xrgdrv.f:80 -- runs with Ixreg==2, which the tdlom call
+                //     site above already excludes, and it zeroes/restores
+                //     Priadj around itself anyway.
+                // Left fatal rather than guessed at. If a route is ever found,
+                // the body is the six lines at tdlom.f:52-58.
                 x11_not_ported(ctx, "x11pt2 tdlom Adjtd==0 LOM removal");
                 return;
             }

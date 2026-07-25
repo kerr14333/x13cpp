@@ -687,5 +687,43 @@ diagnostics front (force / slidingspans / history) is now closed.
   saa/ffc + d10-d13/d16). The constant specs need a series that crosses zero, so
   they run on **`tests/corpus/data/airline_zero.dat`** — airline shifted down by
   150 (24 observations at or below zero) and lifted back by `constant=100`.
+- **`x11regression{tdprior=}` under `x11{mode=logadd}` — CLOSED (bit-exact), and
+  it was a SILENT wrong-numbers bug hiding behind a fatal that never fired.**
+  The prior-TD divide is applied in two places (the pre-model estimation input in
+  `run_pre_model.cpp`, and the X-11 buffer in x11pt1), because the oracle runs
+  x11pt1 BEFORE arima. `run_pre_model` gated its half on `muladd == 0`, marking
+  logadd "deferred with the x11pt1 guard" — but **x11pt1.f:52 collapses Muladd
+  2->0 for the whole prior-adjustment stage**, so x11pt1's guard tests the
+  COLLAPSED value and never fired for logadd either. The spec fell through both
+  and came back `OUTCOME: OK` with the prior TD missing from B1 and d10-d13
+  entirely — off by exactly a factor of `a4` (~2e-2..3.8e-2). **`a4` was
+  bit-exact the whole time**, which is what made it invisible: the factor was
+  computed correctly and then simply never applied. The fix is to drop the mode
+  gate — editor.f:1507 allows the weights for multiplicative OR log-additive and
+  both take the identical divide. Closed alongside it: **editor.f:1494-1530's
+  parse-time validation**, which had never been ported — additive /
+  pseudo-additive prior-TD weights and negative weights under a multiplicative
+  adjustment are *rejected outright* by the oracle, not merely unported, so the
+  x11pt1 `muladd != 0` fatal was standing in for an error the parser should have
+  raised. Gated by `extra/airline_x11regression-tdprior-logadd` (a4 + b1 +
+  d10-d13, in `test_x11_tdprior_tables.py`) and
+  `extra/airline_x11regression-tdprior-add` (the rejection itself, via
+  `test_m1_parse`). **Generalizable**: when a feature is applied in two places
+  and one of them is guarded "deferred, the other guard will catch it", check
+  that the other guard tests the same value at the same point — here one read
+  Muladd before the collapse and the other after.
+- **`x11pt2 tdlom Adjtd==0` — MEASURED UNREACHABLE, left fatal.** It needs Adjtd
+  cleared while `Nflwtd>0` and `Priadj>1` still hold, and the oracle rejects or
+  bails out of every route: chkadj.f:209 (non-log/non-identity transform) is
+  closed because the automatic lom/leap prior only exists under `td`+log and an
+  explicit `transform{adjust=}` alongside `regression{variables=(td)}` is
+  rejected; editor.f:2277 (`.not.Lmodel`) is closed because `regression{}` with
+  no `arima{}` is rejected; x11ari.f:110 (constant series) makes the oracle
+  refuse the run and write no tables, so there is nothing to gate; xrgdrv.f:80
+  runs at `Ixreg==2`, which the tdlom call site already excludes. The reachability
+  analysis is recorded at the fatal in `x11parts.cpp` so it is not re-derived.
+  (Found in passing: the harness throws `basic_string::_M_create` on a constant
+  series where the oracle cleanly refuses — a robustness gap, not a parity one,
+  since the oracle produces no output to compare against.)
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
