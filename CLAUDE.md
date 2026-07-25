@@ -172,6 +172,30 @@ diagnostics front (force / slidingspans / history) is now closed.
   byte-identical. Gated by the new `*_backcast-x11` config (all 4 series).
   Still open here: `x11{appendbcst=yes}` widens the oracle's punch range to the
   backcast span and the harness does not (b1/d10/d16 row counts differ).
+- **The x11{} yes/no switches (`excludefcst` / `true7term` / `sfshort`) — CLOSED
+  (bit-exact):** all three were **accepted and silently dropped**. The numerics
+  had been ported years-of-commits ago — `Noxfct` at x11pt2.f:469/636/747,
+  `Tru7hn` in hndtrn, `Shrtsf` in vsfb — but `gt_x11` had no parse branch for
+  them, so `ctx.x11msc.*` stayed at its gtinpt.f default and the run came back
+  `OUTCOME: OK` having quietly done the default thing (excludefcst ~3.5e-3 in
+  d13; true7term 1.2e-3..5.5; sfshort ~2e-3). One shared branch in
+  `readers_spec.cpp` covers all of them (they share getx11.f's YSNDIC
+  `flag = ivec(1).eq.1` shape). Gating them needs the right conditions or the
+  switch is inert: `true7term` needs `trendma=7` (hndtrn's `while (i==7 &&
+  !tru7hn)` is otherwise dead) and `sfshort` needs a span under five years
+  (vsfb.f:63/65/82). `centerseasonal` (`Lcentr`) is parsed too but stays walled
+  — x11pt3.f:280 is reachable only with a regARIMA seasonal/SO regressor, and
+  that path is `x11_not_ported`, i.e. fatal rather than silent.
+  `print1stpass` (`Prt1ps`) is print surface and is not in /x11msc/.
+  Gated by `*_{excludefcst,true7term,sfshort}-x11` on all 4 series.
+  **Test-harness note:** the m3 estimate gate's `_close` now takes the golden's
+  PRINTED precision as an absolute floor (`_print_ulp`). The .udg prints 4-6
+  significant digits, so a golden of `36.1384` pins the true value only to
+  +/-5e-5; on the four-year sfshort spans the statistics are small enough that
+  this rounding alone exceeds rtol 1e-6. It is a property of the golden format,
+  not of the engine — the same specs' d10-d13 gate at ~5e-15 against the
+  15-digit save goldens. For large values the relative bound still dominates,
+  so nothing else loosened.
 - **`series{modelspan=}` — CLOSED (bit-exact):** the model span was parsed
   (`Begmdl`/`Endmdl` were populated) but **never applied** — the regARIMA model
   was silently fit over the whole series span, so every coefficient, the

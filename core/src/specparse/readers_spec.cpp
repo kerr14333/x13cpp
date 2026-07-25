@@ -622,6 +622,44 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
             if (argok && nelt > 0) ctx.x11adj.finhol = (ivec[0] == 2);
             continue;
         }
+        if (argidx == 16 || argidx == 21 || argidx == 22 || argidx == 24) {
+            // The four NUMERIC yes/no x11{} switches that share getx11.f's YSNDIC
+            // shape (`flag = ivec(1).eq.1`). Every one of them was already ported
+            // in the X-11 engine but had no parse seam, so the argument was
+            // accepted and silently dropped -- the run came back OUTCOME: OK
+            // having done the default thing (excludefcst cost ~3.5e-3 in d13).
+            //   16 sfshort        -> Shrtsf (getx11.f:527-533)  short seasonal MA
+            //   21 excludefcst    -> Noxfct (getx11.f:551-557)  si/xtrm extreme-
+            //        value span: keep the forecast/backcast rows OUT of the
+            //        extreme-value replacement window (x11pt2.f:469/636/747)
+            //   22 true7term      -> Tru7hn (getx11.f:560-566)  hndtrn 7-term
+            //   24 centerseasonal -> Lcentr (getx11.f:441-447)
+            // (getx11.f:355-361's print1stpass -> Prt1ps is print surface only;
+            // it is not in /x11msc/ and falls through to consume_value below.)
+            static const char YSNDIC[] = "yesno";
+            static const int ysnptr[3] = {1, 4, 6};
+            const char* msg =
+                argidx == 16 ? "Available options for sfshort are yes or no."
+                : argidx == 21 ? "Available options for excludefcst are yes or no."
+                : argidx == 22 ? "Available options for true7term are yes or no."
+                               : "Available options for centerseasonal are yes or no.";
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2, msg, ivec, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                const bool on = (ivec[0] == 1);
+                switch (argidx) {
+                case 16: ctx.x11msc.shrtsf = on; break;
+                case 21: ctx.x11msc.noxfct = on; break;
+                case 22: ctx.x11msc.tru7hn = on; break;
+                default: ctx.x11msc.lcentr = on; break;
+                }
+            }
+            continue;
+        }
         if (argidx == 15) {
             // final -> Finao/Finls/Finusr/Fintc (getx11.f:287-311). FINDIC is a
             // LIST argument (up to PFIN=4 entries): each named effect is removed

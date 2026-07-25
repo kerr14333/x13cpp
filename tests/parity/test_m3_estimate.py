@@ -189,17 +189,39 @@ def _parse_udg(spc: str) -> dict:
         key, rest = m.group(1), m.group(2).strip()
         # AR/MA coefficient lines: "MA$Nonseasonal$01$01: <coef> <se> <t>".
         if key.startswith(("AR$", "MA$")):
-            coefs.append((key, float(rest.split()[0])))
+            coefs.append((key, rest.split()[0]))
         else:
             d[key] = rest
     # udg lists AR before MA, nonseasonal before seasonal -- the same order as
     # x13run_m3 walks the operators, so compare the coef values positionally.
-    d["_coefs"] = [c for _, c in coefs]
+    # Keep the raw strings: _print_ulp needs the printed precision.
+    d["_coefs"] = [float(c) for _, c in coefs]
+    d["_coefstr"] = [c for _, c in coefs]
     return d
 
 
-def _close(a: float, b: float, rtol: float = RTOL) -> bool:
-    return math.isclose(a, b, rel_tol=rtol, abs_tol=1e-9)
+def _print_ulp(s: str) -> float:
+    """Half-ulp of the LAST printed digit of an oracle .udg value.
+
+    The .udg prints 4-6 significant digits, so a golden of `36.1384` only pins
+    the true value to +/-0.00005 -- an ABSOLUTE bound that has nothing to do
+    with rtol. On short spans (the sfshort configs run four years) the
+    likelihood statistics are small enough that this rounding alone exceeds
+    rtol 1e-6, which is a property of the golden's format, not of the engine:
+    the same specs' d10-d13 gate at ~5e-15 against the 15-digit save goldens.
+    """
+    tok = s.strip().split()[0] if s.strip() else ""
+    m = re.match(r"[-+]?(\d*)(?:\.(\d*))?(?:[EeDd]([-+]?\d+))?$", tok)
+    if not m:
+        return 0.0
+    ndec = len(m.group(2) or "")
+    exp = int(m.group(3) or 0)
+    return 0.5 * 10.0 ** (exp - ndec)
+
+
+def _close(a: float, b: float, rtol: float = RTOL, bstr: str = "") -> bool:
+    atol = max(1e-9, _print_ulp(bstr) if bstr else 0.0)
+    return math.isclose(a, b, rel_tol=rtol, abs_tol=atol)
 
 
 # ---- the test ---------------------------------------------------------------
@@ -225,13 +247,14 @@ def test_estimation_matches_oracle(spc, workdir):
     for gk, ek in scal.items():
         if ek in exp and gk in got:
             a, b = float(got[gk]), float(exp[ek])
-            assert _close(a, b), f"{gk}: got {a} != oracle {b}"
+            assert _close(a, b, bstr=exp[ek]), f"{gk}: got {a} != oracle {b}"
 
     # ARMA coefficients -- positional, rtol 1e-6.
     assert len(got["_coefs"]) == len(exp["_coefs"]), (
         f"coef count: got {len(got['_coefs'])} != oracle {len(exp['_coefs'])}")
     for i, (a, b) in enumerate(zip(got["_coefs"], exp["_coefs"])):
-        assert _close(a, b), f"arima coef #{i}: got {a} != oracle {b}"
+        assert _close(a, b, bstr=exp["_coefstr"][i]), (
+            f"arima coef #{i}: got {a} != oracle {b}")
 
 
 def test_at_least_one_spec():

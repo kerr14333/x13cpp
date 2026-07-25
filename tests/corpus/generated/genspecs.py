@@ -127,15 +127,16 @@ def spec(name, arglines, *, save_key=None, savelog=False):
     return name + "{\n" + body + "\n}"
 
 
-def series_block(s, modelspan=None):
+def series_block(s, modelspan=None, span=None):
     lines = [
         'title = "%s"' % s["title"],
         'file = "%s/%s"' % (DATA, s["file"]),
         "start = %s" % s["start"],
         "period = %d" % s["period"],
     ]
-    if s["span"]:
-        lines.append("span = %s" % s["span"])
+    span = span or s["span"]
+    if span:
+        lines.append("span = %s" % span)
     if modelspan:
         lines.append("modelspan = %s" % modelspan)
     return spec("series", lines, save_key="series")
@@ -426,6 +427,52 @@ def cfg_modelspan_both_x11(s):
 cfg_modelspan_both_x11.modelspan = MODELSPAN_BOTH
 
 
+def _cfg_switch(s, x11args):
+    # Shared body for the x11{} yes/no switch configs: a plain airline fit with
+    # trading day, so the switch is the only thing that varies.
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(spec("regression", ["variables = (td)"], save_key="regression"))
+    blocks.append(arima_airline())
+    blocks.append(estimate_block())
+    blocks.append(forecast_block(s["period"]))
+    args = ([] if not s["rate"] else ["mode = add"]) + x11args
+    blocks.append(spec("x11", args, save_key="x11", savelog=True))
+    return blocks
+
+
+def cfg_excludefcst_x11(s):
+    # x11{excludefcst=yes} -> Noxfct: keep the forecast/backcast rows OUT of the
+    # extreme-value replacement window that si()/xtrm() work over (x11pt2.f:469,
+    # 636, 747). The engine had the three sites but getx11.f's parse branch was
+    # missing, so the argument was accepted and silently dropped -- OUTCOME: OK
+    # with the default extreme-value span, ~3.5e-3 in d13.
+    return _cfg_switch(s, ["excludefcst = yes"])
+
+
+def cfg_true7term_x11(s):
+    # x11{true7term=yes} -> Tru7hn, with trendma=7 so a 7-term Henderson is
+    # actually selected (hndtrn's `while (i == 7 && !tru7hn)` is otherwise dead).
+    # Same missing-parse-branch class as excludefcst; moves d13 by 1.2e-3 to 5.5.
+    return _cfg_switch(s, ["trendma = 7", "true7term = yes"])
+
+
+def cfg_sfshort_x11(s):
+    # x11{sfshort=yes} -> Shrtsf, on a FOUR-YEAR span: vsfb.f:63/65/82 only
+    # branch on Shrtsf when the series is shorter than five years, so the switch
+    # is inert on the full corpus spans. Same missing-parse-branch class.
+    return _cfg_switch(s, ["sfshort = yes"])
+
+
+cfg_sfshort_x11.span_override = {
+    "airline": "(1949.01, 1952.12)",
+    "payems": "(2000.01, 2003.12)",
+    "unrate": "(1961.01, 1964.12)",
+    "expgs": "(1947.1, 1950.4)",
+}
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -455,6 +502,9 @@ CONFIGS = [
     ("backcast-x11", cfg_backcast_x11),
     ("modelspan-x11", cfg_modelspan_x11),
     ("modelspan-both-x11", cfg_modelspan_both_x11),
+    ("excludefcst-x11", cfg_excludefcst_x11),
+    ("true7term-x11", cfg_true7term_x11),
+    ("sfshort-x11", cfg_sfshort_x11),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 
@@ -467,7 +517,9 @@ HEADER = (
 
 def build_spec(series_name, s, config_name, config_fn):
     mdlspn = getattr(config_fn, "modelspan", None)
-    blocks = [series_block(s, mdlspn and mdlspn[series_name])] + config_fn(s)
+    spnovr = getattr(config_fn, "span_override", None)
+    blocks = [series_block(s, mdlspn and mdlspn[series_name],
+                           spnovr and spnovr[series_name])] + config_fn(s)
     header = HEADER.format(series=series_name, config=config_name)
     return header + "\n".join(blocks) + "\n"
 

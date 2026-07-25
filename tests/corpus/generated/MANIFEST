@@ -1,9 +1,10 @@
 # Generated spec inventory -- produced by genspecs.py
-# 68 specs = 4 series x 17 configs
+# 80 specs = 4 series x 20 configs
 airline_ar2-seats.spc
 airline_automdl-aictest-x11.spc
 airline_automdl-x11.spc
 airline_backcast-x11.spc
+airline_excludefcst-x11.spc
 airline_fixed-airline-seats.spc
 airline_fixed-airline-x11.spc
 airline_holiday-x11.spc
@@ -14,6 +15,8 @@ airline_modelspan-both-x11.spc
 airline_modelspan-x11.spc
 airline_sar-seats.spc
 airline_seats.spc
+airline_sfshort-x11.spc
+airline_true7term-x11.spc
 airline_x11-additive.spc
 airline_x11-default.spc
 airline_x11-logadd.spc
@@ -21,6 +24,7 @@ expgs_ar2-seats.spc
 expgs_automdl-aictest-x11.spc
 expgs_automdl-x11.spc
 expgs_backcast-x11.spc
+expgs_excludefcst-x11.spc
 expgs_fixed-airline-seats.spc
 expgs_fixed-airline-x11.spc
 expgs_holiday-x11.spc
@@ -31,6 +35,8 @@ expgs_modelspan-both-x11.spc
 expgs_modelspan-x11.spc
 expgs_sar-seats.spc
 expgs_seats.spc
+expgs_sfshort-x11.spc
+expgs_true7term-x11.spc
 expgs_x11-additive.spc
 expgs_x11-default.spc
 expgs_x11-logadd.spc
@@ -38,6 +44,7 @@ payems_ar2-seats.spc
 payems_automdl-aictest-x11.spc
 payems_automdl-x11.spc
 payems_backcast-x11.spc
+payems_excludefcst-x11.spc
 payems_fixed-airline-seats.spc
 payems_fixed-airline-x11.spc
 payems_holiday-x11.spc
@@ -48,6 +55,8 @@ payems_modelspan-both-x11.spc
 payems_modelspan-x11.spc
 payems_sar-seats.spc
 payems_seats.spc
+payems_sfshort-x11.spc
+payems_true7term-x11.spc
 payems_x11-additive.spc
 payems_x11-default.spc
 payems_x11-logadd.spc
@@ -55,6 +64,7 @@ unrate_ar2-seats.spc
 unrate_automdl-aictest-x11.spc
 unrate_automdl-x11.spc
 unrate_backcast-x11.spc
+unrate_excludefcst-x11.spc
 unrate_fixed-airline-seats.spc
 unrate_fixed-airline-x11.spc
 unrate_holiday-x11.spc
@@ -65,6 +75,8 @@ unrate_modelspan-both-x11.spc
 unrate_modelspan-x11.spc
 unrate_sar-seats.spc
 unrate_seats.spc
+unrate_sfshort-x11.spc
+unrate_true7term-x11.spc
 unrate_x11-additive.spc
 unrate_x11-default.spc
 unrate_x11-logadd.spc
