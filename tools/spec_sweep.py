@@ -45,10 +45,12 @@ from itertools import combinations
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 ORACLE = os.path.join(REPO, "oracle", "fortran", "x13as_ascii_O2.exe")
-ENGINE = os.path.join(REPO, "build", "x13run_x11.exe")
+ENGINE_X11 = os.path.join(REPO, "build", "x13run_x11.exe")
+ENGINE_SEATS = os.path.join(REPO, "build", "x13run_seats.exe")
 DATA = os.path.join(REPO, "tests", "corpus", "data").replace("\\", "/")
 
-TAGS = ["b1", "d10", "d11", "d12", "d13", "d16", "saa", "ffc"]
+TAGS_X11 = ["b1", "d10", "d11", "d12", "d13", "d16", "saa", "ffc"]
+TAGS_SEATS = ["s10", "s11", "s12", "s13", "s16", "s18"]
 
 # Below this magnitude a whole golden column counts as identically zero (see the
 # gmax branch in run_case). Well under any real table value, well over the
@@ -59,7 +61,7 @@ ZERO_COL = 1e-10
 # The factor space. Keep levels to things the oracle accepts on their own; the
 # _valid predicate below prunes the invalid *combinations*.
 # ---------------------------------------------------------------------------
-FACTORS = {
+FACTORS_X11 = {
     "series":   ["air", "qtr"],
     "trans":    ["log", "none", "auto"],
     "prior":    ["none", "lom", "lpyear"],
@@ -116,7 +118,7 @@ def _valid(row: dict) -> bool:
     return True
 
 
-def spec_text(row: dict) -> str:
+def spec_text_x11(row: dict) -> str:
     monthly = row["series"] == "air"
     sp = 12 if monthly else 4
     fname = "airline.dat" if monthly else "expgs.dat"
@@ -186,6 +188,121 @@ def spec_text(row: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The SEATS suite. Same idea, different half of the program: seats{} replaces
+# x11{}, so the option space is the ARIMA-model-based decomposition's own knobs
+# (gtseat.f) crossed with the same regARIMA front end. The x11 space is clean at
+# t=3, this one has never been scanned.
+# ---------------------------------------------------------------------------
+FACTORS_SEATS = {
+    "series":   ["air", "qtr"],
+    "trans":    ["log", "none"],
+    "prior":    ["none", "lom", "lpyear"],
+    "reg":      ["none", "td", "td_easter", "easter", "ao", "const", "td_ao"],
+    "arima":    ["airline", "ar2", "sar", "ma2"],
+    "outlier":  ["none", "aols", "all"],
+    "fcst":     ["one", "two"],
+    "span":     ["none", "span", "modelspan"],
+    "noadmiss": ["default", "yes"],
+    "imean":    ["default", "yes", "no"],
+    "qmax":     ["default", "8"],
+    "epsphi":   ["default", "5"],
+    "xl":       ["default", "0.95"],
+    "rmod":     ["default", "0.4"],
+    "bias":     ["default", "0", "1"],
+    "finite":   ["default", "yes"],
+    "hpcycle":  ["default", "yes"],
+    "append":   ["none", "fcst"],
+}
+
+
+def _valid_seats(row: dict) -> bool:
+    # Same regARIMA-side constraints as the x11 suite, minus everything keyed on
+    # an x11 mode (seats has no mode argument; the transform decides).
+    if row["prior"] != "none":
+        if "td" in row["reg"]:
+            return False
+        if row["trans"] != "log":
+            return False
+    if row["series"] == "qtr" and row["arima"] == "sar" and "easter" in row["reg"]:
+        return False
+    # hpcycle drives the Hodrick-Prescott trend/cycle split; it is only defined
+    # against the default hplan, and SEATS rejects it with a fixed seasonal MA
+    # of the sar shape on the short quarterly series.
+    if row["hpcycle"] == "yes" and row["series"] == "qtr":
+        return False
+    return True
+
+
+def spec_text_seats(row: dict) -> str:
+    monthly = row["series"] == "air"
+    sp = 12 if monthly else 4
+    fname = "airline.dat" if monthly else "expgs.dat"
+    start = "1949.01" if monthly else "1947.1"
+
+    s = ['title="sweep"', 'file="%s/%s"' % (DATA, fname),
+         "start=%s" % start, "period=%d" % sp]
+    if row["span"] == "span":
+        s.append("span=(1952.01,1959.12)" if monthly else "span=(1952.1,1975.4)")
+    elif row["span"] == "modelspan":
+        s.append("modelspan=(1950.01,)" if monthly else "modelspan=(1950.1,)")
+    parts = ["series{\n  %s\n}" % "\n  ".join(s)]
+
+    tr = {"log": "function=log", "none": "function=none"}[row["trans"]]
+    if row["prior"] != "none":
+        tr += " adjust=%s" % ("lom" if monthly else "loq") \
+            if row["prior"] == "lom" else " adjust=lpyear"
+    parts.append("transform{ %s }" % tr)
+
+    rv = REG_VARS[row["reg"]]
+    if rv:
+        parts.append("regression{ variables=(%s) }" % rv)
+
+    parts.append({"airline": "arima{ model=(0 1 1)(0 1 1) }",
+                  "ar2": "arima{ model=(2 1 0)(0 1 1) }",
+                  "sar": "arima{ model=(0 1 1)(1 1 0) }",
+                  "ma2": "arima{ model=(0 1 2)(0 1 1) }"}[row["arima"]])
+    parts.append("estimate{ }")
+    if row["outlier"] == "aols":
+        parts.append("outlier{ types=(ao ls) }")
+    elif row["outlier"] == "all":
+        parts.append("outlier{ types=all critical=3.5 }")
+
+    lead = sp if row["fcst"] == "one" else 2 * sp
+    parts.append("forecast{ maxlead=%d }" % lead)
+
+    z = []
+    for key, arg in (("noadmiss", "noadmiss"), ("finite", "finite"),
+                     ("hpcycle", "hpcycle")):
+        if row[key] != "default":
+            z.append("%s=%s" % (arg, row[key]))
+    if row["imean"] != "default":
+        z.append("imean=%s" % row["imean"])
+    for key, arg in (("qmax", "qmax"), ("epsphi", "epsphi"), ("xl", "xl"),
+                     ("rmod", "rmod"), ("bias", "bias")):
+        if row[key] != "default":
+            z.append("%s=%s" % (arg, row[key]))
+    if row["append"] == "fcst":
+        z.append("appendfcst=yes")
+    z.append("save=(s10 s11 s12 s13 s16 s18)")
+    parts.append("seats{ %s }" % " ".join(z))
+    return "\n".join(parts) + "\n"
+
+
+# suite -> (factors, validity predicate, spec renderer, engine binary, tags)
+SUITES = {
+    "x11":   (FACTORS_X11, _valid, spec_text_x11, ENGINE_X11, TAGS_X11),
+    "seats": (FACTORS_SEATS, _valid_seats, spec_text_seats, ENGINE_SEATS,
+              TAGS_SEATS),
+}
+SUITE = "x11"          # rebound by main() from --suite
+FACTORS = FACTORS_X11
+_valid_fn = _valid
+spec_text = spec_text_x11
+ENGINE = ENGINE_X11
+TAGS = TAGS_X11
+
+
+# ---------------------------------------------------------------------------
 # Covering-array construction: greedy randomized. While uncovered t-tuples
 # remain, sample candidate valid rows and keep the one covering the most.
 # ---------------------------------------------------------------------------
@@ -204,7 +321,7 @@ def covering_array(t: int, seed: int = 0, candidates: int = 400) -> list[dict]:
     def sample():
         for _ in range(500):
             row = {f: rng.choice(FACTORS[f]) for f in names}
-            if _valid(row):
+            if _valid_fn(row):
                 return row
         return None
 
@@ -276,7 +393,10 @@ def run_case(item):
     errp = os.path.join(d, name + ".err")
     if os.path.exists(errp):
         otext += open(errp, errors="replace").read()
-    if "ERROR" in otext or not os.path.exists(os.path.join(d, name + ".d11")):
+    # "the oracle produced nothing to compare" is suite-relative: d11 for x11,
+    # s11 for seats. Accept the run if ANY of the suite's tables landed.
+    got_any = any(os.path.exists(os.path.join(d, name + "." + t)) for t in TAGS)
+    if "ERROR" in otext or not got_any:
         line = next((l.strip() for l in otext.splitlines() if "ERROR" in l), "")
         return name, row, "oracle-err", line[:90], 0.0
 
@@ -338,7 +458,16 @@ def main():
     ap.add_argument("--rtol", type=float, default=1e-8)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--outdir", default=None)
+    ap.add_argument("--suite", choices=sorted(SUITES), default="x11",
+                    help="which half of the program to sweep (x11 or seats)")
     args = ap.parse_args()
+
+    # Bind the selected suite. Module-level rather than threaded through every
+    # call site because run_case runs in a ThreadPoolExecutor and the binding is
+    # set once, before any worker starts.
+    global SUITE, FACTORS, _valid_fn, spec_text, ENGINE, TAGS
+    SUITE = args.suite
+    FACTORS, _valid_fn, spec_text, ENGINE, TAGS = SUITES[args.suite]
 
     # abspath: run_case launches both binaries with cwd set to the case dir and
     # hands them the spec path, so a RELATIVE --outdir resolves against the case
@@ -354,7 +483,7 @@ def main():
     full = 1
     for v in FACTORS.values():
         full *= len(v)
-    print(f"{len(FACTORS)} factors, full factorial {full:,}; "
+    print(f"suite={SUITE}: {len(FACTORS)} factors, full factorial {full:,}; "
           f"{args.t}-way covering array = {len(rows)} rows")
 
     items = [("c%03d" % i, r, outdir, args.rtol) for i, r in enumerate(rows)]
