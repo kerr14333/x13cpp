@@ -342,6 +342,52 @@ def spec_force_regress():
         "force{} regression (Cholette-Dagum) benchmarking to original", blocks)
 
 
+def _spec_force_target(target, fname, cover):
+    # force{} with a regARIMA trading-day regressor. The TD is what makes these
+    # specs load-bearing: it puts a real model calendar factor (Factd -> Faccal)
+    # and the automatic leap-year prior (td + log => prioradj lpyear) into the
+    # run, and force's qmap sums the target-vs-SA discrepancy over the FORECAST
+    # year as well as the observed span -- so anything wrong in the forecast tail
+    # of Series/Sprior/Factd shows up in saa/ffc while d10-d13 (printed over the
+    # observed span only) stay clean. target != original additionally selects
+    # Stocal/Stopp as the benchmark target (x11pt3.f:715-722, Iftrgt 1/2/3).
+    blocks = [
+        series_airline(),
+        transform_log(),
+        block("regression", ["variables = (td)"], print_all=True),
+        arima_airline(),
+        estimate_block(),
+        block("x11", [], save_key="x11d", print_all=True, savelog=True),
+        block("force", ["type = denton", "target = %s" % target],
+              save_key="force", print_all=True),
+    ]
+    return fname, assemble(cover, blocks)
+
+
+def spec_force_td_original():
+    return _spec_force_target(
+        "original", "airline_force-td.spc",
+        "force{} Denton to original with a regARIMA TD (forecast-span target)")
+
+
+def spec_force_calendaradj():
+    return _spec_force_target(
+        "calendaradj", "airline_force-calendaradj.spc",
+        "force{} target=calendaradj (Iftrgt=1 -> Stocal) with regARIMA TD")
+
+
+def spec_force_permprioradj():
+    return _spec_force_target(
+        "permprioradj", "airline_force-permprioradj.spc",
+        "force{} target=permprioradj (Iftrgt=2 -> Stopp) with regARIMA TD")
+
+
+def spec_force_both():
+    return _spec_force_target(
+        "both", "airline_force-both.spc",
+        "force{} target=both (Iftrgt=3 -> Stopp/Faccal) with regARIMA TD")
+
+
 def spec_force_automdl_x11():
     # M5 x11pt3 force-yearly-totals proof case: the SAME automdl-x11 config
     # genspecs.py already produces in ../generated/airline_automdl-x11.spc
@@ -556,6 +602,10 @@ BUILDERS = [
     spec_x11regression_tdprior,
     spec_force_denton,
     spec_force_regress,
+    spec_force_td_original,
+    spec_force_calendaradj,
+    spec_force_permprioradj,
+    spec_force_both,
     spec_force_automdl_x11,
     spec_metadata,
     spec_pickmdl,

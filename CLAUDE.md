@@ -137,9 +137,26 @@ diagnostics front (force / slidingspans / history) is now closed.
   holday/holidy/easter → Khol prior fold; codex-hardened per xrgdrv/editor.f), and
   the user-regression prior factor (Facusr) all gate. The x11 parse-seam is
   exhausted. Of the three remaining x11 stubs, user PRIOR factors (Nuspad/
-  Nustad) is now closed — see the next entry; still open are force non-original
-  target (Iftrgt>0) and revisions getrev.
+  Nustad) and force non-original targets (Iftrgt>0) are now closed — see the two
+  entries below; the only one still open is revisions getrev.
   (Adjsea/Adjso regARIMA-seasonal combine landed, commit 970e85c.)
+- **`force{}` non-original targets + the forecast-span prior — CLOSED
+  (bit-exact):** all four `target=` values gate (x11pt3.f:715-722 — `original`
+  Series, `calendaradj` Stocal, `permprioradj` Stopp, `both` Stopp/Faccal), on
+  specs carrying a regARIMA TD. The target port was three lines; what had walled
+  it was a real numeric bug that only force can see. force's `qmap` sums the
+  target-vs-SA discrepancy over the FORECAST year too, so it is the only gate
+  that reads D11 past `Posfob` — and there D11 was **infinite**, behind
+  `OUTCOME: OK`. Two causes, both in `run_pre_model.cpp`: (1) the prior-factor
+  series was built to `Nobspf` (the estimation length) instead of adjsrs.f's
+  `Nadj = Nspobs + Nbcst + max(Sp, Nfcst-Fctdrp)`, so `Sprior` was 0 across the
+  forecast span and x11pt2's tdlom `Factd *= Sprior` zeroed the model TD factor
+  (hence `Faccal==0`, hence `D11 = Series/0`); (2) `Kfmt` was never set to 1 on
+  the model path (adjsrs.f:62,101), so adjreg.f:98 never folded the prior back
+  into the forecast tail of `Series`, leaving the prior-ADJUSTED forecast there.
+  d10-d13 print over the observed span only, which is why every existing gate
+  stayed green through both. Gated by `test_force_tables.py` (now also gating
+  d10-d13), corpus `extra/airline_force-{td,calendaradj,permprioradj,both}`.
 - **`transform{}` user PRIOR-adjustment factors — CLOSED (bit-exact):** the
   `data=`/`file=` prior factor series, permanent (`Usrpad`) and temporary
   (`Usrtad`), alone or combined with the predefined `adjust=lom/loq/lpyear`

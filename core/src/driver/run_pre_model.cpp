@@ -137,9 +137,22 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     const bool suppress_lom_td =
         (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd && ctx.picktd.picktd &&
          priadj > 1);
+    // adjsrs.f:39-40 -- Nadj, the length of the prior-factor series, is NOT the
+    // estimation length: it spans the backcasts, the observed span, and at least
+    // a full year of forecasts. The distinction matters because x11pt2's tdlom
+    // multiplies the model TD factor by Sprior over [Pos1bk, Posffc] -- a factor
+    // series that stopped at Nobspf left Sprior==0 across the forecast tail and
+    // so zeroed Factd/Faccal there, which made D11 infinite over the forecast
+    // span. Invisible in d10-d13 (printed over the observed span only), but
+    // force{}'s qmap sums the target-vs-SA discrepancy over the FORECAST year
+    // too, so saa/ffc came out +/-Inf.
+    int nbcst_p = ctx.extend.nbcst;
+    if (nbcst_p < 0) nbcst_p = 0;
+    const int nadj = std::min(nspobs + nbcst_p + std::max(sp, nfcst - fctdrp),
+                              prm::PLEN);
     std::vector<double> padj(static_cast<std::size_t>(nobspf));
-    std::vector<double> fac(static_cast<std::size_t>(nobspf), 1.0);
-    if (!adjsrs_factors(ctx, begspn, sp, nobspf, suppress_lom_td, fac.data()))
+    std::vector<double> fac(static_cast<std::size_t>(nadj), 1.0);
+    if (!adjsrs_factors(ctx, begspn, sp, nadj, suppress_lom_td, fac.data()))
         return false;
     for (int tpnt = 1; tpnt <= nobspf; ++tpnt)
         padj[static_cast<std::size_t>(tpnt - 1)] =
@@ -207,12 +220,18 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // (Adjmod is left at its default: tdlom only special-cases Adjmod==2, and the
     // prior here is the multiplicative LOM/leap ratio.)
     if (has_prior) {
-        for (int t = 0; t < nobspf; ++t)
+        for (int t = 0; t < nadj; ++t)
             ctx.adj.adj(t + 1) = fac[static_cast<std::size_t>(t)];
         ctx.adj.begadj(1) = begspn[0];
         ctx.adj.begadj(2) = begspn[1];
-        ctx.adj.nadj = nobspf;
+        ctx.adj.nadj = nadj;
         ctx.adj.adj1st = 1;
+        // adjsrs.f:62,101 -- a prior series exists, so Kfmt says so. adjreg.f:98
+        // is gated on it: without Kfmt>0 the forecast tail of Series never gets
+        // the prior folded back, so the X-11 "original" over the forecast span
+        // was the prior-ADJUSTED forecast. Only force{} reads that far out, so
+        // the D-tables never saw it.
+        if (!suppress_lom_td) ctx.prior.kfmt = 1;
     }
 
     // Table a2 (LTRNPA): the combined prior-adjustment factors (Sprior).

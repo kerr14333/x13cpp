@@ -18,9 +18,19 @@ benchmarking methods land in different milestones:
                             gated here.
 
 round=yes (the rounded SA series, rndsa) is ported and gated where a golden
-ships. The one still-unported force feature is non-original force targets
-(target != original, Iftrgt>0) -- it fatals cleanly and is reached by no shipped
-golden.
+ships. All four force targets are ported and gated (x11pt3.f:715-722): original
+(Series), calendaradj (Stocal, Iftrgt=1), permprioradj (Stopp, Iftrgt=2) and
+both (Stopp/Faccal, Iftrgt=3).
+
+The `airline_force-*` specs carrying a regARIMA trading-day regressor are the
+load-bearing ones: force's qmap sums the target-vs-SA discrepancy over the
+FORECAST year as well as the observed span, so they are the only gate that sees
+the forecast tail of Series/Sprior/Factd. Two real bugs lived there behind an
+`OUTCOME: OK` -- the prior-factor series was built only to Nobspf instead of
+adjsrs.f's Nadj (leaving Sprior==0 over the forecast span, which zeroed
+Factd/Faccal and made D11 infinite there), and Kfmt was never set on the model
+path (so adjreg never folded the prior back into the forecast tail of Series).
+Neither is visible in d10-d13, which print over the observed span only.
 
 Run:  python -m pytest tests/parity/test_force_tables.py -q
 """
@@ -43,9 +53,10 @@ _GOLDEN = os.path.join(_REPO, "tests", "golden", "extra")
 # policy in tests/parity/test_x11_tables.py). Measured worst is ~5e-15.
 RTOL = 1e-6
 
-# saa/ffc are produced by every force spec; rnd only by round=yes specs, so it is
-# gated per-spec (skipped where its golden is absent) rather than required.
-_TAGS = ["saa", "ffc", "rnd"]
+# saa/ffc are produced by every force spec; rnd (round=yes) and the d10-d13
+# D-tables only by the specs that ask for them, so those are gated per-spec
+# (skipped where the golden is absent) rather than required.
+_TAGS = ["saa", "ffc", "rnd", "d10", "d11", "d12", "d13"]
 _CORE_TAGS = ["saa", "ffc"]
 
 
@@ -111,11 +122,6 @@ CASES = _discover()
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
 def test_force_table(base: str, tag: str) -> None:
-    txt = _spec_text(base)
-    if re.search(r"target\s*=\s*(calendaradj|permprioradj|both)", txt):
-        pytest.xfail("x11pt3 force non-original target (Iftrgt>0): blocked on the "
-                     "TD+force ~2.4e-3 floor, not the target selection")
-
     goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
     if not os.path.exists(goldpath):
         pytest.skip(f"{base} does not produce the {tag} table")

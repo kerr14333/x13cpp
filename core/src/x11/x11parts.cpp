@@ -1009,19 +1009,31 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // x11pt3.f:702-784. Iyrt==0 -> ELSE just copies Stci into Stci2.
     if (frc.iyrt > 0) {
         const int lstfrc = frc.lfctfr ? posffc : posfob;  // last obs to force
-        // Target (stbase): only Iftrgt==0 (target=original) is ported. The
-        // calendaradj/permprioradj/both targets (x11pt3.f:717-721 -> Stocal /
-        // Stopp) stay walled: any calendar target needs a TD/holiday/prior effect,
-        // and force-with-TD hits a pre-existing ~2.4e-3 floor (the Stci-before-
-        // force / TD-forecast interaction) that is independent of the target
-        // selection -- target=original+TD fails identically, so there is no clean
-        // Iftrgt>0 gate until that floor is closed.
-        if (frc.iftrgt != 0) {
-            x11_not_ported(ctx, "x11pt3 force non-original target (Iftrgt>0)");
-            return;
-        }
+        // Target (stbase), x11pt3.f:715-722. target=original takes the original
+        // series; the other three take the buffers x11pt1/x11pt2 left holding the
+        // partially-adjusted original:
+        //   1 calendaradj    -> Stocal (original less the calendar effect)
+        //   2 permprioradj   -> Stopp  (original less the permanent prior)
+        //   3 both           -> Stopp, then also divide out Faccal
+        // NOTE the faithful short copy: x11pt1 fills Stocal/Stopp only over
+        // [Pos1ob, Posfob], so with Lfctfr the tail [Posfob+1, lstfrc] is whatever
+        // those buffers already held (identity-initialized here, stack garbage in
+        // the oracle) -- the oracle does the same thing, so it is reproduced.
         double stbase[PLEN];
-        copy(series, lstfrc, 1, stbase);
+        switch (frc.iftrgt) {
+        case 0:
+            copy(series, lstfrc, 1, stbase);
+            break;
+        case 1:
+            copy(os.stocal.data(), lstfrc, 1, stbase);
+            break;
+        default:
+            copy(os.stopp.data(), lstfrc, 1, stbase);
+            if (frc.iftrgt == 3)
+                divsub(stbase, stbase, ctx.x11fac.faccal.data(), pos1ob, lstfrc,
+                       muladd);
+            break;
+        }
 
         if (frc.iyrt == 1) {
             // type=denton: modified-Denton benchmarking.
