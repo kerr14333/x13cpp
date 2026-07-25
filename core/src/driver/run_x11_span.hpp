@@ -53,9 +53,16 @@ struct X13Context;
 // main run (b1/d10-d13) -- the caller reads them back (or lets the ssrit
 // capture sites in x11parts.cpp, gated on ctx.hiddn.issap==2, do it) before
 // the next call overwrites them.
+// nend_mdl (default 0): history{}'s FIXED-PERIOD model estimation (Fixper, from
+// series{modelspan=(,0.per)} -- revdrv.f:481-489). The span's regARIMA model is
+// estimated only through Endmdl = the last occurrence of period Fixper at or
+// before the span end, i.e. `nend_mdl` periods short of Endspn, and the span END
+// is then put back (setspn.f) before the forecasts and X-11 run. This is
+// arima.f:134-157 + arima.f:1145's narrowing, restricted to the nbeg==0 case
+// (revdrv never moves Begmdl). Pass 0 for the ordinary full-span replay.
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
-                   int lsp);
+                   int lsp, int nend_mdl = 0);
 
 }  // namespace x13
 

@@ -641,5 +641,94 @@ diagnostics front (force / slidingspans / history) is now closed.
     (21 configs x 4 series = 84), not the ~164 hand-authored specs in the same
     directory. It does not need regenerating when specs are hand-added — and
     running the generator to "refresh" it deletes them (the standing hazard).
+- **`history{}`'s last two gaps — `Fixper` and `Indrev` — CLOSED, plus the
+  `fixmdl` and default-`start` paths they dragged in. `history{}` is now
+  complete except for its outlier / alternate-target surface.** All four were
+  measured on the oracle before any porting, and all four were the
+  silent-wrongness class (`OUTCOME: OK`, wrong numbers).
+  - **`Fixper` — the `series{modelspan=(,0.per)}` convention.** rev.cmn calls it
+    "the period every year for which the model will be estimated"; the oracle
+    implements it not by freezing coefficients but by capping each span's
+    `Endmdl` at the last occurrence of that period (revdrv.f:481-489), so the
+    ESTIMATION WINDOW only advances once a year while X-11 still sees the whole
+    span. Measured oracle on-vs-off: **sae 2.09e-3, tre 3.73e-3, sfe 1.09e-2**;
+    the engine was returning exactly the "off" numbers. Ported through a new
+    `nend_mdl` argument on `run_x11_span` that replays arima.f:142-152's narrow
+    and arima.f:1145 (setspn.f)'s restore-before-forecasting — the same dance
+    `run_pre_model` does for the main run, restricted to the nbeg==0 case
+    (revdrv never moves Begmdl). **The same block's OTHER branch was equally
+    wrong and is ported with it:** with a plain `modelspan` END, revdrv.f:490-496
+    caps every span at `mdl2` = the MAIN run's Endmdl (measured **sae 7.17e-4,
+    tre 1.97e-3**). `mdl2` has to be captured in `run_x11.cpp` next to
+    `begspn_full`, because `run_x11_span` overwrites `ctx.arima.endmdl` with each
+    span's own end and slidingspans runs first. setrvp.f:64-71's Beglup shift is
+    ported too, but note **it is observationally inert here**: it only adds
+    pre-Begrev spans, and revdrv.f:432-453 processes just two of them (Beglup
+    itself, with Lx11 OFF, and Frstsa) while every span in this port is restored
+    from the main run's snapshot — so they leave no trace and the loop skips them.
+  - **`Indrev` — the INDIRECT composite revision history.** Real output, not
+    print surface: the oracle writes `iar`/`iae` (Ind_SA_revision, Conc/Final
+    Ind_SA) plus a `historyindsa: yes|no` savelog line, and iae IS the
+    comptype/compwt-weighted aggregation of the components' own concurrent and
+    final SA (verified equal to their sum at 4.3e-15 on the oracle). Ported:
+    gtrvst.f:361-435's derivation + the three ways it gets switched off (a
+    component without a sadj history, mismatched start dates, no explicit start
+    at all), putrev.f:25-30's fold into `/revdta/ Cncisa/Finisa`, getrev.f:117's
+    `Nrcomp` count and revchk.f:547-551's `Ncomp!=Nrcomp` drop (ported WITH its
+    guard — it is the ELSE of `IF(Kfulsm.ge.1)`), and revdrv.f:838-846's
+    Tbltyp=3 print. Cncisa/Finisa/Indrev/Indrvs/Nrcomp are COMMONs that outlive
+    a spec, so `tools/x13run_composite.cpp` carries them exactly like `/mq11/`
+    and `/agreg/`. **The one structural fix this forced:** `run_x11.cpp` ran the
+    span drivers BEFORE its composite tail, but x12run.f calls sspdrv/revdrv
+    AFTER x11ari — which includes agr2/agr3. Order matters in both directions:
+    `agr2_component` reads the D-table buffers a span replay overwrites, and the
+    total's Iagr only reaches 5 (revdrv's test for "print the indirect table")
+    inside agr2. The two blocks are now in x12run.f order, with run_spectrum
+    still ahead of agr3 (the oracle's direct spcdrv runs before the Iagr==3
+    branch). Gated by `census-examples/composite-history/` (positive: 3 specs x
+    sar/sae, the total's iar/iae, `historyindsa yes`, and an assertion that iae
+    equals the component sum on BOTH sides) and
+    `census-examples/composite-history-mismatch/` (negative: a component whose
+    history starts a year later -> `no`, no iar/iae, components unaffected).
+    Measured: iae inherits the components' per-span floor (6.5e-6 rel, median
+    3.6e-9); the total's own sar/sae are bit-exact because a `composite{}` spec
+    carries no model to re-estimate.
+  - **`history{fixmdl=yes}` (`Revfix`) — also parsed-and-dropped, also fixed, and
+    it is the ONE history configuration that gates BIT-EXACT.** Measured oracle
+    on-vs-off **sae 3.23e-3, tre 3.77e-3, sfe 6.48e-3**. revdrv.f:250-262 fixes
+    Arimaf/Regfx/Iregfx — but the fix only sticks because revdrv.f:381 then
+    re-runs `ssprep`, and every span's `restor` reinstates the flags FROM that
+    snapshot. Fixing only the live `ctx.model.arimaf` would be undone by the
+    first `restor_span`; `ctx.ssprep.fxa` has to be set too (the identical trap
+    `ssmdl_fix_model` documents for slidingspans). With nothing re-optimizing,
+    all ten tables land at ~5e-15 instead of the 1e-5 estimation floor — so
+    `airline_history-fixmdl` and `-fixper-fixmdl` are gated at 1e-12/1e-11 via
+    `RTOL_LEVEL_BY_SPEC`/`ATOL_REV_BY_SPEC` rather than the shared tolerance.
+  - **`history{}` with NO `start=` used to FATAL** ("Number of observations after
+    differencing (-12) < minimum series length") because revchk.f:569-608's
+    default was unported and Rvstrt stayed (0,0). Now ported:
+    `strtyr(-1:5) = {6,5,6,8,12,18,6}` indexed by Ltmax (the longest seasonal MA,
+    via the already-ported `sfmax_span`) — 6 years for the corpus filters, so the
+    default start is 1955.01 on airline and matches the explicit spec exactly.
+    **Parse-order dependency worth knowing:** gtrvst reads Rvstrt at PARSE time,
+    before this default exists, so on a composite an unspecified start really
+    does disable the indirect analysis (gtrvst.f:419-427) — the oracle and the
+    engine both say `historyindsa: no` there.
+  - **CB-21** claimed: `restor.f:67` restores `Arimaf` with the bound `PB` (80)
+    instead of `PARIMA` (133) — a copy-paste of the neighbouring regression
+    bound. Under-copies rather than over-reads, and no admissible model has more
+    than 80 ARMA lag slots, so it is unreachable; not reproduced (`restor_span`
+    uses PARIMA, which is bit-equivalent here).
+  - **Still open in `history{}`, all parsed and still SILENT** (measured as a
+    surface, not individually): `outlier=`/`outlierwin=` (Otlrev/Otlwin, the
+    per-span outlier re-identification, which is also what revdrv's `addreg`
+    flag gates), `refresh=` (Lrfrsh), `fixreg=` (Rvfxrg), `fixx11reg=` (Revfxx),
+    `sadjlags=`/`trendlags=`/`target=` (the alternate revision targets),
+    `endtable=` (Irev==2), `additivesa=` (Rvdiff, additive mode only).
+    `transparent=` is print surface. Also found but out of scope: a
+    `comptype=mult` FIRST component makes the composite aggregate all zeros and
+    the oracle rejects the total outright ("All data values ... are equal to
+    zero") while this engine happily decomposes it and emits NaN — an x11/
+    composite input-validation gap, not a history one.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

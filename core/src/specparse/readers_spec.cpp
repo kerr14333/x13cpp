@@ -2152,7 +2152,58 @@ void gt_history(X13Context& ctx, bool& havesp, bool& inptok) {
     if (rv.lrvsa || rv.lrvsf || rv.lrvch || rv.lrvtrn || rv.lrvtch)
         hid.irevsa = 1;
     if (rv.otlwin == prm::NOTSET) rv.otlwin = sp;
-    // (Iagr>0 composite indirect-revision bookkeeping: single-series only here.)
+
+    // gtrvst.f:361-435 -- composite{} indirect-revision bookkeeping. Indrev and
+    // Indrvs are /revcmn/ COMMONs that agr1 initializes once for the whole
+    // metafile (NOTSET / 0.0) and that every component spec then narrows; the
+    // metafile driver carries them between specs. Indrev defaults to "on"
+    // whenever the FIRST component asks for a seasonal-adjustment history, and
+    // is switched off the moment any component disagrees -- it does not ask for
+    // a sadj history, or its history start date differs, or it has none at all.
+    if (ctx.agr.iagr > 0) {
+        constexpr int YR = 1, MO = 2;
+        rev_cmn& ir = ctx.rev;
+        bool lprt2 = false;
+        if (ir.indrev == prm::NOTSET) ir.indrev = rv.lrvsa ? 1 : 0;
+        if (ir.indrev == 1) {
+            if (!rv.lrvsa) {
+                ir.indrev = 0;
+                writln(ctx, "WARNING: Need to specify revisons history for "
+                            "seasonal adjustments in all components of a "
+                            "composite adjustment to get a revisions history "
+                            "of the indirect seasonally adjusted series.",
+                       stdio::STDERR, ctx.units.mt2, true);
+                lprt2 = true;
+            } else if (rv.rvstrt(YR) > 0) {
+                if (ir.indrvs(YR) == 0) {
+                    ir.indrvs(YR) = rv.rvstrt(YR);
+                    ir.indrvs(MO) = rv.rvstrt(MO);
+                } else if (!(ir.indrvs(YR) == rv.rvstrt(YR) &&
+                             ir.indrvs(MO) == rv.rvstrt(MO))) {
+                    ir.indrev = 0;
+                    writln(ctx, "WARNING: Starting date of revisons history "
+                                "analysis must be the same for all components "
+                                "of a composite adjustment to get a revisions "
+                                "history of the indirect seasonally adjusted "
+                                "series.",
+                           stdio::STDERR, ctx.units.mt2, true);
+                    lprt2 = true;
+                }
+            } else if (rv.rvstrt(YR) == 0 && ir.indrev > 0) {
+                ir.indrev = 0;
+                writln(ctx, "WARNING: Starting date of revisons history "
+                            "analysis must be specified for all components of "
+                            "a composite adjustment to get a revisions history "
+                            "of the indirect seasonally adjusted series.",
+                       stdio::STDERR, ctx.units.mt2, true);
+                lprt2 = true;
+            }
+        }
+        if (lprt2)
+            writln(ctx, "         Edit all input specification files to "
+                        "correct this and rerun the metafile.",
+                   stdio::STDERR, ctx.units.mt2, false);
+    }
 
     inptok = inptok && argok;
     ctx.captured.has_history = true;

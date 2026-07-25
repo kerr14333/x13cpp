@@ -537,6 +537,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // their last span's value; `nspobs`/`nfcst` are already const locals holding
     // the main-run values, but `begspn` aliases the live ctx.mdldat buffer).
     const int begspn_full[2] = {begspn[0], begspn[1]};
+    // ... and the main run's Endmdl (revdrv.f:246's mdl2). run_x11_span
+    // overwrites ctx.arima.endmdl with each span's own end, so history{} cannot
+    // read it back after run_slidingspans has run.
+    const int endmdl_full[2] = {ctx.arima.endmdl(1), ctx.arima.endmdl(2)};
 
     // spectrum{} (spcdrv.f): the data-based periodogram diagnostic (sp0/sp1/sp2).
     // Runs on the pristine main-run X-11 state -- BEFORE the sliding-spans/history
@@ -546,21 +550,6 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // slidingspans{}/history{} are separate re-runs. No-op when spectrum{} was
     // absent (ctx.spcout.requested false).
     if (!run_spectrum(ctx)) return false;
-
-    // Both span drivers re-estimate the model per span, so each span's prlkhd
-    // overwrites /lkhd/ (the reported log likelihood + AIC/AICC/BIC/HQ). The
-    // oracle has the same overwrite but writes its .udg before revdrv runs,
-    // whereas this harness dumps at exit -- so keep the main run's values.
-    const lkhd_cmn lkhd_main = ctx.lkhd;
-
-    if (!run_slidingspans(ctx, trnsrs)) return false;
-
-    // history{} (revchk.f/setrvp.f/revdrv.f/getrev.f/prtrev.f): the expanding-
-    // span concurrent-vs-final revisions analysis, built on the same re-entrant
-    // driver (driver/run_history.hpp). No-op when history{} was absent.
-    if (!run_history(ctx, trnsrs, begspn_full, nspobs, nfcst)) return false;
-
-    ctx.lkhd = lkhd_main;
 
     // composite{} (x11ari.f:372-373): if this run is a COMPONENT of a composite
     // adjustment (series{comptype=...} set Iag>=0 and the metafile driver carried
@@ -614,6 +603,30 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
         // and the restore of the direct pointer geometry.
         agr2_compare(ctx, begspn_full);
     }
+
+    // --- the span-replay diagnostics (x12run.f:225/257) ----------------------
+    // sspdrv and revdrv are separate re-runs that x12run.f calls AFTER x11ari
+    // has finished -- which includes x11ari's own composite tail above. Order
+    // matters for a composite run in both directions: agr2_component reads the
+    // main run's D-table buffers (a span replay overwrites them), and revdrv's
+    // indirect revision table is printed by the TOTAL, whose Iagr the oracle has
+    // already moved 4 -> 5 in agr2 by the time revdrv runs.
+    //
+    // Both span drivers re-estimate the model per span, so each span's prlkhd
+    // overwrites /lkhd/ (the reported log likelihood + AIC/AICC/BIC/HQ). The
+    // oracle has the same overwrite but writes its .udg before revdrv runs,
+    // whereas this harness dumps at exit -- so keep the main run's values.
+    const lkhd_cmn lkhd_main = ctx.lkhd;
+
+    if (!run_slidingspans(ctx, trnsrs)) return false;
+
+    // history{} (revchk.f/setrvp.f/revdrv.f/getrev.f/prtrev.f): the expanding-
+    // span concurrent-vs-final revisions analysis, built on the same re-entrant
+    // driver (driver/run_history.hpp). No-op when history{} was absent.
+    if (!run_history(ctx, trnsrs, begspn_full, nspobs, nfcst, endmdl_full))
+        return false;
+
+    ctx.lkhd = lkhd_main;
 
     return !ctx.error.lfatal;
 }

@@ -20,7 +20,6 @@
 //     Sts; sfr the two revisions Final-Conc and Final-Proj (prtrv2, %-form when
 //     Muladd!=1). setrvp.f's Beglup: with Lrvsf the loop starts a year earlier,
 //     at the December before Rvstrt, so the first table year's projections run.
-//     Fixper (fixed-period model estimation) shifting Beglup is out of scope.
 //   * trendchng (Lrvtch: tcr/tce) -- the month-to-month trend %-change history,
 //     the chr/che pattern on Stc (Itype=2): conc/final = (Stc(i)-Stc(i-1))/
 //     Stc(i-1)*100, revision = Final - Conc (Tbltyp=5 forces Rvper=F).
@@ -42,11 +41,35 @@
 //     than the revision tables, which stop at Endtbl-1.
 //     The additive-mode negative-value ceasing branch of putrev (Muladd==1) is
 //     out of scope (this spec is multiplicative).
+//   * The MODEL SPAN of each span (revdrv.f:479-497). Two branches, both ported:
+//     `series{modelspan=(,0.per)}` sets Fixper, and each span's model then stops
+//     at the last occurrence of that period -- so the estimation window advances
+//     only ONCE A YEAR, which is how the oracle implements "parameters fixed to
+//     what they were at the last value of Fixper"; setrvp.f:64-71 additionally
+//     backs Beglup up to the first such period (a pre-Begrev, X-11-less span in
+//     the oracle, which this port skips -- see the loop note in the .cpp). With
+//     an ordinary modelspan END instead, every span's model span is capped at
+//     `mdl2`, the main run's Endmdl. Both are applied through run_x11_span's
+//     nend_mdl -> arima.f:142-152 narrow + arima.f:1145 (setspn.f) restore.
+//   * history{fixmdl=yes} (Revfix, revdrv.f:250-262): every ARMA and regression
+//     parameter held at the main run's converged values, so each span re-FILTERS
+//     rather than re-estimates. This is the one history configuration that is
+//     bit-exact rather than at the per-span re-estimation floor. revchk.f:801-805
+//     then switches Fixper off (nothing left to re-estimate once a year).
+//   * composite{}: the INDIRECT SA revision history (Indrev) -- see the
+//     HistoryOutput fields below and the run_history.cpp comment block.
 //   * No revision targets (Ntarsa==Ntartr==0 -> only the Fin(0,.) concurrent-
-//     vs-final column), no regression{}/outlier{}/x11regression{}, model
-//     re-estimated each span (Revfix=F -- restor_span resets Arimap to the main
-//     run's converged snapshot as the per-span starting values, then rgarma
-//     re-optimizes; the fixmdl=yes path is slidingspans' job).
+//     vs-final column), no regression{}/outlier{}/x11regression{}. Without
+//     fixmdl the model is re-estimated each span (restor_span resets Arimap to
+//     the main run's converged snapshot as the per-span starting values, then
+//     rgarma re-optimizes).
+//
+// Still NOT ported from history{}'s option surface, all parsed and currently
+// SILENT: outlier= / outlierwin= (Otlrev/Otlwin -- the per-span outlier
+// re-identification), refresh= (Lrfrsh), fixreg= (Rvfxrg/Nrvfxr),
+// fixx11reg= (Revfxx), sadjlags=/trendlags=/target= (Targsa/Targtr/Cnctar --
+// the alternate revision targets), endtable= (Irev==2), transparent= (Rvtran,
+// print surface) and additivesa= (Rvdiff, additive-mode only).
 #ifndef X13_DRIVER_RUN_HISTORY_HPP
 #define X13_DRIVER_RUN_HISTORY_HPP
 
@@ -125,6 +148,17 @@ struct HistoryOutput {
     bool have_tdrg = false;          // td   -> tdh
     int nrvtdrg = 0;
     std::vector<double> tdh;         // nrvtdrg per row
+    // composite{}: the INDIRECT seasonally-adjusted revision history (Indrev,
+    // revdrv.f:838-846 -> prtrev Tbltyp=3 -> the iar/iae save tables). Only the
+    // aggregate TOTAL of a metafile emits it; every component instead folds its
+    // own concurrent/final SA into the shared /revdta/ Cncisa/Finisa (putrev.f:
+    // 25-30). Same row range and same percent arithmetic as sar/sae.
+    bool have_ind = false;           // the total emitted iar/iae
+    bool ind_reported = false;       // the total reached the historyindsa line
+    bool ind_yes = false;            // .udg `historyindsa: yes|no`
+    std::vector<double> iar;         // Ind_SA_revision (percent)
+    std::vector<double> iae_cnc;     // Conc_Ind_SA
+    std::vector<double> iae_fin;     // Final_Ind_SA
 };
 
 // Run the revisions-history analysis. No-op (returns true, leaves
@@ -137,8 +171,14 @@ struct HistoryOutput {
 // run's own geometry, captured by the caller before the span drivers overwrite
 // the ctx copies. trnsrs_full is the main run's clean transformed series (see
 // run_x11_span.hpp).
+// endmdl_full is the MAIN run's Endmdl (revdrv.f:246's `mdl2`): every span's own
+// model span is capped at it (revdrv.f:490-496), and when series{modelspan=} gave
+// a "0.per" end it also set Fixper, which caps the model span at the last
+// occurrence of that period instead (revdrv.f:481-489). Captured by the caller
+// before the span drivers overwrite ctx.arima.endmdl with their own span end.
 bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
-                 const int* begspn_full, int nspobs_full, int nfcst_full);
+                 const int* begspn_full, int nspobs_full, int nfcst_full,
+                 const int* endmdl_full);
 
 }  // namespace x13
 

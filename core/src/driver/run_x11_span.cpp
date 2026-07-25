@@ -22,7 +22,7 @@ namespace x13 {
 
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
-                   int lsp) {
+                   int lsp, int nend_mdl) {
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
 
@@ -81,6 +81,16 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     ctx.arima.begmdl(2) = begspn[1];
     ctx.arima.endmdl(1) = endspn[0];
     ctx.arima.endmdl(2) = endspn[1];
+    // history{} Fixper (revdrv.f:481-489): the model span ends `nend_mdl`
+    // periods before the span end, at the last occurrence of period Fixper.
+    // Begmdl is never moved (nbeg==0), so Frstsy/Nomnfy/Adj1st are unaffected
+    // and only Nspobs/Nobspf/Endspn narrow (arima.f:142-152).
+    const int nend = (has_model && nend_mdl > 0) ? nend_mdl : 0;
+    if (nend > 0) {
+        addate(endspn, sp, -nend, ctx.arima.endmdl.data());
+        ctx.arima.endspn(1) = ctx.arima.endmdl(1);
+        ctx.arima.endspn(2) = ctx.arima.endmdl(2);
+    }
 
     int offset = 0;
     dfdate(begspn, begsrs, sp, offset);   // 0-based offset into the raw series
@@ -108,6 +118,15 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         // over just this span's window (Nspobs==nlen); Nestpm==0 means it
         // takes exactly one pass and never perturbs ctx.mdldat.arimap.
         const double* trnsrs_span = trnsrs_full.data() + offset;
+        // arima.f:142-152 -- narrow onto the model span. With nbeg==0 only
+        // Nspobs and Nobspf move; Frstsy/Nomnfy/Adj1st are Begspn-derived and
+        // Begspn has not changed, so the estimation input still starts at
+        // Sto(Pos1ob+0) == trnsrs_span.
+        if (nend > 0) {
+            ctx.mdldat.nspobs = nlen - nend;
+            ctx.extend.nobspf =
+                std::min(ctx.mdldat.nspobs + nfdrp, ctx.arima.nomnfy);
+        }
         int nrxy = 0, frstry = 0;
         regvar(ctx, trnsrs_span, ctx.extend.nobspf, fctdrp, nfcst, 0,
                ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
@@ -134,6 +153,27 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         prlkhd(ctx, aptr, &ctx.adj.adj(ctx.adj.adj1st), ctx.adj.adjmod,
                ctx.arima.fcntyp, ctx.arima.lam);
         if (ctx.error.lfatal) return false;
+
+        // arima.f:1144-1158 (setspn.f) -- put the span END back BEFORE
+        // forecasting, so the forecasts start after the last observation of the
+        // SPAN rather than after the end of the (Fixper-narrowed) model span.
+        // The estimated coefficients are kept; only Nspobs/Nobspf/Endspn and the
+        // design matrix are rebuilt. NOTE the ported asymmetry: setspn.f:135 uses
+        // max(Nfcst-Fctdrp,0) where the narrowing at arima.f:151 used Nfdrp.
+        if (nend > 0) {
+            ctx.mdldat.nspobs = nlen;
+            ctx.arima.endspn(1) = endspn[0];
+            ctx.arima.endspn(2) = endspn[1];
+            ctx.extend.nobspf =
+                std::min(nlen + std::max(nfcst - fctdrp, 0), ctx.arima.nomnfy);
+            int nrxy3 = 0, frstry3 = 0;
+            regvar(ctx, trnsrs_span, ctx.extend.nobspf, fctdrp, nfcst, 0,
+                   ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+                   ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom, nrxy3,
+                   ctx.arima.begxy.data(), frstry3, true, ctx.arima.elong);
+            if (ctx.error.lfatal) return false;
+            ctx.arima.nrxy = nrxy3;
+        }
 
         if (nfcst > 0) {
             fcstout(ctx, nfcst, ctx.arima.fctdrp, ctx.arima.ciprob,

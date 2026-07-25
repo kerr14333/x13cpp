@@ -98,6 +98,14 @@ int main(int argc, char** argv) {
     // The carried aggregation state (the Fortran COMMONs that outlive a run).
     x13::agr_cmn carry_agr{};
     x13::agrsrs_cmn carry_agrsrs{};
+    // ... and, for history{} on a composite, the INDIRECT revision accumulator:
+    // /revdta/ Cncisa/Finisa plus the three /revcmn/ scalars that steer it
+    // (Indrev, Indrvs, Nrcomp). agr1 initializes them once for the metafile
+    // (composite/agr.cpp) and every component folds itself in (putrev.f:25-30),
+    // so they persist exactly like /mq11/ and /agreg/ do.
+    auto carry_revsrs = std::make_unique<x13::revsrs_cmn>();
+    int carry_indrev = 0, carry_nrcomp = 0;
+    int carry_indrvs[2] = {0, 0};
     bool have_carry = false;
     std::string out;   // buffered table lines (printed after OUTCOME:)
 
@@ -120,6 +128,11 @@ int main(int argc, char** argv) {
         if (have_carry) {
             ctx.agr = carry_agr;
             ctx.agrsrs = carry_agrsrs;
+            ctx.revsrs = *carry_revsrs;
+            ctx.rev.indrev = carry_indrev;
+            ctx.rev.indrvs(1) = carry_indrvs[0];
+            ctx.rev.indrvs(2) = carry_indrvs[1];
+            ctx.rev.nrcomp = carry_nrcomp;
         }
 
         bool ok;
@@ -139,6 +152,11 @@ int main(int argc, char** argv) {
 
         carry_agr = ctx.agr;
         carry_agrsrs = ctx.agrsrs;
+        *carry_revsrs = ctx.revsrs;
+        carry_indrev = ctx.rev.indrev;
+        carry_indrvs[0] = ctx.rev.indrvs(1);
+        carry_indrvs[1] = ctx.rev.indrvs(2);
+        carry_nrcomp = ctx.rev.nrcomp;
         have_carry = true;
 
         // Tables: the composite total (the last spec) prints unprefixed so the
@@ -344,6 +362,40 @@ int main(int argc, char** argv) {
             dump(out, prefix, "d11", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data());
             dump(out, prefix, "d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
             dump(out, prefix, "d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
+        }
+
+        // history{} on a composite: each spec's own sar/sae (the DIRECT
+        // revisions of that series) plus, on the aggregate total only, the
+        // INDIRECT iar/iae the components folded into /revdta/ (Indrev) and the
+        // `historyindsa` savelog line (revdrv.f:1199).
+        if (ctx.hist_out.ran) {
+            const auto& ho = ctx.hist_out;
+            char hbuf[160];
+            for (std::size_t r = 0; r < ho.dates.size(); ++r) {
+                if (ho.have_sa) {
+                    std::snprintf(hbuf, sizeof hbuf, "%ssar %06d %.15E\n",
+                                  prefix.c_str(), ho.dates[r], ho.sar[r]);
+                    out += hbuf;
+                    std::snprintf(hbuf, sizeof hbuf, "%ssae %06d %.15E %.15E\n",
+                                  prefix.c_str(), ho.dates[r], ho.sae_cnc[r],
+                                  ho.sae_fin[r]);
+                    out += hbuf;
+                }
+                if (ho.have_ind) {
+                    std::snprintf(hbuf, sizeof hbuf, "%siar %06d %.15E\n",
+                                  prefix.c_str(), ho.dates[r], ho.iar[r]);
+                    out += hbuf;
+                    std::snprintf(hbuf, sizeof hbuf, "%siae %06d %.15E %.15E\n",
+                                  prefix.c_str(), ho.dates[r], ho.iae_cnc[r],
+                                  ho.iae_fin[r]);
+                    out += hbuf;
+                }
+            }
+            if (ho.ind_reported) {
+                std::snprintf(hbuf, sizeof hbuf, "%shistoryindsa %s\n",
+                              prefix.c_str(), ho.ind_yes ? "yes" : "no");
+                out += hbuf;
+            }
         }
     }
     std::printf("OUTCOME: OK\n");
