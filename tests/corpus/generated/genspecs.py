@@ -127,7 +127,7 @@ def spec(name, arglines, *, save_key=None, savelog=False):
     return name + "{\n" + body + "\n}"
 
 
-def series_block(s):
+def series_block(s, modelspan=None):
     lines = [
         'title = "%s"' % s["title"],
         'file = "%s/%s"' % (DATA, s["file"]),
@@ -136,7 +136,26 @@ def series_block(s):
     ]
     if s["span"]:
         lines.append("span = %s" % s["span"])
+    if modelspan:
+        lines.append("modelspan = %s" % modelspan)
     return spec("series", lines, save_key="series")
+
+
+# Per-series model spans, comfortably inside each series{span}. Keyed by series
+# name; a config opts in by carrying a `.modelspan` attribute (see build_spec).
+# The end dates sit two years short of each series' last observation.
+MODELSPAN_OPEN = {
+    "airline": "(1952.01, )",
+    "payems": "(2003.01, )",
+    "unrate": "(1964.01, )",
+    "expgs": "(1950.1, )",
+}
+MODELSPAN_BOTH = {
+    "airline": "(1952.01, 1958.12)",
+    "payems": "(2003.01, 2023.12)",
+    "unrate": "(1964.01, 2023.12)",
+    "expgs": "(1950.1, 2024.4)",
+}
 
 
 def transform_log():
@@ -373,6 +392,40 @@ def cfg_holiday_x11(s):
     return blocks
 
 
+def _cfg_modelspan(s):
+    # series{modelspan=} -- the regARIMA model is fit over Begmdl..Endmdl while
+    # X-11 still decomposes the FULL series span (arima.f:134-157 narrows every
+    # span pointer, setspn.f walks them back out at arima.f:1145/1181). Trading
+    # day is carried so the calendar path spans the narrowing too, and the
+    # forecasts are what catch a span END that was never restored: they must
+    # start after the last observation of the SERIES span, not of the model span.
+    # Before the port the model was silently fit on the whole series and d10-d13
+    # drifted ~5.6e-4 (growing toward the series end) behind an OUTCOME: OK.
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(spec("regression", ["variables = (td)"], save_key="regression"))
+    blocks.append(arima_airline())
+    blocks.append(estimate_block())
+    blocks.append(forecast_block(s["period"]))
+    blocks.append(x11_block("add" if s["rate"] else None))
+    return blocks
+
+
+def cfg_modelspan_x11(s):
+    return _cfg_modelspan(s)
+
+
+cfg_modelspan_x11.modelspan = MODELSPAN_OPEN
+
+
+def cfg_modelspan_both_x11(s):
+    return _cfg_modelspan(s)
+
+
+cfg_modelspan_both_x11.modelspan = MODELSPAN_BOTH
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -400,6 +453,8 @@ CONFIGS = [
     ("mean-td-seats", cfg_mean_td_seats),
     ("holiday-x11", cfg_holiday_x11),
     ("backcast-x11", cfg_backcast_x11),
+    ("modelspan-x11", cfg_modelspan_x11),
+    ("modelspan-both-x11", cfg_modelspan_both_x11),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 
@@ -411,7 +466,8 @@ HEADER = (
 
 
 def build_spec(series_name, s, config_name, config_fn):
-    blocks = [series_block(s)] + config_fn(s)
+    mdlspn = getattr(config_fn, "modelspan", None)
+    blocks = [series_block(s, mdlspn and mdlspn[series_name])] + config_fn(s)
     header = HEADER.format(series=series_name, config=config_name)
     return header + "\n".join(blocks) + "\n"
 

@@ -172,6 +172,32 @@ diagnostics front (force / slidingspans / history) is now closed.
   byte-identical. Gated by the new `*_backcast-x11` config (all 4 series).
   Still open here: `x11{appendbcst=yes}` widens the oracle's punch range to the
   backcast span and the harness does not (b1/d10/d16 row counts differ).
+- **`series{modelspan=}` — CLOSED (bit-exact):** the model span was parsed
+  (`Begmdl`/`Endmdl` were populated) but **never applied** — the regARIMA model
+  was silently fit over the whole series span, so every coefficient, the
+  forecasts, and the forecast-extended X-11 filter tail were wrong (~5.6e-4 in
+  d10-d13, growing toward the series end) behind an `OUTCOME: OK`. It was the
+  100%-attribution culprit in the `tools/spec_sweep.py` covering array (15/15
+  rows). Ported: (1) `Ldestm` — a *local* in `gtinpt.cpp` that was `(void)`'d,
+  so `ctx.arima.ldestm` was never written and the arima.f:136 gate could never
+  fire; (2) arima.f:134-157's narrowing (`Begspn`/`Endspn` onto `Begmdl`/
+  `Endmdl`, then `Nspobs`/`Frstsy`/`Nomnfy`/`Nobspf`/`Adj1st` recomputed, and
+  the estimation input read from `Sto(Pos1ob+nbeg)`); (3) `setspn.f` as a lambda
+  in `run_pre_model.cpp`, called at arima.f:1145 to restore the span **END
+  before forecasting** (forecasts must start after the last observation of the
+  SERIES span) and at arima.f:1181 to restore the START afterwards, each
+  followed by a `trnfcn` + `regvar` rebuild; (4) editor.f:176-187's
+  `nbeg>0 ⇒ Nbcst=0`. Placement is the whole trick: adjsrs (editor.f:849),
+  a1/a2/a3, and trnaic (x11ari.f:84) all run BEFORE arima.f, hence on the full
+  span, so the narrowing sits between trnaic and the transform. Two C++-only
+  seams the Fortran does not have, both silent: `ctx.series.tsrs` is how SEATS
+  gets its decomposition input, so the restore must refresh it or the whole
+  decomposition slides `nbeg` periods (rel ~1.0 in s10-s13); and `x13run_m3`
+  derived `nefobs` as `Nspobs-Nintvl` at print time, i.e. after the restore —
+  the count is now recorded at estimation time as `ctx.est_nefobs`. Ported
+  asymmetry kept: setspn.f:135 uses `max(Nfcst-Fctdrp,0)` for `Nobspf` where
+  arima.f:151 uses `Nfdrp`. Gated by the new `*_modelspan-x11` (open end) and
+  `*_modelspan-both-x11` (both ends) configs on all 4 series.
 - **regARIMA HOLIDAY regressors + X-11 (`Finhol`) — CLOSED (bit-exact):**
   `regression{variables=(easter[N] labor[N] thanks[N])}` with `x11{}` left the
   holiday effect in D11/D13/D16 (~1.4e-2 in March/April) behind an

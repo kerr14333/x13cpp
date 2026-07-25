@@ -180,6 +180,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     bool larma = false, hvfcst = false, hvspec = false, havmdl = false, havreq = false;
     bool lautom = false, lautox = false, hvmfil = false, lagr = false, l1stcomp = false;
     bool ldestm = false, x11reg = false;
+    ctx.arima.ldestm = false;   // gtinpt.f:280
     bool ldata = false;
     std::string dtafil;
     lx11 = false; lseats = false; lmodel = false;
@@ -366,7 +367,10 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 return;
             }
             (void)havotl; (void)hvfcst; (void)hvspec; (void)havreg;
-            (void)l1stcomp; (void)ldestm; (void)x11reg;
+            // Ldestm: "this run estimates a model" (estimate/automdl/seats). It
+            // is what gates the series{modelspan=} narrowing in arima.f:136.
+            ctx.arima.ldestm = ldestm;
+            (void)l1stcomp; (void)x11reg;
             continue;   // GO TO 210
         }
         if (!inptok) return;

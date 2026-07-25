@@ -81,7 +81,9 @@ int main(int argc, char** argv) {
     const auto& m = ctx.model;
     const auto& d = ctx.mdldat;
     const auto& lk = ctx.lkhd;
-    int nefobs = d.nspobs - m.nintvl;
+    // Nspobs is the SERIES span after a modelspan run (setspn.f restores it), so
+    // prefer the count the fit recorded; fall back for the no-estimate paths.
+    int nefobs = ctx.est_nefobs > 0 ? ctx.est_nefobs : d.nspobs - m.nintvl;
 
     // Integer counters + dimensions.
     std::printf("converged: %s\n", d.convrg ? "yes" : "no");

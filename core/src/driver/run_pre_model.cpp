@@ -77,6 +77,28 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     const int* begspn = ctx.mdldat.begspn.data();
     int nspobs = ctx.mdldat.nspobs;
 
+    // series{modelspan=} (arima.f:133-141): the regARIMA stage estimates over
+    // Begmdl..Endmdl, not over the series span. nbeg/nend measure how far inside
+    // the series span the model span sits. The narrowing itself is applied much
+    // further down, just before the transform: the prior-factor record (adjsrs,
+    // editor.f:849), a1/a2/a3, and the automatic transform test (trnaic,
+    // x11ari.f:84) all run on the FULL span in the oracle, ahead of arima.f. It
+    // is walked back out (setspn.f) before X-11 sees the series, so B1 and the
+    // D-tables always cover the whole span.
+    int nbeg = 0, nend = 0;
+    if (ctx.arima.ldestm) {
+        int endspn0[2];
+        addate(begspn, sp, nspobs - 1, endspn0);
+        dfdate(ctx.arima.begmdl.data(), begspn, sp, nbeg);
+        dfdate(endspn0, ctx.arima.endmdl.data(), sp, nend);
+        if (nbeg < 0) nbeg = 0;   // chkcvr already rejects a model span that
+        if (nend < 0) nend = 0;   // is not inside the series span
+    }
+    // editor.f:176-187 -- a model span starting after the series span turns
+    // backcasting off; mkback would otherwise be "backcasting" over observed
+    // data. (The oracle also emits a WARNING here; print surface is deferred.)
+    if (nbeg > 0 && ctx.extend.nbcst > 0) ctx.extend.nbcst = 0;
+
     // Span offset within the full series (getsrs guarantees coverage).
     int offset = 0;
     dfdate(begspn, begsrs, sp, offset);
@@ -273,6 +295,66 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
         ctx.trnaic_result.selected_log = (ctx.arima.fcntyp == 1);
     }
 
+    // --- series{modelspan=}: move onto the model span (arima.f:139-153) ------
+    // Endspn is not carried on the main path (it is derivable from Begspn +
+    // Nspobs), so track it locally; setspn.f rebuilds both endpoints
+    // arithmetically from Begmdl/Endmdl anyway.
+    int endspn_cur[2];
+    addate(begspn, sp, nspobs - 1, endspn_cur);
+    int adj1st_cur = adj1st;
+    // setspn.f -- recompute every span-derived pointer after Begspn/Endspn move.
+    // Called twice on the way back out: once for the span END before forecasting
+    // (arima.f:1145) and once for the span START afterwards (arima.f:1181).
+    auto setspn = [&](int nend_r, int nbeg_r) {
+        if (nend_r > 0)
+            addate(ctx.arima.endmdl.data(), sp, nend_r, endspn_cur);
+        if (nbeg_r > 0)
+            addate(ctx.arima.begmdl.data(), sp, -nbeg_r, ctx.mdldat.begspn.data());
+        dfdate(endspn_cur, begspn, sp, nspobs);
+        nspobs += 1;
+        ctx.mdldat.nspobs = nspobs;
+        dfdate(begspn, begsrs, sp, frstsy);
+        frstsy += 1;
+        ctx.arima.frstsy = frstsy;
+        ctx.arima.nomnfy = ctx.arima.nobs - frstsy + 1;
+        // NOTE the asymmetry, ported as written: setspn.f:135 uses
+        // max(Nfcst-Fctdrp,0) where the narrowing at arima.f:151 uses Nfdrp.
+        // The two differ only when a seasonal adjustment is requested together
+        // with forecast{fctdrp}, where editor.f leaves Nfdrp == Nfcst.
+        nobspf = std::min(nspobs + std::max(nfcst - fctdrp, 0), ctx.arima.nomnfy);
+        ctx.extend.nobspf = nobspf;
+        dfdate(begspn, begadj, sp, adj1st_cur);
+        adj1st_cur += 1;
+        ctx.adj.adj1st = adj1st_cur;
+        aptr = ctx.arima.y.data() + (frstsy - 1);
+        facspn = fac.data() + (adj1st_cur - 1);
+    };
+    bool nend_done = false;   // has the arima.f:1145 span-END restore run yet?
+    if (nbeg > 0 || nend > 0) {
+        if (nbeg > 0) {
+            ctx.mdldat.begspn(1) = ctx.arima.begmdl(1);
+            ctx.mdldat.begspn(2) = ctx.arima.begmdl(2);
+        }
+        if (nend > 0) {
+            endspn_cur[0] = ctx.arima.endmdl(1);
+            endspn_cur[1] = ctx.arima.endmdl(2);
+        }
+        dfdate(endspn_cur, begspn, sp, nspobs);
+        nspobs += 1;
+        ctx.mdldat.nspobs = nspobs;
+        dfdate(begspn, begsrs, sp, frstsy);
+        frstsy += 1;
+        ctx.arima.frstsy = frstsy;
+        ctx.arima.nomnfy = ctx.arima.nobs - frstsy + 1;
+        nobspf = std::min(nspobs + nfdrp, ctx.arima.nomnfy);
+        ctx.extend.nobspf = nobspf;
+        dfdate(begspn, begadj, sp, adj1st_cur);
+        adj1st_cur += 1;
+        ctx.adj.adj1st = adj1st_cur;
+        aptr = ctx.arima.y.data() + (frstsy - 1);
+        facspn = fac.data() + (adj1st_cur - 1);
+    }
+
     // Table trn (LTRNDT): the transformed prior-adjusted series that feeds
     // regARIMA modeling. arima.f applies the Box-Cox/logit transform (trnfcn) to
     // the prior-adjusted series (== a3, or a1 when there is no prior), over
@@ -293,7 +375,10 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     std::vector<double> trnsrs(static_cast<std::size_t>(prm::PLEN));
     bool have_trn = false;
     if (wants_save(ctx, "trn") || ctx.captured.has_model) {
-        trnfcn(ctx, padj.data(), nobspf, ctx.arima.fcntyp, ctx.arima.lam,
+        // arima.f:157 reads the estimation input from Sto(Pos1ob+nbeg): padj is
+        // the prior-adjusted series over the FULL span, so the model span starts
+        // nbeg periods in.
+        trnfcn(ctx, padj.data() + nbeg, nobspf, ctx.arima.fcntyp, ctx.arima.lam,
                trnsrs.data());
         if (ctx.error.lfatal) return false;
         have_trn = true;
@@ -316,8 +401,8 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // /adjcmn/ record above put there, and x11int copies Adj into Sprior
             // from Setpri = Pos1bk -- the first BACKCAST period, not Begspn. With
             // no backcasts Adj1st == 1 and this is the identical write.
-            copy(facspn, ncp, 1, ctx.adj.adj.data() + (adj1st - 1));
-            ctx.adj.adj1st = adj1st;
+            copy(facspn, ncp, 1, ctx.adj.adj.data() + (adj1st_cur - 1));
+            ctx.adj.adj1st = adj1st_cur;
         }
     }
     if (wants_save(ctx, "trn")) {
@@ -446,7 +531,10 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                     ctx.arima.nrxy = nrxy2;
                 }
             }
-            (void)nefobs;  // nefobs == Nspobs-Nintvl; the estimates live in mdldat
+            // nefobs == Nspobs-Nintvl; the estimates live in mdldat. Record it
+            // while Nspobs is still the ESTIMATION span (a model span narrows it
+            // and setspn.f widens it back before X-11).
+            ctx.est_nefobs = nefobs;
 
             // Capture the final regARIMA residuals for the residual-spectrum
             // diagnostic (spr, spcrsd.f, run from arima.f:1126 after the final
@@ -479,6 +567,26 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // original-scale point forecast + confidence band on ctx.forecasts.
             // The prior-adjustment/holiday branches of prtfct are out of this
             // slice, so it is exact only without user prior factors (Priadj<=1).
+            // arima.f:1144-1158 -- model span: put the span END back BEFORE
+            // forecasting, so the forecasts start after the last observation of
+            // the series span rather than after the end of the model span. The
+            // estimated coefficients are kept; only the series and its design
+            // matrix are rebuilt (Begspn is still Begmdl here, hence the +nbeg).
+            if (nend > 0) {
+                nend_done = true;
+                setspn(nend, 0);
+                trnfcn(ctx, padj.data() + nbeg, nspobs, ctx.arima.fcntyp,
+                       ctx.arima.lam, trnsrs.data());
+                if (ctx.error.lfatal) return false;
+                int nrxy3 = 0, frstry3 = 0;
+                regvar(ctx, trnsrs.data(), nobspf, fctdrp, nfcst, 0,
+                       ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+                       ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom,
+                       nrxy3, ctx.arima.begxy.data(), frstry3, true,
+                       ctx.arima.elong);
+                if (ctx.error.lfatal) return false;
+                ctx.arima.nrxy = nrxy3;
+            }
             if (nfcst > 0) {
                 fcstout(ctx, nfcst, ctx.arima.fctdrp, ctx.arima.ciprob,
                         ctx.arima.lognrm);
@@ -492,6 +600,43 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 if (ctx.error.lfatal) return false;
             }
         }
+    }
+
+    // arima.f:1180-1213 -- model span: put the span START back, then recopy and
+    // re-transform the series over the FULL span and rebuild the design matrix.
+    // Everything downstream (extend -> adjreg -> B1 -> X-11) decomposes the whole
+    // series span; only the regARIMA fit and the forecasts used the model span.
+    // arima.f:1204 re-transforms Nspobs points, not Nobspf, so any retained
+    // post-span observations keep the values the narrowed pass left there --
+    // ported as written.
+    // (The `!nend_done` arm also covers the no-estimation harnesses, which skip
+    // the block above: the span must still be restored before X-11 runs.)
+    if (have_trn && (nbeg > 0 || (nend > 0 && !nend_done))) {
+        setspn(nend, nbeg);
+        trnfcn(ctx, padj.data(), nspobs, ctx.arima.fcntyp, ctx.arima.lam,
+               trnsrs.data());
+        if (ctx.error.lfatal) return false;
+        int nrxy4 = 0, frstry4 = 0;
+        regvar(ctx, trnsrs.data(), nobspf, fctdrp, nfcst, ctx.extend.nbcst,
+               ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+               ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom, nrxy4,
+               ctx.arima.begxy.data(), frstry4, true, ctx.arima.elong);
+        if (ctx.error.lfatal) return false;
+        ctx.arima.nrxy = nrxy4;
+        // Refresh the Tsrs/Adj snapshots the later phases read (SEATS takes its
+        // decomposition input straight off ctx.series.tsrs), or they keep the
+        // model-span series while every span pointer says full span -- which
+        // silently slides the whole decomposition by nbeg periods.
+        {
+            int ncp = nobspf < prm::PLEN ? nobspf : prm::PLEN;
+            copy(trnsrs.data(), ncp, 1, ctx.series.tsrs.data());
+            copy(facspn, ncp, 1, ctx.adj.adj.data() + (adj1st_cur - 1));
+            ctx.adj.adj1st = adj1st_cur;
+        }
+    }
+    if ((nbeg > 0 || nend > 0) && have_trn) {
+        if (out_trnsrs) *out_trnsrs = trnsrs;
+        if (out_nobspf) *out_nobspf = nobspf;
     }
 
     return !ctx.error.lfatal;

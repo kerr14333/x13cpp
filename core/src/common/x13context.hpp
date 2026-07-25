@@ -214,6 +214,12 @@ struct X13Context {
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).
     std::vector<double> resid_a;
     int resid_na = 0;
+
+    // Effective observation count the regARIMA fit actually used (Nspobs-Nintvl
+    // at estimation time). Normally derivable from Nspobs, but series{modelspan=}
+    // estimates on a narrower span and setspn.f puts Nspobs back to the full span
+    // before X-11 -- so it has to be recorded when it is still true.
+    int est_nefobs = 0;
     // x11regression{} B/C-iteration regression trading-day factors (b16/c16),
     // snapshotted by x11mdl_td over [Pos1ob,Posfob] at the B (Kpart=2) and C
     // (Kpart=3) iterations of x11pt2.
