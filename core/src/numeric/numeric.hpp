@@ -57,7 +57,7 @@ double gauss(double x);
 // fvalue.f: F-distribution upper-tail probability P(F_{m,n} > x). Returns 0.0
 // for x>90 (or x>40 with n>150), and 1.0 for x<=0.
 //
-// x is BY REFERENCE on purpose: see CB-16. On the two "probability is 1" exits
+// x is BY REFERENCE on purpose: see CB-17. On the two "probability is 1" exits
 // the oracle assigns X=0D0, clobbering the caller's F-statistic. Faithful.
 double fvalue(double& x, int m, int n);
 

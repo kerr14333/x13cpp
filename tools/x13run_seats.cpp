@@ -192,7 +192,7 @@ int main(int argc, char** argv) {
             // (trend)/s13 (irregular)/s18. Only meaningful once run_seats()
             // itself reports OK (matching the driver's own gating); still
             // computed best-effort here for diagnostics even when it isn't.
-            x13::estbur_historical(ctx, mo, cd, comp, est);
+            x13::estbur_historical(ctx, mo, cd, comp, opts, est);
             have_est = est.ok;
         }
     } catch (const std::exception&) {

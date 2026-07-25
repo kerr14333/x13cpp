@@ -147,10 +147,13 @@ def test_seats_table(base: str, tag: str) -> None:
     # inadmissible-decomposition spec (expgs_seats: negative irregular spectrum
     # -> oracle aborts, writes no s-tables) and the no-seasonal tables
     # (unrate_seats s10/s16); those SKIP above (no parity target), they are not
-    # an unported orchestrator. NOTE (engine faithfulness, no gate): our SEATS
-    # still emits approximated s-tables for expgs rather than aborting like the
-    # oracle -- porting the spectrum.f admissibility abort/noadmiss handling is
-    # a separate item with no table golden to verify it.
+    # an unported orchestrator. The engine now FATALS on expgs_seats instead of
+    # emitting approximated s-tables -- seats_decomp_unported_reason
+    # (seatopts.cpp) applies the oracle's own admissibility verdict
+    # (spectrum.f:389/446-547 qt1<0, spectrum.f:1709-1737 cycle varwnc<0), which
+    # with the default seats{noadmiss=no} is exactly "abort SEATS, write no
+    # s-tables". Silent wrongness -> deliberate fatal; still no table golden, so
+    # still a skip here.
     _gated = {
         ("unrate_seats", "s11"), ("unrate_seats", "s12"),
         ("unrate_seats", "s13"), ("unrate_seats", "s18"),
@@ -285,6 +288,99 @@ def test_seats_table(base: str, tag: str) -> None:
         ("expgs_mean-td-seats", "s10"), ("expgs_mean-td-seats", "s11"),
         ("expgs_mean-td-seats", "s12"), ("expgs_mean-td-seats", "s13"),
         ("expgs_mean-td-seats", "s16"), ("expgs_mean-td-seats", "s18"),
+        # ---- seats{} OPTION gates (hand-authored specs, not genspecs.py) ----
+        # *_imean-{yes,no}-seats: the seats{imean=} OVERRIDE of ansub9.f:1072-
+        # 1080's default derivation (L_IMEAN = "does the fitted model carry a
+        # Constant regressor group"). imean-yes forces the mean ON for a model
+        # with NO const regressor; imean-no forces it OFF for a model that has
+        # one. Both are LIVE in the oracle -- flipping the flag moves s12 by
+        # 6.8e-4 (airline), 3.7e-5 (payems), 3.5e-3 (expgs), 1.7e-3 (unrate),
+        # and unrate's additive s10/s16 by 8.5e-1. The series SEATS decomposes
+        # is unaffected either way (regeff never strips the Constant); only the
+        # wm centering / za mean seed in estbur.cpp is gated by L_IMEAN.
+        ("airline_imean-yes-seats", "s10"), ("airline_imean-yes-seats", "s11"),
+        ("airline_imean-yes-seats", "s12"), ("airline_imean-yes-seats", "s13"),
+        ("airline_imean-yes-seats", "s16"), ("airline_imean-yes-seats", "s18"),
+        ("payems_imean-yes-seats", "s10"), ("payems_imean-yes-seats", "s11"),
+        ("payems_imean-yes-seats", "s12"), ("payems_imean-yes-seats", "s13"),
+        ("payems_imean-yes-seats", "s16"), ("payems_imean-yes-seats", "s18"),
+        ("expgs_imean-yes-seats", "s10"), ("expgs_imean-yes-seats", "s11"),
+        ("expgs_imean-yes-seats", "s12"), ("expgs_imean-yes-seats", "s13"),
+        ("expgs_imean-yes-seats", "s16"), ("expgs_imean-yes-seats", "s18"),
+        ("unrate_imean-yes-seats", "s10"), ("unrate_imean-yes-seats", "s11"),
+        ("unrate_imean-yes-seats", "s12"), ("unrate_imean-yes-seats", "s13"),
+        ("unrate_imean-yes-seats", "s16"), ("unrate_imean-yes-seats", "s18"),
+        ("airline_imean-no-seats", "s10"), ("airline_imean-no-seats", "s11"),
+        ("airline_imean-no-seats", "s12"), ("airline_imean-no-seats", "s13"),
+        ("airline_imean-no-seats", "s16"), ("airline_imean-no-seats", "s18"),
+        ("payems_imean-no-seats", "s10"), ("payems_imean-no-seats", "s11"),
+        ("payems_imean-no-seats", "s12"), ("payems_imean-no-seats", "s13"),
+        ("payems_imean-no-seats", "s16"), ("payems_imean-no-seats", "s18"),
+        ("expgs_imean-no-seats", "s10"), ("expgs_imean-no-seats", "s11"),
+        ("expgs_imean-no-seats", "s12"), ("expgs_imean-no-seats", "s13"),
+        ("expgs_imean-no-seats", "s16"), ("expgs_imean-no-seats", "s18"),
+        ("unrate_imean-no-seats", "s10"), ("unrate_imean-no-seats", "s11"),
+        ("unrate_imean-no-seats", "s12"), ("unrate_imean-no-seats", "s13"),
+        ("unrate_imean-no-seats", "s16"), ("unrate_imean-no-seats", "s18"),
+        # *_noadmiss-seats / *_statseas-seats / *_bias0-seats: INERTNESS gates.
+        # Each of these three flags only bites under a specific condition that
+        # these (deliberately ordinary) specs do NOT meet, and the oracle's
+        # output is byte-identical to the same spec without the flag -- so what
+        # they pin is that the port does not invent an effect:
+        #   noadmiss  -- only consulted when the canonical decomposition is
+        #                INADMISSIBLE (SPECTRU qt1<0 / cycle varwnc<0). Here it
+        #                is admissible, so noadmiss=yes changes nothing. (When
+        #                it IS inadmissible the port now FATALS either way:
+        #                noadmiss=no is the oracle's own abort, noadmiss=yes
+        #                needs APPROXIMATE + SEATS-internal re-estimation.)
+        #   statseas  -- only consulted by CHANGEMODEL (ansub1.f:3634-3747).
+        #                (1 0 1)(0 1 1) reaches the d==0/p==1/q==1 test but
+        #                fails it, so no model rewrite happens. (When
+        #                CHANGEMODEL WOULD rewrite the model the port fatals --
+        #                seats_changemodel_cambiado in seatopts.cpp.)
+        #   bias=0    -- PORTED CENSUS QUIRK: analts.f:1647-1653 silently
+        #                promotes bias=0 back to bias=1 and prints "BIAS SET
+        #                EQUAL TO 1", so seats{bias=0} is a documented no-op.
+        #                This gate is what stops a future "implementation" of
+        #                bias=0 (skip the bias1c/bias2c/bias3c correction) from
+        #                landing. bias=-1 (the one live value) is fatal --
+        #                BIASCORR (ansub4.f:1244-1581) is not ported.
+        ("airline_noadmiss-seats", "s10"), ("airline_noadmiss-seats", "s11"),
+        ("airline_noadmiss-seats", "s12"), ("airline_noadmiss-seats", "s13"),
+        ("airline_noadmiss-seats", "s16"), ("airline_noadmiss-seats", "s18"),
+        ("payems_noadmiss-seats", "s10"), ("payems_noadmiss-seats", "s11"),
+        ("payems_noadmiss-seats", "s12"), ("payems_noadmiss-seats", "s13"),
+        ("payems_noadmiss-seats", "s16"), ("payems_noadmiss-seats", "s18"),
+        ("expgs_noadmiss-seats", "s10"), ("expgs_noadmiss-seats", "s11"),
+        ("expgs_noadmiss-seats", "s12"), ("expgs_noadmiss-seats", "s13"),
+        ("expgs_noadmiss-seats", "s16"), ("expgs_noadmiss-seats", "s18"),
+        ("unrate_noadmiss-seats", "s10"), ("unrate_noadmiss-seats", "s11"),
+        ("unrate_noadmiss-seats", "s12"), ("unrate_noadmiss-seats", "s13"),
+        ("unrate_noadmiss-seats", "s16"), ("unrate_noadmiss-seats", "s18"),
+        ("airline_statseas-seats", "s10"), ("airline_statseas-seats", "s11"),
+        ("airline_statseas-seats", "s12"), ("airline_statseas-seats", "s13"),
+        ("airline_statseas-seats", "s16"), ("airline_statseas-seats", "s18"),
+        ("payems_statseas-seats", "s10"), ("payems_statseas-seats", "s11"),
+        ("payems_statseas-seats", "s12"), ("payems_statseas-seats", "s13"),
+        ("payems_statseas-seats", "s16"), ("payems_statseas-seats", "s18"),
+        ("expgs_statseas-seats", "s10"), ("expgs_statseas-seats", "s11"),
+        ("expgs_statseas-seats", "s12"), ("expgs_statseas-seats", "s13"),
+        ("expgs_statseas-seats", "s16"), ("expgs_statseas-seats", "s18"),
+        ("unrate_statseas-seats", "s10"), ("unrate_statseas-seats", "s11"),
+        ("unrate_statseas-seats", "s12"), ("unrate_statseas-seats", "s13"),
+        ("unrate_statseas-seats", "s16"), ("unrate_statseas-seats", "s18"),
+        ("airline_bias0-seats", "s10"), ("airline_bias0-seats", "s11"),
+        ("airline_bias0-seats", "s12"), ("airline_bias0-seats", "s13"),
+        ("airline_bias0-seats", "s16"), ("airline_bias0-seats", "s18"),
+        ("payems_bias0-seats", "s10"), ("payems_bias0-seats", "s11"),
+        ("payems_bias0-seats", "s12"), ("payems_bias0-seats", "s13"),
+        ("payems_bias0-seats", "s16"), ("payems_bias0-seats", "s18"),
+        ("expgs_bias0-seats", "s10"), ("expgs_bias0-seats", "s11"),
+        ("expgs_bias0-seats", "s12"), ("expgs_bias0-seats", "s13"),
+        ("expgs_bias0-seats", "s16"), ("expgs_bias0-seats", "s18"),
+        ("unrate_bias0-seats", "s10"), ("unrate_bias0-seats", "s11"),
+        ("unrate_bias0-seats", "s12"), ("unrate_bias0-seats", "s13"),
+        ("unrate_bias0-seats", "s16"), ("unrate_bias0-seats", "s18"),
     }
     # No golden shipped => the oracle produced no such table, so there is no
     # parity target (not an engine gap). This covers the inadmissible-

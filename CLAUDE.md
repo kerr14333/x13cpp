@@ -398,7 +398,7 @@ diagnostics front (force / slidingspans / history) is now closed.
   span's statistics. That was measurable -- `airline_slidingspans` came out
   fsd8 371.6 against the golden's 190.7 -- and is the same state-leak class as
   the xtrm.ksdev / Lterm per-span resets.
-  (3) **CB-16**: `fvalue.f` ZEROES ITS OWN ARGUMENT on both "probability is 1"
+  (3) **CB-17**: `fvalue.f` ZEROES ITS OWN ARGUMENT on both "probability is 1"
   exits, and every caller stores the statistic AFTER the call -- so a series with
   no between-season variation reports `F=0.000` next to `prob=100.00`. `fvalue`
   therefore takes `double&`; the reference parameter exists only to reproduce the

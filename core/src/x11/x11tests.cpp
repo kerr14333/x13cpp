@@ -67,7 +67,7 @@ void ftest(X13Context& ctx, const double* x, int ib, int ie, int nyr, int ind) {
     if (dpeq(fmsr, 0.0)) return;
 
     double f = fmsm / fmsr;
-    // NOTE fvalue takes f BY REFERENCE and may zero it (CB-16) -- and the
+    // NOTE fvalue takes f BY REFERENCE and may zero it (CB-17) -- and the
     // oracle stores f AFTER this call, so the clobbered value is the one that
     // reaches Fstabl/Fpres. Faithful.
     const double prob = fvalue(f, kdfb, kdfr) * 100.0;
@@ -193,7 +193,7 @@ void mstest(X13Context& ctx, const double* array, int jfda, int jlda, int nyr) {
 
     ctx.tests.fmove = rowssn / errssn;
     const int n1 = noyrs - 1;
-    // By reference: CB-16 can zero Fmove in place here, and the oracle both
+    // By reference: CB-17 can zero Fmove in place here, and the oracle both
     // stores and prints the clobbered value.
     ctx.tests.p2 = fvalue(ctx.tests.fmove, n1, ndgfre) * 100.0;
     if (ctx.hiddn.issap == 2) ctx.ssft.ssmf(ctx.ssft.icol) = ctx.tests.fmove;

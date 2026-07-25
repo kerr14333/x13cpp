@@ -535,7 +535,7 @@ double fvalue(double& x, int m, int n) {
             }
             if (p < 1.0) {
                 if (p > 0.0) return 1.0 - p;
-                // CB-16: the oracle ZEROES ITS OWN ARGUMENT here (fvalue.f
+                // CB-17: the oracle ZEROES ITS OWN ARGUMENT here (fvalue.f
                 // label 10, "X=0D0"). Every caller passes a live variable
                 // (ftest's f, mstest's Fmove, kwtest's Chikw), so the
                 // F-statistic the caller then stores/prints is destroyed. Kept
