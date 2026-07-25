@@ -172,6 +172,32 @@ diagnostics front (force / slidingspans / history) is now closed.
   byte-identical. Gated by the new `*_backcast-x11` config (all 4 series).
   Still open here: `x11{appendbcst=yes}` widens the oracle's punch range to the
   backcast span and the harness does not (b1/d10/d16 row counts differ).
+- **`x11{appendbcst=yes}` — CLOSED, and it was the HARNESS, not the engine.**
+  The last open sweep culprit. `Savbct` widens the b1/d10/d16 punch range back to
+  `Pos1bk`, and `x13run_x11`'s `dump()` anchored its date arithmetic on the
+  *range start* rather than on `Pos1ob` — so the leading backcast rows, which
+  belong to dates BEFORE `Begspn`, pushed every label `Nbcst` periods late. A
+  date-keyed diff then lined row k up against row k+Nbcst and reported 30-70%
+  "drift" on columns that were bit-identical. `dump()` now takes `first`/`last`
+  and a separate `anchor`. Gated by the new `*_appendbcst-x11` config (all 4
+  series, `appendbcst`+`appendfcst`+real backcasts).
+  **The whole spec_sweep factor space is now clean at t=3: 202/202 ok over 228
+  rows, 15 factors, 26 oracle-rejected combinations.** Three fixes to
+  `tools/spec_sweep.py` came out of this and are worth knowing before trusting
+  its next report: (1) **pair-level attribution** — the single-level table was
+  structurally blind to this bug, which needed `bcst!=none` AND
+  `append in {bcst,both}`, so neither factor alone reached the 50% bar and the
+  report printed *nothing* while seven rows drifted; the premise of a covering
+  array is that bugs live at two-factor seams, so attribution has to be able to
+  name one. (2) `--outdir` is now abspath'd: a relative one resolved against the
+  per-case cwd, so every engine run died `rc=2` before doing any work and the
+  report blamed 100% of every level of every factor — **if you ever see uniform
+  100%-bad attribution, suspect the harness; no real defect is uniform across
+  the space.** (3) a golden column whose max magnitude is under `ZERO_COL=1e-10`
+  is compared on ABSOLUTE terms: with `x11{mode=add}` the force factors are
+  additive differences, so `ffc` is identically zero — the oracle prints
+  -1.1e-13, the engine an exact 0, and a pointwise relative test called that
+  rel=1.000 on a table where both were right.
 - **The x11{} yes/no switches (`excludefcst` / `true7term` / `sfshort`) — CLOSED
   (bit-exact):** all three were **accepted and silently dropped**. The numerics
   had been ported years-of-commits ago — `Noxfct` at x11pt2.f:469/636/747,

@@ -473,6 +473,29 @@ cfg_sfshort_x11.span_override = {
 }
 
 
+def cfg_appendbcst_x11(s):
+    # x11{appendbcst=yes appendfcst=yes} with real backcasts: Savbct/Savfct widen
+    # the b1/d10/d16 punch range BACK to Pos1bk and forward to Posffc. No
+    # arithmetic changes -- what this gates is the row range and, above all, the
+    # DATES on those rows. The extra leading rows are dated before Begspn, and
+    # anchoring them on the range start instead of Pos1ob labelled every row
+    # Nbcst periods late; a date-keyed diff then compared row k to row k+Nbcst
+    # and called it a 30-70% drift on values that were bit-identical.
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(spec("regression", ["variables = (td)"], save_key="regression"))
+    blocks.append(arima_airline())
+    blocks.append(estimate_block())
+    blocks.append(spec("forecast", ["maxlead = %d" % (12 if s["period"] == 12 else 8),
+                                    "maxback = %d" % s["period"]],
+                       save_key="forecast"))
+    args = ([] if not s["rate"] else ["mode = add"]) + \
+        ["appendbcst = yes", "appendfcst = yes"]
+    blocks.append(spec("x11", args, save_key="x11", savelog=True))
+    return blocks
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -505,6 +528,7 @@ CONFIGS = [
     ("excludefcst-x11", cfg_excludefcst_x11),
     ("true7term-x11", cfg_true7term_x11),
     ("sfshort-x11", cfg_sfshort_x11),
+    ("appendbcst-x11", cfg_appendbcst_x11),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 

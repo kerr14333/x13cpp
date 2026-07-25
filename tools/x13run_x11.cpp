@@ -44,12 +44,18 @@ std::string basename_of(const std::string& p) {
     return (s == std::string::npos) ? p : p.substr(s + 1);
 }
 
-// Emit one table section: `<tag> YYYYMM <value>` over the span [pos1ob, posfob].
-void dump(const char* tag, const int* begspn, int sp, int pos1ob, int posfob,
-          const double* arr /*1-based*/) {
-    for (int i = pos1ob; i <= posfob; ++i) {
+// Emit one table section: `<tag> YYYYMM <value>` over the buffer range
+// [first, last]. `anchor` is the buffer index that carries the date Begspn --
+// always Pos1ob, which is NOT the same as `first`: x11{appendbcst=yes} widens
+// the punch range back to Pos1bk, and those leading rows are dated BEFORE
+// Begspn. Anchoring on `first` instead labelled every row Nbcst periods late,
+// so a date-keyed diff against the oracle compared row k to row k+Nbcst and
+// reported a 30-70% "drift" on values that were in fact bit-identical.
+void dump(const char* tag, const int* begspn, int sp, int first, int last,
+          const double* arr /*1-based*/, int anchor) {
+    for (int i = first; i <= last; ++i) {
         int idate[2];
-        x13::addate(begspn, sp, i - pos1ob, idate);
+        x13::addate(begspn, sp, i - anchor, idate);
         std::printf("%s %04d%02d %.15E\n", tag, idate[0], idate[1], arr[i - 1]);
     }
 }
@@ -148,7 +154,7 @@ int main(int argc, char** argv) {
         (ctx.captured.has_model || ctx.x11opt.khol > 1)
             ? ctx.orisrs.stoap.data()
             : ctx.inpt.series.data();
-    dump("b1",  begspn, sp, b1_frst, b1_last, b1src);
+    dump("b1",  begspn, sp, b1_frst, b1_last, b1src, pos1ob);
     // d10 seasonal factors are projected across the forecast/backcast span, so
     // they too honour appendfcst/appendbcst (the oracle saves d10 over the same
     // extended range as b1). d11/d12/d13 (SA/trend/irregular of the data) do not.
@@ -162,14 +168,14 @@ int main(int argc, char** argv) {
                             ? posfob
                             : (ctx.extend.nfcst > 0 ? ctx.x11ptr.posffc
                                                     : posfob + sp);
-    dump("d10", begspn, sp, sf_frst, sf_last, ctx.x11srs.sts.data());
-    dump("d11", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data());
-    dump("d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
-    dump("d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
+    dump("d10", begspn, sp, sf_frst, sf_last, ctx.x11srs.sts.data(), pos1ob);
+    dump("d11", begspn, sp, pos1ob, posfob, ctx.x11srs.stci.data(), pos1ob);
+    dump("d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data(), pos1ob);
+    dump("d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data(), pos1ob);
     // d16 -- combined seasonal + calendar adjustment factors (x11pt3's ststd,
     // snapshotted onto ctx). Empty when the oracle writes no D16 (Khol==1).
     if (!ctx.x11_ststd.empty())
-        dump("d16", begspn, sp, sf_frst, sf_last, ctx.x11_ststd.data());
+        dump("d16", begspn, sp, sf_frst, sf_last, ctx.x11_ststd.data(), pos1ob);
 
     // a4 -- x11regression tdprior user prior trading-day factor (Kswv=1 pritd),
     // over the observed span [pos1ob,posfob]. x11_a4_prior is 0-based from pos1ob.
@@ -196,11 +202,11 @@ int main(int argc, char** argv) {
         for (int i = pos1ob; i <= lstfrc; ++i)
             ffc[i - 1] = (muladd == 0) ? stci[i - 1] / stci2[i - 1]
                                        : stci[i - 1] - stci2[i - 1];
-        dump("saa", begspn, sp, pos1ob, posfob, stci2);
-        dump("ffc", begspn, sp, pos1ob, lstfrc, ffc.data());
+        dump("saa", begspn, sp, pos1ob, posfob, stci2, pos1ob);
+        dump("ffc", begspn, sp, pos1ob, lstfrc, ffc.data(), pos1ob);
         // rnd: the rounded SA series (round=yes -> rndsa), over [pos1ob, posfob].
         if (ctx.force.lrndsa)
-            dump("rnd", begspn, sp, pos1ob, posfob, ctx.adxser.stcirn.data());
+            dump("rnd", begspn, sp, pos1ob, posfob, ctx.adxser.stcirn.data(), pos1ob);
     }
 
     // slidingspans{} sfs (seasonal-factor spans) / chs (month-to-month SA-

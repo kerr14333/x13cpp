@@ -50,6 +50,11 @@ DATA = os.path.join(REPO, "tests", "corpus", "data").replace("\\", "/")
 
 TAGS = ["b1", "d10", "d11", "d12", "d13", "d16", "saa", "ffc"]
 
+# Below this magnitude a whole golden column counts as identically zero (see the
+# gmax branch in run_case). Well under any real table value, well over the
+# roundoff the oracle actually prints for a zero column (~1e-13).
+ZERO_COL = 1e-10
+
 # ---------------------------------------------------------------------------
 # The factor space. Keep levels to things the oracle accepts on their own; the
 # _valid predicate below prunes the invalid *combinations*.
@@ -302,6 +307,19 @@ def run_case(item):
         if not common:
             return name, row, "no-overlap", t, 0.0
         checked += 1
+        # A table whose entire golden column is roundoff dust IS the zero column,
+        # and a pointwise relative test against dust is meaningless: with
+        # x11{mode=add} the force{} factors are additive DIFFERENCES, so ffc is
+        # identically zero -- the oracle prints -1.1e-13, the engine prints an
+        # exact 0, and rel comes out 1.000 on a table where both are right.
+        # Compare such a column on absolute terms against the same floor.
+        gmax = max((abs(v) for v in g.values()), default=0.0)
+        if gmax < ZERO_COL:
+            for k in common:
+                dev = abs(produced[t][k] - g[k])
+                if dev >= ZERO_COL and dev > worst:
+                    worst, wtag, wkey = dev, t, k
+            continue
         for k in common:
             rel = (abs(produced[t][k] - g[k]) / abs(g[k]) if g[k]
                    else abs(produced[t][k] - g[k]))
@@ -322,7 +340,14 @@ def main():
     ap.add_argument("--outdir", default=None)
     args = ap.parse_args()
 
-    outdir = args.outdir or os.path.join(REPO, "build", "spec_sweep")
+    # abspath: run_case launches both binaries with cwd set to the case dir and
+    # hands them the spec path, so a RELATIVE --outdir resolves against the case
+    # dir and every engine invocation dies with "cannot open" (rc=2) before doing
+    # any work -- which the report then attributes as a 100%-bad CRASH on every
+    # level of every factor. If you ever see that, it is the harness, not a port
+    # bug: no real defect is uniform across the whole factor space.
+    outdir = os.path.abspath(args.outdir or
+                             os.path.join(REPO, "build", "spec_sweep"))
     os.makedirs(outdir, exist_ok=True)
 
     rows = covering_array(args.t, args.seed)
@@ -374,9 +399,45 @@ def main():
             a, b = stats.get(k, (0, 0))
             stats[k] = (a + (1 if bad else 0), b + 1)
     ranked = sorted(stats.items(), key=lambda kv: (-(kv[1][0] / kv[1][1]), -kv[1][1]))
+    hits = 0
     for (f, lv), (bad, tot) in ranked:
         if bad and bad / tot >= 0.5:
             print(f"  {f:9s} = {lv:12s}  {bad}/{tot} bad ({100*bad/tot:.0f}%)")
+            hits += 1
+    if not hits:
+        print("  (no single level is >=50% bad)")
+
+    # PAIR-level attribution. Single-level attribution is blind to a culprit that
+    # is itself an interaction: the appendbcst date-labelling bug needed BOTH
+    # bcst!=none AND append in {bcst,both}, so neither factor alone got near 50%
+    # and the table above printed nothing at all while seven rows were drifting.
+    # Since the whole premise of the covering array is that bugs live at
+    # two-factor seams, the attribution has to be able to name a two-factor seam.
+    print("--- pair-level attribution ---")
+    pstats = {}
+    for _, row, v, _, _ in results:
+        if v in ("oracle-err", "oracle-timeout"):
+            continue
+        bad = v in ("drift", "no-overlap", "engine-err")
+        items = sorted(row.items())
+        for (f1, l1), (f2, l2) in combinations(items, 2):
+            k = (f1, l1, f2, l2)
+            a, b = pstats.get(k, (0, 0))
+            pstats[k] = (a + (1 if bad else 0), b + 1)
+    pranked = sorted(pstats.items(),
+                     key=lambda kv: (-(kv[1][0] / kv[1][1]), -kv[1][1]))
+    shown = 0
+    for (f1, l1, f2, l2), (bad, tot) in pranked:
+        # Require a real sample: a 1/1 pair is noise, not attribution.
+        if bad and bad / tot >= 0.75 and tot >= 3:
+            print(f"  {f1}={l1} x {f2}={l2}  {bad}/{tot} bad "
+                  f"({100*bad/tot:.0f}%)")
+            shown += 1
+            if shown >= 15:
+                print("  ... (truncated)")
+                break
+    if not shown:
+        print("  (no pair is >=75% bad over >=3 rows)")
 
 
 if __name__ == "__main__":
