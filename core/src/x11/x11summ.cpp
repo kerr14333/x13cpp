@@ -305,6 +305,125 @@ void f3cal(X13Context& ctx, const double* sts, int& ifail) {
 }
 
 // ---------------------------------------------------------------------------
+// x11pt4.f, PART E (:162-:319)
+// ---------------------------------------------------------------------------
+void x11pt4_etables(X13Context& ctx, const double* stc_int,
+                    const double* stc2_int, bool lttc) {
+    const x11ptr_cmn& p = ctx.x11ptr;
+    const x11opt_cmn& opt = ctx.x11opt;
+    const x11adj_cmn& adj = ctx.x11adj;
+    const priusr_cmn& pu = ctx.priusr;
+    const force_cmn& frc = ctx.force;
+
+    const int pos1ob = p.pos1ob, posfob = p.posfob;
+    const int pos1bk = p.pos1bk, posffc = p.posffc;
+    const int muladd = opt.muladd;
+    const double* series = ctx.inpt.series.data();
+    const double* stci = ctx.x11srs.stci.data();
+    const double* stome = ctx.adxser.stome.data();
+    const double* stcime = ctx.adxser.stcime.data();
+    bool* gudval = ctx.goodob.gudval.data();
+
+    // x11pt4.f:169-176 -- with percent changes to compute and a pseudo-additive
+    // adjustment or a user constant in play, re-check for zeroes first (a zero
+    // denominator would make every change DNOTST from that point on).
+    if (muladd != 1 && (ctx.x11msc.psuadd || !dpeq(ctx.adj.cnstnt, prm::DNOTST)))
+        chkzro(series, stci, ctx.adxser.stci2.data(), ctx.adxser.stcirn.data(),
+               ctx.orisrs.stocal.data(), pos1bk, posffc, opt.kfulsm, frc.iyrt,
+               frc.lrndsa, gudval);
+
+    const int mfda = pos1ob + 1;
+    ctx.x11_e5.assign(PLEN, 0.0);
+    ctx.x11_e6.assign(PLEN, 0.0);
+    ctx.x11_e7.assign(PLEN, 0.0);
+    ctx.x11_e8.assign(PLEN, 0.0);
+    ctx.x11_e6a.clear();
+    ctx.x11_e6r.clear();
+
+    // E5: changes in the original series.
+    change(series, ctx.x11_e5.data(), mfda, posfob, muladd, gudval);
+    if (opt.kfulsm == 0) {
+        // E6: changes in the seasonally adjusted series.
+        change(stci, ctx.x11_e6.data(), mfda, posfob, muladd, gudval);
+        // E6.A / E6.R: the same for the forced and the rounded SA series.
+        if (frc.iyrt > 0) {
+            ctx.x11_e6a.assign(PLEN, 0.0);
+            change(ctx.adxser.stci2.data(), ctx.x11_e6a.data(), mfda, posfob,
+                   muladd, gudval);
+        }
+        if (frc.lrndsa) {
+            ctx.x11_e6r.assign(PLEN, 0.0);
+            change(ctx.adxser.stcirn.data(), ctx.x11_e6r.data(), mfda, posfob,
+                   muladd, gudval);
+        }
+    }
+    // E7: changes in the final trend-cycle. If a level shift (or, with Lttc, a
+    // temporary change) was removed pre-adjustment it belongs in the trend, so
+    // the changes are taken on the FOLDED trend Stc2 instead of Stc.
+    // NOTE the Fortran precedence at x11pt4.f:241-243: `.and.` binds tighter
+    // than `.or.`, so `Iagr.lt.4` qualifies ONLY the Nustad/Lprntr clause, not
+    // the Finls/Adjls one. Reproduced verbatim.
+    const bool e7_from_stc2 =
+        (((!adj.finls) && adj.adjls == 1) ||
+         (pu.nustad > 0 && ctx.prior.lprntr && ctx.agr.iagr < 4)) ||
+        (ctx.agr.iagr == 4 && ctx.agr.lindls) ||
+        (lttc && adj.adjtc == 1 && !adj.fintc);
+    change(e7_from_stc2 ? stc2_int : stc_int, ctx.x11_e7.data(), mfda, posfob,
+           muladd, gudval);
+    // E8: changes in the calendar-adjusted original series.
+    change(ctx.orisrs.stocal.data(), ctx.x11_e8.data(), mfda, posfob, muladd,
+           gudval);
+
+    // x11pt4.f:265-268 -- with a user constant, every observation counts as good
+    // from here on (the constant shifts the series away from zero). gudbak is
+    // restored by x11pt4_partf's own copylg, so the save is kept on ctx.
+    if (muladd != 1 && !dpeq(ctx.adj.cnstnt, prm::DNOTST)) {
+        ctx.x11_gudbak.assign(gudval, gudval + PLEN);
+        setlg(true, PLEN, gudval);
+    } else {
+        ctx.x11_gudbak.clear();
+    }
+
+    // E11: a more robust seasonally adjusted series (x11pt4.f:272-274). Note the
+    // arithmetic is a plain subtract/add in EVERY mode, multiplicative included.
+    ctx.x11_e11.assign(PLEN, 0.0);
+    for (int i = pos1ob; i <= posfob; ++i)
+        ctx.x11_e11[i - 1] = series[i - 1] - stome[i - 1] + stcime[i - 1];
+
+    // E18: the final adjustment ratios A1 / D11 (x11pt4.f:281-301). A zero SA
+    // value with a nonzero original has no ratio -- DNOTST -- and sets pre18b,
+    // which is what makes the oracle also emit the total-factor table below.
+    ctx.x11_e18.assign(PLEN, 0.0);
+    bool pre18b = false;
+    const bool cmp = (ctx.agr.iagr >= 4);
+    const double* obs = cmp ? ctx.agrsrs.o.data() : series;
+    for (int i = pos1ob; i <= posffc; ++i) {
+        const double thisob = obs[i - 1];
+        if (dpeq(stci[i - 1], 0.0)) {
+            if (dpeq(thisob, 0.0)) {
+                ctx.x11_e18[i - 1] = 1.0;
+            } else {
+                ctx.x11_e18[i - 1] = prm::DNOTST;
+                pre18b = true;
+            }
+        } else {
+            if (dpeq(thisob, 0.0) || thisob < 0.0) pre18b = true;
+            ctx.x11_e18[i - 1] = thisob / stci[i - 1];
+        }
+    }
+    // EB: the total adjustment factors (x11pt4.f:309-319). Same quantity as E18
+    // but formed through divsub, so it is a DIFFERENCE in additive mode where
+    // E18 is always a ratio. The oracle builds it whenever pre18b fired or the
+    // table was requested; building it unconditionally is harmless here (nothing
+    // downstream reads it) and keeps the harness able to punch it.
+    (void)pre18b;
+    ctx.x11_eb.assign(PLEN, 0.0);
+    divsub(ctx.x11_eb.data(), obs, stci, pos1ob, posffc, muladd);
+
+    ctx.x11_etables_set = true;
+}
+
+// ---------------------------------------------------------------------------
 // x11pt4.f, PART F (:320-:713)
 // ---------------------------------------------------------------------------
 bool x11pt4_partf(X13Context& ctx, const double* sti_int, const double* stc_int) {
@@ -364,8 +483,14 @@ bool x11pt4_partf(X13Context& ctx, const double* sti_int, const double* stc_int)
     // !allgud the good-obs-only divgud). Reproduced verbatim; unreachable in
     // this port because the Cnstnt path is walled in x11pt3.
     bool allgud = true;
-    if (muladd != 1 && !dpeq(ctx.adj.cnstnt, prm::DNOTST))
+    if (muladd != 1 && !dpeq(ctx.adj.cnstnt, prm::DNOTST)) {
+        // x11pt4.f:334 -- restore the flags Part E stashed before forcing them
+        // all true (ctx.x11_gudbak; gudbak is a local in the oracle).
+        if (ctx.x11_gudbak.size() == static_cast<std::size_t>(PLEN))
+            for (int i = 1; i <= PLEN; ++i)
+                gudval[i - 1] = ctx.x11_gudbak[static_cast<std::size_t>(i - 1)];
         allgud = isfals(gudval, pos1ob, posfob);
+    }
 
     // --- Prior-adjustment factors (x11pt4.f:338-348) ---
     if (ctx.prior.kfmt != 0) {

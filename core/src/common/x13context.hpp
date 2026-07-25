@@ -212,6 +212,22 @@ struct X13Context {
     double x11_f2ratic = 0.0;   // /optxdp/ Ratic (f2.ic), snapshotted with them
     double x11_f2ratis = 0.0;   // /optxdp/ Ratis (f2.is)
     bool x11_f3_set = false;
+    // x11pt4.f's PART-E tables. E1/E2/E3 are just Stome/Stcime/Stime, already on
+    // ctx; these are the ones the oracle builds into function-locals or the
+    // /work/ Temp scratch, all 1-based over PLEN so the harness can punch them
+    // over the oracle's own ranges. e5-e8 (and their pe* percent twins) start at
+    // Pos1ob+1; e11/e18/eb over [Pos1ob,Posfob] (e18/eb widening to Pos1bk /
+    // Posffc under x11{appendbcst/appendfcst}). e6a/e6r exist only with
+    // force{type=denton} / x11{sarounded=yes}.
+    std::vector<double> x11_e5, x11_e6, x11_e6a, x11_e6r, x11_e7, x11_e8;
+    std::vector<double> x11_e11, x11_e18, x11_eb;
+    bool x11_etables_set = false;
+    // x11pt4.f:266's `gudbak` -- the good-obs flags as they stood before the
+    // Part-E section forced them all true for a user-constant run. A function-
+    // local in the oracle; carried here only because the port splits x11pt4 into
+    // its Part-E and Part-F halves, and :334 restores from it. Empty (and the
+    // restore skipped) on every path without x11{constant=}.
+    std::vector<bool> x11_gudbak;
     // agr3.f locals the composite gate needs back: `stc2in` (the published
     // INDIRECT trend -- Stc still holds the pre-level-shift filter output) and
     // `ststd` (the indirect total adjustment factors). Function-locals in the

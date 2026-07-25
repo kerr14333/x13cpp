@@ -1,11 +1,13 @@
-// x11summ.hpp -- the X-11 PART-F summary measures and quality statistics:
-// sumry.f, vars.f/varlog.f/varian.f, avedur.f, issame.f, isfals.f and f3cal.f,
-// plus the Part-F body of x11pt4.f that drives them.
+// x11summ.hpp -- x11pt4.f: the X-11 Part-E tables and the Part-F summary
+// measures / quality statistics. sumry.f, vars.f/varlog.f/varian.f, avedur.f,
+// issame.f, isfals.f, f3cal.f, and the two halves of x11pt4.f itself
+// (x11pt4_etables, x11pt4_partf) that drive them.
 //
-// This is the diagnostics half of x11pt4; the E tables (E1-E8/E11/E18) it also
-// emits are pure print/save and stay deferred. Everything here writes into the
-// /inpt2/, /work2/ and /optxin/ Mcd COMMONs, which are what svf2f3.f then prints
-// as the .udg `f2.*` / `f3.*` savelog block.
+// Part F writes into the /inpt2/, /work2/ and /optxin/ Mcd COMMONs, which are
+// what svf2f3.f prints as the .udg `f2.*` / `f3.*` savelog block. Part E's
+// results are save tables and land on ctx.x11_e* instead. E4 (ratios of annual
+// totals) is print-only in the oracle and stays deferred, as does every actual
+// table/punch emission -- the harness does that.
 //
 // Index convention as elsewhere in core/src/x11: 0-based C pointers, Fortran
 // index i -> element [i-1]; range args stay Fortran 1-based.
@@ -59,6 +61,20 @@ bool isfals(const bool* lsrs, int l1, int l2);
 // measures x11pt4_partf has just written plus /tests/ Test1,Test2 (from combft),
 // Ratic/Ratis and Mcd; writes /work2/ Qu,Qual,Q2m2,Nn,Nyrs,Kfail.
 void f3cal(X13Context& ctx, const double* sts, int& ifail);
+
+// x11pt4.f's PART E (:162-319) -- the modified/change tables E5-E8 (+E6.A/E6.R),
+// the robust seasonally adjusted series E11, the final adjustment ratios E18 and
+// the total adjustment factors (EB). E1/E2/E3 need no work here: they ARE
+// Stome/Stcime/Stime as x11pt3 left them. E4 (the ratios of annual totals) is
+// print-only in the oracle -- table with no punch -- so it stays deferred.
+//
+// Results land on ctx.x11_e* (see x13context.hpp) because Part F below then
+// scribbles over the /work/ Temp scratch these are built in. Reads the LIVE
+// buffers, exactly where the oracle does, so it must run BEFORE x11pt4_partf
+// makes its working copies. `stc2_int` is the published (LS/TC-folded) trend --
+// the oracle's Stc2 -- used for E7 when the level shift belongs in the trend.
+void x11pt4_etables(X13Context& ctx, const double* stc_int,
+                    const double* stc2_int, bool lttc);
 
 // x11pt4.f from "PART F" (:320) to the f3cal call (:713) -- the summary-measure
 // battery: Pbar/Psq/Vp, Tdbar/Tdsq/Vtd, Ibar/Isq/Isd/Adri, Ombar, Imbar/Vi,

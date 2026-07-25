@@ -511,6 +511,14 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // the same placement, before the span replays. x11_sti_int is empty only
     // when x11pt3 took its Khol==1 early return, where the oracle emits no F
     // block either.
+    // Part E first (x11pt4.f:162-319): the E5-E8 change tables, E11, E18 and the
+    // total adjustment factors, all read off the LIVE buffers before Part F makes
+    // its working copies. ctx.x11srs.stc is the PUBLISHED (LS/TC-folded) trend,
+    // i.e. the oracle's Stc2, which is what E7 wants when the shift belongs in
+    // the trend; ctx.x11_stc_int is the internal one.
+    if (!ctx.x11_sti_int.empty())
+        x11pt4_etables(ctx, ctx.x11_stc_int.data(), ctx.x11srs.stc.data(),
+                       /*lttc=*/false);
     if (!ctx.x11_sti_int.empty() &&
         x11pt4_partf(ctx, ctx.x11_sti_int.data(), ctx.x11_stc_int.data())) {
         ctx.x11_f2inpt2 = ctx.inpt2;

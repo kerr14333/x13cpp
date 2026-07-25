@@ -177,6 +177,43 @@ int main(int argc, char** argv) {
     if (!ctx.x11_ststd.empty())
         dump("d16", begspn, sp, sf_frst, sf_last, ctx.x11_ststd.data(), pos1ob);
 
+    // Part-E tables (x11pt4.f:85-319). Punch ranges per prtagr.f/pragr2.f:
+    //   e1/e2/e3/e11  [Pos1ob, Posfob]  (Ibsav==Ib, so appendfcst/bcst is inert)
+    //   e5-e8         [Pos1ob+1, Posfob]  -- pe5-pe8 are the same series x100
+    //   e18/eb        [Pos1ob, Posfob], widening to Pos1bk / Posffc under
+    //                 x11{appendbcst}/{appendfcst}
+    if (ctx.x11_etables_set) {
+        dump("e1", begspn, sp, pos1ob, posfob, ctx.adxser.stome.data(), pos1ob);
+        dump("e2", begspn, sp, pos1ob, posfob, ctx.adxser.stcime.data(), pos1ob);
+        dump("e3", begspn, sp, pos1ob, posfob, ctx.mq5a_stime.data(), pos1ob);
+        const int chg1 = pos1ob + 1;
+        struct { const char* tag; const std::vector<double>* v; } chg[] = {
+            {"e5", &ctx.x11_e5},   {"e6", &ctx.x11_e6},
+            {"e6a", &ctx.x11_e6a}, {"e6r", &ctx.x11_e6r},
+            {"e7", &ctx.x11_e7},   {"e8", &ctx.x11_e8},
+        };
+        for (const auto& c : chg) {
+            if (c.v->empty()) continue;
+            dump(c.tag, begspn, sp, chg1, posfob, c.v->data(), pos1ob);
+            // The p<tag> twin is the SAME series; pragr2.f passes `Muladd.ne.1`
+            // as punch's percent flag, so it is scaled to percent in
+            // multiplicative / log-additive mode and printed unscaled in
+            // additive mode (where the "changes" are already differences).
+            const double pscale = (ctx.x11opt.muladd != 1) ? 100.0 : 1.0;
+            for (int i = chg1; i <= posfob; ++i) {
+                int idate[2];
+                x13::addate(begspn, sp, i - pos1ob, idate);
+                std::printf("p%s %04d%02d %.15E\n", c.tag, idate[0], idate[1],
+                            (*c.v)[i - 1] * pscale);
+            }
+        }
+        dump("e11", begspn, sp, pos1ob, posfob, ctx.x11_e11.data(), pos1ob);
+        const int e18_frst = ctx.tbllog.savbct ? ctx.x11ptr.pos1bk : pos1ob;
+        const int e18_last = ctx.tbllog.savfct ? ctx.x11ptr.posffc : posfob;
+        dump("e18", begspn, sp, e18_frst, e18_last, ctx.x11_e18.data(), pos1ob);
+        dump("eb", begspn, sp, e18_frst, e18_last, ctx.x11_eb.data(), pos1ob);
+    }
+
     // F2 seasonality tests (svf2f3.f:59-64). These are savelog canaries, not
     // tables: emitted here at the oracle's own printed precision so the gate can
     // read the .udg golden directly. Fpres/P3 come from the B1 F-test in x11pt2,

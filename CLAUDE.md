@@ -462,9 +462,35 @@ diagnostics front (force / slidingspans / history) is now closed.
   reversed, so the LS/user divide is never undone and `/work/ Temp` is clobbered)
   are both transcribed verbatim; both are unreachable here (they need
   `x11{constant=}`, which is walled in x11pt3).
-  **Still open in x11pt4** (increment 3): the E tables (E1-E8, E11, E18) —
-  `change.f` is ported and the Gudval good-obs machinery now exists, so what is
-  left there is the E4 annual-total ratios and the table emission itself.
+- **x11pt4 increment 3 — the PART-E TABLES — CLOSED (bit-exact), and x11pt4 is
+  now fully ported.** `x11pt4_etables` (x11pt4.f:162-319) in the same
+  `core/src/x11/x11summ.cpp`: the E5-E8 change tables and their `pe*` percent
+  twins, E6.A/E6.R (the forced and rounded SA series' changes), E11 (the robust
+  SA series) and E18 (the final adjustment ratios A1/D11), plus the EB total-
+  factor table. E1/E2/E3 needed no arithmetic at all — they ARE Stome/Stcime/
+  Stime as x11pt3 leaves them, so the harness just punches them. Gated by the new
+  `tests/parity/test_x11_etables.py`: 795 tests over the 61 corpus specs that
+  ship the family (plus `extra/airline_automdl-x11-force` for e6a/e6r), **again
+  zero new goldens blessed**; same two-tier tolerance as `test_x11_tables`
+  (1e-12 arithmetic / 1e-6 estimation) with an absolute floor on the change
+  tables, since a difference of neighbouring values has no relative precision
+  where the change is ~0. Ordering is the whole constraint: Part E reads the LIVE
+  buffers, so it must run BEFORE `x11pt4_partf` takes its working copies, and E7
+  wants the PUBLISHED (LS/TC-folded) trend — `ctx.x11srs.stc`, the oracle's Stc2
+  — where Part F wants the internal one. Three things worth knowing:
+  (1) **`e4` has no golden and never will** — x11pt4.f:156 calls `table` with no
+  `punch`, so the ratios of annual totals are print surface. Deliberately not
+  produced.
+  (2) **`pe5`-`pe8` are the SAME series as `e5`-`e8`, not a separate table.**
+  pragr2.f passes `Muladd.ne.1` as punch's percent flag, so they are scaled x100
+  in multiplicative/log-additive mode and printed UNSCALED in additive mode.
+  Emitting them only when `muladd != 1` (the obvious reading) drops them from
+  every `mode=add` spec.
+  (3) **E11 is a plain subtract/add in EVERY mode**, multiplicative included
+  (`Series - Stome + Stcime`, x11pt4.f:272-274) — there is no divsub variant.
+  The Fortran precedence trap at x11pt4.f:241-243 is reproduced: `.and.` binds
+  tighter than `.or.`, so `Iagr.lt.4` qualifies only the Nustad/Lprntr clause of
+  the E7 trend selection, not the Finls/Adjls one.
 - **The `seats{}` OPTION SURFACE — swept, and the sweep found real wrongness.**
   `tools/spec_sweep.py --suite seats` showed only 6 of 22 parsed seats options
   were ever read; 11 were parsed, stored, and silently ignored. Three parallel
