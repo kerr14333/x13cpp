@@ -331,6 +331,26 @@ def cfg_mean_td_seats(s):
     return blocks
 
 
+def cfg_backcast_x11(s):
+    # forecast{maxback=} -- BACKCASTS, with trading day so the calendar path is
+    # live over the backcast span. Three separate defects lived here, all behind
+    # a spec that no corpus case exercised: Nbcst2 was pinned to 0 (Pos1bk went
+    # NEGATIVE -> segfault), mkback.f was never ported (extend read a 1-element
+    # stack array as the backcast vector), and /adjcmn/ Adj was anchored at
+    # Begspn instead of Begadj (the leap-year prior landed a year late in D11).
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    blocks.append(spec("regression", ["variables = (td)"], save_key="regression"))
+    blocks.append(arima_airline())
+    blocks.append(estimate_block())
+    blocks.append(spec("forecast", ["maxlead = %d" % (12 if s["period"] == 12 else 8),
+                                    "maxback = %d" % s["period"]],
+                       save_key="forecast"))
+    blocks.append(x11_block("add" if s["rate"] else None))
+    return blocks
+
+
 def cfg_holiday_x11(s):
     # A regARIMA HOLIDAY regressor alongside trading day. The point of the config
     # is Finhol: gtinpt.f defaults it TRUE and clears it at the parse tail only
@@ -379,6 +399,7 @@ CONFIGS = [
     ("mean-d0-seats", cfg_mean_d0_seats),
     ("mean-td-seats", cfg_mean_td_seats),
     ("holiday-x11", cfg_holiday_x11),
+    ("backcast-x11", cfg_backcast_x11),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 

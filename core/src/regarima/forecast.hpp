@@ -37,6 +37,17 @@ void fcstxy(X13Context& ctx, int fctori, int nfcst, double* fcst, double* se,
 // period observations dropped from the fit.
 void fcstout(X13Context& ctx, int nfcst, int fctdrp, double ciprob, bool lognrm);
 
+// bcstout: the numeric core of mkback.f (arima.f:1174), i.e. BACKcasts. It is
+// the same MMSE machinery as fcstxy, run on the TIME-REVERSED design: mkback
+// rebuilds the Nspobs-row regression matrix, reverses its first Nrxy-Nfcst rows
+// in place, and calls fcstxy with fctori = Nspobs -- so "predict past the end"
+// becomes "predict before the start". Xy is restored afterwards. The result
+// (transformed scale, most-recent-first, which is the order extend.f's revrse
+// expects) lands on ctx.forecasts.trnbct; trnsrs is the transformed series.
+// Nrxy is left at the rebuilt Nspobs+Nbcst+max(0,Nfcst-Fctdrp), which is what
+// adjreg then needs to reach the backcast rows.
+void bcstout(X13Context& ctx, int nbcst, const double* trnsrs, bool lognrm);
+
 }  // namespace x13
 
 #endif  // X13_REGARIMA_FORECAST_HPP

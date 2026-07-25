@@ -1,8 +1,9 @@
 # Generated spec inventory -- produced by genspecs.py
-# 56 specs = 4 series x 14 configs
+# 60 specs = 4 series x 15 configs
 airline_ar2-seats.spc
 airline_automdl-aictest-x11.spc
 airline_automdl-x11.spc
+airline_backcast-x11.spc
 airline_fixed-airline-seats.spc
 airline_fixed-airline-x11.spc
 airline_holiday-x11.spc
@@ -17,6 +18,7 @@ airline_x11-logadd.spc
 expgs_ar2-seats.spc
 expgs_automdl-aictest-x11.spc
 expgs_automdl-x11.spc
+expgs_backcast-x11.spc
 expgs_fixed-airline-seats.spc
 expgs_fixed-airline-x11.spc
 expgs_holiday-x11.spc
@@ -31,6 +33,7 @@ expgs_x11-logadd.spc
 payems_ar2-seats.spc
 payems_automdl-aictest-x11.spc
 payems_automdl-x11.spc
+payems_backcast-x11.spc
 payems_fixed-airline-seats.spc
 payems_fixed-airline-x11.spc
 payems_holiday-x11.spc
@@ -45,6 +48,7 @@ payems_x11-logadd.spc
 unrate_ar2-seats.spc
 unrate_automdl-aictest-x11.spc
 unrate_automdl-x11.spc
+unrate_backcast-x11.spc
 unrate_fixed-airline-seats.spc
 unrate_fixed-airline-x11.spc
 unrate_holiday-x11.spc

@@ -157,6 +157,21 @@ diagnostics front (force / slidingspans / history) is now closed.
   d10-d13 print over the observed span only, which is why every existing gate
   stayed green through both. Gated by `test_force_tables.py` (now also gating
   d10-d13), corpus `extra/airline_force-{td,calendaradj,permprioradj,both}`.
+- **`forecast{maxback=}` BACKCASTS — CLOSED (bit-exact):** backcasts **segfaulted**
+  the engine on every spec that used them. Three defects stacked: (1) `Nbcst2` was
+  pinned to 0, so setxpt put `Pos1bk = -Nbcst+1` — a negative buffer index (the
+  crash); editor.f:206-219 sets `Nbcst2 = Nbcst` (padded to a January start when
+  `Begbak` is mid-year). (2) `mkback.f` was never ported — `extend` was handed a
+  pointer to a single stack `double` as the backcast vector. Ported as `bcstout`
+  in `regarima/forecast.cpp`: same MMSE machinery as fcstxy, run on the TIME-
+  REVERSED design (rebuild Xy over Nspobs rows, reverse the first `Nrxy-Nfcst`,
+  forecast, restore). (3) `/adjcmn/ Adj` was anchored at `Begspn` instead of
+  `Begadj = Begspn - Nbcst`, so the leap-year prior landed a **year late** in
+  D11/D13/D16 (~3.6e-2, Februaries only). Adj is now Begadj-anchored with
+  `Adj1st = Nbcst+1`; with no backcasts `Adj1st==1` and every existing path is
+  byte-identical. Gated by the new `*_backcast-x11` config (all 4 series).
+  Still open here: `x11{appendbcst=yes}` widens the oracle's punch range to the
+  backcast span and the harness does not (b1/d10/d16 row counts differ).
 - **regARIMA HOLIDAY regressors + X-11 (`Finhol`) — CLOSED (bit-exact):**
   `regression{variables=(easter[N] labor[N] thanks[N])}` with `x11{}` left the
   holiday effect in D11/D13/D16 (~1.4e-2 in March/April) behind an

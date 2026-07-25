@@ -265,6 +265,11 @@ struct X13Context {
         std::vector<double> uprci;   // upper confidence bound, original scale
         std::vector<double> trnfct;  // forecast on the transformed scale
         std::vector<double> trnse;   // forecast standard error, transformed scale
+        // mkback.f backcasts (forecast{maxback=}), transformed scale. Ordered
+        // most-recent-first, which is what extend.f's revrse expects.
+        int nbcst = 0;
+        std::vector<double> trnbct;
+        std::vector<double> trnbse;
     } forecasts;
     // trnaic.f automatic transform-selection result (transform{function=auto}).
     // The two default-airline-model AICC values the oracle reports as

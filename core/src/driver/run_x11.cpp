@@ -131,7 +131,22 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     if (nbcst < 0) nbcst = 0;
     ctx.extend.nfcst = nfcst;
     ctx.extend.nbcst = nbcst;
-    ctx.extend.nbcst2 = 0;
+    // editor.f:206-219 -- Begbak is the backcast start (Begspn shifted back
+    // Nbcst); when it does not land on period 1 the backcast count is PADDED to
+    // the start of that year (Nbcst2 >= Nbcst) so the X-11 buffer always begins
+    // on a full year. setxpt then places the span at Pos1ob = Nbcst2 + Lsp, so
+    // Nbcst2 is exactly the left padding of the padded buffer. This was pinned
+    // to 0, which put Pos1bk = -Nbcst + 1 -- a NEGATIVE buffer index. Every
+    // backcast run (forecast{maxback=}) segfaulted on it.
+    addate(begspn, sp, -nbcst, ctx.extend.begbak.data());
+    if (ctx.extend.begbak(2) > 1) {
+        ctx.extend.nbcst2 = nbcst + ctx.extend.begbak(2) - 1;
+        ctx.extend.begbk2(2) = 1;
+    } else {
+        ctx.extend.nbcst2 = nbcst;
+        ctx.extend.begbk2(2) = ctx.extend.begbak(2);
+    }
+    ctx.extend.begbk2(1) = ctx.extend.begbak(1);
     const bool lsadj = true;                             // Lx11
     const int fctdrp = ctx.arima.fctdrp;
     int nfdrp = nfcst;
@@ -370,10 +385,17 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
         const double lam = ctx.arima.lam;
         const int fcntyp = ctx.arima.fcntyp;
         bool extok = true;
-        double bcstx = 0.0;   // Nbcst==0 on this path
+        // arima.f:1227 passes bcstx, mkback's transformed backcasts (empty when
+        // Nbcst==0; extend only reads it when Nbcst>0). Sized to PFCST so the
+        // guard loop inside extend never reads past the end.
+        constexpr int PFCST = 120;   // srslen.prm: 10*PSP
+        std::vector<double> bcstx(static_cast<std::size_t>(PFCST), 0.0);
+        for (std::size_t i = 0; i < ctx.forecasts.trnbct.size() && i < bcstx.size();
+             ++i)
+            bcstx[i] = ctx.forecasts.trnbct[i];
         if ((nfcst > 0 && nfdrp > 0) || nbcst > 0) {
             extend(ctx, trnsrs.data(), ctx.arima.begxy.data(), orix.data(), extok,
-                   lam, ctx.forecasts.trnfct.data(), &bcstx);
+                   lam, ctx.forecasts.trnfct.data(), bcstx.data());
             if (ctx.error.lfatal) return false;
         } else {
             copy(trnsrs.data(), ctx.extend.nobspf, 1, orix.data() + (pos1ob - 1));

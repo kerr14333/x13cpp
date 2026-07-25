@@ -222,4 +222,49 @@ void fcstout(X13Context& ctx, int nfcst, int fctdrp, double ciprob, bool lognrm)
     out.uprci.assign(uprci.begin(), uprci.begin() + nfcst);
 }
 
+// mkback.f:57-80 -- the numeric core of the backcasts (the remaining ~310 lines
+// of mkback.f are print/save surface this port defers by design).
+void bcstout(X13Context& ctx, int nbcst, const double* trnsrs, bool lognrm) {
+    if (nbcst <= 0) return;
+    mdldat_cmn& d = ctx.mdldat;
+    const int nfcst = ctx.extend.nfcst < 0 ? 0 : ctx.extend.nfcst;
+
+    // mkback.f:58 -- rebuild the design over Nspobs rows (NOT Nobspf) with the
+    // backcast rows included. This deliberately leaves Nrxy/Begxy/Xy rebuilt for
+    // the rest of the run, exactly as the oracle does.
+    int nrxy = 0, frstry = 0;
+    regvar(ctx, const_cast<double*>(trnsrs), d.nspobs, ctx.arima.fctdrp, nfcst,
+           nbcst, ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+           ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom, nrxy,
+           ctx.arima.begxy.data(), frstry, true, ctx.arima.elong);
+    if (ctx.error.lfatal) return;
+    ctx.arima.nrxy = nrxy;
+
+    // mkback.f:61-68 -- reverse the observed+backcast rows of [X:y] so the
+    // forward forecast recursion runs backwards in time, forecast Nbcst steps,
+    // then put Xy back. The forecast rows (the trailing Nfcst) are excluded from
+    // the reversal: they are not part of the backward-looking sample.
+    const int ncxy = ctx.model.ncxy;
+    const std::size_t n = static_cast<std::size_t>(nrxy) * ncxy;
+    std::vector<double> bkxy(n);
+    copy(ctx.mdldat.xy.data(), static_cast<int>(n), 1, bkxy.data());
+    revrse(bkxy.data(), nrxy - nfcst, ncxy, ctx.mdldat.xy.data());
+
+    std::vector<double> bcst(prm::PFCST), bse(prm::PFCST), rgvar(prm::PFCST);
+    fcstxy(ctx, d.nspobs, nbcst, bcst.data(), bse.data(), rgvar.data());
+
+    copy(bkxy.data(), static_cast<int>(n), 1, ctx.mdldat.xy.data());
+    if (ctx.error.lfatal) return;
+
+    // mkback.f:80 -- the lognormal mean-correction, in place on the transformed
+    // backcasts (Ltrans=F: mkback corrects Bcst itself, not a separate array).
+    if (lognrm && dpeq(ctx.arima.lam, 0.0))
+        lgnrmc(nbcst, bcst.data(), bse.data(), bcst.data(), /*ltrans=*/false);
+
+    auto& out = ctx.forecasts;
+    out.nbcst = nbcst;
+    out.trnbct.assign(bcst.begin(), bcst.begin() + nbcst);
+    out.trnbse.assign(bse.begin(), bse.begin() + nbcst);
+}
+
 }  // namespace x13

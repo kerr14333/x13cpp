@@ -150,13 +150,23 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     if (nbcst_p < 0) nbcst_p = 0;
     const int nadj = std::min(nspobs + nbcst_p + std::max(sp, nfcst - fctdrp),
                               prm::PLEN);
+    // adjsrs.f:39 -- and the factor series starts at BEGADJ (Begspn shifted back
+    // Nbcst), not Begspn: Adj(1) is the first BACKCAST period, which is what
+    // x11int's Adj -> Sprior copy at Setpri = Pos1bk assumes. Anchoring it at
+    // Begspn shifted every prior factor forward by Nbcst, which showed up as a
+    // ~3.6e-2 error in D11/D13/D16 on any backcast run carrying trading day.
+    // The estimation input therefore reads the factors from Adj1st, not from 1.
+    int begadj[2];
+    addate(begspn, sp, -nbcst_p, begadj);
+    const int adj1st = nbcst_p + 1;          // dfdate(Begspn,Begadj)+1
     std::vector<double> padj(static_cast<std::size_t>(nobspf));
     std::vector<double> fac(static_cast<std::size_t>(nadj), 1.0);
-    if (!adjsrs_factors(ctx, begspn, sp, nadj, suppress_lom_td, fac.data()))
+    if (!adjsrs_factors(ctx, begadj, sp, nadj, suppress_lom_td, fac.data()))
         return false;
+    const double* facspn = fac.data() + (adj1st - 1);   // factors from Begspn
     for (int tpnt = 1; tpnt <= nobspf; ++tpnt)
         padj[static_cast<std::size_t>(tpnt - 1)] =
-            aptr[tpnt - 1] / fac[static_cast<std::size_t>(tpnt - 1)];  // divsub
+            aptr[tpnt - 1] / facspn[tpnt - 1];   // divsub
 
     // SEATS s16/s18 combined-adjustment source: stash the RAW original series
     // (a1, original units) whenever a prior or a non-mean regressor will be
@@ -222,10 +232,10 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     if (has_prior) {
         for (int t = 0; t < nadj; ++t)
             ctx.adj.adj(t + 1) = fac[static_cast<std::size_t>(t)];
-        ctx.adj.begadj(1) = begspn[0];
-        ctx.adj.begadj(2) = begspn[1];
+        ctx.adj.begadj(1) = begadj[0];
+        ctx.adj.begadj(2) = begadj[1];
         ctx.adj.nadj = nadj;
-        ctx.adj.adj1st = 1;
+        ctx.adj.adj1st = adj1st;
         // adjsrs.f:62,101 -- a prior series exists, so Kfmt says so. adjreg.f:98
         // is gated on it: without Kfmt>0 the forecast tail of Series never gets
         // the prior folded back, so the X-11 "original" over the forecast span
@@ -236,7 +246,7 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
 
     // Table a2 (LTRNPA): the combined prior-adjustment factors (Sprior).
     if (has_prior && wants_save(ctx, "a2")) {
-        savtbl(ctx, LTRNPA, begspn, 1, nspobs, sp, fac.data(), base, serlbl, nser);
+        savtbl(ctx, LTRNPA, begspn, 1, nspobs, sp, facspn, base, serlbl, nser);
         if (ctx.error.lfatal) return false;
     }
     // Table a3 (LTRNA3): the prior-adjusted data (Sto after divsub).
@@ -299,10 +309,15 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
         {
             int ncp = nobspf < prm::PLEN ? nobspf : prm::PLEN;
             copy(trnsrs.data(), ncp, 1, ctx.series.tsrs.data());
-            // Prior factors span-aligned into Adj (Adj1st=1), so the automatic-
-            // model path's prlkhd sees Adj(Adj1st)==fac[0], matching arima.f.
-            copy(fac.data(), ncp, 1, ctx.adj.adj.data());
-            ctx.adj.adj1st = 1;
+            // Prior factors into Adj at Adj1st, so the automatic-model path's
+            // prlkhd sees Adj(Adj1st) == the factor at Begspn, matching arima.f.
+            // Adj stays BEGADJ-anchored (Adj1st = Nbcst+1): writing the span
+            // slice at index 1 instead would clobber the backcast rows the
+            // /adjcmn/ record above put there, and x11int copies Adj into Sprior
+            // from Setpri = Pos1bk -- the first BACKCAST period, not Begspn. With
+            // no backcasts Adj1st == 1 and this is the identical write.
+            copy(facspn, ncp, 1, ctx.adj.adj.data() + (adj1st - 1));
+            ctx.adj.adj1st = adj1st;
         }
     }
     if (wants_save(ctx, "trn")) {
@@ -446,7 +461,7 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // adjusted log likelihood + AIC/AICC/BIC/HQ into ctx.lkhd. Y is the
             // original untransformed series over the span (aptr == Y(Frstsy)); the
             // prior factors are `fac` (all 1 with no prior).
-            prlkhd(ctx, aptr, fac.data(), ctx.adj.adjmod, ctx.arima.fcntyp,
+            prlkhd(ctx, aptr, facspn, ctx.adj.adjmod, ctx.arima.fcntyp,
                    ctx.arima.lam);
             if (ctx.error.lfatal) return false;
 
@@ -467,6 +482,13 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             if (nfcst > 0) {
                 fcstout(ctx, nfcst, ctx.arima.fctdrp, ctx.arima.ciprob,
                         ctx.arima.lognrm);
+                if (ctx.error.lfatal) return false;
+            }
+            // Backcasting (arima.f:1172-1176 mkback, when Nbcst>0). Must run
+            // AFTER the forecasts: it rebuilds Xy/Nrxy over Nspobs rows with the
+            // backcast rows included, which is also what adjreg then needs.
+            if (ctx.extend.nbcst > 0) {
+                bcstout(ctx, ctx.extend.nbcst, trnsrs.data(), ctx.arima.lognrm);
                 if (ctx.error.lfatal) return false;
             }
         }
