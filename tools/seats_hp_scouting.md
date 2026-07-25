@@ -41,7 +41,7 @@ regressor to bite at all.
 - `ansub9.f:1081-1090` — block 1: `Lhp` decides. `hplan` present ⇒ explicit
   `1` (or `Hptrgt`); absent ⇒ the `-1` "auto" sentinel. `Lhp` false ⇒ `0`.
 - `ansub9.f:1109-1117` — block 2: `hplan=` sets `L_hplan` and re-enables a `0`.
-  **This is CB-14** (`tools/census_bugs.md`): `hpcycle=no` is silently
+  **This is CB-15** (`tools/census_bugs.md`): `hpcycle=no` is silently
   overridden by `hplan=`. Ported verbatim.
 - `sigex.f:2370-2387` — the `-1` sentinel resolves at decomposition time on the
   series length (monthly needs `nz>=120`; 60/48/45/30/15 for `mq`=6/4/3/2/1),

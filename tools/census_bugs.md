@@ -352,6 +352,52 @@ it. `Mtype==7` (3-term) is special-cased to `wtx11=1/3` and avoids the access.
   value against the oracle's `.sum` echo, and the presence of the oracle's
   `.cyc`/`.ltt` goldens). `*_hp-off-seats` pins the un-overridden "no".
 
+## CB-16 — `seats{finite=yes}` zeroes the `pctreductionyr1..5` savelog stats (uninitialised COMMON)
+
+- **Where:** `oracle/fortran/sigsub.f:577-598` (SECOND) reading `relRevs` from
+  `/firevs/` (`oracle/fortran/revs.i`), which is filled only inside
+  `oracle/fortran/getdiag.f:1402`'s `IF (out .eq. 0)` guard.
+- **Severity:** `active` — hits every `seats{finite=yes}` run made through the
+  X-13 wrapper at its default SEATS output level.
+- **Symptom:** SECOND prints/stores the "percentage reduction in the standard
+  error of the revision after additional years" statistics. With `Lfinit` false
+  it computes them from `vretre/vreadj`; with `Lfinit` true it substitutes the
+  finite-sample values `tmp(i)=relRevs(3,i)`, `tmp1(i)=relRevs(2,i)`, which then
+  reach `setCovt1/setCovsa1/setCovt5/setCovsa5` and `USRENTRY(...,1517/1518)` —
+  i.e. the `.udg` savelog keys `pctreductionyr1..5`. But `relRevs` is only ever
+  written by `getDiag`'s **`IF (out .eq. 0)`**-guarded `compRevs` call
+  (getdiag.f:1402, "Modified by REG, on 27 Apr 2008, to restrict finite
+  revisions calculations unless out=0"). ansub9.f:1040-1056 hands SEATS
+  `L_OUT = 2`, or `3` when any SEATS table is printed/saved — never 0 unless the
+  user sets `seats{out=0}` *and* prints/saves nothing. So the substituted array
+  is never filled and SECOND reads uninitialised `/firevs/` COMMON. Measured on
+  all four corpus series: `pctreductionyr1` goes from `76.2582 42.7151`
+  (airline), `76.3342 0.9996` (payems), `62.2269 3.0984` (unrate),
+  `91.0536 0.9989` (expgs) to `0.0000 0.0000` in every case. Loader-zeroed
+  COMMON makes that look like a clean zero for a single-series run; under `-x` /
+  iterative multi-series processing it is stale data from a prior series. The
+  guard asymmetry is the defect: `Lfinit` gates the *substitution*
+  (sigsub.f:577) while `out` gates the *computation* (getdiag.f:1402).
+- **Port:** nothing to reproduce yet — the port emits no SEATS savelog keys, and
+  the whole finite-sample subsystem (`getDiag` plus its ~7.6 kloc closure:
+  `getdiag/bldcov/blddif/extsgnl/compmse/complagdiag/compcrodiag/comprevs/getgr/
+  getrevdec/procflts`, plus `altundovrtst` and ansub4.f `UnderOverTest`) is
+  unported. `core/src/seats/seatopts.cpp` carries `Lfinit` onto
+  `SeatsOptions::finite`; the decomposition correctly ignores it (measured
+  invariant over 24 oracle configurations — see the note in `seatopts.hpp`).
+  **If the SEATS savelog is ever ported, `pctreductionyr*` must reproduce this
+  zeroing**, not the "obviously intended" finite-sample value. Pinned indirectly
+  by `tests/parity/test_seats_tables.py` (`*_finite-seats`), whose blessed
+  `.udg` goldens carry the zeroed values.
+- **Related, not a bug — worth knowing when scoping `finite`:** the same
+  `IF (Lfinit) CALL getDiag(...)` at sigex.f:1502 is the only path that sets the
+  `lSAFlt/lSAGain/lSATmShf/lTreFlt/lTreGain/ltreTmShf` flags (procflts.f:111-116)
+  that seatdg.f:187-275 requires before it will write the `faf/fac/ftf/ftc`
+  filter-weight, `gaf/gac/gtf/gtc` squared-gain and `tac/ttc` time-shift save
+  tables. Without `finite=yes` the oracle accepts those `save=` tokens and
+  silently writes no file at all; with it, ten files appear. So `finite` is a
+  real output gate, not only a print switch.
+
 ## CB-17 — fvalue.f zeroes its own argument, destroying the caller's F-statistic
 
 `fvalue.f` returns the F-distribution upper-tail probability

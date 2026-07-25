@@ -113,7 +113,9 @@ SeatsOptions seats_resolve_options(const X13Context& ctx) {
     for (int i = LSETRN; i <= prm::NTBL - 11; ++i) {
         if (ctx.tbllog.prttab(i)) { r.out = 3; break; }
     }
-
+    // Lfinit is a plain LOGICAL in /setopt/ (no NOTSET sentinel): gtinpt.f:537
+    // seeds it F and gtseat.f:303 overwrites it only when the argument parses.
+    r.finite = o.lfinit;
     return r;
 }
 

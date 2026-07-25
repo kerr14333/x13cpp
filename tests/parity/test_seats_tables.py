@@ -410,6 +410,39 @@ def test_seats_table(base: str, tag: str) -> None:
         ("payems_hp-relock-seats", "s10"), ("payems_hp-relock-seats", "s11"),
         ("payems_hp-relock-seats", "s12"), ("payems_hp-relock-seats", "s13"),
         ("payems_hp-relock-seats", "s16"), ("payems_hp-relock-seats", "s18"),
+        # *_finite-seats: seats{finite=yes} -> /setopt/ Lfinit, the finite-
+        # sample signal-extraction filters. These are the *_fixed-airline-seats
+        # specs plus that one argument, and they gate the INVARIANCE: Lfinit
+        # never touches the decomposition, so s10-s18 must stay bit-exact. That
+        # is measured, not assumed -- the blessed goldens here are byte-identical
+        # (body, ignoring the spec-name header line) to the
+        # *_fixed-airline-seats goldens for all 4 series x all 6 tables, and a
+        # 24-configuration oracle probe (4 series x 2 model shapes x {default,
+        # seats out=0, span<120 obs, forecasts on}) moved no table written in
+        # both modes.
+        #
+        # The flag is emphatically LIVE, though, and NOT merely print surface --
+        # it gates getDiag (sigex.f:1502), which alone sets the flags seatdg.f
+        # needs before it will write TEN save tables (faf/fac/ftf/ftc filter
+        # weights, gaf/gac/gtf/gtc squared gains, tac/ttc time shifts: absent
+        # entirely without finite=yes, 146-1203 rows each with it), plus 44 .udg
+        # keys -- 39 `oustat*` going 0 -> nonzero and `pctreductionyr1..5` going
+        # real -> 0.0000 (a Census defect, tools/census_bugs.md CB-16). getDiag
+        # and its ~7.6 kloc closure are unported, and so is every SEATS save
+        # table beyond s10-s18, so there is no port surface for those yet; see
+        # the measurement note in core/src/seats/seatopts.hpp.
+        ("airline_finite-seats", "s10"), ("airline_finite-seats", "s11"),
+        ("airline_finite-seats", "s12"), ("airline_finite-seats", "s13"),
+        ("airline_finite-seats", "s16"), ("airline_finite-seats", "s18"),
+        ("payems_finite-seats", "s10"), ("payems_finite-seats", "s11"),
+        ("payems_finite-seats", "s12"), ("payems_finite-seats", "s13"),
+        ("payems_finite-seats", "s16"), ("payems_finite-seats", "s18"),
+        ("unrate_finite-seats", "s10"), ("unrate_finite-seats", "s11"),
+        ("unrate_finite-seats", "s12"), ("unrate_finite-seats", "s13"),
+        ("unrate_finite-seats", "s16"), ("unrate_finite-seats", "s18"),
+        ("expgs_finite-seats", "s10"), ("expgs_finite-seats", "s11"),
+        ("expgs_finite-seats", "s12"), ("expgs_finite-seats", "s13"),
+        ("expgs_finite-seats", "s16"), ("expgs_finite-seats", "s18"),
     }
     # No golden shipped => the oracle produced no such table, so there is no
     # parity target (not an engine gap). This covers the inadmissible-
