@@ -546,3 +546,46 @@ Reachability: any `history{estimates=(td) save=(tdh)}` run.
   (`tests/parity/test_history_tables.py::test_history_model_table`) therefore
   takes the column COUNT from the golden's tab-separated header and reads the
   data rows by whitespace split.
+
+## CB-21 — restor.f restores `Arimaf` with the WRONG array bound (`PB`, not `PARIMA`)
+
+`ssprep.f:79` snapshots the ARMA fixed-parameter flags with the correct extent:
+
+```fortran
+       CALL copylg(Arimaf,PARIMA,1,Fxa)
+```
+
+but its inverse, `restor.f:67`, restores them with `PB`:
+
+```fortran
+       CALL copy(Ap2,PARIMA,1,Arimap)      ! <-- PARIMA, correct
+       CALL copy(Bb,PB,1,B)
+       CALL copylg(Fxa,PB,1,Arimaf)        ! <-- PB, should be PARIMA
+```
+
+`Arimaf` is `LOGICAL Arimaf(PARIMA)` and `Fxa` is `LOGICAL Fxa(PARIMA)`; `PB` is
+the REGRESSION column bound, which belongs to the two lines around it (`B`,
+`Regfx2`), not to this one. It is a copy-paste of the neighbouring bound.
+
+Both slidingspans (`ssx11a.f`) and history (`revdrv.f`) call `restor` before
+every span, so on those paths elements `PARIMA` down to `PB+1` of `Arimaf` are
+never restored from the snapshot — they keep whatever the previous span left
+there.
+
+Reachability: **none in practice, and the direction of the bound is why.**
+`model.prm` sets `PB = 80` and `PARIMA = 133`, so the under-copy leaves the
+tail 81..133 stale rather than reading out of bounds. Those entries only matter
+for a model with more than 80 ARMA coefficients (`Mdl`/`Opr` lag slots), which
+no admissible X-13 model has: the ARMA lag structure is bounded by
+`PORDER`-degree operators, and the corpus's largest model uses four. Nothing
+in the span loops writes them either, so stale == correct here.
+
+- **Port:** NOT reproduced. `core/src/x11/slidingspans.cpp`'s `restor_span` uses
+  `copylg(p.fxa.data(), prm::PARIMA, 1, m.arimaf.data())` — the bound the
+  snapshot side uses. Since `PB < PARIMA` and elements 81..133 are identical on
+  both sides for every reachable model, the two are bit-equivalent; writing
+  `PB` here would only make the C++ harder to read for no observable gain.
+  Pinned by `tests/parity/test_history_tables.py` (the `airline_history-fixmdl`
+  spec is the one that exercises `restor`'s ARMA-flag restore most directly:
+  `history{fixmdl=yes}` sets all `PARIMA` flags true and relies on every span's
+  `restor` to keep them true).
