@@ -11,6 +11,13 @@ savable table for that spec, and ``savelog = all`` on the specs where that is
 legal. See the module comments for why explicit save lists are used instead of
 ``save = all``.
 
+WARNING: this directory holds many committed specs that genspecs.py does NOT
+produce (hand-added coverage cases). Because main() wipes every ``*.spc`` before
+regenerating, running it deletes them -- ``git status`` after a run will show
+~130 deletions. Restore with ``git checkout tests/corpus/generated`` (which also
+reverts THIS file, so re-apply generator edits afterwards), or add a config here
+and write only the new specs.
+
 Run:  python genspecs.py
 """
 
@@ -324,6 +331,28 @@ def cfg_mean_td_seats(s):
     return blocks
 
 
+def cfg_holiday_x11(s):
+    # A regARIMA HOLIDAY regressor alongside trading day. The point of the config
+    # is Finhol: gtinpt.f defaults it TRUE and clears it at the parse tail only
+    # when no holiday regressor turned up (gtinpt.f:1240-1242). With it TRUE,
+    # x11pt2 folds Fachol into Faccal and x11pt3's `.not.Finhol` guard SKIPS the
+    # divide that would take it back out -- so the holiday effect belongs in the
+    # combined calendar factor (D16) and is removed from D11/D13. Missing that
+    # default left the Easter effect in D11/D13/D16 (~1.4e-2 in March/April)
+    # behind an OUTCOME: OK.
+    blocks = []
+    if not s["rate"]:
+        blocks.append(transform_log())
+    hol = "easter[8] labor[10] thanks[3]" if s["period"] == 12 else "easter[8]"
+    blocks.append(spec("regression", ["variables = (td %s)" % hol],
+                       save_key="regression"))
+    blocks.append(arima_airline())
+    blocks.append(estimate_block())
+    blocks.append(forecast_block(s["period"]))
+    blocks.append(x11_block("add" if s["rate"] else None))
+    return blocks
+
+
 def cfg_automdl_aictest_x11(s):
     blocks = []
     if not s["rate"]:
@@ -349,6 +378,7 @@ CONFIGS = [
     ("mean-seats", cfg_mean_seats),
     ("mean-d0-seats", cfg_mean_d0_seats),
     ("mean-td-seats", cfg_mean_td_seats),
+    ("holiday-x11", cfg_holiday_x11),
     ("automdl-aictest-x11", cfg_automdl_aictest_x11),
 ]
 

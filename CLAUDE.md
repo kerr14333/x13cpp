@@ -157,6 +157,26 @@ diagnostics front (force / slidingspans / history) is now closed.
   d10-d13 print over the observed span only, which is why every existing gate
   stayed green through both. Gated by `test_force_tables.py` (now also gating
   d10-d13), corpus `extra/airline_force-{td,calendaradj,permprioradj,both}`.
+- **regARIMA HOLIDAY regressors + X-11 (`Finhol`) — CLOSED (bit-exact):**
+  `regression{variables=(easter[N] labor[N] thanks[N])}` with `x11{}` left the
+  holiday effect in D11/D13/D16 (~1.4e-2 in March/April) behind an
+  `OUTCOME: OK`. Cause: `Finhol` was never initialized. gtinpt.f:407 defaults it
+  **TRUE** and gtinpt.f:1240-1242 clears it at the parse tail only when no
+  holiday regressor turned up (`Havhol`, set by adpdrg/getreg — or `Leastr` for
+  the aictest easter). It is not a print flag: with Finhol true x11pt2 folds
+  Fachol into Faccal AND x11pt3's `.not.Finhol` guard skips the divide that
+  would take it back out, so the holiday belongs in the combined calendar factor.
+  Both were already ported correctly — with Finhol false they cancel exactly,
+  which is why the effect vanished silently. Gated by the new `*_holiday-x11`
+  config (all 4 series) in `test_x11_tables.py`, which now also gates **d16**
+  (optional, where the golden ships) — d16 is the table that catches a Faccal
+  missing a calendar factor while d10-d13 still look right.
+  **Corpus-generator hazard** found here: `generated/genspecs.py` and
+  `extra/genextra.py` both wipe every `*.spc` in their directory before
+  regenerating, but both directories hold committed specs the generators do not
+  produce (~130 in `generated/`). Running them deletes those. Both docstrings now
+  warn; add a config and write only the new specs, or `git checkout` the
+  directory afterwards (which reverts the generator too).
 - **`transform{}` user PRIOR-adjustment factors — CLOSED (bit-exact):** the
   `data=`/`file=` prior factor series, permanent (`Usrpad`) and temporary
   (`Usrtad`), alone or combined with the predefined `adjust=lom/loq/lpyear`

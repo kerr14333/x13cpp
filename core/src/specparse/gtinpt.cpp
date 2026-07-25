@@ -75,6 +75,14 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.arima.fcntyp = prm::NOTSET;
     ctx.arima.lam = 1.0;
     ctx.picktd.picktd = false;
+    // gtinpt.f:407-411 -- the regression-effect "keep in the final series" flags.
+    // Finao/Finls/Fintc/Finusr default FALSE (the zero-init already gives that);
+    // Finhol defaults TRUE and is cleared at the parse tail when no holiday
+    // regressor turned up (gtinpt.f:1240-1242). It is not a print-only flag: with
+    // Finhol true x11pt2 folds Fachol into Faccal and x11pt3's `.not.Finhol`
+    // guard skips the divide that would take it back out, so the holiday effect
+    // stays in the combined calendar factor (D16) and is removed from D11/D13.
+    ctx.x11adj.finhol = true;
     ctx.prior.priadj = 0;    // gtinpt.f: Priadj=0 (no predefined prior adjustment)
     ctx.prior.kfmt = 0;      // gtinpt.f: Kfmt=0
     ctx.arima.reglom = 0;    // gtinpt.f: Reglom=0
@@ -505,6 +513,26 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                     break;
                 }
             }
+        }
+
+        // gtinpt.f:1240-1242 -- clear the Finhol default when nothing in the run
+        // actually produces a holiday effect. Havhol is set by the regression
+        // parsers (adpdrg.f:971/1037/1105 for easter/statcaneaster/stockeaster,
+        // labor and thanksgiving; getreg.f:345 for a user holiday regressor;
+        // getreg.f:851 for the aictest easter, Leastr), so it is equivalent to
+        // scanning the built model for chkadj's Nhol regressor types.
+        {
+            bool havhol = ctx.arima.leastr;
+            for (int icol = 1; !havhol && icol <= ctx.model.nb; ++icol) {
+                const int t = ctx.model.rgvrtp(icol);
+                if (t == prm::PRGTEA || t == prm::PRGTLD || t == prm::PRGTTH ||
+                    t == prm::PRGTEC || t == prm::PRGTES ||
+                    (t >= prm::PRGTUH && t <= prm::PRGUH5))
+                    havhol = true;
+            }
+            if (!(havhol || ctx.x11log.axrghl || ctx.x11log.axruhl ||
+                  ctx.x11opt.khol == 1) && ctx.x11adj.finhol)
+                ctx.x11adj.finhol = false;
         }
 
         // gtinpt.f:220: finalize the ARMA model dimensions for estimation

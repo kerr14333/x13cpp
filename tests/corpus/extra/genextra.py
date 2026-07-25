@@ -14,6 +14,12 @@ directories (``../data/``, ``../generated/``, ``../census-examples/``,
 ``../edge/``). The ``pickmdl.mdl`` model file and ``data/`` provenance README
 are committed by hand alongside this generator, not regenerated here.
 
+WARNING: like generated/genspecs.py, main() wipes every ``*.spc`` here before
+regenerating, and this directory holds a few committed specs this generator does
+NOT produce (airline_automdl, airline_iddiff, metadata-fewer-values). Running it
+deletes them -- check ``git status`` afterwards and ``git checkout`` the ones you
+did not mean to change.
+
 Run:  python genextra.py
 
 Save-table lists are the explicit valid tokens for each spec, taken from the

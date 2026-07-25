@@ -82,7 +82,12 @@ def _is_no_model(spec_path: str) -> bool:
     return "x11{" in txt and not any(k in txt for k in modeling)
 
 
-_TAGS = ["b1", "d10", "d11", "d12", "d13"]
+# d16 (the COMBINED seasonal + calendar factor) is gated where its golden ships
+# but is not required for discovery: it is the table that carries the calendar
+# effect, so it is the one that catches a Faccal that is missing (or double-
+# counting) the trading-day / holiday factor while d10-d13 still look right.
+_CORE_TAGS = ["b1", "d10", "d11", "d12", "d13"]
+_TAGS = _CORE_TAGS + ["d16"]
 
 
 def _discover() -> list[str]:
@@ -94,7 +99,8 @@ def _discover() -> list[str]:
             continue
         base = fn[:-4]
         gdir = os.path.join(_GOLDEN, base)
-        if not all(os.path.exists(os.path.join(gdir, base + "." + t)) for t in _TAGS):
+        if not all(os.path.exists(os.path.join(gdir, base + "." + t))
+                   for t in _CORE_TAGS):
             continue
         specs.append(base)
     return specs
@@ -107,6 +113,9 @@ CASES = _discover()
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
 def test_x11_table(base: str, tag: str) -> None:
+    goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
+    if not os.path.exists(goldpath):
+        pytest.skip(f"{base} does not ship the {tag} golden")
     spec = os.path.join(_CORPUS, base + ".spc")
     # Tolerance by path: no-model decomposition is pure arithmetic (tight);
     # model-based runs carry estimation-derived values (loose).
@@ -121,7 +130,7 @@ def test_x11_table(base: str, tag: str) -> None:
         if len(p) == 3 and p[0] == tag:
             produced[p[1]] = float(p[2])
 
-    gold = _read_golden(os.path.join(_GOLDEN, base, base + "." + tag))
+    gold = _read_golden(goldpath)
     assert gold, f"{base}.{tag}: empty golden"
 
     keys = sorted(set(gold) & set(produced))
