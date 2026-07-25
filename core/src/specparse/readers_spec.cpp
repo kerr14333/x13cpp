@@ -110,7 +110,8 @@ void gt_transform(X13Context& ctx, bool& inptok) {
         std::vector<std::string> cap;
         bool want = (argidx == 6 || argidx == 8 || argidx == 9 || argidx == 11 ||
                      argidx == 17 || argidx == 1 || argidx == 2 || argidx == 4 ||
-                     argidx == 5 || argidx == 12 || argidx == 14 || argidx == 19);
+                     argidx == 5 || argidx == 12 || argidx == 14 || argidx == 19 ||
+                     argidx == 20);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
         if (argidx == 1) {                       // data= : inline prior factors
@@ -139,6 +140,21 @@ void gt_transform(X13Context& ctx, bool& inptok) {
             // getadj.f:421 -- put the temporary prior back into the final TREND
             // (D12) as well as the SA series.
             ctx.prior.lprntr = (cap[0] == "yes");
+        } else if (argidx == 20 && !cap.empty()) { // constant=
+            // getadj.f:177-436 -- a positive constant added to the WHOLE series
+            // (editor.f:430) so a multiplicative adjustment can run on data that
+            // would otherwise touch or cross zero. It is taken back out of the
+            // published D11/D12/original at the x11pt3 output points.
+            double c = 0.0;
+            bool ok = true;
+            try { c = std::stod(cap[0]); } catch (...) { ok = false; }
+            if (!ok || c <= 0.0) {
+                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                       "Constant argument cannot be less than or equal to zero.");
+                inptok = false;
+            } else {
+                ctx.adj.cnstnt = c;
+            }
         } else if (argidx == 14 && !cap.empty()) { // type= temporary|permanent
             const std::string& t = cap[0];
             if (t == "temporary" || t == "temp") pr_type = 1;

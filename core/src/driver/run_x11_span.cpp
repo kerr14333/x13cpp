@@ -48,7 +48,8 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // extreme-value sigma mode -> wrong extreme weights -> wrong seasonal MA
     // and Henderson-length choice (the ~3.45% span-1 sfs error).
     ctx.xtrm.ksdev = ctx.saved.ksdev0;
-    ctx.adj.cnstnt = prm::DNOTST;
+    // (Cnstnt is a COMMON in the oracle and survives every span replay, so it is
+    // deliberately NOT reset here.)
 
     // Span pointers (setxpt.f) -- purely from Lsp/Nbcst2/Nbcst/Nfcst/Nofpob,
     // no calendar dependency yet.

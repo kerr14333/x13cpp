@@ -444,6 +444,37 @@ diagnostics front (force / slidingspans / history) is now closed.
   inventory: neither is composite.) Still open for composite: the SEATS branch
   (`agr3s.f`), pseudo-additive, and the forced/rounded indirect series. Map:
   **`tools/composite_scouting.md`**.
+- **`transform{constant=}` + `x11{final=(ls)}`'s Part-E fold — CLOSED
+  (bit-exact).** `constant=` was **parsed and silently dropped**: `gt_transform`
+  consumed the token and never wrote `Cnstnt`, so every consumer's
+  `!= DNOTST` test was false and the run came back `OUTCOME: OK` with d10-d13
+  off by 1.3e-2..5.5e-2 (measured on airline with `constant=50`). Ported the
+  whole chain: the parse + `>0` validation, `editor.f:429-434` (the constant is
+  added to the WHOLE input series once, before the transform, the model and the
+  X-11 spine ever see it — done at the tail of `parse_spec`, the only place in
+  this port that is unambiguously "after gtinpt, before everything else"), and
+  x11pt3's four removal points — D11 + the original (`:621-635`, including the
+  `Iyrt>0` floor at zero, which is NOT print surface because force reads Stci
+  after it), the published trend (`:950-953` folded / `:1015-1018` plain), and
+  Part E's add-then-subtract round trip (`:1204-1228` / `:1275-1281`). The
+  pre-removal copies are the `sac`/`tac` save tables (`Stcipc`/`stc2pc`), now
+  gated. **Two things worth knowing.** (1) The Part-E round trip is NOT the
+  identity: `:1275-1281` subtracts the constant AFTER the AO/TC divides, so in
+  multiplicative mode the constant is divided by those factors first — verbatim.
+  (2) Three drivers were pinning `ctx.adj.cnstnt = DNOTST` (run_x11,
+  run_x11_span, xrgdrv) purely to correct the struct's zero-init; the default is
+  now set once in gtinpt and those three assignments had to GO, or a real user
+  constant would be cleared by the span replays and the transparent x11reg pass
+  (Cnstnt is a COMMON in the oracle and survives both). **This also makes CB-18
+  and CB-19 reachable** — both live in x11pt4's `Muladd!=1 && Cnstnt!=DNOTST`
+  branch, and `generated/airline_constant`'s f2/f3 block now matches the oracle
+  bit-for-bit with both defects transcribed. SEATS is walled instead
+  (`seatpr.f:211-390`'s constant removal is unported). Closed alongside it:
+  **`x11{final=(ls)}`'s Part-E Facls re-adjustment** (x11pt3.f:1243-1249), which
+  had been a `not_ported` fatal — six lines, and they belong INSIDE the
+  weight-zero branch of the Part-E loop, not after it. Gated by the new
+  `generated/airline_constant` (b1/d10-d13/d16/sac/tac + the E family + f2/f3)
+  and `generated/airline_finals-ls` (measured oracle on-vs-off 6.0e-2 in e2).
 - **x11pt4 increment 1 — the F2 SEASONALITY TEST BATTERY — CLOSED (bit-exact).**
   `x11pt4.f` was never ported at all, so the whole diagnostics front the .udg
   reports (`f2.*`, `f3.m01`-`m11`/`q`/`qm2`, the E tables) was simply absent.

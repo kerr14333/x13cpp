@@ -179,10 +179,8 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.lzero.l0 = 1;
     ctx.lzero.ly0 = ctx.x11opt.lyr;
     ctx.xtrm.kersa = 0;
-    // gtinpt.f: Cnstnt defaults to DNOTST (no user constant). x11pt3 keys its
-    // constant-removal branch on Cnstnt != DNOTST, so the zero-init default must
-    // be corrected or the base path wrongly enters that (unported) branch.
-    ctx.adj.cnstnt = prm::DNOTST;
+    // (Cnstnt is set by gtinpt/gt_transform now -- transform{constant=} -- and
+    // must NOT be cleared here or the user constant would never reach x11pt3.)
 
     // editor.f 2042-2103: X-11 seasonal-filter default resolution (the post-parse
     // setup getx11 leaves to the editor). Base (type!=trend): an unset Lterm ->

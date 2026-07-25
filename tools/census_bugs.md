@@ -461,10 +461,11 @@ observations divides them anyway (`divsub`), and a span where every observation
 is good takes the DNOTST-producing `divgud`.
 
 Reachability: the whole `IF` needs `Muladd != 1` **and** a user constant
-(`x11{constant=}`), so the base path never evaluates it and `allgud` stays at
-its `T` initialiser. In this port the constant path is walled earlier
-(`x11pt3 constant removal from D11/original`), so the branch is unreachable —
-but it is transcribed verbatim rather than corrected.
+(`transform{constant=}`), so the base path never evaluates it and `allgud`
+stays at its `T` initialiser. The constant path is now ported and gated by
+`generated/airline_constant`, whose `f2.*`/`f3.*` block matches the oracle
+bit-for-bit with the negation in place — it is transcribed verbatim rather
+than corrected.
 
 - **Port:** `core/src/x11/x11summ.cpp`, `x11pt4_partf`, the `allgud` assignment
   and each of the six `if (allgud) ... else ...` blocks. Commented at the site.
@@ -496,7 +497,9 @@ scratch `Temp` is clobbered as a side effect — `Temp` at that moment holds the
 detrended E1 from `:528`, which `:694-696` then reads back into `Stmcd`.
 
 Reachability: same gate as CB-18 — the `ELSE` is the `.not.allgud` branch, so it
-needs `Muladd != 1` plus `x11{constant=}`, and is unreachable in this port.
+needs `Muladd != 1` plus a `transform{constant=}`. That is no longer unreachable:
+the constant is ported and gated by `generated/airline_constant`, whose f2/f3
+block matches the oracle bit-for-bit with the reversal in place.
 
 - **Port:** `core/src/x11/x11summ.cpp`, `x11pt4_partf`, the E2 restore block.
   Transcribed verbatim with the reversal commented.

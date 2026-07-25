@@ -24,6 +24,8 @@
 #include "seats/model_decode.hpp"
 #include "seats/seatopts.hpp"
 #include "seats/spectru.hpp"
+#include "gen/notset.hpp"      // prm::DNOTST
+#include "numeric/numeric.hpp" // dpeq
 
 #include <cmath>
 #include <string>
@@ -71,6 +73,15 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     if (!parse_spec(ctx, spec_text, base)) return false;
     if (!ctx.captured.has_series) return false;
     if (!ctx.captured.has_seats) return false;
+    // transform{constant=} is now parsed and applied (the whole series is
+    // shifted up in parse_spec). SEATS takes it back out of its own published
+    // components at seatpr.f:211-390, which is unported -- so fatal rather than
+    // publish a decomposition that is uniformly `constant` too high.
+    if (!dpeq(ctx.adj.cnstnt, prm::DNOTST)) {
+        seats_not_ported(ctx, "transform{constant=} through SEATS "
+                              "(seatpr.f:211-390 constant removal)");
+        return false;
+    }
 
     // SEATS is always model-based (analts.f: the fitted regARIMA model feeds
     // SEATS through NMLSTS/ss2rv -- see tools/seats_scope.md section 1). Reuse

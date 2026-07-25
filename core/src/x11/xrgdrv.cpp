@@ -124,7 +124,7 @@ bool xrgdrv(X13Context& ctx) {
     ctx.x11opt.ny = sp;
     ctx.x11opt.lyr = begspn[0];
     ctx.xtrm.kersa = 0;
-    ctx.adj.cnstnt = prm::DNOTST;
+    // (Cnstnt is a COMMON and survives the transparent pass; do not clear it.)
 
     // editor.f 2042-2103 seasonal-filter default resolution (base branch).
     ctx.work2.lstabl = false;

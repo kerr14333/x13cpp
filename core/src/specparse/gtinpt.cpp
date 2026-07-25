@@ -86,6 +86,10 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.prior.priadj = 0;    // gtinpt.f: Priadj=0 (no predefined prior adjustment)
     ctx.prior.kfmt = 0;      // gtinpt.f: Kfmt=0
     ctx.arima.reglom = 0;    // gtinpt.f: Reglom=0
+    // gtinpt.f:170 -- Cnstnt=DNOTST (no transform{constant=}). Every consumer
+    // keys on "!= DNOTST", so the struct's zero-init would wrongly read as a
+    // constant of 0 and enter the removal branches.
+    ctx.adj.cnstnt = prm::DNOTST;
 
     // gtinpt.f 259, 271-279: estimation-control defaults (an estimate{} spec
     // overrides these; that reader is a later M3 step). DFTOL etc. from model.prm.

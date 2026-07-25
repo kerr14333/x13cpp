@@ -214,6 +214,13 @@ int main(int argc, char** argv) {
         dump("eb", begspn, sp, e18_frst, e18_last, ctx.x11_eb.data(), pos1ob);
     }
 
+    // transform{constant=}: the D11 / published D12 with the constant still in,
+    // i.e. the oracle's Stcipc / stc2pc (save tokens sac / tac).
+    if (!ctx.x11_stcipc.empty())
+        dump("sac", begspn, sp, pos1ob, posfob, ctx.x11_stcipc.data(), pos1ob);
+    if (!ctx.x11_stc2pc.empty())
+        dump("tac", begspn, sp, pos1ob, posfob, ctx.x11_stc2pc.data(), pos1ob);
+
     // F2 seasonality tests (svf2f3.f:59-64). These are savelog canaries, not
     // tables: emitted here at the oracle's own printed precision so the gate can
     // read the .udg golden directly. Fpres/P3 come from the B1 F-test in x11pt2,

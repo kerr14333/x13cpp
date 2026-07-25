@@ -265,6 +265,10 @@ struct X13Context {
     // the final replacement values. Save surface only -- nothing downstream reads
     // them (the tests above run on their own AO-adjusted copy).
     std::vector<double> agr_id8, agr_id9;
+    // transform{constant=}: the D11 / published D12 as they stand BEFORE x11pt3
+    // subtracts the constant back out (the oracle's Stcipc / stc2pc), i.e. the
+    // `sac` and `tac` save tables. Empty when no constant was given.
+    std::vector<double> x11_stcipc, x11_stc2pc;
     // Final regARIMA residuals (arima.f's `a`, length `resid_na`) captured after
     // estimation for the residual-spectrum diagnostic (spr, spcrsd.f). Their
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).

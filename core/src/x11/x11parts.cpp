@@ -1033,10 +1033,24 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         }
     }
 
-    // D11 write + residual-seasonality test. Base path: no temporary constant.
+    // D11 write + residual-seasonality test.
+    // x11pt3.f:621-635 -- transform{constant=} added the constant to the WHOLE
+    // series back in editor.f, so the PUBLISHED seasonally adjusted series and
+    // original have it taken back out here. The pre-removal D11 is kept as
+    // Stcipc, which is the `sac` save table ("SA series with the constant").
+    // The negative-value message is print surface, but its Iyrt>0 floor at zero
+    // is not -- force reads Stci afterwards.
     if (!dpeq(adjc.cnstnt, prm::DNOTST)) {
-        x11_not_ported(ctx, "x11pt3 constant removal from D11/original");
-        return;
+        const double c = adjc.cnstnt;
+        ctx.x11_stcipc.assign(stci, stci + PLEN);
+        for (int i = pos1ob; i <= posffc; ++i) {
+            stci[i - 1] -= c;
+            series[i - 1] -= c;
+            if (!(stci[i - 1] > 0.0) && muladd != 1 && frc.iyrt > 0)
+                stci[i - 1] = 0.0;
+        }
+    } else {
+        ctx.x11_stcipc.clear();
     }
     // (deferred: D11 table/punch; residual-seasonality ftest(Stci) -- read-only.)
 
@@ -1154,6 +1168,20 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         }
         have_stc2 = true;
     }
+    // x11pt3.f:950-953 (folded branch) / :1015-1018 (plain branch) -- take the
+    // transform{constant=} back out of the PUBLISHED trend too, keeping the
+    // pre-removal copy as stc2pc, the `tac` save table. Note the constant stays
+    // in the INTERNAL Stc when the folded branch runs, exactly as in the oracle:
+    // there it is `stc2` that is decremented, and Stc is only touched when there
+    // is no stc2. Part F reads the internal one and adds the constant back.
+    if (!dpeq(adjc.cnstnt, prm::DNOTST)) {
+        const double c = adjc.cnstnt;
+        double* pub = have_stc2 ? stc2 : stc;
+        ctx.x11_stc2pc.assign(pub, pub + PLEN);
+        for (int i = pos1ob; i <= posffc; ++i) pub[i - 1] -= c;
+    } else {
+        ctx.x11_stc2pc.clear();
+    }
     // (deferred: D12 table/prttrn/punch/x11plt of stc2/Stc.)
     if (hid.irev == 4) {
         x11_not_ported(ctx, "x11pt3 revisions trend store (getrev)");
@@ -1196,38 +1224,45 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // has to be put back). Feeds E2 = Stcime and hence x11pt4's Cimbar.
     const int nadj2 = (pri.kfmt > 0) ? ctx.adj.nadj : 0;
     opt.kpart = 5;
+    // x11pt3.f:1204-1207 etc. -- Series/Stci had the constant taken out above, so
+    // Part E puts it back for the duration: every measure it builds lives on the
+    // shifted scale, and :1275-1279 removes it again at the end.
+    const bool have_cnst = !dpeq(adjc.cnstnt, prm::DNOTST);
+    const double cnst = have_cnst ? adjc.cnstnt : 0.0;
     for (int i = pos1bk; i <= posffc; ++i) {
         if (stwt[i - 1] > 0.0) {
-            stome[i - 1] = series[i - 1];
+            stome[i - 1] = series[i - 1] + cnst;
             stime[i - 1] = sti[i - 1];
-            stcime[i - 1] = stci[i - 1];
+            stcime[i - 1] = stci[i - 1] + cnst;
         } else {
             stcime[i - 1] = have_stc2 ? stc2[i - 1] : stc[i - 1];  // LS -> folded trend
+            stcime[i - 1] += cnst;
             stime[i - 1] = ebar;          // expected irregular
             // x11pt3.f:1227-1231 -- rebuild the original from its components.
-            stome[i - 1] = muladd == 1 ? series[i - 1] - sti[i - 1]
-                                       : series[i - 1] / sti[i - 1];
+            const double s = series[i - 1] + cnst;
+            stome[i - 1] = muladd == 1 ? s - sti[i - 1] : s / sti[i - 1];
             // x11pt3.f:1232-1238 -- put the prior back into the SA replacement.
             if (nadj2 > 0) {
                 if (muladd == 1) stcime[i - 1] += in.sprior(i);
                 else             stcime[i - 1] *= in.sprior(i);
             }
-            // (Finls==F: no Facls divide.)
+            // x11pt3.f:1243-1249 -- with final=ls the level shift is NOT part of
+            // the published SA series, so take it back out of the replacement
+            // value (which was built from the trend, and the trend carries it).
+            if (adj.finls) {
+                if (muladd == 1) stcime[i - 1] -= facls[i - 1];
+                else             stcime[i - 1] /= facls[i - 1];
+            }
         }
     }
     // x11pt3.f:1265-1273 -- if AO/TC outliers were removed pre-adjustment, remove
     // them from the modified original (E1=Stome) and, unless kept final, the
     // modified SA (E2=Stcime). The modified irregular (E3=Stime) is left untouched
     // (the oracle comments out its divide). LS/user E-folds stay unported.
-    // Finls removes the LS from the modified SA (x11pt3.f:1247-1253); the adjls
-    // (non-final) LS lives in the folded trend stc2 (used above), so it needs no
-    // Part-E fold. Adjusr does NOT fold into E1/E2 here -- it only triggers the
-    // deferred sp2 -> Sprior writeback (x11pt3.f:1284-1288, Kfmt/A18), which does
-    // not feed the E-tables; so it passes through.
-    if (adj.finls) {
-        x11_not_ported(ctx, "x11pt3 Part-E Finls re-adjustment (Facls)");
-        return;
-    }
+    // Finls removes the LS from the modified SA -- done inside the loop above,
+    // where the oracle does it. Adjusr does NOT fold into E1/E2 here; it only
+    // triggers the sp2 -> Sprior writeback (x11pt3.f:1284-1288, Kfmt/A18), which
+    // does not feed the E-tables, so it passes through.
     if (adj.adjao == 1) {
         divsub(stome, stome, facao, pos1bk, posffc, muladd);
         if (!adj.finao) divsub(stcime, stcime, facao, pos1bk, posffc, muladd);
@@ -1235,6 +1270,16 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     if (adj.adjtc == 1) {
         divsub(stome, stome, factc, pos1bk, posffc, muladd);
         if (!adj.fintc) divsub(stcime, stcime, factc, pos1bk, posffc, muladd);
+    }
+    // x11pt3.f:1275-1281 -- and take the constant back out of E1/E2. NB this
+    // runs AFTER the AO/TC divides above, so in multiplicative mode the constant
+    // is divided by those factors first and then subtracted: the round trip is
+    // NOT the identity. Verbatim.
+    if (have_cnst) {
+        for (int i = pos1bk; i <= posffc; ++i) {
+            stome[i - 1] -= cnst;
+            stcime[i - 1] -= cnst;
+        }
     }
     // x11pt3.f:1284-1288 -- with any outlier / user-regression effect removed,
     // the prior-factor series becomes the TOTAL prior: Sprior <- sp2. Read by

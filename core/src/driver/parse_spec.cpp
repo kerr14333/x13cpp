@@ -6,6 +6,9 @@
 // reporting. Estimation / adjustment / output phases are out of M1 scope.
 #include "specparse/specparse.hpp"
 #include "x13/fformat.hpp"
+#include "common/x13context.hpp"
+#include "numeric/numeric.hpp"   // dpeq
+#include "gen/notset.hpp"        // prm::DNOTST
 
 namespace x13 {
 
@@ -40,6 +43,19 @@ bool parse_spec(X13Context& ctx, const std::string& spec_text,
     bool lx11 = false, lseats = false, lmodel = false, inptok = true;
     gtinpt(ctx, lx11, lseats, lmodel, inptok);
     ctx.captured.has_model = lmodel;
+
+    // editor.f:429-434 -- transform{constant=} shifts the WHOLE input series up
+    // by the constant, before anything reads it (the transform, the model, the
+    // X-11 spine all work on Y+c; the constant is taken back out at x11pt3's
+    // output points). Missing values are left alone. This port has no separate
+    // editor stage, and Y is not read before here, so this is the one place that
+    // is unambiguously "after gtinpt, before everything else".
+    if (inptok && !ctx.error.lfatal && !dpeq(ctx.adj.cnstnt, prm::DNOTST)) {
+        const double c = ctx.adj.cnstnt;
+        const double mv = ctx.missng.mvcode;
+        for (int i = 1; i <= ctx.arima.nobs; ++i)
+            if (!dpeq(ctx.arima.y(i), mv)) ctx.arima.y(i) += c;
+    }
     return inptok && !ctx.error.lfatal;
 }
 

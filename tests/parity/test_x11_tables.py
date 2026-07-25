@@ -86,8 +86,10 @@ def _is_no_model(spec_path: str) -> bool:
 # but is not required for discovery: it is the table that carries the calendar
 # effect, so it is the one that catches a Faccal that is missing (or double-
 # counting) the trading-day / holiday factor while d10-d13 still look right.
+# sac / tac are the transform{constant=} pair: the D11 and published D12 with the
+# constant still in them (the oracle's Stcipc / stc2pc), gated where they ship.
 _CORE_TAGS = ["b1", "d10", "d11", "d12", "d13"]
-_TAGS = _CORE_TAGS + ["d16"]
+_TAGS = _CORE_TAGS + ["d16", "sac", "tac"]
 
 
 def _discover() -> list[str]:
