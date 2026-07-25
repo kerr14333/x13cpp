@@ -484,6 +484,28 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
     else
         ctx.ssout.dmax_sfs.assign(MXLEN, prm::DNOTST);
 
+    // ssap.f:209-210 / :219-222 -- the Sa (ads) table. It is NOT unconditional:
+    // the seasonal factors alone move every span, but the SA series only picks
+    // up a separately-flagged difference when something outside the seasonal
+    // factor is being re-estimated per span, so the oracle emits ads only with a
+    // trading-day / holiday / rounding / force option live. The Sa call shares
+    // `iobs` with the S call above -- ssap.f does not bump iobs until after it.
+    const bool ads_on =
+        (ctx.x11opt.kfulsm == 0 &&
+         (ctx.force.lrndsa || ctx.force.iyrt > 0 || sa.itd == 1)) ||
+        sa.ihol == 1;
+    // (The Muladd!=0 branch's own `IF(Ssdiff) ... ELSE mflag(Sa)` fallback --
+    // which flags Sa unconditionally when Ssdiff is off -- is not reached by
+    // this port's mult/log gate corpus and is deliberately not wired.)
+    if (muladd == 0 && ctx.agr.iagr < 6 && ads_on) {
+        mflag(ctx.sspdat.sa, /*nop2=*/0, iobs_s, sa.sslen2, si.ncol, ssdiff,
+              ctx.ssout.dmax_ads);
+        ctx.ssout.have_ads = true;
+    } else {
+        ctx.ssout.dmax_ads.assign(MXLEN, prm::DNOTST);
+        ctx.ssout.have_ads = false;
+    }
+
     const int io1 = (ny == 4) ? 2 : 1;
     const int iobs_c = iobs_s + 1;           // mflag.f: iobs=iobs+1 before the c call
     mflag_c(ctx.ssout.c_flat, io1, iobs_c, sa.sslen2, si.ncol, ssdiff,

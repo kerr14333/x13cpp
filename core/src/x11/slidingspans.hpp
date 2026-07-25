@@ -9,10 +9,11 @@
 // SEATS, no x11regression (Nbx==0), and Ssinit==1 (fixmdl=yes, the default --
 // ssmdl.f's tail then FIXES the whole regARIMA model at the main run's
 // converged values for every span, which is what run_x11_span's fixed-
-// coefficient rgarma replay assumes). ads/tds/ycs (needs TD/holiday/round/
-// force or an explicit save=(ycs) with >=5 years of spans) are not produced;
-// see setssp_span/run_slidingspans doc comments for exactly what is and is
-// not ported.
+// coefficient rgarma replay assumes). ads (the SA-series spans) IS produced,
+// but only under ssap.f:209-210's gating -- a trading-day, holiday, round or
+// force option must be live, so most specs legitimately emit no ads table at
+// all. tds/ycs are still not produced; see setssp_span/run_slidingspans doc
+// comments for exactly what is and is not ported.
 #ifndef X13_X11_SLIDINGSPANS_HPP
 #define X13_X11_SLIDINGSPANS_HPP
 
@@ -101,6 +102,12 @@ struct SlidingSpansOutput {
     std::vector<double> c_flat;       // MXLEN*MXCOL, column-major (row-1)+(col-1)*MXLEN
     std::vector<double> dmax_sfs;     // MXLEN, 1-based via [row-1]
     std::vector<double> dmax_chs;     // MXLEN
+    // ads (the SA-series spans). Unlike sfs/chs this one is CONDITIONAL --
+    // ssap.f:209-210 only flags Sa when a trading-day, holiday, round or force
+    // option is on -- so `have_ads` says whether the oracle produced the table
+    // at all, and an absent one is not the same as an all-DNOTST one.
+    bool have_ads = false;
+    std::vector<double> dmax_ads;     // MXLEN
 };
 
 }  // namespace x13

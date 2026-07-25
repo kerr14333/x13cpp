@@ -641,5 +641,51 @@ diagnostics front (force / slidingspans / history) is now closed.
     (21 configs x 4 series = 84), not the ~164 hand-authored specs in the same
     directory. It does not need regenerating when specs are hand-added — and
     running the generator to "refresh" it deletes them (the standing hazard).
+- **force{}'s NEGATIVE-VALUE CORRECTION + the slidingspans `ads` table — CLOSED
+  (bit-exact), and the span-replay clobber it exposed is fixed.** Three things,
+  each of which had to land before the next was measurable.
+  (1) **The `qmap2` negative-value correction (x11pt3.f:750-782)** was the last
+  x11 wall that last session's `transform{constant=}` port made REACHABLE — it
+  sits behind `Muladd!=1 && Cnstnt!=DNOTST`, and until the constant was parsed
+  that guard could never fire. Subtracting the constant back out can drive D11
+  to or below zero (x11pt3.f:632-634 floors it there when `Iyrt>0`), so the
+  FORCED series can go non-positive too; the oracle clamps those to zero and
+  re-prorates against the target with a **second qmap2 pass at Rol=0/Lamda=0.5**
+  — run even when the primary pass was Denton, and taking the CLAMPED Stci2 as
+  its input series, not Stci, so the correction compounds on the first pass.
+  (2) **`frcfac` (the `ffc` save table) moved out of the harness and into
+  x11pt3**, because x11pt3.f:841-850 has a second branch the harness could not
+  see: with `negfin` (values still <= 0 after the correction) the ratio is not
+  formed at all and those observations get **DNOTST (-999)**. `x13run_x11` had
+  been recomputing ffc as a plain Stci/Stci2, i.e. the else-branch only.
+  Nearly logged a CB here and it would have been wrong: the negfin branch takes
+  a hard QUOTIENT where the other goes through `divsub` (which SUBTRACTS when
+  Muladd!=0), which looks like an inconsistency — but log-additive has already
+  collapsed `muladd` 2->0 at the D12 antilog well before the force block, so
+  muladd is 0 or 1 here and the branch is guarded on `!=1`. Measured on a logadd
+  force spec: ffc is the quotient of the published D11/D11A on both branches.
+  **Measure before naming a Census bug.**
+  (3) **x11pt3.f:815-822's `Iyrt>0` sliding-spans store was never ported** —
+  only its `Iyrt==0` counterpart at :678-680 was — so every force+slidingspans
+  run stored NO SA span at all. With it, `mflag(Sa,3,...)` becomes reachable and
+  the **`ads` table** is now produced. NB ads is *conditional*, not merely
+  unported: ssap.f:209-210 emits it only when `Kfulsm==0 && (Lrndsa || Iyrt>0 ||
+  Itd==1)` or `Ihol==1`, which is why the two existing slidingspans specs
+  correctly ship no ads golden and their gate skips.
+  **The real find, though, was underneath all three.** A span replay is a full
+  x11pt1->x11pt3 pass, so it rewrites `/x11srs/`, `/adxser/`, `/x11fac/`,
+  `/x11ptr/` and `Begspn` **in place**. The oracle punches all of them during
+  the main pass, before sspdrv/revdrv run; this harness dumps at exit. Nothing
+  gated it because no spec had ever combined slidingspans{}/history{} with a
+  table the harness prints — the moment one did, saa/ffc came back as **84 rows
+  starting seven years late**, i.e. the last span's values under the last span's
+  dates. `run_x11.cpp` now save/restores that whole set around both span
+  drivers, exactly as it already did for `/lkhd/`. The new spec's d10-d13/d16
+  goldens exist specifically to pin the restore.
+  Gated by `extra/airline_force-constant-{regress,denton}` (d10-d13/d16 + saa +
+  the DNOTST-carrying ffc) and `extra/airline_slidingspans-force` (sfs/chs/ads +
+  saa/ffc + d10-d13/d16). The constant specs need a series that crosses zero, so
+  they run on **`tests/corpus/data/airline_zero.dat`** — airline shifted down by
+  150 (24 observations at or below zero) and lifted back by `constant=100`.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

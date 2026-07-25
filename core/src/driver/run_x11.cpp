@@ -552,6 +552,22 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // oracle has the same overwrite but writes its .udg before revdrv runs,
     // whereas this harness dumps at exit -- so keep the main run's values.
     const lkhd_cmn lkhd_main = ctx.lkhd;
+    // The same hazard, one level up: a span replay is a full x11pt1->x11pt3 pass,
+    // so it rewrites the published D-tables (/x11srs/), the Part-E / forced
+    // series (/adxser/, including Stci2 and Stcirn), the factor buffers
+    // (/x11fac/) and the span geometry (/x11ptr/ and Begspn) IN PLACE. The oracle
+    // punches every one of those during the main pass, before sspdrv/revdrv ever
+    // run; this harness dumps at exit, so without the restore below every table
+    // it prints for a slidingspans{}/history{} spec is the LAST SPAN's -- wrong
+    // values under wrong dates. (Nothing gated this until a spec carried force{}
+    // and slidingspans{} together: saa/ffc came back as 84 rows starting seven
+    // years late.) Same discipline as the ctx.x11_f2tests snapshot above.
+    const auto x11srs_main = ctx.x11srs;
+    const auto adxser_main = ctx.adxser;
+    const auto x11fac_main = ctx.x11fac;
+    const auto x11ptr_main = ctx.x11ptr;
+    const auto mdlbegspn_main = ctx.mdldat.begspn;
+    const std::vector<double> frcfac_main = ctx.x11_frcfac;
 
     if (!run_slidingspans(ctx, trnsrs)) return false;
 
@@ -561,6 +577,12 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     if (!run_history(ctx, trnsrs, begspn_full, nspobs, nfcst)) return false;
 
     ctx.lkhd = lkhd_main;
+    ctx.x11srs = x11srs_main;
+    ctx.adxser = adxser_main;
+    ctx.x11fac = x11fac_main;
+    ctx.x11ptr = x11ptr_main;
+    ctx.mdldat.begspn = mdlbegspn_main;
+    ctx.x11_frcfac = frcfac_main;
 
     // composite{} (x11ari.f:372-373): if this run is a COMPONENT of a composite
     // adjustment (series{comptype=...} set Iag>=0 and the metafile driver carried

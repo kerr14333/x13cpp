@@ -22,6 +22,16 @@ ships. All four force targets are ported and gated (x11pt3.f:715-722): original
 (Series), calendaradj (Stocal, Iftrgt=1), permprioradj (Stopp, Iftrgt=2) and
 both (Stopp/Faccal, Iftrgt=3).
 
+`airline_force-constant-{regress,denton}` gate the negative-value correction
+(x11pt3.f:750-782), which is reachable only with `transform{constant=}` in a
+non-additive mode: subtracting the constant back out can drive D11 to or below
+zero, so the forced series is clamped and then re-prorated against the target by
+a SECOND qmap2 pass (with Rol=0/Lamda=0.5) -- run even when the primary pass was
+Denton. Their series is airline shifted down by 150 so 24 observations cross
+zero, and `constant=100` lifts it back. They are also the only specs that reach
+the `ffc` DNOTST branch (x11pt3.f:841-850): where the corrected series is STILL
+<= 0 the forcing factor is not formed at all and the golden carries -999.
+
 The `airline_force-*` specs carrying a regARIMA trading-day regressor are the
 load-bearing ones: force's qmap sums the target-vs-SA discrepancy over the
 FORECAST year as well as the observed span, so they are the only gate that sees
@@ -56,7 +66,7 @@ RTOL = 1e-6
 # saa/ffc are produced by every force spec; rnd (round=yes) and the d10-d13
 # D-tables only by the specs that ask for them, so those are gated per-spec
 # (skipped where the golden is absent) rather than required.
-_TAGS = ["saa", "ffc", "rnd", "d10", "d11", "d12", "d13"]
+_TAGS = ["saa", "ffc", "rnd", "d10", "d11", "d12", "d13", "d16"]
 _CORE_TAGS = ["saa", "ffc"]
 
 

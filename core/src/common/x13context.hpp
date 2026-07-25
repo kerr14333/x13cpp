@@ -269,6 +269,12 @@ struct X13Context {
     // subtracts the constant back out (the oracle's Stcipc / stc2pc), i.e. the
     // `sac` and `tac` save tables. Empty when no constant was given.
     std::vector<double> x11_stcipc, x11_stc2pc;
+    // force{}: the per-observation forcing factor (the oracle's frcfac, save table
+    // `ffc`), over [Pos1ob, lstfrc]. Computed in x11pt3 rather than in the harness
+    // because x11pt3.f:841-850 has a second branch -- when values are STILL <= 0
+    // after the negative-value correction the ratio is not formed at all and those
+    // observations get DNOTST. Empty unless Iyrt>0.
+    std::vector<double> x11_frcfac;
     // Final regARIMA residuals (arima.f's `a`, length `resid_na`) captured after
     // estimation for the residual-spectrum diagnostic (spr, spcrsd.f). Their
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).

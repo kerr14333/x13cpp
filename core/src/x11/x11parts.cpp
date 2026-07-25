@@ -1118,15 +1118,78 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
                   frc.rol, frc.mid, frc.begyrt);
         }
 
-        // Negative-value correction re-runs qmap2; unreachable on the base path
-        // (Cnstnt==DNOTST is guaranteed by the constant-removal guard above).
+        // x11pt3.f:750-782 -- the negative-value correction. Reachable only with
+        // transform{constant=} in a non-additive mode: the constant removal above
+        // subtracts Cnstnt from Stci (flooring it at zero when Iyrt>0), so the
+        // forced Stci2 can land at or below zero too. Clamp those to zero and, if
+        // any were found, prorate the CLAMPED series against the target with a
+        // second pass. Three things are load-bearing here:
+        //   * the fallback pass is qmap2 even when the primary pass was Denton;
+        //   * its input series is Stci2 (the clamped, already-forced series), not
+        //     Stci -- so the correction compounds on the first pass;
+        //   * it runs with Rol=0 / Lamda=0.5, which the oracle achieves by saving
+        //     and restoring the /force/ COMMON around the call (x11pt3.f:767-773).
+        //     Here they are arguments, so the live frc.rol/frc.lamda are untouched.
+        bool negmsg = false, negfin = false;
         if (muladd != 1 && !dpeq(adjc.cnstnt, prm::DNOTST)) {
-            x11_not_ported(ctx, "x11pt3 force negative-value correction (qmap2)");
-            return;
+            for (int i = pos1ob; i <= lstfrc; ++i) {
+                if (!(stci2[i - 1] > 0.0)) {
+                    negmsg = true;
+                    stci2[i - 1] = 0.0;
+                }
+            }
+            if (negmsg) {
+                std::vector<double> temp2(PLEN, 0.0);
+                qmap2(stbase, stci2, temp2.data(), pos1ob, lstfrc, ny, 0,
+                      /*lamda=*/0.5, /*rol=*/0.0, frc.mid, frc.begyrt);
+                // Faithful full-PLEN copy (x11pt3.f:774) -- everything outside
+                // [Pos1ob,lstfrc] is overwritten with temp2's untouched tail, zero
+                // here and uninitialised stack in the oracle. Nothing reads Stci2
+                // outside that range, so the difference is unobservable.
+                copy(temp2.data(), PLEN, 1, stci2);
+                for (int i = pos1ob; i <= lstfrc; ++i)
+                    if (!(stci2[i - 1] > 0.0)) negfin = true;
+            }
         }
-        // (deferred: D11A/rnd/e6*/p6*/cr/rr/ffc table + punch.)
+        // (deferred: D11A/rnd/e6*/p6*/cr/rr table + punch; the negmsg/negfin NOTE
+        // messages; the residual-seasonality ftest on Stci2 -- all read-only.)
+
+        // x11pt3.f:815-831 -- with force{} on, the sliding-spans / revisions SA
+        // store takes the FORCED series and the oracle RETURNs right after the
+        // ssrit call. (The Iyrt==0 counterpart is above, at x11pt3.f:678-680.)
+        if (!frc.lrndsa) {
+            if (hid.issap == 2) {
+                ssrit(ctx, stci2, pos1ob, posfob, 3, series);
+                return;
+            }
+            if (hid.irev == 4) {
+                x11_not_ported(ctx, "x11pt3 revisions forced-SA store (getrev)");
+                return;
+            }
+        }
+
+        // x11pt3.f:836-850 -- the per-observation forcing factor (the `ffc` save
+        // table). With negfin (values STILL <= 0 after the correction) the ratio
+        // is not formed at all: those observations get DNOTST, and the rest take
+        // a hard quotient rather than going through divsub. That looks like an
+        // inconsistency and is not one -- the log-additive mode has already
+        // collapsed muladd 2->0 at the D12 antilog above, so muladd is 0 or 1
+        // here, and the negfin branch is guarded on muladd!=1. Where it runs,
+        // divsub divides too. (Measured: a logadd force spec's ffc is the
+        // quotient of the published D11/D11A on both branches.)
+        ctx.x11_frcfac.assign(PLEN, 0.0);
+        double* frcfac = ctx.x11_frcfac.data();
+        if (negfin) {
+            for (int i = pos1ob; i <= lstfrc; ++i)
+                frcfac[i - 1] = (stci2[i - 1] > 0.0)
+                                    ? stci[i - 1] / stci2[i - 1]
+                                    : prm::DNOTST;
+        } else {
+            divsub(frcfac, stci, stci2, pos1ob, lstfrc, muladd);
+        }
     } else {
         copy(stci, posffc, 1, stci2);
+        ctx.x11_frcfac.clear();
     }
 
     if (frc.lrndsa) {

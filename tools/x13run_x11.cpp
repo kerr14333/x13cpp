@@ -296,31 +296,32 @@ int main(int argc, char** argv) {
     // posfob] (x11pt3.f:788); ffc over [pos1ob, lstfrc], where lstfrc extends to
     // posffc (the forecast-extended span) when usefcst is on (the default).
     if (ctx.force.iyrt > 0) {
-        const double* stci = ctx.x11srs.stci.data();
         const double* stci2 = ctx.adxser.stci2.data();
-        const int muladd = ctx.x11opt.muladd;
         const int lstfrc = ctx.force.lfctfr ? ctx.x11ptr.posffc : posfob;
-        std::vector<double> ffc(static_cast<std::size_t>(lstfrc), 0.0);
-        for (int i = pos1ob; i <= lstfrc; ++i)
-            ffc[i - 1] = (muladd == 0) ? stci[i - 1] / stci2[i - 1]
-                                       : stci[i - 1] - stci2[i - 1];
         dump("saa", begspn, sp, pos1ob, posfob, stci2, pos1ob);
-        dump("ffc", begspn, sp, pos1ob, lstfrc, ffc.data(), pos1ob);
+        // ffc is built by x11pt3 itself, not here: x11pt3.f:841-850 has a second
+        // branch (DNOTST where the corrected series is still <= 0) that this
+        // harness cannot see from Stci/Stci2 alone.
+        if (!ctx.x11_frcfac.empty())
+            dump("ffc", begspn, sp, pos1ob, lstfrc, ctx.x11_frcfac.data(), pos1ob);
         // rnd: the rounded SA series (round=yes -> rndsa), over [pos1ob, posfob].
         if (ctx.force.lrndsa)
             dump("rnd", begspn, sp, pos1ob, posfob, ctx.adxser.stcirn.data(), pos1ob);
     }
 
     // slidingspans{} sfs (seasonal-factor spans) / chs (month-to-month SA-
-    // change spans) -- see tools/slidingspans_scope.md; ads/tds are not
-    // produced by this gate corpus (no TD/holiday/round/force -- ssap.f's
-    // mflag gating never fires for them).
+    // change spans) / ads (SA-series spans) -- see tools/slidingspans_scope.md.
+    // ads is conditional on ssap.f's mflag gating (a TD / holiday / round /
+    // force option must be live); tds is still not produced.
     if (ctx.ssout.ran) {
         const auto& so = ctx.ssout;
         dump_span_table("sfs", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
                          ctx.sspdat.s.data(), so.dmax_sfs.data());
         dump_span_table("chs", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
                          so.c_flat.data(), so.dmax_chs.data());
+        if (so.have_ads)
+            dump_span_table("ads", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
+                             ctx.sspdat.sa.data(), so.dmax_ads.data());
     }
 
     // spectrum{} sp0/sp1/sp2 periodogram tables -- `<tag> <pos> <freq> <value>`,
