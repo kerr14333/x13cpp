@@ -453,6 +453,12 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     x11pt3(ctx, lgraf, /*lttc=*/false);
     if (ctx.error.lfatal) return false;
 
+    // x11pt4.f's savelog point: freeze the D8/B1 seasonality-test battery here,
+    // before the sliding-spans / history replays below re-run x11pt3 and
+    // overwrite /tests/ with a sub-span's statistics.
+    ctx.x11_f2tests = ctx.tests;
+    ctx.x11_f2tests_set = true;
+
     // slidingspans{} (ssap.f/sspdrv.f/ssrit.f): replay the model+X11 pipeline
     // over each sub-span (driver/run_x11_span.hpp -- the re-entrant driver),
     // producing the sfs/chs cross-span stability tables on ctx.ssout. No-op

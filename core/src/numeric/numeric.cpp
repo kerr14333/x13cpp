@@ -479,6 +479,77 @@ double chisq(double x, int n) {
     return 1.0 - gauss(c2) + C * c3 * std::exp(-y / 2.0) / c2;
 }
 
+double fvalue(double& x, int m, int n) {
+    if (x > 0.0) {
+        if (x <= 90.0 && (x <= 40.0 || n <= 150)) {
+            const int l = (m / 2) * 2 - m + 2;
+            int k = (n / 2) * 2 - n + 2;
+            const double w = x * static_cast<double>(m) / static_cast<double>(n);
+            double z = 1.0 / (1.0 + w);
+            double p, d, y;
+            if (l != 1) {
+                if (k != 1) {
+                    d = z * z;
+                    p = w * z;
+                } else {
+                    p = std::sqrt(z);
+                    d = 0.5 * z * p;
+                    p = 1.0 - p;
+                }
+            } else if (k != 1) {
+                p = std::sqrt(w * z);
+                d = 0.5 * p * z / w;
+            } else {
+                p = std::sqrt(w);
+                y = 0.31830988618379;
+                d = y * z / p;
+                p = 2.0 * y * std::atan(p);
+            }
+            y = 2.0 * w / z;
+            const int j1 = k + 2;
+            if (n >= j1) {
+                if (l != 1) {
+                    // Fortran `z**INTEGER` is square-and-multiply, not
+                    // pow(double,double) -- dpow_ri matches it bit for bit.
+                    const double zk = dpow_ri(z, (n - 1) / 2);
+                    d = d * zk * static_cast<double>(n) / static_cast<double>(k);
+                    p = p * zk + w * z * (zk - 1.0) / (z - 1.0);
+                } else {
+                    for (int j = j1; j <= n; j += 2) {
+                        d = (1.0 + static_cast<double>(l) /
+                                       static_cast<double>(j - 2)) * d * z;
+                        p = p + d * y / static_cast<double>(j - 1);
+                    }
+                }
+            }
+            y = w * z;
+            const int i1 = l + 2;
+            if (m >= i1) {
+                z = 2.0 / z;
+                k = n - 2;
+                for (int i = i1; i <= m; i += 2) {
+                    const double zk = static_cast<double>(i + k);
+                    d = y * d * zk / static_cast<double>(i - 2);
+                    p = p - z * d / zk;
+                }
+            }
+            if (p < 1.0) {
+                if (p > 0.0) return 1.0 - p;
+                // CB-16: the oracle ZEROES ITS OWN ARGUMENT here (fvalue.f
+                // label 10, "X=0D0"). Every caller passes a live variable
+                // (ftest's f, mstest's Fmove, kwtest's Chikw), so the
+                // F-statistic the caller then stores/prints is destroyed. Kept
+                // verbatim -- hence the reference parameter.
+                x = 0.0;
+                return 1.0;
+            }
+        }
+        return 0.0;
+    }
+    x = 0.0;
+    return 1.0;
+}
+
 double sumf(const double* x, int n1, int n2) {
     double s = 0.0;
     for (int i = n1; i <= n2; ++i) s += x[i - 1];  // x[0]==X(1)

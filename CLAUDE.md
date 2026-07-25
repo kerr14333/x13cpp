@@ -374,5 +374,38 @@ diagnostics front (force / slidingspans / history) is now closed.
   scouting inventory: neither is composite.) Still open for composite: the SEATS
   branch (`agr3s.f`) and pseudo-additive. Map:
   **`tools/composite_scouting.md`**.
+- **x11pt4 increment 1 — the F2 SEASONALITY TEST BATTERY — CLOSED (bit-exact).**
+  `x11pt4.f` was never ported at all, so the whole diagnostics front the .udg
+  reports (`f2.*`, `f3.m01`-`m11`/`q`/`qm2`, the E tables) was simply absent.
+  Increment 1 lands the four tests: `ftest.f` (one-way ANOVA, stable
+  seasonality), `kwtest.f` (Kruskal-Wallis), `mstest.f` (two-way ANOVA, MOVING
+  seasonality) and `combft.f` (the combined identifiable-seasonality verdict) as
+  `core/src/x11/x11tests.cpp`, plus `fvalue.f` in `numeric.cpp`. Wired at the two
+  oracle call sites: the B1 test in x11pt2 (`x11pt2.f:436`, Ind=2 -> Fpres/P3)
+  and the D8 battery in x11pt3 (`x11pt3.f:111-134`, Ind=0 -> Fstabl/P1, then
+  kwtest/mstest/combft). **This is the floor the quality statistics stand on** --
+  combft writes `/tests/ Test1,Test2`, which ARE the M7 inputs and hence feed Q.
+  Gated by the new `tests/parity/test_x11_diagnostics.py`: 114 corpus specs,
+  **zero new goldens blessed** -- every x11 `.udg` golden already shipped the
+  canaries. Three things worth knowing:
+  (1) **The gate's tolerance is the oracle's PRINT precision, by necessity.**
+  svf2f3.f writes the statistic F11.3 and the probability F8.2, so the golden
+  pins them only to +/-5e-4 / +/-5e-3. Same policy as test_m3_estimate's
+  `_print_ulp`; there is no 15-digit golden for a savelog canary.
+  (2) **A snapshot, not a live read** (`ctx.x11_f2tests`, taken in run_x11.cpp
+  where x11pt4 sits). slidingspans{}/history{} replay x11pt3 per span and each
+  replay OVERWRITES `/tests/`; reading it at harness-exit reported the LAST
+  span's statistics. That was measurable -- `airline_slidingspans` came out
+  fsd8 371.6 against the golden's 190.7 -- and is the same state-leak class as
+  the xtrm.ksdev / Lterm per-span resets.
+  (3) **CB-16**: `fvalue.f` ZEROES ITS OWN ARGUMENT on both "probability is 1"
+  exits, and every caller stores the statistic AFTER the call -- so a series with
+  no between-season variation reports `F=0.000` next to `prob=100.00`. `fvalue`
+  therefore takes `double&`; the reference parameter exists only to reproduce the
+  bug. Not reached by the current corpus, hence pinned in `census_bugs.md`.
+  **Still open in x11pt4** (increments 2-3): the Part-F summary measures
+  (`sumry`/`vars`/`varlog`/`avedur` -> `f2.a*`/`b*`/`c*`/`d`/`e`/`f`/`g`, MCD,
+  I/C + I/S ratios) and `f3cal.f` (M1-M11, Q, QM2); then the E tables (E1-E8,
+  E11, E18), which need `change.f` and the Gudval good-obs machinery.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

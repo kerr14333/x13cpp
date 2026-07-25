@@ -15,6 +15,7 @@
 #include "x11/loadxr.hpp"           // loadxr (regARIMA <-> x11reg model swap)
 #include "x11/x11xtrm.hpp"          // xtrm, vtest, entsch
 #include "x11/x11drv.hpp"           // forcst, vtc, si
+#include "x11/x11tests.hpp"         // ftest, kwtest, mstest, combft (F2 tests)
 #include "x11/x11force.hpp"         // qmap (force yearly totals)
 #include "x11/slidingspans.hpp"     // ssrit
 #include "x11/shrink.hpp"           // shrink (seasonal-factor shrinkage)
@@ -510,7 +511,11 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         const int mlda = posffc - ny2;
         const int klda = posfob - ny2;
         divsub(stsi, stcsi, stc, mfda, mlda, muladd);
-        // (deferred: ftest seasonality F-test; B2/C2/D2 trend table.)
+        // x11pt2.f:436-437 -- the B1 stable-seasonality F-test (savelog
+        // f2.fsb1). Only the B pass's section-1 SI ratios feed it.
+        if (opt.ksect == 1 && kpart == 2 && ctx.hiddn.ixreg != 2 && opt.khol != 1)
+            ftest(ctx, stsi, mfd1, klda, ny, 2);
+        // (deferred: B2/C2/D2 trend table.)
 
         if (kpart == 2) {
             // Part B: replace extreme SI ratios (si drives vsfb/xtrm/replac).
@@ -737,16 +742,23 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     addmul(stsie, stsi, stex, pos1bk, posffc, muladd);
     // (deferred: D8 table/punch.)
 
-    // D8 analysis of variance on the unmodified SI ratios.
+    // D8 analysis of variance on the unmodified SI ratios (x11pt3.f:111-130).
+    // ftest/mstest are read-only on the series; kwtest SORTS Stsie in place,
+    // which is why the oracle rebuilds it from Stsi/Stex in between.
     if (!hid.lhiddn && opt.khol != 1) {
-        // deferred diagnostics: ftest/kwtest/mstest/COMBFT (D8 F/moving-seasonality
-        // tests). ftest/mstest are read-only on the series; kwtest sorts Stsie in
-        // place but Stsie is dead downstream on the base path (only deferred prints
-        // read it) and is rebuilt by the addmul below; COMBFT takes no series arg.
-        // All stubbed no-ops.
-        addmul(stsie, stsi, stex, pos1bk, posffc, muladd);  // rebuild Stsie post-kwtest
+        ftest(ctx, stsie, pos1ob, posfob, ny, 0);
+        kwtest(ctx, stsie, pos1bk, posfob, ny);
+        addmul(stsie, stsi, stex, pos1bk, posffc, muladd);  // rebuild post-kwtest
+        mstest(ctx, stsie, pos1bk, posfob, ny);
+        combft(ctx);
+    } else if (hid.issap == 2) {
+        // Sliding-spans replay: same battery, print suppressed (x11pt3.f:131-135).
+        ftest(ctx, stsie, pos1ob, posfob, ny, 0);
+        kwtest(ctx, stsie, pos1bk, posfob, ny);
+        addmul(stsie, stsi, stex, pos1bk, posffc, muladd);
+        mstest(ctx, stsie, pos1bk, posfob, ny);
+        combft(ctx);
     }
-    // (Issap==2 sliding-spans alt diagnostic branch: off base.)
 
     double ebar = 0.0;
     if (muladd == 0) ebar = 1.0;

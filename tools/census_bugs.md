@@ -291,3 +291,41 @@ it. `Mtype==7` (3-term) is special-cased to `wtx11=1/3` and avoids the access.
 - **Port:** `core/src/x11/shrink.cpp` transcribes `lx11[mtype-1]` verbatim
   (same latent OOB for `mtype==6`), commented at the access site. Reproduce the
   bug if a shrink+stable path is ever gated.
+
+## CB-16 — fvalue.f zeroes its own argument, destroying the caller's F-statistic
+
+`fvalue.f` returns the F-distribution upper-tail probability
+`P(F_{m,n} > X)`. On its two "probability is 1" exits — `X <= 0`, and the
+computed `p <= 0` — it falls to label 10 and executes:
+
+```fortran
+   10 fvalue=1D0
+      X=0D0
+      RETURN
+```
+
+`X` is the **dummy argument**, passed by reference like everything in F77, so
+the routine silently zeroes the caller's variable. Every caller passes a live
+F-statistic and stores it *after* the call:
+
+- `ftest.f:104-110` — `prob=fvalue(f,kdfb,kdfr)*100D0` then `Fstabl=f` /
+  `Fpres=f`, so the savelog would report `f2.fsd8: 0.000` / `f2.fsb1: 0.000`.
+- `mstest.f:110-111` — `P2=fvalue(Fmove,n1,ndgfre)*100D0` writes straight
+  through `/tests/ Fmove`, so `f2.msf` and the M7 input `Test2 = 3*Fmove/Fstabl`
+  both see 0.
+
+The `X<=0` exit is the reachable one: a series with no between-season variation
+gives `fmsm==0`, hence `f==0`, and the statistic and its probability are then
+mutually inconsistent (`F=0.000` alongside `prob=100.00`). The `p<=0` exit needs
+catastrophic cancellation in the series and has not been observed.
+
+- **Port:** `core/src/numeric/numeric.cpp` `fvalue(double& x, int m, int n)` —
+  the reference parameter exists *only* to reproduce this. Both exits assign
+  `x = 0.0` verbatim, commented at the site. Callers in
+  `core/src/x11/x11tests.cpp` pass their live statistic (`ftest`'s `f`,
+  `mstest`'s `ctx.tests.fmove`) exactly as the oracle does. Pinned by
+  `tests/parity/test_x11_diagnostics.py`, which gates `f2.fsb1`/`f2.fsd8`/
+  `f2.kw`/`f2.msf`/`f2.idseasonal` against the oracle `.udg` on 114 corpus
+  specs — any "fix" that made the argument `const` would still pass today's
+  corpus (no gated spec reaches the exit) but would diverge the moment one does,
+  which is why the shape is documented here rather than only in code.

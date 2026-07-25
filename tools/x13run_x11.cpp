@@ -177,6 +177,19 @@ int main(int argc, char** argv) {
     if (!ctx.x11_ststd.empty())
         dump("d16", begspn, sp, sf_frst, sf_last, ctx.x11_ststd.data(), pos1ob);
 
+    // F2 seasonality tests (svf2f3.f:59-64). These are savelog canaries, not
+    // tables: emitted here at the oracle's own printed precision so the gate can
+    // read the .udg golden directly. Fpres/P3 come from the B1 F-test in x11pt2,
+    // the rest from the D8 battery in x11pt3.
+    if (ctx.x11_f2tests_set) {
+        const x13::tests_cmn& t = ctx.x11_f2tests;
+        std::printf("f2.fsb1 %.3f %.2f\n", t.fpres, t.p3);
+        std::printf("f2.fsd8 %.3f %.2f\n", t.fstabl, t.p1);
+        std::printf("f2.kw %.3f %.2f\n", t.chikw, t.p5);
+        std::printf("f2.msf %.3f %.2f\n", t.fmove, t.p2);
+        std::printf("f2.idseasonal %s\n", t.iqfail == 1 ? "yes" : "no");
+    }
+
     // a4 -- x11regression tdprior user prior trading-day factor (Kswv=1 pritd),
     // over the observed span [pos1ob,posfob]. x11_a4_prior is 0-based from pos1ob.
     if (!ctx.x11_a4_prior.empty()) {

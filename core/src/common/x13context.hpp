@@ -187,6 +187,13 @@ struct X13Context {
     // Khol==1 return, so a holiday-only run leaves it empty exactly as the
     // oracle writes no D16) so the harness can emit the table.
     std::vector<double> x11_ststd;
+    // /tests/ as of the END of the MAIN X-11 run -- i.e. where x11pt4 (and its
+    // svf2f3 savelog write) sits in the oracle. Needed because the oracle emits
+    // f2.fsd8/kw/msf/idseasonal at that point, while slidingspans{}/history{}
+    // replay x11pt3 afterwards and each replay OVERWRITES the live /tests/ with
+    // its own span's statistics. Snapshot, not live read.
+    tests_cmn x11_f2tests{};
+    bool x11_f2tests_set = false;
     // agr3.f locals the composite gate needs back: `stc2in` (the published
     // INDIRECT trend -- Stc still holds the pre-level-shift filter output) and
     // `ststd` (the indirect total adjustment factors). Function-locals in the
