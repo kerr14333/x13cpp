@@ -194,6 +194,24 @@ struct X13Context {
     // its own span's statistics. Snapshot, not live read.
     tests_cmn x11_f2tests{};
     bool x11_f2tests_set = false;
+    // The INTERNAL (pre-publication) D13 and D12 as they stand at the end of
+    // x11pt3, i.e. before the AO/TC outliers are folded back into the published
+    // D13 and the level shift into the published D12. x11pt4 reads those
+    // internal buffers (the oracle keeps Sti/Stc internal and prints from local
+    // sti2/stc2 copies; the C++ x11pt3 does it the other way round so the
+    // harness can dump the published tables straight off /x11srs/).
+    std::vector<double> x11_sti_int;
+    std::vector<double> x11_stc_int;
+    // The Part-F summary measures + quality statistics (x11pt4's /inpt2/,
+    // /work2/ and Mcd output), snapshotted where the oracle's svf2f3 writes the
+    // .udg `f2.*`/`f3.*` block. Snapshot for the same reason as x11_f2tests: a
+    // slidingspans{}/history{} replay re-runs the X-11 spine per span.
+    inpt2_cmn x11_f2inpt2{};
+    work2_cmn x11_f2work2{};
+    int x11_f2mcd = 0;
+    double x11_f2ratic = 0.0;   // /optxdp/ Ratic (f2.ic), snapshotted with them
+    double x11_f2ratis = 0.0;   // /optxdp/ Ratis (f2.is)
+    bool x11_f3_set = false;
     // agr3.f locals the composite gate needs back: `stc2in` (the published
     // INDIRECT trend -- Stc still holds the pre-level-shift filter output) and
     // `ststd` (the indirect total adjustment factors). Function-locals in the

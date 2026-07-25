@@ -896,11 +896,19 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         bool chkfct = false;  // Nfcst>0 & Prttab(LXETRF): deferred print -> false.
         chktrn(ctx, stc, chkfct);  // oktrn/oktrf only gated deferred prints.
     }
-    // x11pt3.f:439-442 accumulates the outlier/user factors into sp2 (a Sprior
-    // snapshot) that feeds only the deferred A18/D18 total-factor tables and the
-    // Sprior writeback (l.1285) -- none of which feed D10-D13. Skipped on the
-    // outlier base path; the user-regression factor (Adjusr) is likewise
-    // deferred-only here.
+    // x11pt3.f:439-442 (and the same four lines at :508 in the Kfulsm==1 branch)
+    // accumulate the outlier / user-regression factors into sp2, the Sprior
+    // snapshot taken at entry. Beyond the deferred A18/D18 total-factor tables
+    // this DOES have a numeric consumer: the writeback at :1284-1288 replaces
+    // Sprior with sp2, and x11pt4's Part F then reports Pbar/Psq/Vp off it.
+    if (adj.adjls == 1)
+        addmul(sp2, ctx.x11fac.facls.data(), sp2, pos1bk, posffc, muladd);
+    if (adj.adjao == 1)
+        addmul(sp2, ctx.x11fac.facao.data(), sp2, pos1bk, posffc, muladd);
+    if (adj.adjtc == 1)
+        addmul(sp2, ctx.x11fac.factc.data(), sp2, pos1bk, posffc, muladd);
+    if (adj.adjusr == 1)
+        addmul(sp2, ctx.x11fac.facusr.data(), sp2, pos1bk, posffc, muladd);
 
     // --- D11: final seasonally adjusted series (x11pt3.f:447-467, 516-522) ---
     if (opt.kfulsm == 2) {
@@ -1182,6 +1190,11 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     ctx.x11_ststd.assign(ststd, ststd + PLEN);
 
     // --- PART E: modified original / SA / irregular series ---
+    // x11pt3.f:69-70 -- nadj2 is Nadj when a prior-adjustment series exists;
+    // it gates the Sprior fold on the weight-zero replacement below (the SA
+    // replacement is built from the trend, which carries no prior, so the prior
+    // has to be put back). Feeds E2 = Stcime and hence x11pt4's Cimbar.
+    const int nadj2 = (pri.kfmt > 0) ? ctx.adj.nadj : 0;
     opt.kpart = 5;
     for (int i = pos1bk; i <= posffc; ++i) {
         if (stwt[i - 1] > 0.0) {
@@ -1191,8 +1204,15 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         } else {
             stcime[i - 1] = have_stc2 ? stc2[i - 1] : stc[i - 1];  // LS -> folded trend
             stime[i - 1] = ebar;          // expected irregular
-            stome[i - 1] = series[i - 1] / sti[i - 1];  // muladd==0
-            // (nadj2==0 base: no Sprior fold; Finls==F: no Facls divide.)
+            // x11pt3.f:1227-1231 -- rebuild the original from its components.
+            stome[i - 1] = muladd == 1 ? series[i - 1] - sti[i - 1]
+                                       : series[i - 1] / sti[i - 1];
+            // x11pt3.f:1232-1238 -- put the prior back into the SA replacement.
+            if (nadj2 > 0) {
+                if (muladd == 1) stcime[i - 1] += in.sprior(i);
+                else             stcime[i - 1] *= in.sprior(i);
+            }
+            // (Finls==F: no Facls divide.)
         }
     }
     // x11pt3.f:1265-1273 -- if AO/TC outliers were removed pre-adjustment, remove
@@ -1216,8 +1236,23 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         divsub(stome, stome, factc, pos1bk, posffc, muladd);
         if (!adj.fintc) divsub(stcime, stcime, factc, pos1bk, posffc, muladd);
     }
-    // (Cnstnt==DNOTST base: no constant subtract; the sp2/Sprior outlier writeback
-    // x11pt3.f:1284-1288 feeds only deferred downstream tables -- skipped.)
+    // x11pt3.f:1284-1288 -- with any outlier / user-regression effect removed,
+    // the prior-factor series becomes the TOTAL prior: Sprior <- sp2. Read by
+    // the deferred A18/D18 tables and, numerically, by x11pt4's Pbar/Psq/Vp.
+    // (Cnstnt==DNOTST base: no constant subtract above.)
+    if (adj.adjls == 1 || adj.adjusr == 1 || adj.adjao == 1 || adj.adjtc == 1) {
+        copy(sp2, PLEN, 1, in.sprior.data());
+        // (nadj2 is a local the oracle also bumps here, but only Part E above
+        // reads it -- the assignment is dead by this point.)
+        if (ctx.prior.kfmt == 0) ctx.prior.kfmt = 1;
+    }
+
+    // Hand x11pt4 the INTERNAL D13/D12 before the publication folds below
+    // overwrite them -- the oracle keeps Sti/Stc internal here and prints from
+    // its own sti2/stc2 locals, so the Part-F summary measures are computed on
+    // the AO/TC-removed irregular and the level-shift-free trend.
+    ctx.x11_sti_int.assign(sti, sti + PLEN);
+    ctx.x11_stc_int.assign(stc, stc + PLEN);
 
     // Store the AO/TC-restored published D13 (sti2, built above) so the harness
     // and D13 table read it as Sti. Base path (no outlier) leaves srs.sti as the

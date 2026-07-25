@@ -526,6 +526,15 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
         // getreg.f:851 for the aictest easter, Leastr), so it is equivalent to
         // scanning the built model for chkadj's Nhol regressor types.
         {
+            // gtinpt.f:1239 -- Khol takes the x11{x11easter=} setting here, and
+            // it is READ by the Finhol test on the next line: with the classic
+            // X-11 Easter on (Khol==1) Finhol stays TRUE even though no holiday
+            // REGRESSOR exists. That matters at x11pt3.f:525, where `.not.Finhol`
+            // gates `Faccal /= Fachol` -- x11pt1 folds X11hol into Faccal and
+            // x11pt2 folds the same factor into Fachol, so letting the divide run
+            // cancels the Easter factor out of Faccal entirely (Faccal == 1) and
+            // x11pt4's Tdbar/Vtd then report no calendar effect at all.
+            ctx.x11opt.khol = ctx.x11opt.keastr;
             bool havhol = ctx.arima.leastr;
             for (int icol = 1; !havhol && icol <= ctx.model.nb; ++icol) {
                 const int t = ctx.model.rgvrtp(icol);

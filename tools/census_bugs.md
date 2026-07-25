@@ -435,3 +435,68 @@ catastrophic cancellation in the series and has not been observed.
   specs — any "fix" that made the argument `const` would still pass today's
   corpus (no gated spec reaches the exit) but would diverge the moment one does,
   which is why the shape is documented here rather than only in code.
+
+---
+
+## CB-18 — x11pt4's `allgud` is the NEGATION of what its name and its users mean
+
+`x11pt4.f:332-336` decides whether the Part-F summary measures may use the
+unguarded `divsub`/`addmul` (all observations usable) or must use the good-obs
+`divgud`:
+
+```fortran
+      allgud=T
+      IF(Muladd.ne.1.and.(.not.dpeq(Cnstnt,DNOTST)))THEN
+       CALL copylg(gudbak,POBS,1,Gudval)
+       allgud=isfals(Gudval,Pos1ob,Posfob)
+      END IF
+```
+
+`isfals.f` returns `.true.` when **at least one element is FALSE** — i.e. when
+at least one observation is NOT good. So the assignment reads "allgud is true
+when some observation is bad", the exact complement of the intent. Every one of
+the six consumer blocks (`:373-380`, `:409-414`, `:479-490`, `:519-526`,
+`:583-618`, `:620-654`) then takes the wrong branch: a span containing bad
+observations divides them anyway (`divsub`), and a span where every observation
+is good takes the DNOTST-producing `divgud`.
+
+Reachability: the whole `IF` needs `Muladd != 1` **and** a user constant
+(`x11{constant=}`), so the base path never evaluates it and `allgud` stays at
+its `T` initialiser. In this port the constant path is walled earlier
+(`x11pt3 constant removal from D11/original`), so the branch is unreachable —
+but it is transcribed verbatim rather than corrected.
+
+- **Port:** `core/src/x11/x11summ.cpp`, `x11pt4_partf`, the `allgud` assignment
+  and each of the six `if (allgud) ... else ...` blocks. Commented at the site.
+
+---
+
+## CB-19 — x11pt4's modified-SA restore copies the wrong way round
+
+The Part-F measures temporarily strip the level-shift / user-regression factors
+out of a series, take the measure, then put them back. Three of the four such
+blocks restore from the saved copy correctly; the fourth (`x11pt4.f:643-654`,
+the modified seasonally adjusted series E2) does not:
+
+```fortran
+      IF(allgud)THEN
+       IF(.not.Finls.and.Adjls.eq.1)
+     &    CALL addmul(Stcime,Stcime,Facls,Pos1bk,Posffc)
+       ...
+      ELSE
+       CALL copy(Stcime,Posffc,1,Temp)     ! <-- arguments reversed
+      END IF
+```
+
+Compare the identical construct at `:413` (`CALL copy(Temp,Posffc,1,Stome)`) and
+`:617` (`CALL copy(Temp,Posffc,1,Stci)`), both of which copy the SAVED buffer
+back into the series. Here the copy runs the other way: `Stcime` is left holding
+the divided-out values (the LS/user effect is never restored) and the `/work/`
+scratch `Temp` is clobbered as a side effect — `Temp` at that moment holds the
+detrended E1 from `:528`, which `:694-696` then reads back into `Stmcd`.
+
+Reachability: same gate as CB-18 — the `ELSE` is the `.not.allgud` branch, so it
+needs `Muladd != 1` plus `x11{constant=}`, and is unreachable in this port.
+
+- **Port:** `core/src/x11/x11summ.cpp`, `x11pt4_partf`, the E2 restore block.
+  Transcribed verbatim with the reversal commented.

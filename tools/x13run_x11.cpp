@@ -190,6 +190,51 @@ int main(int argc, char** argv) {
         std::printf("f2.idseasonal %s\n", t.iqfail == 1 ? "yes" : "no");
     }
 
+    // The rest of the F2 summary-measure block + the F3 quality statistics
+    // (svf2f3.f:28-58 and :96-113). Emitted at full precision; the gate applies
+    // the .udg's own PRINTED precision as its tolerance (E15.8 / F8.2 / f6.3).
+    if (ctx.x11_f3_set) {
+        const x13::inpt2_cmn& q = ctx.x11_f2inpt2;
+        const x13::work2_cmn& w = ctx.x11_f2work2;
+        const int ny = ctx.x11opt.ny;
+        for (int i = 1; i <= ny; ++i)
+            std::printf("f2.a%02d %.15E %.15E %.15E %.15E %.15E %.15E %.15E "
+                        "%.15E %.15E %.15E %.15E\n",
+                        i, q.obar(i), q.cibar(i), q.ibar(i), q.cbar(i),
+                        q.sbar(i), w.pbar(i), q.tdbar(i), q.smbar(i),
+                        q.ombar(i), q.cimbar(i), q.imbar(i));
+        for (int i = 1; i <= ny; ++i)
+            std::printf("f2.b%02d %.15E %.15E %.15E %.15E %.15E %.15E\n", i,
+                        q.isq(i), q.csq(i), q.ssq(i), w.psq(i), q.tdsq(i),
+                        q.osq2(i));
+        for (int i = 1; i <= ny; ++i)
+            std::printf("f2.c%02d %.15E %.15E %.15E %.15E %.15E %.15E %.15E "
+                        "%.15E %.15E %.15E %.15E %.15E\n",
+                        i, q.obar2(i), q.osd(i), q.ibar2(i), q.isd(i),
+                        q.cbar2(i), q.csd(i), q.sbar2(i), q.ssd(i), q.cibar2(i),
+                        q.cisd(i), q.smbar2(i), q.smsd(i));
+        std::printf("f2.d %.15E %.15E %.15E %.15E\n", q.adrci, q.adri, q.adrc,
+                    q.adrmcd);
+        std::printf("f2.e");
+        for (int i = 1; i <= ny; ++i) std::printf(" %.15E", q.smic(i));
+        std::printf("\n");
+        std::printf("f2.mcd %d\n", ctx.x11_f2mcd);
+        std::printf("f2.f %.15E %.15E %.15E %.15E %.15E %.15E\n", q.vi, q.vc,
+                    q.vs, q.vp, q.vtd, q.rv);
+        std::printf("f2.g");
+        for (int i = 1; i <= ny + 2; ++i) std::printf(" %.15E", w.autoc(i));
+        std::printf("\n");
+        std::printf("f2.ic %.15E\n", ctx.x11_f2ratic);
+        std::printf("f2.is %.15E\n", ctx.x11_f2ratis);
+        // svf2f3.f:97 -- M6 is skipped from the printout when Kfulsm==2.
+        for (int i = 1; i <= w.nn; ++i)
+            if (i != 6 || ctx.x11opt.kfulsm < 2)
+                std::printf("f3.m%02d %.15E\n", i, w.qu(i));
+        std::printf("f3.q %.15E\n", w.qual);
+        std::printf("f3.qm2 %.15E\n", w.q2m2);
+        std::printf("f3.fail %d\n", w.kfail);
+    }
+
     // a4 -- x11regression tdprior user prior trading-day factor (Kswv=1 pritd),
     // over the observed span [pos1ob,posfob]. x11_a4_prior is 0-based from pos1ob.
     if (!ctx.x11_a4_prior.empty()) {

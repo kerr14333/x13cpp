@@ -403,10 +403,68 @@ diagnostics front (force / slidingspans / history) is now closed.
   no between-season variation reports `F=0.000` next to `prob=100.00`. `fvalue`
   therefore takes `double&`; the reference parameter exists only to reproduce the
   bug. Not reached by the current corpus, hence pinned in `census_bugs.md`.
-  **Still open in x11pt4** (increments 2-3): the Part-F summary measures
-  (`sumry`/`vars`/`varlog`/`avedur` -> `f2.a*`/`b*`/`c*`/`d`/`e`/`f`/`g`, MCD,
-  I/C + I/S ratios) and `f3cal.f` (M1-M11, Q, QM2); then the E tables (E1-E8,
-  E11, E18), which need `change.f` and the Gudval good-obs machinery.
+- **x11pt4 increment 2 — the PART-F SUMMARY MEASURES + the F3 QUALITY
+  STATISTICS — CLOSED (bit-exact at the .udg's printed precision).**
+  `core/src/x11/x11summ.{hpp,cpp}`: `sumry.f`, `vars.f`/`varlog.f`/`varian.f`,
+  `avedur.f`, `issame.f`, `isfals.f`, `f3cal.f` and x11pt4.f's Part-F body
+  (`:320-713`). Gates the whole remaining `.udg` block — `f2.a01-a12`/`b*`/`c*`/
+  `d`/`e`/`mcd`/`f`/`g`/`ic`/`is` and `f3.m01-m11`/`q`/`qm2`/`fail` — over the
+  same 114 corpus specs, **again with zero new goldens blessed**
+  (`test_x11_diagnostics.py`, now 342 tests). Tolerance is per-field printed
+  precision: E15.8 for a/c, F8.2 for the ratio lines, `2P`+F8.2 for b (compare in
+  the SCALED space, 5e-3 — halving that to 5e-5 on the fraction is wrong and was
+  the first false failure), f6.3 for the M statistics, F5.2 for Q. **The b block
+  and the `f3.m*` lines carry a `1x` between the colon and the first field and
+  the others do not**, so a fixed-width parse of the golden has to skip it.
+  Structural notes: x11pt4 works on COPIES of Series/Stci/Stcime/Stome/Stc/Sti,
+  because it mutates them in place (a log/antilog round trip on Stc, divide-then-
+  multiply round trips on the rest) AFTER the oracle has already punched d10-d16
+  — the oracle's saved tables are the PRE-x11pt4 values, and the C++ harness
+  dumps at exit. It also needs the INTERNAL (pre-publication) D13/D12, so x11pt3
+  now snapshots `ctx.x11_sti_int`/`x11_stc_int` before folding the AO/TC back
+  into D13 and the LS into D12. Same snapshot discipline as increment 1 for the
+  outputs (`ctx.x11_f2inpt2`/`x11_f2work2`/`x11_f2mcd`/`x11_f2ratic`/`x11_f2ratis`
+  — the sliding-spans replays overwrite the live COMMONs, and `Ratic` visibly
+  did). **FIVE pre-existing silent-wrongness bugs this surfaced**, none of which
+  any existing gate could see, because they all live in tables or COMMONs the
+  port never read until now:
+  (1) **`x11{mode=add}` built E1 wrong.** x11pt3.f:1227-1231's weight-zero
+  replacement is `Stome = Series - Sti` additively and `Series / Sti`
+  multiplicatively; only the divide was ported, so every additive spec's e1/e2/e3
+  save tables were wrong (Ombar 2.41 against 0.13).
+  (2) **The x11pt3 `sp2 -> Sprior` writeback was skipped as "deferred".** It is
+  not: x11pt3.f:1284-1288 replaces Sprior with `Sprior*Facls*Facao*Factc*Facusr`
+  and x11pt4's `Pbar`/`Psq`/`Vp` measure the result. (`nadj2` really is dead by
+  that point, so only the copy and the `Kfmt=0 -> 1` matter.)
+  (3) **`/adjcmn/ Adj` was only populated when a prior existed**, but adjsrs.f
+  records Nadj/Begadj/Adj1st unconditionally and its no-prior ELSE fills Adj with
+  the mode IDENTITY. With Nadj==0 x11int never copies it, so Sprior stayed the
+  all-ZERO COMMON — and (2) then multiplied the outlier/user factors into zero,
+  giving `Pbar = NaN` and `Q = NaN`. Kfmt stays keyed to a real prior; only the
+  record became unconditional.
+  (4) **x11pt3's Part-E `nadj2>0` Sprior fold was skipped** ("nadj2==0 base"),
+  which is only true with no prior; with one, E2's weight-zero replacement is
+  built from the trend and needs the prior put back (Cimbar off ~10%).
+  (5) **`gtinpt.f:1239 Khol=Keastr` was never ported**, and it is READ one line
+  later by the `Finhol` test: with the classic X-11 Easter on, `Khol==1` keeps
+  Finhol TRUE. Without it Finhol went false, x11pt3.f:525's `.not.Finhol` gate
+  opened, and `Faccal /= Fachol` cancelled the Easter factor out of Faccal
+  entirely (x11pt1 folds X11hol into Faccal, x11pt2 folds the same factor into
+  Fachol) — so `f2.a*` Tdbar and Vtd reported no calendar effect at all.
+  Also ported here: **editor.f:2071-2097**, the rule that a 3x15 seasonal filter
+  is silently downgraded to a STABLE filter on a series under twenty years —
+  which sets `Lstabl`, and `Lstabl` is what f3cal reads to decide whether M8-M11
+  exist at all (the engine was emitting four statistics the oracle suppresses).
+  It needs `Posffc`, so it sits after setxpt, not with the rest of the
+  editor.f:2042-2103 block. **CB-18** (x11pt4's `allgud` is the NEGATION of what
+  its name and its six consumers mean — `isfals` is true when something is BAD)
+  and **CB-19** (the E2 restore at x11pt4.f:653 has its `copy` arguments
+  reversed, so the LS/user divide is never undone and `/work/ Temp` is clobbered)
+  are both transcribed verbatim; both are unreachable here (they need
+  `x11{constant=}`, which is walled in x11pt3).
+  **Still open in x11pt4** (increment 3): the E tables (E1-E8, E11, E18) —
+  `change.f` is ported and the Gudval good-obs machinery now exists, so what is
+  left there is the E4 annual-total ratios and the table emission itself.
 - **The `seats{}` OPTION SURFACE — swept, and the sweep found real wrongness.**
   `tools/spec_sweep.py --suite seats` showed only 6 of 22 parsed seats options
   were ever read; 11 were parsed, stored, and silently ignored. Three parallel

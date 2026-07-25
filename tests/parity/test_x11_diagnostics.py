@@ -1,4 +1,4 @@
-"""M5 X-11 diagnostics gate: the F2 seasonality test battery vs the oracle .udg.
+"""M5 X-11 diagnostics gate: the F2/F3 savelog block vs the oracle .udg.
 
 x11pt4.f's savelog block (svf2f3.f:59-64) reports five statistics that between
 them decide whether X-11 thinks the series has identifiable seasonality:
@@ -14,16 +14,32 @@ yes/no). ``combft`` also writes /tests/ Test1,Test2, which are the inputs to M7
 and hence to the F3 Q statistic -- so this gate is the floor the quality
 statistics stand on.
 
-TOLERANCE. These are savelog canaries, not save tables: the oracle prints the
-statistic as F11.3 and the probability as F8.2, so the golden pins them only to
-+/-5e-4 and +/-5e-3 respectively. That printed precision IS the tolerance here
-(same policy as test_m3_estimate's ``_print_ulp``) -- there is no 15-digit
-golden for these values to compare against.
+The rest of the block is the Part-F summary measures and the F3 quality
+statistics (x11pt4.f:320-713 -> sumry/vars/avedur + f3cal.f):
+
+  * ``f2.a01``..``a12`` -- mean absolute span-k change of each component
+  * ``f2.b01``..``b12`` -- those squared, as a share of the total
+  * ``f2.c01``..``c12`` -- the signed means and their standard deviations
+  * ``f2.d`` / ``f2.e`` / ``f2.mcd`` -- average durations of run, I/C ratios, MCD
+  * ``f2.f``            -- relative contributions to the variance (Vi/Vc/Vs/Vp/Vtd/Rv)
+  * ``f2.g``            -- autocorrelations of the irregular, lags 1..Ny+2
+  * ``f2.ic`` / ``f2.is`` -- the global I/C and moving-seasonality ratios
+  * ``f3.m01``..``m11``, ``f3.q``, ``f3.qm2``, ``f3.fail`` -- the M statistics,
+    the composite Q, Q without M2, and the count of M's at or above 1
+
+TOLERANCE. These are savelog canaries, not save tables, so each value is pinned
+only to its own PRINTED precision: E15.8 for the a/c blocks, F8.2 for the
+percentage and ratio lines (and the b block, which carries a 2P scale factor, so
+half a printed digit is 5e-5 on the underlying fraction), f6.3 for the M
+statistics, F5.2 for Q. That printed precision IS the tolerance here (same
+policy as test_m3_estimate's ``_print_ulp``) -- there is no 15-digit golden for
+these values to compare against.
 
 Run:  python -m pytest tests/parity/test_x11_diagnostics.py -q
 """
 from __future__ import annotations
 
+import functools
 import os
 import re
 import subprocess
@@ -94,19 +110,52 @@ CASES = _discover()
 
 
 def _read_udg(path: str) -> dict[str, list[str]]:
-    want = {}
-    pat = re.compile(r"(f2\.(?:fsb1|fsd8|kw|msf|idseasonal)):\s*(.*)$")
+    """Every f2./f3. key in a golden .udg, split on whitespace.
+
+    Whitespace splitting is correct for the E15.8 blocks and for every F-format
+    line the corpus actually produces; ``_fixed`` below re-splits the F-format
+    lines by column when a value is wide enough to touch its neighbour.
+    """
+    want: dict[str, list[str]] = {}
+    pat = re.compile(r"((?:f2|f3)\.[a-z0-9]+):\s*(.*)$")
     with open(path, encoding="utf-8", errors="replace") as fh:
         for ln in fh:
-            m = pat.match(ln.strip())
+            m = pat.match(ln.rstrip("\n").lstrip())
             if m:
                 want[m.group(1)] = m.group(2).split()
     return want
 
 
-@pytest.mark.skipif(not CASES, reason="no corpus golden ships the F2 test battery")
-@pytest.mark.parametrize("rel", CASES)
-def test_f2_seasonality_tests(rel: str) -> None:
+def _read_udg_raw(path: str) -> dict[str, str]:
+    """The same keys, but keeping the raw (column-significant) value text."""
+    raw: dict[str, str] = {}
+    pat = re.compile(r"((?:f2|f3)\.[a-z0-9]+):(.*)$")
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for ln in fh:
+            m = pat.match(ln.rstrip("\n").lstrip())
+            if m:
+                raw[m.group(1)] = m.group(2)
+    return raw
+
+
+def _fixed(text: str, width: int, n: int) -> list[float | None]:
+    """Split a Fortran fixed-width numeric field list.
+
+    Returns None for a field the oracle overflowed into asterisks, so the
+    caller can skip a column the golden simply does not pin.
+    """
+    out: list[float | None] = []
+    for i in range(n):
+        chunk = text[i * width:(i + 1) * width].strip()
+        try:
+            out.append(float(chunk))
+        except ValueError:
+            out.append(None)
+    return out
+
+
+@functools.lru_cache(maxsize=None)
+def _run(rel: str) -> dict[str, list[str]]:
     spec = os.path.join(_CORPUS, rel + ".spc")
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
     if "pickmdl{" in txt:
@@ -120,10 +169,16 @@ def test_f2_seasonality_tests(rel: str) -> None:
     got: dict[str, list[str]] = {}
     for ln in r.stdout.splitlines():
         p = ln.split()
-        if p and p[0].startswith("f2."):
+        if p and (p[0].startswith("f2.") or p[0].startswith("f3.")):
             got[p[0]] = p[1:]
-    assert got, f"{rel}: harness emitted no f2.* canaries"
+    return got
 
+
+@pytest.mark.skipif(not CASES, reason="no corpus golden ships the F2 test battery")
+@pytest.mark.parametrize("rel", CASES)
+def test_f2_seasonality_tests(rel: str) -> None:
+    got = _run(rel)
+    assert got, f"{rel}: harness emitted no f2.* canaries"
     want = _read_udg(os.path.join(_GOLDEN, rel, os.path.basename(rel) + ".udg"))
 
     for k in _KEYS:
@@ -141,3 +196,129 @@ def test_f2_seasonality_tests(rel: str) -> None:
         assert got.get("f2.idseasonal") == want["f2.idseasonal"], (
             f"{rel}: identifiable-seasonality verdict "
             f"{got.get('f2.idseasonal')} != {want['f2.idseasonal']}")
+
+
+# --- Part-F summary measures + F3 quality statistics -------------------------
+
+# E15.8 pins ~9 significant digits; the abs floor covers a measure that is
+# legitimately ~0 (a component with no variation, e.g. Tdbar with no TD).
+_RTOL_E15 = 1e-7
+_ATOL_E15 = 1e-8
+# Half the last printed digit of an F8.2 percentage / ratio.
+_ATOL_F82 = 5e-3
+# f2.b carries a 2P scale factor: the printed field is the value x 100, so the
+# comparison is done in the SCALED space and half a printed digit is 5e-3 there.
+_ATOL_2PF82 = 5e-3
+# f3.mNN is f6.3, f3.q / f3.qm2 are F5.2.
+_ATOL_M = 5e-4
+_ATOL_Q = 5e-3
+
+
+def _cmp_e15(rel: str, key: str, got: list[str], want: list[str]) -> None:
+    assert len(got) == len(want), (
+        f"{rel}: {key} has {len(got)} values, golden has {len(want)}")
+    for i, (g, w) in enumerate(zip(got, want)):
+        gv, wv = float(g), float(w)
+        assert abs(gv - wv) <= max(_ATOL_E15, _RTOL_E15 * abs(wv)), (
+            f"{rel}: {key}[{i}] {gv} != {wv}")
+
+
+def _cmp_fixed(rel: str, key: str, got: list[str], raw: str, width: int,
+               atol: float, scale: float = 1.0) -> None:
+    ref = _fixed(raw, width, len(got))
+    for i, (g, w) in enumerate(zip(got, ref)):
+        if w is None:
+            continue  # the oracle overflowed the field; nothing to compare to
+        gv = float(g) * scale
+        assert abs(gv - w) <= atol, f"{rel}: {key}[{i}] {gv} != {w}"
+
+
+@pytest.mark.skipif(not CASES, reason="no corpus golden ships the F2 test battery")
+@pytest.mark.parametrize("rel", CASES)
+def test_f2_summary_measures(rel: str) -> None:
+    """x11pt4.f's Part F: sumry / vars / avedur / MCD / the autocorrelations."""
+    got = _run(rel)
+    udg = os.path.join(_GOLDEN, rel, os.path.basename(rel) + ".udg")
+    want = _read_udg(udg)
+    raw = _read_udg_raw(udg)
+    if "f2.a01" not in want:
+        pytest.skip("golden carries no Part-F summary block")
+    assert "f2.a01" in got, (
+        f"{rel}: the oracle emitted the Part-F block but the engine did not "
+        "(x11pt4_partf returned false -- a variance it could not compute)")
+
+    # a / c: the E15.8 blocks, one line per span k = 1..Ny.
+    for prefix in ("f2.a", "f2.c"):
+        for i in range(1, 13):
+            k = f"{prefix}{i:02d}"
+            if k not in want:
+                continue
+            assert k in got, f"{rel}: {k} missing from harness output"
+            _cmp_e15(rel, k, got[k], want[k])
+
+    # b: 5 shares + the literal 100.00 column + Osq2, all under a 2P scale.
+    for i in range(1, 13):
+        k = f"f2.b{i:02d}"
+        if k not in want:
+            continue
+        assert k in got and len(got[k]) == 6, f"{rel}: {k} malformed"
+        # svf2f3.f:1020 puts a `1x` between the colon and the first field, so
+        # the F8.2 columns start one character in (the a/c/d/e/f/g formats do
+        # not have it).
+        ref = _fixed(raw[k][1:], 8, 7)
+        # svf2f3.f:1020 -- fields 1-5 are Isq/Csq/Ssq/Psq/Tdsq, field 6 is the
+        # hardcoded '  100.00' total, field 7 is Osq2.
+        cols = ref[:5] + [ref[6]]
+        for j, (g, w) in enumerate(zip(got[k], cols)):
+            if w is None:
+                continue
+            gv = float(g) * 100.0
+            assert abs(gv - w) <= _ATOL_2PF82, f"{rel}: {k}[{j}] {gv} != {w}"
+
+    if "f2.d" in want:
+        _cmp_fixed(rel, "f2.d", got["f2.d"], raw["f2.d"], 8, _ATOL_F82)
+    if "f2.e" in want:
+        _cmp_fixed(rel, "f2.e", got["f2.e"], raw["f2.e"], 8, _ATOL_F82)
+    if "f2.f" in want:
+        _cmp_fixed(rel, "f2.f", got["f2.f"], raw["f2.f"], 8, _ATOL_F82)
+    if "f2.g" in want:
+        _cmp_fixed(rel, "f2.g", got["f2.g"], raw["f2.g"], 8, _ATOL_F82)
+    if "f2.ic" in want:
+        _cmp_fixed(rel, "f2.ic", got["f2.ic"], raw["f2.ic"], 12, _ATOL_F82)
+    if "f2.is" in want:
+        _cmp_fixed(rel, "f2.is", got["f2.is"], raw["f2.is"], 12, _ATOL_F82)
+    if "f2.mcd" in want:
+        assert int(got["f2.mcd"][0]) == int(want["f2.mcd"][0]), (
+            f"{rel}: MCD {got['f2.mcd'][0]} != {want['f2.mcd'][0]}")
+
+
+@pytest.mark.skipif(not CASES, reason="no corpus golden ships the F2 test battery")
+@pytest.mark.parametrize("rel", CASES)
+def test_f3_quality_statistics(rel: str) -> None:
+    """f3cal.f: M1-M11, the composite Q, Q without M2, and the failure count."""
+    got = _run(rel)
+    want = _read_udg(os.path.join(_GOLDEN, rel, os.path.basename(rel) + ".udg"))
+    if "f3.q" not in want:
+        pytest.skip("golden carries no F3 quality block")
+    assert "f3.q" in got, f"{rel}: the engine emitted no F3 block"
+
+    for i in range(1, 12):
+        k = f"f3.m{i:02d}"
+        if k not in want:
+            # Nn == 7 (a stable seasonal filter or a span under six years)
+            # suppresses M8-M11 entirely -- so must the engine.
+            assert k not in got, (
+                f"{rel}: engine emitted {k} but the oracle suppressed it "
+                "(Nn==7: Lstabl, or fewer than six years)")
+            continue
+        assert k in got, f"{rel}: {k} missing from harness output"
+        assert abs(float(got[k][0]) - float(want[k][0])) <= _ATOL_M, (
+            f"{rel}: {k} {got[k][0]} != {want[k][0]}")
+
+    for k, atol in (("f3.q", _ATOL_Q), ("f3.qm2", _ATOL_Q)):
+        if k in want:
+            assert abs(float(got[k][0]) - float(want[k][0])) <= atol, (
+                f"{rel}: {k} {got[k][0]} != {want[k][0]}")
+    if "f3.fail" in want:
+        assert int(got["f3.fail"][0]) == int(want["f3.fail"][0]), (
+            f"{rel}: f3.fail {got['f3.fail'][0]} != {want['f3.fail'][0]}")

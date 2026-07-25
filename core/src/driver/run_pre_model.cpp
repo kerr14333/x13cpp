@@ -251,13 +251,24 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // multiplies Factd by it -> Factd==0 -> Faccal==0 -> D11/D13 divide-by-zero.
     // (Adjmod is left at its default: tdlom only special-cases Adjmod==2, and the
     // prior here is the multiplicative LOM/leap ratio.)
-    if (has_prior) {
+    //
+    // The RECORD is unconditional (adjsrs.f:39-40 + :108-109 sit outside the
+    // prior branch, and its ELSE at :79-80 fills Adj with the mode identity):
+    // with no prior, Adj is all-1 and x11int still copies it into Sprior, so
+    // Sprior is the IDENTITY rather than the all-zero COMMON. That distinction
+    // is invisible until x11pt3's sp2 writeback replaces Sprior with
+    // Sprior*Facusr (etc.) -- with a zero Sprior the product stays zero and
+    // x11pt4's Pbar/Vp come out NaN instead of measuring the outlier/user
+    // factors. Only Kfmt stays keyed to whether a prior really exists.
+    {
         for (int t = 0; t < nadj; ++t)
             ctx.adj.adj(t + 1) = fac[static_cast<std::size_t>(t)];
         ctx.adj.begadj(1) = begadj[0];
         ctx.adj.begadj(2) = begadj[1];
         ctx.adj.nadj = nadj;
         ctx.adj.adj1st = adj1st;
+    }
+    if (has_prior) {
         // adjsrs.f:62,101 -- a prior series exists, so Kfmt says so. adjreg.f:98
         // is gated on it: without Kfmt>0 the forecast tail of Series never gets
         // the prior folded back, so the X-11 "original" over the forecast span

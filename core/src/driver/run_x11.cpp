@@ -15,6 +15,7 @@
 // they land; until then a spec carrying a model fatals cleanly.
 #include "specparse/specparse.hpp"
 #include "x11/x11parts.hpp"   // x11pt1, x11pt2
+#include "x11/x11summ.hpp"    // x11pt4_partf (Part-F summary measures + f3cal)
 #include "x11/x11drv.hpp"     // setxpt, x11int, chkadj, regeff, extend, adjreg
 #include "regarima/regvar.hpp"   // regvar (design rebuild for regression effects)
 #include "regarima/priadj.hpp"   // adjsrs_factors (prior-adjustment factor series)
@@ -216,6 +217,34 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // editor.f:234 -- on the composite total's run, reconcile the direct and
     // indirect buffer geometries before anything reads the pointers.
     if (ctx.agr.iagr == 3) agrxpt(ctx, begspn, sp);
+
+    // editor.f:2071-2097 -- the 3x15 seasonal filter (Lterm/Lter == 4) is NOT
+    // used on a series shorter than twenty years: it silently becomes a STABLE
+    // filter (5), and that sets Lstabl. Placed here (not with the rest of the
+    // 2042-2103 block above) because it needs Posffc, which setxpt has only just
+    // resolved -- editor.f computes its own `nyr` from Posffc at :688, long
+    // before reaching :2071. Lstabl is what f3cal reads to decide whether M8-M11
+    // exist at all, so without this the engine reported four quality statistics
+    // the oracle suppresses.
+    {
+        int nyr = ctx.x11ptr.posffc / sp;
+        if (ctx.x11ptr.posffc % sp > 0) nyr += 1;
+        if (ctx.x11opt.lterm == 4 && nyr < 20) {
+            ctx.x11opt.lterm = 5;
+            ctx.work2.lstabl = true;
+        }
+        for (int i = 1; i <= sp; ++i) {
+            if (ctx.x11opt.lter(i) == 4 && nyr < 20) {
+                ctx.x11opt.lter(i) = 5;
+                if (!ctx.work2.lstabl) ctx.work2.lstabl = true;
+            } else if (!ctx.work2.lstabl && ctx.x11opt.lter(i) == 5) {
+                ctx.work2.lstabl = true;
+            }
+            if (ctx.work2.l3x5 && ctx.x11opt.lter(i) != 2 && ctx.x11opt.lter(i) != 0)
+                ctx.work2.l3x5 = false;
+        }
+    }
+
     const int pos1ob = ctx.x11ptr.pos1ob;
     // editor.f:851 Setpri=Pos1bk -- the 1-based start of the prior-adjustment span
     // in the padded buffer. Never set in the base port (no gated prior-adj spec);
@@ -237,6 +266,17 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // editor.f:2492 -- Orig2 gets the same copy. It is the buffer composite
     // adjustment aggregates (agr2.f:267).
     for (int i = 0; i < norig; ++i)  ctx.inpt.orig2(pos1ob + i) = aptr[i];
+    // editor.f:2500-2502 -- the "good observation" flags. Every observation in
+    // the span is good unless pseudo-additive adjustment is on and the value is
+    // non-positive. chkzro clears more of them later; sumry/varlog/divgud/issame
+    // (x11pt4's Part-F measures) and change() are the consumers. Only [Pos1ob,
+    // Posfob] is written, exactly as the oracle does.
+    for (int i = pos1ob; i <= ctx.x11ptr.posfob; ++i) {
+        ctx.goodob.gudval(i) = true;
+        if (ctx.x11msc.psuadd && ctx.inpt.series(i) <= 0.0)
+            ctx.goodob.gudval(i) = false;
+    }
+
     // arima.f:1433-1441 -- overlay the UNTRANSFORMED forecasts (and backcasts)
     // onto Orig2's extension region. Only the composite path reads this far out:
     // it is what makes the aggregated O2/O5 (hence the indirect seasonal factors)
@@ -267,8 +307,14 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // does on both paths. Without this the no-model run decomposed the RAW series
     // while x11pt3 still tried to remove a prior that had never been applied --
     // which indexed Usrpad at Frstap==0 and threw.
-    if (!has_model && (ctx.prior.priadj > 1 || ctx.priusr.nuspad > 0 ||
-                       ctx.priusr.nustad > 0)) {
+    // The /adjcmn/ RECORD itself is unconditional in adjsrs.f (:39-40, :79-80,
+    // :108-109): with no prior, Adj is the mode identity and Sprior comes out
+    // all-1 rather than the all-zero COMMON -- which is what x11pt3's sp2
+    // writeback then multiplies the outlier/user factors into. Only Kfmt is
+    // keyed to a prior actually existing.
+    if (!has_model) {
+        const bool has_pri = (ctx.prior.priadj > 1 || ctx.priusr.nuspad > 0 ||
+                              ctx.priusr.nustad > 0);
         // adjsrs.f:39-40 -- Nadj spans the backcasts, the series, and at least a
         // full year of forecasts; Begadj is the span start shifted back Nbcst.
         const int nadj = std::min(
@@ -282,7 +328,8 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
         ctx.adj.nadj = nadj;
         dfdate(begspn, ctx.adj.begadj.data(), sp, ctx.adj.adj1st);  // adjsrs.f:108
         ctx.adj.adj1st += 1;
-        ctx.prior.kfmt = 1;    // adjsrs.f:62,101 -- there IS a prior to remove
+        if (has_pri)
+            ctx.prior.kfmt = 1;  // adjsrs.f:62,101 -- there IS a prior to remove
     }
 
     // X-11 array initialization (x11int.f) -- once, before both the (optional)
@@ -458,6 +505,21 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // overwrite /tests/ with a sub-span's statistics.
     ctx.x11_f2tests = ctx.tests;
     ctx.x11_f2tests_set = true;
+
+    // x11pt4.f's PART F: the summary measures (f2.a*/b*/c*/d/e/f/g, MCD) and the
+    // f3cal quality statistics (M1-M11, Q, Q2). Same snapshot discipline -- and
+    // the same placement, before the span replays. x11_sti_int is empty only
+    // when x11pt3 took its Khol==1 early return, where the oracle emits no F
+    // block either.
+    if (!ctx.x11_sti_int.empty() &&
+        x11pt4_partf(ctx, ctx.x11_sti_int.data(), ctx.x11_stc_int.data())) {
+        ctx.x11_f2inpt2 = ctx.inpt2;
+        ctx.x11_f2work2 = ctx.work2;
+        ctx.x11_f2mcd = ctx.x11opt.mcd;
+        ctx.x11_f2ratic = ctx.x11opt.ratic;
+        ctx.x11_f2ratis = ctx.x11opt.ratis;
+        ctx.x11_f3_set = true;
+    }
 
     // slidingspans{} (ssap.f/sspdrv.f/ssrit.f): replay the model+X11 pipeline
     // over each sub-span (driver/run_x11_span.hpp -- the re-entrant driver),
