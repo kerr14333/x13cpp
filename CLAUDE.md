@@ -172,6 +172,30 @@ diagnostics front (force / slidingspans / history) is now closed.
   byte-identical. Gated by the new `*_backcast-x11` config (all 4 series).
   Still open here: `x11{appendbcst=yes}` widens the oracle's punch range to the
   backcast span and the harness does not (b1/d10/d16 row counts differ).
+- **regARIMA SEASONAL-OUTLIER (`Adjso`) through X-11 + `x11{centerseasonal=}`
+  (`Lcentr`) — CLOSED (bit-exact).** Two things, closed together because neither
+  is gateable without the other. (1) The `x11pt2 user/seasonal/cycle/x11reg
+  factor combine+emit` wall fatalled on `Adjso==1`/`Adjsea==1` UNCONDITIONALLY,
+  but on the base path those are print-only in x11pt2 — `Facso` reaches only the
+  deferred A8 accumulator (x11pt2.f:204-207) and `Facsea` only the deferred A10
+  table (:273), exactly like the Adjao/Adjls/Adjtc/Adjusr the comment there
+  already excused. Their real arithmetic is the x11pt3 combine, ported in
+  970e85c. The one place they ARE numeric in x11pt2 is the x11regression
+  feedback rebuild at x11pt2.f:851-859, where the C++ takes a `STCSI = STO`
+  shortcut that is only bit-equivalent when no such factor exists — so the fatal
+  is now narrowed to exactly that path (`Ixreg in {1,2} && Axrgtd`) instead of
+  firing everywhere. `Adjcyc` and `Axrghl` stay fatal. (2) `Lcentr` (x11pt3.f:280
+  -> `vsfc`) then became reachable and is wired. `vsfc` had been ported all along
+  — it is `vsfb`'s own tail in x11seas.cpp — only the call site was missing.
+  **The gating trap here:** `Lcentr` runs INSIDE the Adjsea/Adjso block, so on
+  any ordinary spec the oracle does not centre either and on/off are
+  byte-identical; `regression{variables=(seasonal)}` measures 0.000 delta on
+  every series (`Adjsea` is not 1 there — chkadj.f:165 needs nsea>0) and can
+  never gate it no matter what else it does. A seasonal OUTLIER does:
+  measured oracle on-vs-off d10 delta 2.06e-3 airline / 2.95e-4 payems /
+  1.89e-3 expgs. Gated by `{airline,payems,expgs}_so-x11` (the narrowed wall
+  alone) and `_so-centerseasonal-x11` (both). Supersedes the "UNGATED,
+  currently unreachable" caveat in 9e56160.
 - **`x11{appendbcst=yes}` — CLOSED, and it was the HARNESS, not the engine.**
   The last open sweep culprit. `Savbct` widens the b1/d10/d16 punch range back to
   `Pos1bk`, and `x13run_x11`'s `dump()` anchored its date arithmetic on the

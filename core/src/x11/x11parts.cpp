@@ -443,8 +443,22 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // (xrgdrv transparent pass -- x11mdl_td builds Faccal here) and Ixreg==3
         // (main run -- the prior Faccal passes through, adjtd==0 so the :358 fold
         // is skipped), so none of those fatal. Ixreg==0 with Axrgtd cannot occur.
-        if (adj.adjso == 1 || adj.adjsea == 1 ||
-            adj.adjcyc == 1 || xl.axrghl ||
+        // Adjso/Adjsea were in this fatal list unconditionally, but on the BASE
+        // (non-x11regression) path they are print-only here, exactly like
+        // Adjao/Adjls/Adjtc/Adjusr above: Facso reaches only the deferred A8
+        // accumulator (x11pt2.f:204-207 dtemp -> LRGOTL table/punch) and Facsea
+        // only the deferred A10 table (x11pt2.f:273). Their real arithmetic is
+        // the x11pt3 combine, which is ported and gated. The ONE place they are
+        // numeric in x11pt2 is the x11regression feedback rebuild at
+        // x11pt2.f:851-859, which re-applies the outlier/user/seasonal priors to
+        // a Stcsi rebuilt from the raw Series -- and the C++ takes the
+        // `STCSI = STO` shortcut there, which is only bit-equivalent when no such
+        // factor exists. So keep them fatal on that path alone, not everywhere.
+        const bool xreg_feedback =
+            (ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2) && xl.axrgtd;
+        if (adj.adjcyc == 1 || xl.axrghl ||
+            (xreg_feedback && (adj.adjso == 1 || adj.adjsea == 1 ||
+                               adj.adjusr == 1)) ||
             (xl.axrgtd && ctx.hiddn.ixreg != 1 && ctx.hiddn.ixreg != 2 &&
              ctx.hiddn.ixreg != 3)) {
             x11_not_ported(ctx, "x11pt2 user/seasonal/cycle/x11reg factor combine+emit");
