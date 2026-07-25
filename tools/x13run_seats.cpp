@@ -111,6 +111,23 @@ int main(int argc, char** argv) {
     bool have_est = false;
     try {
         x13::SeatsOptions opts = x13::seats_resolve_options(ctx);
+        // Hodrick-Prescott option bridge canaries (ansub9.f:1080-1117 +
+        // sigex.f:2370-2387). HPOPT_hpcycle is the value AFTER the "auto"
+        // (-1) sentinel resolves on the series length -- i.e. exactly the
+        // `hpcycle` sigex.f:2388 branches on. The oracle echoes the
+        // PRE-resolution value in its .sum INPUT block whenever it differs
+        // from the SEATS default, which is what
+        // tests/parity/test_seats_hpopts.py gates against, so both are
+        // printed. The HP filter itself is NOT ported (no cyc/ltt tables --
+        // tools/seats_hp_scouting.md).
+        std::printf("HPOPT_hpcycle_raw: %d\n", opts.hpcycle);
+        std::printf("HPOPT_hpcycle: %d\n",
+                    x13::seats_resolve_hpcycle(opts, ctx.model.sp,
+                                               ctx.mdldat.nspobs));
+        std::printf("HPOPT_hplan: %.15g\n", opts.hplan);
+        std::printf("HPOPT_hptarget: %d\n", opts.hptarget);
+        std::printf("HPOPT_hprmls: %d\n", opts.hprmls ? 1 : 0);
+        std::printf("HPOPT_out: %d\n", opts.out);
         x13::SeatsModelOrders mo;
         if (x13::seats_decode_model(ctx, opts.xl, mo)) {
             std::printf("DECODE_ARIMAMDL: (%d %d %d)", mo.p, mo.d, mo.q);

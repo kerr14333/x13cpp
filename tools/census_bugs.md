@@ -291,3 +291,40 @@ it. `Mtype==7` (3-term) is special-cased to `wtx11=1/3` and avoids the access.
 - **Port:** `core/src/x11/shrink.cpp` transcribes `lx11[mtype-1]` verbatim
   (same latent OOB for `mtype==6`), commented at the access site. Reproduce the
   bug if a shrink+stable path is ever gated.
+
+---
+
+## CB-14 — `seats{hplan=}` silently re-enables an explicit `hpcycle=no`
+
+- **Where:** `oracle/fortran/ansub9.f:1109-1117` (the SEATS options→internal
+  bridge, `NMLSTS` icode==1).
+- **Severity:** `active` — changes which output tables a run produces, on any
+  spec that sets both arguments.
+- **Symptom:** the bridge resolves the Hodrick-Prescott switch twice. Block 1
+  (`:1081-1090`) reads `Lhp` (the `hpcycle=` argument, defaulted TRUE at
+  `gtinpt.f:536`) and sets `L_hpcycle = 0` when the user said `hpcycle=no`.
+  Block 2 then runs:
+
+      IF(.not.dpeq(Hplan2,DNOTST))THEN
+       L_hplan=Hplan2
+       IF(L_hpcycle.eq.0)THEN
+        L_hpcycle=1
+        IF(Hptrgt.ne.NOTSET)L_hpcycle=Hptrgt
+       END IF
+      END IF
+
+  `L_hpcycle` can only BE 0 at that point because block 1 saw `hpcycle=no` —
+  the other branch yields -1, 1, 2 or 3 — so the test is really "did the user
+  turn HP off?", and the answer is used to turn it back **on**. Setting the
+  unrelated smoothing parameter `hplan=` therefore overrides an explicit
+  `hpcycle=no`, and with `hptarget=` present it also picks the target.
+- **Measured:** `seats{hpcycle=no hplan=40}` on airline emits `.cyc`/`.ltt`
+  and echoes `hpcycle= 1` in the `.sum` INPUT block; `seats{hpcycle=no}` alone
+  emits neither and echoes `hpcycle= 0`. Adding `hptarget=orig` to the first
+  makes the echo `hpcycle= 3`.
+- **Port:** reproduced verbatim in `core/src/seats/seatopts.cpp`
+  (`seats_resolve_options`, block 2), commented at the site.
+- **Pinned by:** `tests/parity/test_seats_hpopts.py`, corpus
+  `generated/{airline,payems}_hp-relock-seats` (gated two ways — the resolved
+  value against the oracle's `.sum` echo, and the presence of the oracle's
+  `.cyc`/`.ltt` goldens). `*_hp-off-seats` pins the un-overridden "no".

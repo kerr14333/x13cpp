@@ -285,6 +285,35 @@ def test_seats_table(base: str, tag: str) -> None:
         ("expgs_mean-td-seats", "s10"), ("expgs_mean-td-seats", "s11"),
         ("expgs_mean-td-seats", "s12"), ("expgs_mean-td-seats", "s13"),
         ("expgs_mean-td-seats", "s16"), ("expgs_mean-td-seats", "s18"),
+        # *_hp-*-seats: the Hodrick-Prescott option family
+        # (seats{hpcycle/hplan/hptarget}). These gate s10-s18 as a NON-
+        # DISTURBANCE check, not as evidence that HP is ported -- it is not
+        # (tools/seats_hp_scouting.md). Measured against the oracle, the whole
+        # blast radius of every HP option is .cyc/.ltt/.tbs/.sum; s10-s18 are
+        # bit-identical with the filter on, off, or retargeted. The option
+        # bridge itself is gated in test_seats_hpopts.py. hp-short additionally
+        # covers a 6-year span (sigex.f:2371's minimum-length rule).
+        ("airline_hp-hplan-seats", "s10"), ("airline_hp-hplan-seats", "s11"),
+        ("airline_hp-hplan-seats", "s12"), ("airline_hp-hplan-seats", "s13"),
+        ("airline_hp-hplan-seats", "s16"), ("airline_hp-hplan-seats", "s18"),
+        ("airline_hp-off-seats", "s10"), ("airline_hp-off-seats", "s11"),
+        ("airline_hp-off-seats", "s12"), ("airline_hp-off-seats", "s13"),
+        ("airline_hp-off-seats", "s16"), ("airline_hp-off-seats", "s18"),
+        ("airline_hp-relock-seats", "s10"), ("airline_hp-relock-seats", "s11"),
+        ("airline_hp-relock-seats", "s12"), ("airline_hp-relock-seats", "s13"),
+        ("airline_hp-relock-seats", "s16"), ("airline_hp-relock-seats", "s18"),
+        ("airline_hp-short-seats", "s10"), ("airline_hp-short-seats", "s11"),
+        ("airline_hp-short-seats", "s12"), ("airline_hp-short-seats", "s13"),
+        ("airline_hp-short-seats", "s16"), ("airline_hp-short-seats", "s18"),
+        ("payems_hp-hplan-seats", "s10"), ("payems_hp-hplan-seats", "s11"),
+        ("payems_hp-hplan-seats", "s12"), ("payems_hp-hplan-seats", "s13"),
+        ("payems_hp-hplan-seats", "s16"), ("payems_hp-hplan-seats", "s18"),
+        ("payems_hp-off-seats", "s10"), ("payems_hp-off-seats", "s11"),
+        ("payems_hp-off-seats", "s12"), ("payems_hp-off-seats", "s13"),
+        ("payems_hp-off-seats", "s16"), ("payems_hp-off-seats", "s18"),
+        ("payems_hp-relock-seats", "s10"), ("payems_hp-relock-seats", "s11"),
+        ("payems_hp-relock-seats", "s12"), ("payems_hp-relock-seats", "s13"),
+        ("payems_hp-relock-seats", "s16"), ("payems_hp-relock-seats", "s18"),
     }
     # No golden shipped => the oracle produced no such table, so there is no
     # parity target (not an engine gap). This covers the inadmissible-
