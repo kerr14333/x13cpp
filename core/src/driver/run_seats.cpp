@@ -172,7 +172,22 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
 
             EstburResult est;
             estbur_historical(ctx, mo, cd, comp, opts, est);
-            if (est.ok) return true;
+            if (est.ok) {
+                // Keep the decomposition on the context. The CLI harness re-runs
+                // this whole (idempotent, side-effect-free) chain to dump its
+                // tables, but the C ABI has no business re-deriving it, so the
+                // driver publishes what it computed. Pure bookkeeping -- no
+                // numeric path reads these back.
+                ctx.seats_ran = true;
+                ctx.seats_sa = est.sa;
+                ctx.seats_trend = est.trend;
+                ctx.seats_ir = est.ir;
+                ctx.seats_cycle = est.cycle;
+                ctx.seats_seasonal_add = est.seasonal_add;
+                ctx.seats_combined_add = est.combined_add;
+                ctx.seats_combined_factor = est.combined_factor;
+                return true;
+            }
         }
     } catch (const std::exception&) {
         // Fall through to seats_not_ported below.

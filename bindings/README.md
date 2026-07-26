@@ -76,11 +76,17 @@ port these bindings to another host, check `x13_host_fp_control()` first.
 
 ## Scope
 
-Currently the X-11 decomposition path (`x11{}` specs): `b1`, `d10`–`d13`, `d16`,
-the Part-E tables, the `force{}`/`x11regression{}` outputs, and the F2/F3 quality
-statistics. **SEATS (`s10`–`s18`) is not exposed yet** — `run_seats` does not
-leave its decomposition on the context (the CLI harness re-runs the chain to get
-it), so wiring it up is its own increment.
+Both decomposition paths. The binding parses the spec, sees which one it asks
+for, and dispatches — so a run exposes one family or the other, never both.
+
+* **X-11** (`x11{}`): `b1`, `d10`–`d13`, `d16`, the Part-E tables, the
+  `force{}` / `x11regression{}` outputs (`saa`, `ffc`, `rnd`, `a4`,
+  `sac`/`tac`), and the F2/F3 quality statistics as scalar diagnostics.
+* **SEATS** (`seats{}`): `s10`–`s14`, `s16`, `s18`.
+
+Not exposed yet: the `history{}` / `slidingspans{}` revision tables, the
+composite/metafile aggregation (it spans several specs in one process, so it
+needs a different handle shape), and forecasts.
 
 ## Tests
 

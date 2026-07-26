@@ -40,11 +40,24 @@ x13c = pytest.importorskip("x13c")
 RTOL_ARITHMETIC = 1e-12
 RTOL_ESTIMATION = 1e-6
 
+# SEATS gets its own pair, matching test_seats_tables.py rather than either of
+# the above: the canonical decomposition rides the model estimate, so it sits
+# near 1e-10 on the harder specs, and its factor tables legitimately cross zero
+# in additive mode, where a purely relative test has no meaning. Same
+# |v-g| <= RTOL*|g| + ATOL form the established SEATS gate uses.
+RTOL_SEATS = 1e-8
+ATOL_SEATS = 1e-9
+
 _ROW = re.compile(r"^(\d{6})\s+([+\-][0-9.EeDd+\-]+)")
 
 # The decomposition tables every X-11 run produces, plus the ones only some do.
 _TAGS = ["b1", "d10", "d11", "d12", "d13", "d16", "e1", "e2", "e3", "e11",
          "e18", "eb", "sac", "tac", "saa", "ffc", "a4", "rnd"]
+
+# SEATS produces its own family. A spec asks for one decomposition or the other,
+# so the binding dispatches on the parsed spec and these never coexist with the
+# X-11 tags above.
+_SEATS_TAGS = ["s10", "s11", "s12", "s13", "s14", "s16", "s18"]
 
 
 def _library_available() -> bool:
@@ -71,11 +84,10 @@ def _read_golden(path: str) -> dict[str, float]:
     return out
 
 
-def _discover() -> list[tuple[str, str, str]]:
-    """(spec_id, spec_path, golden_dir) for every corpus spec with a d11 golden.
-
-    d11 is the marker for "this spec ran an X-11 decomposition and was blessed";
-    the per-table comparison below then covers whichever of _TAGS also shipped.
+def _discover(marker: str) -> list[tuple[str, str, str]]:
+    """(spec_id, spec_path, golden_dir) for every corpus spec whose golden dir
+    ships `marker` -- d11 for an X-11 run, s11 for a SEATS one. The per-table
+    comparison then covers whichever tags also shipped.
     """
     cases = []
     for group in ("generated", "extra", "census-examples"):
@@ -87,13 +99,15 @@ def _discover() -> list[tuple[str, str, str]]:
             gd = os.path.join(gdir, name)
             spec = os.path.join(cdir, name + ".spc")
             if (os.path.isdir(gd) and os.path.exists(spec)
-                    and os.path.exists(os.path.join(gd, name + ".d11"))):
+                    and os.path.exists(os.path.join(gd, name + "." + marker))):
                 cases.append((f"{group}/{name}", spec, gd))
     return cases
 
 
-CASES = _discover()
+CASES = _discover("d11")
+SEATS_CASES = _discover("s11")
 assert CASES, "no corpus spec ships a d11 golden -- discovery is broken"
+assert SEATS_CASES, "no corpus spec ships an s11 golden -- discovery is broken"
 
 
 @pytest.mark.parametrize("spec_id,spec,golden", CASES,
@@ -141,6 +155,73 @@ def test_binding_matches_oracle_golden(spec_id: str, spec: str, golden: str):
             compared += 1
 
         assert compared, f"{spec_id}: no table was actually compared"
+
+
+@pytest.mark.parametrize("spec_id,spec,golden", SEATS_CASES,
+                         ids=[c[0] for c in SEATS_CASES])
+def test_seats_binding_matches_oracle_golden(spec_id: str, spec: str,
+                                             golden: str):
+    """The SEATS family (s10-s18) through the binding, same date-keyed compare.
+
+    SEATS runs a different driver (run_seats, not run_x11), so the binding has to
+    dispatch on the parsed spec to reach it at all. These tables are the
+    canonical decomposition -- arithmetic on the already-estimated model -- and
+    measure ~5e-15 against the goldens, so they hold the TIGHT tolerance even
+    though every SEATS spec is model-based.
+    """
+    base = os.path.basename(golden)
+    with x13c.adjust(spec, check=False) as run:
+        if not run.ok:
+            pytest.skip(f"{spec_id}: engine declined the run ({run.error})")
+
+        compared = 0
+        for tag in _SEATS_TAGS:
+            gpath = os.path.join(golden, base + "." + tag)
+            if not os.path.exists(gpath):
+                continue
+            gold = _read_golden(gpath)
+            if not gold:
+                continue
+            assert run.has_table(tag), (
+                f"{spec_id}: golden ships {tag} but the binding exposes only "
+                f"{sorted(run.table_names())}")
+            t = run.table(tag)
+            got = {f"{y:04d}{p:02d}": v for (y, p), v in zip(t.dates, t.values)}
+            missing = sorted(set(gold) - set(got))
+            assert not missing, (
+                f"{spec_id}.{tag}: binding is missing {len(missing)} dated "
+                f"rows, e.g. {missing[:4]}")
+            bad, worst, at = 0, 0.0, None
+            for k, g in gold.items():
+                d = abs(got[k] - g)
+                if d > RTOL_SEATS * abs(g) + ATOL_SEATS:
+                    bad += 1
+                rel = d / abs(g) if g else d
+                if rel > worst:
+                    worst, at = rel, k
+            assert bad == 0, (
+                f"{spec_id}.{tag}: {bad} of {len(gold)} points exceed "
+                f"RTOL*|g|+ATOL; max rel {worst:.3e} at {at}")
+            compared += 1
+
+        assert compared, f"{spec_id}: no SEATS table was actually compared"
+
+
+def test_seats_and_x11_tables_do_not_mix():
+    """A SEATS spec exposes the s-family and no d-family, and an X-11 spec the
+    reverse -- the binding picks one driver, it does not run both."""
+    with x13c.adjust(SEATS_CASES[0][1], check=False) as run:
+        if run.ok:
+            names = set(run.table_names())
+            assert names & set(_SEATS_TAGS), "a SEATS run should expose s-tables"
+            assert not (names & {"d10", "d11", "d12", "d13"}), (
+                f"a SEATS run should not expose d-tables, got {sorted(names)}")
+    x11_spec = os.path.join(_REPO, "tests", "corpus", "generated",
+                            "airline_x11-default.spc")
+    with x13c.adjust(x11_spec) as run:
+        names = set(run.table_names())
+        assert "d11" in names
+        assert not (names & set(_SEATS_TAGS))
 
 
 def test_dates_are_contiguous_and_calendar_valid():

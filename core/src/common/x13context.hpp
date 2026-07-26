@@ -275,6 +275,18 @@ struct X13Context {
     // after the negative-value correction the ratio is not formed at all and those
     // observations get DNOTST. Empty unless Iyrt>0.
     std::vector<double> x11_frcfac;
+    // SEATS: the historical-span decomposition as run_seats leaves it (the
+    // s10-s18 save tables, 0-indexed from Begspn). run_seats used to compute
+    // these and throw them away, returning only success/failure, which meant
+    // the only way to SEE a SEATS decomposition was tools/x13run_seats.cpp
+    // re-running the whole chain itself. The C ABI cannot do that (it has no
+    // business re-deriving the chain), so the driver now stashes its result
+    // here. `seats_ran` distinguishes "ran and produced nothing" from "did not
+    // run"; the harness is unaffected either way, since it still re-runs.
+    bool seats_ran = false;
+    std::vector<double> seats_sa, seats_trend, seats_ir, seats_cycle;
+    std::vector<double> seats_seasonal_add, seats_combined_add,
+                        seats_combined_factor;
     // Final regARIMA residuals (arima.f's `a`, length `resid_na`) captured after
     // estimation for the residual-spectrum diagnostic (spr, spcrsd.f). Their
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).

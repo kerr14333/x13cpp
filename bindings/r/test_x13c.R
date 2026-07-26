@@ -133,6 +133,33 @@ test("a model-based spec reproduces its goldens too", function() {
   expect(rel <= 1e-6, sprintf("d11 max rel err %.3e (estimation floor 1e-6)", rel))
 })
 
+test("a SEATS spec dispatches to SEATS and matches its goldens", function() {
+  spec <- file.path(REPO, "tests", "corpus", "generated", "airline_seats.spc")
+  if (!file.exists(spec)) return(invisible(NULL))
+  run <- x13_adjust(spec, check = FALSE)
+  on.exit(x13_close(run))
+  if (!x13_ok(run)) return(invisible(NULL))
+  nms <- x13_table_names(run)
+  expect(any(c("s11", "s12") %in% nms), "a SEATS run should expose s-tables")
+  expect(!any(c("d10", "d11") %in% nms),
+         "a SEATS run should not expose X-11 d-tables")
+  gdir <- file.path(REPO, "tests", "golden", "generated", "airline_seats")
+  # The established SEATS policy (test_seats_tables.py): |v-g| <= 1e-8*|g| + 1e-9.
+  for (tag in c("s10", "s11", "s12", "s13", "s16", "s18")) {
+    gp <- file.path(gdir, paste0("airline_seats.", tag))
+    if (!file.exists(gp)) next
+    gold <- read_golden(gp)
+    tb <- x13_table(run, tag)
+    got <- stats::setNames(tb$value, sprintf("%04d%02d", tb$year, tb$period))
+    common <- intersect(names(gold), names(got))
+    expect(length(common) == length(gold),
+           paste0(tag, ": binding should cover every golden row"))
+    bad <- sum(abs(got[common] - gold[common]) >
+                 1e-8 * abs(gold[common]) + 1e-9)
+    expect(bad == 0L, sprintf("%s: %d point(s) outside RTOL*|g|+ATOL", tag, bad))
+  }
+})
+
 # --- 2. the R surface ------------------------------------------------------
 
 test("metadata", function() {

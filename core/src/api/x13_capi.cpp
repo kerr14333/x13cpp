@@ -120,6 +120,31 @@ void addDiag(x13_run& h, const std::string& name, double v) {
     h.diags.push_back(Diag{name, v});
 }
 
+// SEATS leaves its tables 0-indexed from Begspn, all the same length, so they
+// need none of the X-11 punch-range machinery above.
+void harvestSeats(x13_run& h, const x13::X13Context& ctx) {
+    const int sp = ctx.model.sp;
+    const int* begspn = ctx.mdldat.begspn.data();
+
+    h.period = sp;
+    h.nobs = static_cast<int>(ctx.seats_sa.size());
+    h.modelBased = true;              // SEATS has no no-model path in the oracle
+    h.mode = ctx.x11msc.psuadd ? 3 : ctx.x11opt.muladd;
+    h.arimaModel = ctx.arima.bstdsn.str();
+    while (!h.arimaModel.empty() && h.arimaModel.back() == ' ')
+        h.arimaModel.pop_back();
+    if (h.arimaModel == "?") h.arimaModel.clear();
+
+    // Tag names follow the oracle's save tokens, as x13run_seats.cpp dumps them.
+    addTableVec(h, "s10", begspn, sp, ctx.seats_seasonal_add);
+    addTableVec(h, "s11", begspn, sp, ctx.seats_sa);
+    addTableVec(h, "s12", begspn, sp, ctx.seats_trend);
+    addTableVec(h, "s13", begspn, sp, ctx.seats_ir);
+    addTableVec(h, "s14", begspn, sp, ctx.seats_cycle);
+    addTableVec(h, "s16", begspn, sp, ctx.seats_combined_add);
+    addTableVec(h, "s18", begspn, sp, ctx.seats_combined_factor);
+}
+
 // Harvest everything the X-11 driver leaves on the context.
 void harvest(x13_run& h, const x13::X13Context& ctx) {
     const int sp = ctx.model.sp;
@@ -306,8 +331,21 @@ x13_run* runSpec(const std::string& text, const std::string& base) {
         return nullptr;    // allocation failure is the only NULL return
     }
     try {
+        // Which decomposition the spec asks for is only knowable after parsing,
+        // and both drivers parse for themselves -- so parse once into a scratch
+        // context purely to read `has_seats`, then hand a FRESH context to the
+        // driver. Parsing twice is wasteful but safe; re-running a driver over
+        // an already-parsed context is neither.
+        bool wantSeats = false;
+        {
+            auto probe = std::make_unique<x13::X13Context>();
+            if (x13::parse_spec(*probe, text, base))
+                wantSeats = probe->captured.has_seats;
+        }
+
         auto ctxp = std::make_unique<x13::X13Context>();
-        const bool ok = x13::run_x11(*ctxp, text, base);
+        const bool ok = wantSeats ? x13::run_seats(*ctxp, text, base)
+                                  : x13::run_x11(*ctxp, text, base);
         if (!ok || ctxp->error.lfatal) {
             h->ok = false;
             h->error = "engine reported a fatal condition for '" + base + "'";
@@ -315,7 +353,8 @@ x13_run* runSpec(const std::string& text, const std::string& base) {
             // more useful than nothing, and callers gate on x13_ok().
             return h;
         }
-        harvest(*h, *ctxp);
+        if (wantSeats && ctxp->seats_ran) harvestSeats(*h, *ctxp);
+        else                              harvest(*h, *ctxp);
         h->ok = true;
     } catch (const std::exception& e) {
         h->ok = false;
