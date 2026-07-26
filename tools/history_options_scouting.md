@@ -256,9 +256,66 @@ next person does not re-derive it.
    and is still open; it needs `rmatot.f` (as `outlier=` does) on top of what
    landed here.
 4. ~~`sadjlags=`/`trendlags=`/`target=`~~ — DONE. See the section below.
-5. `outlier=`/`outlierwin=` — needs `rmatot.f` + `rmotrv.f`; the default is
-   already right, so this is the least urgent of the movers.
+5. ~~`outlier=`/`outlierwin=`~~ — mostly DONE, and the ranking here ("the
+   default is already right, so this is the least urgent") was **wrong, for the
+   fourth time**. See the section below: the default was the most urgent thing
+   on the list.
 6. `additivesa=` — additive mode only, and the additive branches of
    `putrev`/`getrev` are out of scope for the current history port generally.
 
 `refresh=` — do not port; record the mechanism instead.
+
+### `outlier=` — the DEFAULT was wrong, and this table said it was not
+
+**Status: `keep` (the default) and `remove` ported and gated; `auto` now a clean
+fatal.** This one is worth reading as a method failure, not just a port.
+
+The row above claimed *"the current engine's default behaviour is `keep`, and
+that is correct — measured, on `outlier{}`+`history{}` with everything
+defaulted, the engine agrees with the oracle at sae 7.1e-6 / sar 2.1e-3, i.e.
+the ordinary per-span re-estimation floor."* That measurement was taken with
+`outlier{critical=3.5}` on airline, **where the oracle identifies no outliers at
+all** — the largest t in the whole series is 3.48, printed in the run's own
+"might later be identified" table. The spec exercised the flag over an empty
+set. Re-measured at `critical=3.0`, where three outliers are found:
+
+| family | before | after |
+| --- | --- | --- |
+| `outlier{}` present, DEFAULT (`keep`) | sar **9.20e-1** / sae **1.52e-2** | 4.3e-4 / 4.3e-6 |
+| `regression{variables=(ao1957.jan ls1958.jul)}`, DEFAULT | sar **9.77e-1** / sae **9.08e-3** | 7.2e-4 / 7.1e-6 |
+| same, but outliers dated BEFORE the history start | 3.5e-4 / 3.4e-6 | unchanged |
+| `outlier = remove` | sar 1.12e+0 / sae 1.53e-2 | 4.0e-4 / 3.8e-6 |
+
+against tolerances of 5e-3 absolute / 1e-5 relative. **This is the same trap the
+"traps" section above already names** ("a null measured under the wrong
+preconditions is not a null", "`outlier=auto` measured 0.000e+00 ... not a null,
+a saturated precondition") — and it was still walked into on the DEFAULT row,
+because a saturated precondition looks like a passing gate rather than like a
+zero delta. When a feature's whole effect is conditional on a set being
+non-empty, the probe has to assert the set is non-empty.
+
+What was actually missing is **not** behind `outlier=` at all: `rmotrv.f`
+(revdrv.f:302) and `chkorv.f` (revdrv.f:589) run on every history{} with a
+regARIMA model. A span ending at date T must not know about an outlier dated
+after T, so every outlier-type regressor past the first revision date comes out
+of the design before the loop and is re-introduced when a span's MODEL span
+(`i - nend`, not `i`) reaches it. `outlier=` only chooses whether they are SAVED
+for that re-introduction or dropped. Ported in `core/src/driver/rev_outlier.cpp`,
+including chkorv's singularity pass (several outliers on the same last
+observation are not jointly estimable, so its `opref` table picks one).
+
+**The structural fix underneath it:** `restor.f:50-64` restores the whole design
+DICTIONARY (`Ngrp`/`Nb`/`Colttl`/`Colptr`/`Grp`/`Grpptr`/`Rgvrtp`/`Ncxy`/`Nrxy`)
+and this port's `restor_span` did not — it had only ever needed the coefficient
+half, because until now nothing changed the regression STRUCTURE between spans.
+Both halves of the ssprep/restor pair now carry it; it is byte-identical on
+every path that leaves the design alone (verified: full parity unchanged).
+
+`outlier=auto` (`Otlrev=2`) is left **fatal**, not silent: it needs each span to
+re-run the automatic identification (`Ltstao`/`Ltstls` back ON, revdrv.f:517's
+`Begtst = Endspn - Otlwin` test window, rmatot's save-and-re-enter arm, and the
+per-span `rmatot` at revdrv.f:723) — a sub-engine `run_x11_span` does not have.
+`outlierwin=` is only reachable from it. Measured delta if it were ignored:
+sar 1.2e+0.
+
+Gated by `extra/airline_history-outlier-{reg,pre,auto-keep,remove}`.

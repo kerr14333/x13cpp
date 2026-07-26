@@ -25,6 +25,7 @@
 #include "common/x13context.hpp"
 #include "driver/run_x11_span.hpp"
 #include "x11/slidingspans.hpp"      // restor_span
+#include "driver/rev_outlier.hpp"  // rmotrv, chkorv (held-back outliers)
 #include "specparse/specparse.hpp"   // dfdate, addate
 #include "gen/model.hpp"            // prm:: regression-type constants (PRG*), AR/MA
 #include "gen/notset.hpp"           // prm::DNOTST (prtrev's "no such estimate yet")
@@ -489,9 +490,12 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // very first span. (That restore is itself new -- ssprep.f:81-95's
     // regression half had been skipped as "Nb==0", which was true until a
     // span-replay spec carried a regression{} group.)
+    // revdrv.f:116-126 -- `otlfix` outlives the fixreg block: chkorv re-adds a
+    // held-back outlier with its coefficient FIXED when fixreg=(outlier).
+    bool otlfix = false;
     if (rev.nrvfxr > 0 &&
         ((ctx.model.nb > 0 && ctx.model.iregfx < 3) || ctx.xrgmdl.nbx > 0)) {
-        bool tdfix = false, holfix = false, usrfix = false, otlfix = false;
+        bool tdfix = false, holfix = false, usrfix = false;
         for (int i = 1; i <= rev.nrvfxr; ++i) {
             switch (rev.rvfxrg(i)) {
             case 1: tdfix = true; break;
@@ -580,6 +584,49 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
         }
     }
 
+    // revdrv.f:296-306 -- HOLD BACK the outliers dated after the first revision
+    // date. Not behind any flag: a span ending at date T must not know about an
+    // outlier dated after T, so every outlier-type regressor past Beglup comes
+    // out of the design now and chkorv puts it back when a span's model span
+    // reaches it. `outlier=` only decides whether they are SAVED for that
+    // re-introduction (keep/auto) or simply dropped (remove).
+    //   Placed after the Revfxx block rather than before it as in revdrv; the
+    //   two touch disjoint state (the regARIMA design vs the x11reg store).
+    RevOtlStore otr;
+    if (has_model) {
+        // revdrv.f:275-287 -- `outlier=` (OTLDIC = 'keepremoveauto', so the
+        // DEFAULT is keep=0; remove=1, auto=2). Below 2 the oracle switches the
+        // per-span automatic identification OFF, which is what this port does
+        // unconditionally (run_x11_span never re-identifies), so keep/remove
+        // need no Ltstao/Ltstls/Ltsttc handling here. At 2 it switches it ON --
+        // and that, plus rmatot's save-and-re-enter arm and the per-span rmatot
+        // at revdrv.f:723, is a whole unported sub-engine. Fatal rather than
+        // silent: measured, `auto` moves sar 1.2e+0 against a 5e-3 tolerance.
+        if (rev.otlrev >= 2) {
+            errhdr(ctx);
+            writln(ctx,
+                   "ERROR: history{outlier=auto} (per-span automatic outlier "
+                   "identification) is not yet ported.",
+                   stdio::STDERR, ctx.units.mt2, true);
+            abend(ctx);
+            return false;
+        }
+        // revdrv.f:290-295 -- outlier=remove: drop the outliers the MAIN run's
+        // outlier{} identified, so no span inherits a find it could not have
+        // made itself.
+        if (rev.otlrev == 1) {
+            rmatot(ctx, rev.otlrev, ctx.arima.nrxy);
+            if (ctx.error.lfatal) return false;
+        }
+        const bool lotlrv = (rev.otlrev == 0 || rev.otlrev == 2);
+        rmotrv(ctx, begspn_full, beglup, ctx.arima.nrxy, otr, lotlrv);
+        if (ctx.error.lfatal) return false;
+    }
+    // revdrv.f:181/484-488 -- `addreg`. True whenever a model is estimated,
+    // EXCEPT under Fixper, where a span whose model span was pulled back to the
+    // fixed period must not gain a regressor the estimation would not see.
+    bool addreg = has_model;
+
     const int nspan = endrev - begrev + 1;         // includes the final full span
     std::vector<double> cncsa(nspan + 1, 0.0), cnctrn(nspan + 1, 0.0);
     std::vector<double> cncch(nspan + 1, 0.0);     // concurrent SA % change (putrev)
@@ -652,6 +699,11 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             addate(begspn_full, ny, nlen - 1, endspn_i);
             int endmdl_i[2] = {endspn_i[0], endspn_i[1]};
             if (fixper > 0) {
+                // revdrv.f:484-488 -- addreg is ON only in the spans whose own
+                // end IS the fixed period, i.e. the ones that actually
+                // re-estimate; in between, the model span is pulled back and a
+                // newly-defined outlier must wait.
+                addreg = (endmdl_i[1] == fixper);
                 if (endmdl_i[1] != fixper) {
                     if (endmdl_i[1] < fixper) endmdl_i[0] -= 1;
                     endmdl_i[1] = fixper;
@@ -667,6 +719,16 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             dfdate(endspn_i, endmdl_i, ny, nend_mdl);
             if (nend_mdl < 0) nend_mdl = 0;
             if (nend_mdl >= nlen) nend_mdl = 0;    // defensive: keep >=1 obs
+        }
+        // revdrv.f:587-593 -- put back every held-back outlier this span's MODEL
+        // span now covers (`i - nend`, not `i`: with a modelspan/Fixper end the
+        // estimation stops short of the span end, and an outlier past that
+        // point is still undefined for the fit). chkorv re-snapshots the design
+        // so the NEXT span's restor keeps it.
+        if (addreg && i > begrev && !otr.empty()) {
+            chkorv(ctx, begspn_full, i - nend_mdl, otr, otlfix, ctx.arima.nrxy,
+                   /*lmdl=*/true);
+            if (ctx.error.lfatal) return false;
         }
         if (!run_x11_span(ctx, trnsrs_full, has_model, nlen, nfcst_full,
                           /*nbcst=*/0, /*nbcst2=*/0, lsp, nend_mdl))

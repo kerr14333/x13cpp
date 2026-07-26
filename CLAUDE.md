@@ -953,6 +953,44 @@ diagnostics front (force / slidingspans / history) is now closed.
   problem) and the whole model-free case (`sfs` 2.0e+2).
   Gated by `extra/airline_history-x11reg{,-fixx11reg,-nomodel-fixx11reg,-fixmdl}`
   in `test_history_tables.py`.
+- **`history{}`'s HELD-BACK OUTLIERS (`rmotrv`/`chkorv`) — CLOSED, and it was a
+  DEFAULT-path silent wrong-numbers bug that the scouting doc had explicitly
+  measured as CORRECT.** A span ending at date T must not know about an outlier
+  dated after T. `revdrv.f:302` deletes every outlier-type regressor past the
+  first revision date from the design before the loop, and `revdrv.f:589`
+  re-introduces each one when a span's MODEL span (`i - nend`, not `i`) reaches
+  it. **Neither is behind a flag** — `outlier=` only chooses whether the deleted
+  ones are SAVED for re-introduction (keep/auto) or dropped (remove). Ported in
+  `core/src/driver/rev_outlier.cpp`, including chkorv's singularity pass (several
+  outliers on one last observation are not jointly estimable, so its `opref`
+  table keeps one). Measured before/after, tolerances 5e-3 abs / 1e-5 rel:
+  `regression{variables=(ao1957.jan ls1958.jul)}` sar 9.77e-1 → 7.2e-4;
+  `outlier{critical=3.0}` at the DEFAULT `keep` sar 9.20e-1 → 4.3e-4;
+  `outlier=remove` (rmatot.f's delete arm) 1.12e+0 → 4.0e-4. Outliers dated
+  BEFORE the history start were already right and stay so (the negative control).
+  **The method failure is the point.** `tools/history_options_scouting.md` had
+  measured this default and called it correct at "sae 7.1e-6, the ordinary
+  per-span floor" — on a spec with `outlier{critical=3.5}`, where the airline
+  series' largest t is 3.48 and the oracle identifies NOTHING. The flag was
+  exercised over an empty set. That doc's own traps section already names this
+  ("a null measured under the wrong preconditions is not a null") and it was
+  still walked into, because **a saturated precondition looks like a passing
+  gate, not like a zero delta** — when a feature's effect is conditional on a set
+  being non-empty, the probe has to assert the set is non-empty.
+  **The structural fix underneath:** `restor.f:50-64` restores the whole design
+  DICTIONARY (`Ngrp`/`Nb`/`Colttl`/`Colptr`/`Grp`/`Grpptr`/`Rgvrtp`/`Ncxy`/
+  `Nrxy`) and this port's `restor_span` restored only the coefficient half —
+  enough until now, because nothing had ever changed the regression STRUCTURE
+  between spans. Both halves of the ssprep/restor pair now carry it (verified
+  byte-identical on every existing path). Same trap as `fixmdl`/`fixreg`: a
+  structural change that is not mirrored into the ssprep snapshot is undone by
+  the first span's `restor`. **`outlier=auto` is now a clean FATAL rather than
+  silent** (measured sar 1.2e+0 if ignored): it needs each span to re-run the
+  automatic identification — `Ltstao`/`Ltstls` back on, `revdrv.f:517`'s
+  `Begtst = Endspn - Otlwin` window, rmatot's save-and-re-enter arm and the
+  per-span rmatot at `revdrv.f:723` — a sub-engine `run_x11_span` does not have.
+  `outlierwin=` is reachable only from it. Gated by
+  `extra/airline_history-outlier-{reg,pre,auto-keep,remove}`.
 - **`history{sadjlags= trendlags= target=}` — the ALTERNATE REVISION TARGETS —
   CLOSED (at the per-span floor).** The biggest OUTPUT gap left in `history{}`:
   whole columns absent, not values wrong. Each surviving lag adds one column per
@@ -983,9 +1021,9 @@ diagnostics front (force / slidingspans / history) is now closed.
   1yr/2yr pair on both families), `-sadjlags-conc` (`target=concurrent`) and
   `-sadjlags-drop` (an UNSORTED list carrying one lag too long for the span, so
   the sort, the drop and the widened-then-discarded `mxrlag` are all pinned).
-  - Still open, all measured as moving: `outlier=`/`outlierwin=`, `x11outlier=`
-    (shares the `revdrv.f:309-350` block but additionally needs `rmatot.f`),
-    `additivesa=`. Suggested order is in the
+  - Still open, all measured as moving: `x11outlier=`
+    (shares the `revdrv.f:309-350` block), `outlier=auto`/`outlierwin=` (now
+    FATAL rather than silent), `additivesa=`. Suggested order is in the
     scouting doc — note it has now been wrong three times: it ranked `fixreg` as
     cheapest (it needed the rmfix seam), listed `endtable=` as unported (it was
     already correct), and its model-free `x11regression{}` row was measured on a

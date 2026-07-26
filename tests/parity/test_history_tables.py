@@ -34,6 +34,18 @@ meaningless near a zero-crossing. The one exception is `history{fixmdl=yes}`
 re-optimizes, and those specs gate BIT-EXACT (~5e-15) -- see
 RTOL_LEVEL_BY_SPEC / ATOL_REV_BY_SPEC.
 
+The OUTLIER specs (`airline_history-outlier-{reg,pre,auto-keep,remove}`) cover
+rmotrv.f/chkorv.f, the outliers a revisions history HOLDS BACK: a span ending at
+date T must not know about an outlier dated after T, so every outlier-type
+regressor past the first revision date leaves the design before the loop and is
+re-introduced when a span's model span reaches it. That is the DEFAULT path, not
+an option -- `outlier=` only decides whether the removed ones are saved for
+re-introduction. `-pre` is the negative control (outliers BEFORE the start are
+untouched) and `-remove` covers rmatot.f's delete arm. The specs use
+`critical = 3.0` deliberately: at the default critical value airline has no
+outlier over the threshold, so the whole family exercises an empty set and
+passes no matter what the engine does.
+
 The MODEL-SPAN specs (`airline_history-fixper`, `-modelspan`,
 `-fixper-fixmdl`) cover revdrv.f:479-497: `series{modelspan=(,0.per)}` sets
 Fixper and each span's model then stops at the last occurrence of that period

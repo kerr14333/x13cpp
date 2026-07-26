@@ -85,6 +85,23 @@ void ssprep_snapshot(X13Context& ctx) {
     copy(d.b.data(), prm::PB, 1, p.bb.data());
     copylg(m.regfx.data(), prm::PB, 1, p.regfx2.data());
     p.irfx2 = m.iregfx;
+    // ssprep.f:64-76/80 -- the design DICTIONARY. Inert on every path that
+    // leaves the regression structure alone (restor puts back exactly what was
+    // there), and required by the two that do not: rmotrv deletes the outliers
+    // dated after the first revision date before the span loop and chkorv adds
+    // them back as the spans grow (driver/rev_outlier.cpp). Without it every
+    // span's restor would reinstate the main run's Nb/Colttl and undo both.
+    p.ngr2 = m.ngrp;
+    p.ngrt2 = m.ngrptl;
+    p.ncxy2 = m.ncxy;
+    p.nct2 = m.ncoltl;
+    p.cttl = m.colttl.raw();
+    p.gttl = m.grpttl.raw();
+    cpyint(m.colptr.data(), prm::PB + 1, 1, p.clptr.data());
+    cpyint(m.grp.data(), prm::PGRP + 1, 1, p.g2.data());
+    cpyint(m.grpptr.data(), prm::PGRP + 1, 1, p.gptr.data());
+    cpyint(m.rgvrtp.data(), prm::PB, 1, p.rgv2.data());
+    p.nr2 = ctx.arima.nrxy;
     p.nbb = m.nb;
     p.v2 = d.var;
     p.nintv2 = m.nintvl;
@@ -123,6 +140,21 @@ void restor_span(X13Context& ctx) {
     copy(p.bb.data(), prm::PB, 1, d.b.data());
     m.iregfx = p.irfx2;
     copylg(p.regfx2.data(), prm::PB, 1, m.regfx.data());
+    // restor.f:50-64 -- the design dictionary half of the same pair. See the
+    // note in ssprep_snapshot: byte-identical on every path that does not
+    // change the regression structure between spans.
+    m.ngrp = p.ngr2;
+    m.ngrptl = p.ngrt2;
+    m.ncxy = p.ncxy2;
+    m.nb = p.nbb;
+    m.ncoltl = p.nct2;
+    m.colttl = p.cttl.raw();
+    m.grpttl = p.gttl.raw();
+    cpyint(p.clptr.data(), prm::PB + 1, 1, m.colptr.data());
+    cpyint(p.g2.data(), prm::PGRP + 1, 1, m.grp.data());
+    cpyint(p.gptr.data(), prm::PGRP + 1, 1, m.grpptr.data());
+    cpyint(p.rgv2.data(), prm::PB, 1, m.rgvrtp.data());
+    ctx.arima.nrxy = p.nr2;
     d.var = p.v2;
     m.nintvl = p.nintv2;
     m.nextvl = p.nextv2;

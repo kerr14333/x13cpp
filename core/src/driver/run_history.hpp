@@ -70,14 +70,23 @@
 //     whose target estimate does not exist. `target=concurrent` (Cnctar) makes
 //     every column a revision FROM the concurrent estimate rather than TO the
 //     final one.
-//   * No regression{}/outlier{}/x11regression{}. Without
+//   * The HELD-BACK OUTLIERS (rmotrv.f / chkorv.f, driver/rev_outlier.hpp) --
+//     every outlier-type regressor dated after the first revision date is taken
+//     out of the design before the loop and put back when a span's model span
+//     reaches it. This is the DEFAULT path, not an option: a span ending at date
+//     T must not know about an outlier dated after T. `history{outlier=remove}`
+//     (rmatot.f's delete arm) additionally strikes the ones an outlier{} spec
+//     identified on the main run. `outlier=auto` is FATAL -- it needs per-span
+//     automatic identification, which this driver does not do.
+//   * Without
 //     fixmdl the model is re-estimated each span (restor_span resets Arimap to
 //     the main run's converged snapshot as the per-span starting values, then
 //     rgarma re-optimizes).
 //
-// Still NOT ported from history{}'s option surface, all parsed and currently
-// SILENT: outlier= / outlierwin= (Otlrev/Otlwin -- the per-span outlier
-// re-identification) and additivesa= (Rvdiff, additive-mode only). refresh=
+// Still NOT ported from history{}'s option surface: outlier=auto / outlierwin=
+// (Otlrev==2 / Otlwin -- the per-span outlier re-identification), which FATALS
+// rather than running silently, and additivesa= (Rvdiff, additive-mode only,
+// still silent). refresh=
 // (Lrfrsh) is measured structurally INERT and deliberately not ported;
 // transparent= (Rvtran) is print surface. See tools/history_options_scouting.md.
 #ifndef X13_DRIVER_RUN_HISTORY_HPP
