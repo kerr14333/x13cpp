@@ -319,3 +319,31 @@ per-span `rmatot` at revdrv.f:723) — a sub-engine `run_x11_span` does not have
 sar 1.2e+0.
 
 Gated by `extra/airline_history-outlier-{reg,pre,auto-keep,remove}`.
+
+### `x11outlier=` — transcribed, INERT, and the blocker is not in `history{}`
+
+`revdrv.f:332-350` (pre-loop) and `:731-741` (per span) run the same two
+routines again on the X11REGRESSION design, with `loadxr(false)`/`loadxr(true)`
+swapping that store into the working model arrays. `x11outlier=` (`Rvxotl`,
+DEFAULT **yes**) picks which: yes deletes the automatically identified x11reg
+outliers so each span re-identifies its own, no holds them back by date the way
+the regARIMA side does. Both blocks are ported.
+
+**They are currently inert, and the measurement says why.** Reaching them needs
+the x11reg design to CARRY automatic outliers, which needs
+`x11regression{critical=}` → `Otlxrg`. That argument is accepted by the parser
+and **silently dropped**: `core/src/x11/x11reg.cpp:541` hardcodes
+`setcv(nobxot, 0.05)` and never reads `ctx.x11reg.critxr`; `sigma=` (`Sigxrg`)
+is dropped the same way (`sigxrg` is a hardcoded 2.5). So the engine identifies
+a different outlier set from the oracle **on the main run** — measured d11
+1.7e-4 relative on airline + `critical=3.0` with no `history{}` in the spec at
+all. Instrumenting `ctx.xrgmdl` at the pre-loop block confirms it: six
+trading-day columns, no outliers, so the blocks do nothing and adding them moves
+the history numbers by exactly zero (sar stays 5.2e-1 default / 7.5e-1 `no` /
+5.3e-1 model-free).
+
+**That is an `x11regression{}` front item, not a `history{}` one**, and it has to
+land before `x11outlier=` can be gated — measuring this family today measures
+the main-run gap. Note also what it says about the earlier `x11regression{}`
+measurements in this document: they were taken on `variables=(td)` alone, where
+`critical=` never appears, so they are unaffected.

@@ -26,6 +26,7 @@
 #include "driver/run_x11_span.hpp"
 #include "x11/slidingspans.hpp"      // restor_span
 #include "driver/rev_outlier.hpp"  // rmotrv, chkorv (held-back outliers)
+#include "x11/loadxr.hpp"          // loadxr (regARIMA <-> x11reg model swap)
 #include "specparse/specparse.hpp"   // dfdate, addate
 #include "gen/model.hpp"            // prm:: regression-type constants (PRG*), AR/MA
 #include "gen/notset.hpp"           // prm::DNOTST (prtrev's "no such estimate yet")
@@ -621,7 +622,62 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
         const bool lotlrv = (rev.otlrev == 0 || rev.otlrev == 2);
         rmotrv(ctx, begspn_full, beglup, ctx.arima.nrxy, otr, lotlrv);
         if (ctx.error.lfatal) return false;
+        // revdrv.f:305 -- and note what it is keyed on: the STORE being
+        // non-empty, not on anything having been deleted. With `outlier=remove`
+        // and nothing dated after the start, rmatot's deletions are NOT
+        // snapshotted (rmatot.f's own update sits inside its Otlrev>=2 arm) and
+        // the first span's restor puts them straight back. Transcribed.
+        if (!otr.empty()) rev_snapshot_design(ctx);
     }
+    // revdrv.f:332-350 -- the same two routines again, on the X11REGRESSION
+    // design. loadxr(false) swaps that store into the working model arrays, the
+    // manipulation happens there, loadxr(true) saves it back, and restor puts
+    // the regARIMA model back over the top. `x11outlier=` (Rvxotl, DEFAULT yes)
+    // picks which of the two runs: yes deletes the automatically identified
+    // x11reg outliers outright (each span re-identifies its own), no holds them
+    // back by date the way the regARIMA side does.
+    //
+    // TRANSCRIBED BUT CURRENTLY INERT, AND UNGATED -- deliberately, with the
+    // blocker measured. Reaching it needs the x11reg design to CARRY
+    // automatically identified outliers, which needs `x11regression{critical=}`
+    // -> Otlxrg. That argument is accepted by the parser and silently dropped:
+    // x11reg.cpp:541 hardcodes `setcv(nobxot, 0.05)` and never reads
+    // ctx.x11reg.critxr, and `sigma=` is dropped the same way -- so the engine
+    // identifies a different outlier set from the oracle on the MAIN run
+    // (measured d11 1.7e-4 relative on airline + critical=3.0, with no
+    // history{} involved at all). Until that is fixed, an engine-vs-oracle
+    // history measurement on this family measures the main-run gap: airline +
+    // `x11regression{variables=(td) critical=3.0}` + `history{}` sits at sar
+    // 5.2e-1 (default) / 7.5e-1 (`x11outlier=no`) / 5.3e-1 (model-free) and does
+    // NOT move when this block is added, because ctx.xrgmdl holds six trading-day
+    // columns and no outliers. Verified by instrumenting the store here.
+    RevOtlStore otx;
+    // revdrv.f:246 -- `mdl2x`, the MAIN run's Endxrg, the x11reg counterpart of
+    // mdl2. Each span's Endxrg is its own end unless the main run's x11reg span
+    // ends inside it (revdrv.f:499-513).
+    const int mdl2x[2] = {ctx.x11reg.endxrg(1), ctx.x11reg.endxrg(2)};
+    if (ctx.hiddn.ixreg > 0) {
+        loadxr(ctx, false);
+        if (rev.rvxotl) {
+            rmatot(ctx, 1, ctx.arima.nrxy);
+            if (ctx.error.lfatal) return false;
+        }
+        rmotrv(ctx, begspn_full, beglup, ctx.arima.nrxy, otx, !rev.rvxotl);
+        if (ctx.error.lfatal) return false;
+        loadxr(ctx, true);
+        if (has_model) restor_span(ctx);
+    }
+    // revdrv.f:381 -- CALL ssprep(Lmodel,F,F), UNCONDITIONALLY, right before the
+    // span loop. This is the one that actually makes the two blocks above stick:
+    // :306's conditional ssprep only fires when rmotrv SAVED something, so with
+    // `outlier=remove` (which deletes without saving) nothing would be
+    // snapshotted and the first span's restor would put every deleted outlier
+    // straight back -- measured, that costs sar 1.19e+0. Note the order it
+    // implies: with x11regression{} present, :351's restor runs FIRST and
+    // reinstates the regARIMA design from whatever the snapshot then held, so
+    // a `remove` that :306 did not snapshot really is undone on that path. Both
+    // are transcribed as written.
+    if (has_model) rev_snapshot_design(ctx);
     // revdrv.f:181/484-488 -- `addreg`. True whenever a model is estimated,
     // EXCEPT under Fixper, where a span whose model span was pulled back to the
     // fixed period must not gain a regressor the estimation would not see.
@@ -729,6 +785,37 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             chkorv(ctx, begspn_full, i - nend_mdl, otr, otlfix, ctx.arima.nrxy,
                    /*lmdl=*/true);
             if (ctx.error.lfatal) return false;
+        }
+        // revdrv.f:731-741 -- the x11regression half, per span. With
+        // `x11outlier=yes` (the DEFAULT) every span starts by deleting the
+        // automatically identified x11reg outliers, so it re-identifies its own
+        // on its own data; with `no` they are held back by date and chkorv adds
+        // each one back as the spans reach it. Note `lmdl=false`: chkorv does
+        // NOT re-snapshot on this branch -- the change is saved into the x11reg
+        // store by loadxr(true) instead, and nothing restores that store.
+        if (ctx.hiddn.ixreg > 0) {
+            // revdrv.f:499-513 -- Endxrg: this span's own end, unless Fxprxr is
+            // set or the main run's x11reg span ends inside it, in which case
+            // that end. nend_xrg is how far short of the span end it stops.
+            int nend_xrg = 0;
+            if (ctx.x11reg.fxprxr <= 0) {
+                int endspn_x[2];
+                addate(begspn_full, ny, nlen - 1, endspn_x);
+                int nendx = 0;
+                dfdate(endspn_x, mdl2x, ny, nendx);
+                if (nendx > 0) nend_xrg = nendx;
+            }
+            loadxr(ctx, false);
+            if (i > begrev && !otx.empty() && !rev.rvxotl) {
+                // The x11reg model span end (Endxrg), not the regARIMA one.
+                chkorv(ctx, begspn_full, i - nend_xrg, otx, otlfix,
+                       ctx.arima.nrxy, /*lmdl=*/false);
+            } else if (rev.rvxotl) {
+                rmatot(ctx, 1, ctx.arima.nrxy);
+            }
+            if (ctx.error.lfatal) return false;
+            loadxr(ctx, true);
+            if (has_model) restor_span(ctx);
         }
         if (!run_x11_span(ctx, trnsrs_full, has_model, nlen, nfcst_full,
                           /*nbcst=*/0, /*nbcst2=*/0, lsp, nend_mdl))

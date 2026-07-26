@@ -120,12 +120,14 @@ void rmatot(X13Context& ctx, int otlrev, int nrxy) {
     // NOT here: it only means anything when each span re-runs the automatic
     // identification, which this port does not do. run_history fatals on
     // otlrev>=2 before reaching this. See the note there.
+    //
+    // Note what that means for the SNAPSHOT: rmatot.f's ssprep-style update
+    // (:107-126) sits INSIDE that same `Otlrev.ge.2 .and. natrtl.gt.0` guard,
+    // so on the delete-only path the Fortran does NOT re-snapshot -- the
+    // deletion sticks only if the rmotrv that follows re-snapshots for its own
+    // reasons (revdrv.f:305, keyed on ITS store being non-empty). Transcribed:
+    // nothing is written here.
     (void)otlrev;
-    // revdrv.f:305's ssprep is for rmotrv's store; rmatot updates the snapshot
-    // itself (rmatot.f:107-126), and does so on the DELETE path too -- otherwise
-    // the first span's restor would put every automatic outlier straight back.
-    snapshot_design(ctx);
-    copylg(m.regfx.data(), prm::PB, 1, ctx.ssprep.regfx2.data());
 }
 
 void rmotrv(X13Context& ctx, const int* begxy, int begrev, int nrxy,
@@ -160,25 +162,20 @@ void rmotrv(X13Context& ctx, const int* begxy, int begrev, int nrxy,
         dlrgef(ctx, icol, nrxy, 1);
         if (ctx.error.lfatal) return;
     }
-    // revdrv.f:305 -- IF(Notrtl.gt.0) CALL ssprep(Lmodel,F,F). Faithfully keyed
-    // on the STORE being non-empty, not on anything having been deleted: with
-    // lotlrv false the columns are dropped and the snapshot is NOT re-taken, so
-    // the first span's restor puts them straight back. (Which is consistent --
-    // `outlier=remove` reaches here only after rmatot has already deleted the
-    // automatic ones and re-snapshotted.)
-    if (!st.empty()) {
-        snapshot_design(ctx);
-        // revdrv.f:305 calls the FULL ssprep, so the fix flags -- which dlrgef
-        // shifted down with the columns -- are re-snapshotted too. chkorv's own
-        // inline update (chkorv.f:189-202) pointedly does NOT include them;
-        // that asymmetry is the Fortran's, and it is reproduced by keeping this
-        // pair here and out of chkorv. (Calling the whole ssprep_snapshot would
-        // also re-take ctx.saved.lterm0/nterm0/ksdev0 from the MAIN run's
-        // already-resolved values, which the span loop reads back -- the same
-        // state-leak trap xrgdrv's span_mode documents.)
-        copylg(m.regfx.data(), prm::PB, 1, ctx.ssprep.regfx2.data());
-        ctx.ssprep.irfx2 = m.iregfx;
-    }
+}
+
+void rev_snapshot_design(X13Context& ctx) {
+    snapshot_design(ctx);
+    // revdrv.f:305 is a FULL ssprep, so the fix flags -- which dlrgef shifted
+    // down with the deleted columns -- are re-snapshotted too. chkorv's own
+    // inline update (chkorv.f:189-202) pointedly does NOT include them; that
+    // asymmetry is the Fortran's and is reproduced by keeping this pair here
+    // and out of chkorv. (Calling the whole ssprep_snapshot would also re-take
+    // ctx.saved.lterm0/nterm0/ksdev0 from the MAIN run's already-resolved
+    // values, which the span loop reads back -- the same state-leak trap
+    // xrgdrv's span_mode documents.)
+    copylg(ctx.model.regfx.data(), prm::PB, 1, ctx.ssprep.regfx2.data());
+    ctx.ssprep.irfx2 = ctx.model.iregfx;
 }
 
 void chkorv(X13Context& ctx, const int* begxy, int endrev, RevOtlStore& st,

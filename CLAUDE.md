@@ -991,6 +991,21 @@ diagnostics front (force / slidingspans / history) is now closed.
   per-span rmatot at `revdrv.f:723` — a sub-engine `run_x11_span` does not have.
   `outlierwin=` is reachable only from it. Gated by
   `extra/airline_history-outlier-{reg,pre,auto-keep,remove}`.
+  **`x11outlier=` (`Rvxotl`) is transcribed alongside it — `revdrv.f:332-350` +
+  `:731-741`, the same two routines on the X11REGRESSION design via
+  `loadxr(false)`/`loadxr(true)` — but is INERT and deliberately UNGATED, and
+  the blocker is not in `history{}`.** Reaching it needs the x11reg design to
+  carry automatic outliers, i.e. `x11regression{critical=}` → `Otlxrg`, and
+  **that argument is accepted by the parser and silently dropped**:
+  `x11reg.cpp:541` hardcodes `setcv(nobxot, 0.05)` instead of reading
+  `ctx.x11reg.critxr`, and `sigma=` (`Sigxrg`) is a hardcoded 2.5 the same way.
+  So the engine identifies a different outlier set from the oracle **on the main
+  run** — measured d11 1.7e-4 relative on airline + `critical=3.0` with no
+  `history{}` in the spec at all — and a history measurement on this family
+  measures that, not the flag (instrumenting `ctx.xrgmdl` at the block shows six
+  trading-day columns and no outliers; adding the blocks moves nothing).
+  **`x11regression{critical=}`/`sigma=` is the next thing to port on that
+  front**, and it is an x11regression item, not a history one.
 - **`history{sadjlags= trendlags= target=}` — the ALTERNATE REVISION TARGETS —
   CLOSED (at the per-span floor).** The biggest OUTPUT gap left in `history{}`:
   whole columns absent, not values wrong. Each surviving lag adds one column per

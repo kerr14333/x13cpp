@@ -53,6 +53,14 @@ void rmatot(X13Context& ctx, int otlrev, int nrxy);
 void rmotrv(X13Context& ctx, const int* begxy, int begrev, int nrxy,
             RevOtlStore& st, bool lotlrv);
 
+// revdrv.f:305's `IF(Notrtl.gt.0) CALL ssprep(Lmodel,F,F)` -- re-take the design
+// half of the ssprep snapshot so a structural change survives the next span's
+// restor. The CALLER does this, exactly where revdrv does: only after the
+// regARIMA rmotrv, and only when that store is non-empty. The x11regression
+// branch (revdrv.f:332-350) has no such call -- its changes stick because they
+// are saved back into the x11reg store by loadxr(true), which nothing restores.
+void rev_snapshot_design(X13Context& ctx);
+
 // chkorv.f -- re-introduce every stored outlier that is now defined, i.e. dated
 // at or before `endrev` (this span's MODEL span end, revdrv.f:588's `i-nend`),
 // removing it from the store as it goes. When more than one outlier lands

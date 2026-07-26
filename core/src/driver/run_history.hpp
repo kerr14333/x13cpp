@@ -78,6 +78,11 @@
 //     (rmatot.f's delete arm) additionally strikes the ones an outlier{} spec
 //     identified on the main run. `outlier=auto` is FATAL -- it needs per-span
 //     automatic identification, which this driver does not do.
+//     `history{x11outlier=}` (Rvxotl) applies the same pair to the
+//     x11regression design (revdrv.f:332-350 / :731-741, via loadxr) and is
+//     transcribed, but is INERT until x11regression{critical=} is honoured --
+//     that argument is parsed and dropped, so the x11reg store never carries an
+//     automatic outlier. See the note at the call site.
 //   * Without
 //     fixmdl the model is re-estimated each span (restor_span resets Arimap to
 //     the main run's converged snapshot as the per-span starting values, then
