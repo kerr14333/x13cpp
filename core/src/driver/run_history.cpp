@@ -411,10 +411,12 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // the ARMA parameters still re-estimate, so this rides the ordinary per-span
     // re-estimation floor rather than being bit-exact.
     //
-    // Iregfx/Regfx are NOT part of this port's ssprep snapshot (restor_span
-    // restores Arimap/Arimaf and the x11 filter state only), so unlike the fixmdl
-    // block below there is no snapshot copy to keep in step -- setting the live
-    // model once here persists across every span.
+    // Like fixmdl below, the fix only STICKS if the ssprep SNAPSHOT is fixed as
+    // well: restor_span (restor.f) now restores B/Regfx/Iregfx from it before
+    // every span, so writing only the live model here would be undone by the
+    // very first span. (That restore is itself new -- ssprep.f:81-95's
+    // regression half had been skipped as "Nb==0", which was true until a
+    // span-replay spec carried a regression{} group.)
     if (rev.nrvfxr > 0 &&
         ((ctx.model.nb > 0 && ctx.model.iregfx < 3) || ctx.xrgmdl.nbx > 0)) {
         bool tdfix = false, holfix = false, usrfix = false, otlfix = false;
@@ -442,6 +444,9 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    ctx.xrgmdl.regfxx, ctx.xrgmdl.nbx, ctx.xrgmdl.rgxvtp,
                    ctx.xrgmdl.nusxrg, ctx.usrxrg.usxtyp, ctx.xrgmdl.nusxrg,
                    ctx.xrgmdl.usrxfx);
+        // Mirror the result into the ssprep snapshot restor_span restores from.
+        copylg(ctx.model.regfx.data(), prm::PB, 1, ctx.ssprep.regfx2.data());
+        ctx.ssprep.irfx2 = ctx.model.iregfx;
     }
 
     // revdrv.f:250-262 -- history{fixmdl=yes} (Revfix): hold the WHOLE model at
@@ -457,8 +462,12 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             ctx.model.arimaf(i) = true;
             ctx.ssprep.fxa(i) = true;
         }
-        for (int i = 1; i <= ctx.model.nb; ++i) ctx.model.regfx(i) = true;
+        for (int i = 1; i <= ctx.model.nb; ++i) {
+            ctx.model.regfx(i) = true;
+            ctx.ssprep.regfx2(i) = true;    // restor_span restores from here
+        }
         ctx.model.iregfx = 3;
+        ctx.ssprep.irfx2 = 3;
     }
 
     const int nspan = endrev - begrev + 1;         // includes the final full span

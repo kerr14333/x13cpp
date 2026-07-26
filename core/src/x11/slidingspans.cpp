@@ -77,6 +77,15 @@ void ssprep_snapshot(X13Context& ctx) {
         p.pri2 = ctx.prior.priadj;
     copy(d.arimap.data(), prm::PARIMA, 1, p.ap2.data());
     copylg(m.arimaf.data(), prm::PARIMA, 1, p.fxa.data());
+    // ssprep.f:81-95 -- the REGRESSION half. Previously skipped as "Nb==0", true
+    // of every span-replay spec in the corpus until one carried a regression{}
+    // group: without it each span starts its regression from whatever the
+    // PREVIOUS span converged to instead of from the main run, and the spans
+    // drift (measured 8.4e-3 in sfs on airline_slidingspans-td).
+    copy(d.b.data(), prm::PB, 1, p.bb.data());
+    copylg(m.regfx.data(), prm::PB, 1, p.regfx2.data());
+    p.irfx2 = m.iregfx;
+    p.nbb = m.nb;
     p.v2 = d.var;
     p.nintv2 = m.nintvl;
     p.nextv2 = m.nextvl;
@@ -108,6 +117,12 @@ void restor_span(X13Context& ctx) {
     ctx.prior.priadj = p.pri2;
     copy(p.ap2.data(), prm::PARIMA, 1, d.arimap.data());
     copylg(p.fxa.data(), prm::PARIMA, 1, m.arimaf.data());
+    // restor.f:66-70 -- the regression half, the counterpart of the ssprep
+    // block above. Every span must start from the MAIN run's regression state,
+    // not the previous span's.
+    copy(p.bb.data(), prm::PB, 1, d.b.data());
+    m.iregfx = p.irfx2;
+    copylg(p.regfx2.data(), prm::PB, 1, m.regfx.data());
     d.var = p.v2;
     m.nintvl = p.nintv2;
     m.nextvl = p.nextv2;
@@ -119,8 +134,9 @@ void restor_span(X13Context& ctx) {
     d.lndtcv = p.dtcv2;
 }
 
-// ssmdl.f, scoped to Nb==0 (see hpp): only the Ssinit==1 "fix all model
-// parameters" tail is reachable.
+// ssmdl.f: the Ssinit==1 "fix all model parameters" tail, both halves (ARMA and
+// regression). The earlier Nb==0 scoping was only ever true because no
+// span-replay spec carried a regression{} group.
 void ssmdl_fix_model(X13Context& ctx) {
     sspinp_cmn& si = ctx.sspinp;
     if (ctx.model.nb <= 0) si.nssfxr = 0;
@@ -143,7 +159,18 @@ void ssmdl_fix_model(X13Context& ctx) {
             ctx.ssprep.fxa(i) = true;
             ctx.model.arimaf(i) = true;
         }
-        // (Nb==0: the B/Regfx/Iregfx/Userfx fixing lines are no-ops.)
+        // ssmdl.f:345-350 -- the REGRESSION half of the same fix. `regchg` (the
+        // outlier-regressor-changed path) is not reachable here, so the B
+        // snapshot is unconditional. Snapshot AND live copy, for the same reason
+        // as Arimap/Arimaf above.
+        copy(ctx.mdldat.b.data(), prm::PB, 1, ctx.ssprep.bb.data());
+        for (int i = 1; i <= prm::PB; ++i) ctx.ssprep.regfx2(i) = true;
+        if (ctx.model.iregfx < 3) ctx.model.iregfx = 3;
+        for (int i = 1; i <= ctx.model.nb; ++i) ctx.model.regfx(i) = true;
+        ctx.ssprep.irfx2 = 3;
+        // (bakusr/Userfx needs user-defined regressors, which this driver's
+        // scope excludes.)
+        if (!ctx.model.userfx) ctx.model.userfx = ctx.usrreg.ncusrx > 0;
     }
 }
 
