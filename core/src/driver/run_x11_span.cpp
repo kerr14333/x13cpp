@@ -12,6 +12,8 @@
 #include "regarima/regvar.hpp"       // regvar
 #include "automdl/automd_finalize.hpp"  // rmfix, addfix (arima.f:283/910)
 #include "transform/transform.hpp"   // trnfcn (arima.f:157's estimation input)
+#include "driver/run_seats.hpp"      // seats_restore_mean, seats_decompose
+#include "x11/slidingspans.hpp"      // ssrit (seatdg.f's span store)
 #include "x11/x11parts.hpp"          // x11pt1, x11pt2, x11pt3
 #include "x11/xrgdrv.hpp"            // xrgdrv (x11ari.f:88-95, per span)
 #include "x11/x11drv.hpp"            // setxpt, x11int, chkadj, extend, adjreg, regeff
@@ -25,7 +27,7 @@ namespace x13 {
 
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
-                   int lsp, int nend_mdl) {
+                   int lsp, int nend_mdl, bool lseats) {
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
 
@@ -33,7 +35,7 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     ctx.extend.nfcst = nfcst;
     ctx.extend.nbcst = nbcst;
     ctx.extend.nbcst2 = nbcst2;
-    const bool lsadj = true;   // Lx11
+    const bool lsadj = true;   // x11ari.f:76 -- Lx11.or.Lseats, true either way
     const int fctdrp = ctx.arima.fctdrp;
     int nfdrp = nfcst;
     if (!lsadj && fctdrp > 0) nfdrp = std::max(0, nfcst - fctdrp);
@@ -123,8 +125,8 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
 
     x11int(ctx);
 
-    const bool lmodel = has_model, lgraf = false, lgrfxr = false, lseats = false;
-    const bool lx11 = true;
+    const bool lmodel = has_model, lgraf = false, lgrfxr = false;
+    const bool lx11 = !lseats;   // x11ari.f: the two are alternatives
     x11pt1(ctx, lmodel, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
 
@@ -319,8 +321,49 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
 
     x11pt2(ctx, lmodel, lx11, lseats, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
-    x11pt3(ctx, lgraf, /*lttc=*/false);
-    if (ctx.error.lfatal) return false;
+
+    if (lseats) {
+        // x11ari.f:204-243 -- with Lseats the span replaces x11pt3 with the
+        // SEATS chain (seats -> seatad -> seatfc -> seatdg). x11pt2 above still
+        // runs: x11ari.f:199 gates it on `(.not.Lcmpaq).or.Lx11`, so a
+        // non-composite SEATS run takes it exactly as the X-11 one does.
+        seats_restore_mean(ctx);
+        if (!seats_decompose(ctx)) return false;
+        if (ctx.error.lfatal) return false;
+
+        // seatdg.f:101-110 -- the sliding-spans store, the SEATS counterpart of
+        // x11pt3's `ssrit(Sts,...,2)` / `ssrit(Stci,...,3)` pair. Seatsf/Seatsa
+        // are PLEN buffers in the same absolute index space as Series (they are
+        // written by seatad over Pos1bk..Posffc), whereas this port's published
+        // components are 0-indexed from Begspn -- hence the lift into `buf`
+        // below. Scale matches: seatad.f:33-35 divides Seatsf by 100 under
+        // Muladd!=1 and ssrit multiplies it straight back, which is the ratio
+        // scale ctx.seats_seasonal_add already carries (= the s10 save table).
+        if (ctx.hiddn.issap == 2) {
+            const int pos1ob_s = ctx.x11ptr.pos1ob;
+            const int posfob_s = ctx.x11ptr.posfob;
+            auto lift = [&](const std::vector<double>& src) {
+                std::vector<double> buf(prm::PLEN, 0.0);
+                const int n = static_cast<int>(src.size());
+                for (int k = 0; k < n; ++k) {
+                    const int i = pos1ob_s + k;          // 1-based buffer index
+                    if (i >= 1 && i <= prm::PLEN) buf[i - 1] = src[k];
+                }
+                return buf;
+            };
+            const std::vector<double> sf = lift(ctx.seats_seasonal_add);
+            // Lrndsa / Iyrt>0 (the rounded and forced SA series) select Stsarn /
+            // Setsa2 instead -- neither is produced by this port's SEATS path,
+            // so the plain Seatsa branch is the only reachable one.
+            const std::vector<double> sa_v = lift(ctx.seats_sa);
+            const double* series = ctx.inpt.series.data();
+            ssrit(ctx, sf.data(), pos1ob_s, posfob_s, 2, series);
+            ssrit(ctx, sa_v.data(), pos1ob_s, posfob_s, 3, series);
+        }
+    } else {
+        x11pt3(ctx, lgraf, /*lttc=*/false);
+        if (ctx.error.lfatal) return false;
+    }
 
     return !ctx.error.lfatal;
 }

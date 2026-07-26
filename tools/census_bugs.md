@@ -644,3 +644,46 @@ never have one of their own. Two observable consequences:
   corpus specs (`extra/airline_history-sadjlags*`) give BOTH lists the same
   1yr/2yr pair or neither, which is the only configuration where the flag means
   what its name says.
+- **Third face, same defect:** with `trendlags=(12 24)` and NO `sadjlags=` at
+  all, `Ntarsa==0` and `Lr1y2y==T` reach `prtrev` together. `prtrev.f:90-91`
+  sizes the SA table to `0+1 = 1` column, and `prtrev.f:202`'s
+  `IF(Lr1y2y.and.i2.gt.0)` sits inside `DO i2=0,Ntargt` — which with
+  `Ntargt==0` runs the `i2==0` pass only — so the single column is never
+  assigned. The port omits the column rather than emit a fabricated value
+  (`run_history.cpp`'s `ncol_sa` guard carries the reasoning at the line).
+  Ungated: no corpus spec sets `trendlags=` without `sadjlags=`.
+
+## CB-23 — `chkorv.f:54-58`: the span-outlier end-date guard can never fire
+
+`chkorv` decides whether a held-back outlier may be re-introduced into the
+span's design. The intent is plainly "a ramp/temporary-LS/quadratic needs BOTH
+endpoints inside the revision span; everything else needs only its start":
+
+```fortran
+      IF(((otltyp.eq.RP.or.otltyp.eq.TLS.or.otltyp.eq.QI.or.
+     &       otltyp.eq.QD).and.(begotl.le.Endrev.and.
+     &    endotl.le.Endrev)).or.((otltyp.ne.RP.and.otltyp.ne.TLS.or.
+     &       otltyp.ne.QI.or.otltyp.ne.QD).and.
+     &    begotl.le.Endrev))THEN
+```
+
+The second disjunct's type test was meant to be `.not.(RP.or.TLS.or.QI.or.QD)`.
+Written with mixed connectives it groups (Fortran binds `.and.` tighter than
+`.or.`) as `(t/=RP .and. t/=TLS) .or. t/=QI .or. t/=QD`, which is **true for
+every outlier type** — `RP` and `TLS` each satisfy `t/=QI`, and `QI`/`QD` each
+satisfy the leading pair. So the second disjunct reduces to `begotl<=Endrev`,
+and since the first disjunct implies it, the whole condition is just
+`begotl <= Endrev`. A ramp whose END lies past the revision span is re-added
+regardless.
+
+Note `chkorv.f:69-70`'s neighbouring `nlast` test spells the same intent with
+`.and.` throughout and is correct — which is what makes this a typo rather than
+a deliberate rule.
+
+- **Port:** reproduced verbatim (`core/src/driver/rev_outlier.cpp` tests
+  `begotl <= endrev` alone and keeps `span_type` only for the `nlast` test).
+  This was initially mis-ported as the *intended* ternary — the comment named
+  the quirk and the code then "fixed" it — and was caught in review.
+- **Reachability:** needs an `rp`/`tls`/`qi`/`qd` regressor in a `history{}`
+  run whose end date falls past the revision span. No corpus spec has one, so
+  it is currently unreachable and ungated.

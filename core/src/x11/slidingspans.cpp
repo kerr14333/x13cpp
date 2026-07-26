@@ -38,6 +38,46 @@ int sfmax_span(int lterm, const int* lter, int ny) {
     return sfmax;
 }
 
+// getsma.f -- the first-order seasonal MA parameter of the fitted model, or 0
+// when the model has none. Ported asymmetry, verbatim: the lag scan finds the
+// lag equal to Sp but then returns `Arimap(beglag)`, the parameter of the
+// operator's FIRST lag, not of the lag it matched. The two coincide whenever
+// the seasonal MA operator leads with lag Sp -- which is every model this
+// corpus fits -- so the difference is unobservable here; it is transcribed as
+// written rather than "fixed".
+double getsma(X13Context& ctx) {
+    const model_cmn& m = ctx.model;
+    const mdldat_cmn& d = ctx.mdldat;
+    const int begopr = m.mdl(prm::MA - 1);
+    const int endopr = m.mdl(prm::MA) - 1;
+    if (begopr > endopr) return 0.0;
+    std::string ttl;
+    int ntmp = 0;
+    for (int iopr = begopr; iopr <= endopr; ++iopr) {
+        getstr(ctx, m.oprttl.data(), m.oprptr.data(), m.noprtl, iopr, ttl, ntmp);
+        if (ctx.error.lfatal) return 0.0;
+        if (ttl != "Seasonal MA") continue;
+        const int beglag = m.opr(iopr - 1);
+        const int endlag = m.opr(iopr) - 1;
+        for (int ilag = beglag; ilag <= endlag; ++ilag)
+            if (m.arimal(ilag) == m.sp) return d.arimap(beglag);
+    }
+    return 0.0;
+}
+
+// mdssln.f -- the SEATS sliding-span length, from Findley (2003): the closer
+// the seasonal MA is to non-invertibility the longer a span has to be to say
+// anything about the seasonal factors. Falls through to 19 years.
+int mdssln(X13Context& ctx, int sp) {
+    static const double smalim[15] = {0.16,  0.325, 0.49, 0.535, 0.62,
+                                       0.64,  0.695, 0.71, 0.75,  0.76,
+                                       0.795, 0.805, 0.84, 0.85,  0.91};
+    const double sma = getsma(ctx);
+    for (int i = 1; i <= 15; ++i)
+        if (sma < smalim[i - 1]) return (i + 3) * sp;
+    return 19 * sp;
+}
+
 // ssprep.f, scoped to Lx11=true always and Lx11rg=false (see hpp). The
 // Nb>0/Ngrp>0 regression-snapshot fields (Ngr2/Ncxy2/Nbb/Colttl/.../Regfx2/
 // Rgv2) are NOT copied -- out of scope (no regression{} in the gate corpus;
@@ -240,7 +280,7 @@ bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
         static const int nl[6] = {6, 6, 7, 8, 11, 17};   // nl(-1:4)
         if (!lnlset) {
             if (lseats) {
-                hid.issap = 0;   // mdssln (SEATS span length) not ported/reachable
+                si.nlen = mdssln(ctx, ny);   // setssp.f:151-152
             } else {
                 si.nlen = nl[ltmax + 1] * ny;
             }
@@ -510,7 +550,12 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
     const int ltmax = sfmax_span(ctx.x11opt.lterm, ctx.x11opt.lter.data(),
                                   ctx.x11opt.ny);
 
-    if (!setssp_span(ctx, ltmax, ctx.captured.has_model, /*lseats=*/false,
+    // sspdrv.f:66 passes Lseats through to setssp, and :121/:180 pass it on to
+    // ssx11a/x11ari -- a SEATS spec's spans differ from an X-11 spec's only in
+    // which adjustment routine runs after x11pt2 (seatdg's ssrit store instead
+    // of x11pt3's). Nothing else here is X-11-specific.
+    const bool lseats = ctx.captured.has_seats && !ctx.captured.has_x11;
+    if (!setssp_span(ctx, ltmax, ctx.captured.has_model, lseats,
                       lncset, lnlset) || hid.issap == 0) {
         hid.issap = 0;
         return true;   // "not enough data" -- clean skip, not FATAL
@@ -550,7 +595,7 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
         // the demote, so neither is this seam.
         const int lsp = l0 + (j - 1) * ny + sa.im - nbcst2 - 1;
         if (!run_x11_span(ctx, trnsrs_full, has_model, si.nlen, nfcst, nbcst,
-                           nbcst2, lsp))
+                           nbcst2, lsp, /*nend_mdl=*/0, lseats))
             return false;
         if (ctx.error.lfatal) return false;
     }

@@ -60,9 +60,15 @@ struct X13Context;
 // is then put back (setspn.f) before the forecasts and X-11 run. This is
 // arima.f:134-157 + arima.f:1145's narrowing, restricted to the nbeg==0 case
 // (revdrv never moves Begmdl). Pass 0 for the ordinary full-span replay.
+//
+// lseats (default false): run the span's SEATS decomposition in place of
+// x11pt3, mirroring x11ari.f -- sspdrv and revdrv both pass Lseats straight
+// through to x11ari, so a SEATS spec's spans differ from an X-11 spec's only in
+// which adjustment routine follows x11pt2. With lseats the span's store is
+// seatdg.f's (ssrit on Seatsf/Seatsa) rather than x11pt3's.
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
-                   int lsp, int nend_mdl = 0);
+                   int lsp, int nend_mdl = 0, bool lseats = false);
 
 }  // namespace x13
 

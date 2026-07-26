@@ -417,6 +417,19 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // and trend-change calls pass Lr1y2y as a literal F (revdrv.f:852/859), so
     // that extra column exists only on the SA / SA-change / indirect tables --
     // even though revchk derives the flag from BOTH lists (CB-22).
+    //
+    // The `ntarsa > 0` half of the guard below is a DELIBERATE, DOCUMENTED
+    // deviation, not a transcription of prtrev.f:90-91 (which adds the column
+    // on Lr1y2y alone). It only differs for `trendlags=(Ny 2Ny)` with NO
+    // `sadjlags=`: revchk lets the trend list set the shared Lr1y2y (CB-22), so
+    // Ntarsa==0 and Lr1y2y==T reach prtrev together. There the oracle sizes the
+    // SA table to one column and then never writes it -- prtrev.f:202's
+    // `IF(Lr1y2y.and.i2.gt.0)` sits inside `DO i2=0,Ntargt`, which with
+    // Ntargt==0 runs the i2==0 pass only, so `rev(ncol,.)` is emitted straight
+    // out of uninitialised storage. That is CB-22's second face: a column whose
+    // VALUES are whatever memory held. Reproducing a specific garbage value is
+    // not portable, so this port omits the column rather than fabricate one.
+    // Nothing in the corpus reaches it (every target spec sets sadjlags).
     const int ncol_sa = ntarsa + ((r1y2y && ntarsa > 0) ? 1 : 0);
     const int ncol_tr = ntartr;
     // Fin(1:Ntargt, .) for each table family, filled during the span loop.

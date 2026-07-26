@@ -193,16 +193,28 @@ void chkorv(X13Context& ctx, const int* begxy, int endrev, RevOtlStore& st,
         bool locok = true;
         rdotlr(ctx, str, begxy, sp, otltyp, begotl, endotl, locok);
         if (ctx.error.lfatal) return;
-        // chkorv.f:66-71, transcribed as written. The `.or.` chain in the
-        // non-ramp half is a Fortran precedence quirk -- `otltyp.ne.RP .and.
-        // otltyp.ne.TLS .or. otltyp.ne.QI .or. otltyp.ne.QD` is true for every
-        // type (a value cannot be both QI and QD), so the second branch tests
-        // only `begotl.le.Endrev`. Reproduced by construction: the ramp branch
-        // is taken when the type is a span type, the plain one otherwise.
+        // chkorv.f:54-58, transcribed as written -- CB-23. The test reads
+        //   (span_type .and. begotl<=Endrev .and. endotl<=Endrev)
+        //   .or. (C .and. begotl<=Endrev)
+        // where C is `otltyp.ne.RP .and. otltyp.ne.TLS .or. otltyp.ne.QI .or.
+        // otltyp.ne.QD`. Census meant `.not.(RP.or.TLS.or.QI.or.QD)`, but
+        // `.and.` binds tighter than `.or.`, so C groups as
+        // `(t/=RP .and. t/=TLS) .or. t/=QI .or. t/=QD` -- TRUE for every type
+        // (RP satisfies t/=QI, TLS satisfies t/=QI, QI satisfies the first
+        // pair, QD likewise). The second disjunct is therefore unguarded, and
+        // since it is implied by the first, the whole condition collapses to
+        // `begotl <= Endrev`. The intended `endotl <= Endrev` guard on the
+        // span-type outliers NEVER fires: a ramp/temporary-LS whose END is
+        // past the span is re-added anyway. Reproduced verbatim -- writing the
+        // ternary the comment's own prose describes would be "improving" the
+        // Fortran and is what this line said before.
+        //
+        // span_type is still needed below: chkorv.f:69-70's nlast test spells
+        // the same intent with `.and.` throughout and so is NOT affected.
         const bool span_type =
             (otltyp == RP || otltyp == TLS || otltyp == QI || otltyp == QD);
-        const bool defined = span_type ? (begotl <= endrev && endotl <= endrev)
-                                       : (begotl <= endrev);
+        (void)endotl;   // read by the dead first disjunct only
+        const bool defined = (begotl <= endrev);
         if (!defined) { ++icol; continue; }
 
         const bool fx = st.fix[static_cast<std::size_t>(icol - 1)] != 0 || otlfix;

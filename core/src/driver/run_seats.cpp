@@ -16,6 +16,7 @@
 // (idempotent, side-effect-free) chain to dump the tables. Falls back to
 // seats_not_ported() only when the decomposition chain itself fails.
 #include "specparse/specparse.hpp"
+#include "driver/run_seats.hpp"  // seats_restore_mean, seats_decompose
 #include "gen/model.hpp"       // prm::PRGTCN (mean-regressor type), prm::DIFF
 #include "regarima/regvar.hpp" // ratpos (rebuild the undifferenced Constant column)
 #include "seats/canonical_denoms.hpp"
@@ -107,6 +108,72 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     // model this reproduces the clean transformed series trnsrs (raw log);
     // alongside TD/outliers it keeps those removed. d-agnostic: the drift ramp +
     // the wm centering in estbur carry the mean regardless of d.
+    seats_restore_mean(ctx);
+
+    if (!seats_decompose(ctx)) return false;
+
+    // x11ari.f returns to x12run.f, which then calls sspdrv/revdrv -- the span
+    // drivers are NOT part of the adjustment, they replay it. They are reached
+    // identically from the SEATS path (both take Lseats and hand it to x11ari),
+    // so run_seats needs the same tail run_x11 has.
+    //
+    // Both drivers rewrite the X-11 buffers, the span pointers AND -- new here
+    // -- ctx.seats_* in place, because each span republishes its own
+    // decomposition. The oracle punches the main run's tables before sspdrv
+    // runs; this port dumps at exit, so the main decomposition has to be put
+    // back afterwards. Same snapshot discipline run_x11.cpp already applies to
+    // /x11srs/, /adxser/, /x11fac/, /x11ptr/ and /lkhd/.
+    if (ctx.captured.has_slidingspans) {
+        // The restore set is run_x11.cpp's, plus the three things only the
+        // SEATS path has: the published components (ctx.seats_*), the
+        // decomposition INPUT (ctx.series.tsrs -- each span's rgarma leaves its
+        // own residuals there and seats_restore_mean then adds that span's mean
+        // back), and Nspobs (the window length every consumer derives its row
+        // count from). tools/x13run_seats.cpp re-derives the whole ESTBUR chain
+        // from ctx AFTER this returns, so a miss here shows up as the LAST
+        // SPAN's decomposition under the main run's dates.
+        const lkhd_cmn lkhd_main = ctx.lkhd;
+        const auto x11srs_main = ctx.x11srs;
+        const auto adxser_main = ctx.adxser;
+        const auto x11fac_main = ctx.x11fac;
+        const auto x11ptr_main = ctx.x11ptr;
+        const auto mdlbegspn_main = ctx.mdldat.begspn;
+        const int nspobs_main = ctx.mdldat.nspobs;
+        const auto tsrs_main = ctx.series.tsrs;
+        const bool seats_ran_main = ctx.seats_ran;
+        const auto sa_main = ctx.seats_sa;
+        const auto trend_main = ctx.seats_trend;
+        const auto ir_main = ctx.seats_ir;
+        const auto cycle_main = ctx.seats_cycle;
+        const auto seasadd_main = ctx.seats_seasonal_add;
+        const auto cmbadd_main = ctx.seats_combined_add;
+        const auto cmbfac_main = ctx.seats_combined_factor;
+
+        const bool ok = run_slidingspans(ctx, trnsrs);
+
+        ctx.lkhd = lkhd_main;
+        ctx.x11srs = x11srs_main;
+        ctx.adxser = adxser_main;
+        ctx.x11fac = x11fac_main;
+        ctx.x11ptr = x11ptr_main;
+        ctx.mdldat.begspn = mdlbegspn_main;
+        ctx.mdldat.nspobs = nspobs_main;
+        ctx.series.tsrs = tsrs_main;
+        ctx.seats_ran = seats_ran_main;
+        ctx.seats_sa = sa_main;
+        ctx.seats_trend = trend_main;
+        ctx.seats_ir = ir_main;
+        ctx.seats_cycle = cycle_main;
+        ctx.seats_seasonal_add = seasadd_main;
+        ctx.seats_combined_add = cmbadd_main;
+        ctx.seats_combined_factor = cmbfac_main;
+
+        if (!ok || ctx.error.lfatal) return false;
+    }
+    return true;
+}
+
+void seats_restore_mean(X13Context& ctx) {
     if (seats_has_mean(ctx)) {
         auto& M = ctx.model;
         auto& D = ctx.mdldat;
@@ -122,12 +189,15 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         for (int i = 0; i < nsp; ++i)
             ctx.series.tsrs(i + 1) += bcon * xc[i];
     }
-    // (ctx.seats_combined_orig -- the raw original series feeding the s16/s18
-    // combined-adjustment factors -- is stashed in run_pre_model, where the raw
-    // untransformed a1 and the lom/leap prior are directly available.)
+}
 
-    // decode -> canonical denoms -> SPECTRU -> DecompSpectrum -> ESTBUR
-    // (historical span only; see estbur.hpp for exact scope/limits).
+// (ctx.seats_combined_orig -- the raw original series feeding the s16/s18
+// combined-adjustment factors -- is stashed in run_pre_model, where the raw
+// untransformed a1 and the lom/leap prior are directly available.)
+
+// decode -> canonical denoms -> SPECTRU -> DecompSpectrum -> ESTBUR
+// (historical span only; see estbur.hpp for exact scope/limits).
+bool seats_decompose(X13Context& ctx) {
     try {
         // NOTE opts.finite (seats{finite=}, /setopt/ Lfinit) is deliberately NOT
         // read here. It gates getDiag (sigex.f:1502) -- the finite-sample

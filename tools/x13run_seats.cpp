@@ -29,6 +29,8 @@
 
 #include "specparse/specparse.hpp"
 #include "common/x13context.hpp"
+#include "numeric/numeric.hpp"    // dpeq
+#include "gen/notset.hpp"         // prm::DNOTST
 #include "seats/model_decode.hpp"
 #include "seats/canonical_denoms.hpp"
 #include "seats/spectru.hpp"
@@ -56,6 +58,28 @@ void dump(const char* tag, const int* begspn, int sp, int n,
         x13::addate(begspn, sp, i - 1, idate);
         std::printf("%s %04d%02d %.15E\n", tag, idate[0], idate[1],
                     arr[i - 1]);
+    }
+}
+
+// slidingspans{} wide table, verbatim from tools/x13run_x11.cpp -- the SEATS
+// spans store into the same /sspdat/ buffers via seatdg's ssrit, so the emit is
+// identical and the golden .sfs/.chs convention (-999 for "this span does not
+// cover this date") is the same one test_slidingspans_tables.py already parses.
+constexpr int MXLEN_SS = 276;
+void dump_span_table(const char* tag, int iyr, int im, int nsea, int sslen,
+                      int ncol, const double* arr, const double* dmax) {
+    constexpr double SENTINEL = -999.0;
+    int date[2] = {iyr, im};
+    for (int l0 = im; l0 <= sslen + im - 1; ++l0) {
+        int idate[2];
+        x13::addate(date, nsea, l0 - im, idate);
+        std::printf("%s %04d%02d", tag, idate[0], idate[1]);
+        for (int l = 1; l <= ncol; ++l) {
+            double v = arr[(l0 - 1) + (l - 1) * MXLEN_SS];
+            std::printf(" %+.15E", x13::dpeq(v, x13::prm::DNOTST) ? SENTINEL : v);
+        }
+        double dv = dmax[l0 - 1];
+        std::printf(" %+.15E\n", x13::dpeq(dv, x13::prm::DNOTST) ? SENTINEL : dv);
     }
 }
 }  // namespace
@@ -237,6 +261,16 @@ int main(int argc, char** argv) {
         // s14 -- transitory component (SEATS). Non-trivial only for AR/cycle
         // models; airline-family est.cycle is all-1 (no transitory).
         dump("s14", begspn, sp, n, est.cycle.data());
+    }
+
+    // slidingspans{} under seats{} (sspdrv.f with Lseats -- the store is
+    // seatdg.f:101-110's ssrit pair on Seatsf/Seatsa).
+    if (ctx.ssout.ran) {
+        const auto& so = ctx.ssout;
+        dump_span_table("sfs", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
+                         ctx.sspdat.s.data(), so.dmax_sfs.data());
+        dump_span_table("chs", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
+                         so.c_flat.data(), so.dmax_chs.data());
     }
     return 0;
 }
