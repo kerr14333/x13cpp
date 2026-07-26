@@ -169,7 +169,11 @@ x13_close <- function(run) {
 X13_MODES <- c("multiplicative", "additive", "log-additive", "pseudo-additive")
 
 x13_ok    <- function(run) .x13_meta(run)$ok
-x13_error <- function(run) .x13_str("x13r_error", handle = .x13_check(run))
+# cap is generous here on purpose: the C shim's putStr TRUNCATES silently (a
+# void .C() signature cannot report a needed length -- see x13_rabi.cpp), and an
+# engine diagnostic is the one string with no bounded length.
+x13_error <- function(run)
+  .x13_str("x13r_error", handle = .x13_check(run), cap = 4096L)
 
 x13_engine_version <- function() {
   x13_load()

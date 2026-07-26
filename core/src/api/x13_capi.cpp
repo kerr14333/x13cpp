@@ -386,11 +386,22 @@ const char* x13_engine_version(void) { return x13::upstream_version(); }
 
 x13_run* x13_run_spec_text(const char* spec_text, const char* series_name) {
     if (!spec_text) return nullptr;
-    return runSpec(spec_text, series_name ? series_name : "series");
+    // runSpec is itself no-throw, but its two std::string PARAMETERS are
+    // constructed here, at the call site, outside that guarantee -- a
+    // std::bad_alloc from either would cross the ABI. Same reason the file
+    // entry point below is wrapped.
+    try {
+        return runSpec(spec_text, series_name ? series_name : "series");
+    } catch (...) {
+        return nullptr;
+    }
 }
 
-x13_run* x13_run_spec_file(const char* spec_path) {
-    if (!spec_path) return nullptr;
+// Body of x13_run_spec_file. Split out so the whole thing -- including the
+// std::string construction, the substr-based dir/base split and the
+// error-message concatenations, all of which can throw -- sits inside one
+// catch. Only the file-read block used to be guarded.
+static x13_run* runSpecFileImpl(const char* spec_path) {
     std::string path(spec_path);
 
     std::string text;
@@ -440,6 +451,15 @@ x13_run* x13_run_spec_file(const char* spec_path) {
     x13_run* h = runSpec(text, base);
     if (haveCwd) x13_capi_chdir(saved);
     return h;
+}
+
+x13_run* x13_run_spec_file(const char* spec_path) {
+    if (!spec_path) return nullptr;
+    try {
+        return runSpecFileImpl(spec_path);
+    } catch (...) {
+        return nullptr;
+    }
 }
 
 void x13_run_free(x13_run* run) { delete run; }
