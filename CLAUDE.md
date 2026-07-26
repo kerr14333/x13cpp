@@ -852,6 +852,27 @@ diagnostics front (force / slidingspans / history) is now closed.
     no corpus spec combined `regression{variables=(td)}` under log with either.
     ssprep's asymmetry is ported verbatim: once tdlom HAS run the flow reverses
     and the live value is restored FROM the snapshot.
+  - **A SECOND span-replay bug, found by the gates added for the first:**
+    `ssprep.f:81-95` / `restor.f:66-70` — the REGRESSION half of the
+    snapshot/restore pair (`B`, `Regfx`, `Iregfx`) — had been skipped as
+    "Nb==0", true of every span-replay spec until one carried a `regression{}`
+    group. Without it each span starts its regression from whatever the PREVIOUS
+    span converged to rather than from the main run (measured 8.4e-3 in sfs).
+    Ported with `ssmdl.f:345-350`'s matching Ssinit==1 fixing. **That then broke
+    `history{fixreg}`** until run_history mirrored its flags into the ssprep
+    snapshot — the identical trap already documented for fixmdl: once
+    restor_span restores Regfx/Iregfx, setting only the LIVE model before the
+    loop is undone by the first span.
+  - **Open, measured, deliberately not hidden:** `airline_slidingspans-td`'s
+    `chs` (per-span SA change table). sfs is bit-exact; chs is not. At 1956.Feb
+    (a leap February) the golden's span columns are
+    -0.264/+0.284/+0.680/+1.396 and the engine gives
+    +3.299/+3.865/+0.680/+5.018 — the THIRD span agrees bit-for-bit and the
+    others do not. A uniformly missing prior would move every span, so this is a
+    per-span PHASE problem in how the prior series (anchored at the MAIN run's
+    Begadj) is indexed for a span starting at a different date, NOT a repeat of
+    the Priadj bug. Golden blessed and committed; the gate skips that one cell
+    with the measurement written at the skip.
   - Still open, all measured as moving: `outlier=`/`outlierwin=`, `fixx11reg=`,
     `x11outlier=`, `endtable=`, `sadjlags=`/`trendlags=`/`target=`,
     `additivesa=`. Suggested order is in the scouting doc — note it originally
