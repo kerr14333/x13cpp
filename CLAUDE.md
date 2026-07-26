@@ -814,5 +814,89 @@ diagnostics front (force / slidingspans / history) is now closed.
     the oracle rejects the total outright ("All data values ... are equal to
     zero") while this engine happily decomposes it and emits NaN — an x11/
     composite input-validation gap, not a history one.
+- **`history{}`'s option surface — MEASURED, and `fixreg=` CLOSED.** All 11
+  remaining parsed-but-silent flags were run through the ORACLE on-vs-off before
+  any porting (`tools/history_options_scouting.md` has the table). 10 move real
+  numbers; `refresh=` is **structurally inert with a mechanism** —
+  `revdrv.f:528` restores unconditionally at every span head, so `revdrv.f:746`'s
+  `IF(Lrfrsh)CALL restor` is overwritten before anything reads it. Do not port
+  it. **A null measured under the wrong preconditions is not a null**: round 1
+  returned 0.000e+00 for four flags and three of them were structurally
+  incapable of moving anything in the spec tested — `Cnctar` is a no-op without
+  `sadjlags`/`trendlags` (prtrev.f:115 gates on `Cnctar .or. i2.eq.0`), `Rvxotl`
+  needs `Otlxrg` i.e. `x11regression{critical=}`, and `Otlrev` needs outliers
+  already carried as regressors. **`OTLDIC` is `'keepremoveauto'`, so the
+  DEFAULT `outlier=` is KEEP** even though gtrvst's own error message lists
+  remove first — measured, the engine's default behaviour is therefore already
+  correct and only the non-default values are silent. Two things landed:
+  - **`fixreg=` (`Rvfxrg`) — ported** (`rvfixd.f`, revdrv.f:112-134's group
+    decode, revchk.f:230-287's rule dropping the td model history when TD is
+    held). Engine now moves by exactly the oracle's measured delta. **Not yet
+    gated** — no corpus spec or golden.
+  - **`arima.f:283`'s `rmfix(...,1)` had NO call site in the port**, so FIXED
+    regression coefficients were ignored by the estimator outright. rmfix/addfix
+    were ported long ago but only ever reached from automdl with `fxindx=2`.
+    Wired into `run_x11_span` with arima.f:909-914's restore. **`run_pre_model`
+    still has the same gap on the MAIN estimation path** — `regression{b=(..)}`
+    fixed coefficients are silently ignored there. Out of scope when found;
+    still open.
+  - **The real find: `Priadj` was not restored between span replays.** x11pt2's
+    tdlom NEGATES Priadj after folding the length-of-month/leap-year prior into
+    the model TD factor (so nothing removes it twice); `ssprep.f:56-62` saves the
+    pre-tdlom value in `Pri2` and `restor.f:55` puts it back before every span.
+    This port did neither, so every replay saw `Priadj<=0`, skipped the fold, and
+    built a `Factd` with no prior in it — **every February of the span's
+    D11/D16 off by exactly the leap-year factor** (0.9912 non-leap / 1.0265 leap;
+    sae 2.7e-2 against a 1e-5 floor) behind `OUTCOME: OK`. Affects
+    slidingspans{} AND history{}, not just the new flag. Nothing gated it because
+    no corpus spec combined `regression{variables=(td)}` under log with either.
+    ssprep's asymmetry is ported verbatim: once tdlom HAS run the flow reverses
+    and the live value is restored FROM the snapshot.
+  - Still open, all measured as moving: `outlier=`/`outlierwin=`, `fixx11reg=`,
+    `x11outlier=`, `endtable=`, `sadjlags=`/`trendlags=`/`target=`,
+    `additivesa=`. Suggested order is in the scouting doc — note it originally
+    ranked `fixreg` as cheapest and was wrong (it needed the rmfix seam);
+    `endtable=` is the genuinely self-contained one.
+- **PRIORITY #2 STARTED: R and Python can now call the engine in-process.**
+  Both wrapper trees were pure stubs (`py-pkg`'s `seasonal_adjust()` raised
+  `NotImplementedError`) because `core/` had no entry point anything but C++
+  could call. Deliberately NOT a package: one shared library (`x13c`) plus two
+  single-file loaders needing no build step or install on the caller's side.
+  See **`bindings/README.md`**.
+  - `core/include/x13/capi.h` — the flat C ABI. Opaque per-run handle; tables
+    reached **by name** (the engine grows tables as the port advances, so
+    enumerating them in the ABI would break it every release); caller-allocated
+    buffers with a size-then-fill protocol (short buffer ⇒ return `-needed`,
+    write nothing); no exception ever crosses the boundary.
+  - `core/src/api/x13_rabi.cpp` — a `.C()`-shaped shim (integer handle registry,
+    out-parameters only) so **R needs no R headers**. `.Call` would have meant
+    building against `<Rinternals.h>`.
+  - Covers both decomposition paths — X-11 (`b1`, `d10`-`d13`, `d16`, Part-E,
+    force/x11reg outputs, F2/F3 as scalar diagnostics) and SEATS (`s10`-`s14`,
+    `s16`, `s18`). `run_seats` used to compute its decomposition and throw it
+    away; it now publishes onto the context so the ABI need not re-derive it.
+  - **THE FINDING WORTH REMEMBERING: a shared library inherits its HOST's
+    floating-point mode, and hosts disagree.** Measured, same DLL, same spec,
+    x87 control word: MinGW `.exe` `0x037f` and Rscript `0x037f` (PC=3, 64-bit
+    extended) both bit-exact against the oracle, versus **CPython `0x027f`**
+    (PC=2, 53-bit). MXCSR identical in all three. On well-conditioned specs the
+    difference is ~1e-16 and invisible; the optimizer amplifies it on the
+    near-non-invertible ones, and `unrate_sfshort-x11`'s d10 came back **8.2e-6**
+    off — six orders past the 1e-6 floor that spec otherwise holds. Each run now
+    pins PC=3 and restores the host's word on exit. **The trap:
+    `_control87(_PC_64, _MCW_PC)` does NOT do this on x86-64** — the CRT ignores
+    the precision mask (SSE has no such field), so the x87 register must be
+    written directly with `fnstcw`/`fldcw`. `x13_host_fp_control()` is exported
+    so the next host that disagrees is diagnosable rather than guesswork.
+  - Tested three ways: `tests/unit/test_capi.cpp` (ctest, the ABI *contract* —
+    NULL handles, out-of-range indices, the short-buffer protocol, run
+    independence, the FP-word restore — linked against the actual `.dll` an
+    interpreter loads); `tests/parity/test_bindings.py` (the Python binding vs
+    every corpus spec with a blessed golden, **keyed on the DATE the binding
+    reports, not position** — a positional compare would pass even if every
+    label were a year late, the exact bug class that bit `x13run_x11`'s own
+    `dump()`); `bindings/r/test_x13c.R` (the R binding vs the same goldens plus
+    the R surface — data.frame shapes, `ts()` conversion, use-after-close,
+    double-close).
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
