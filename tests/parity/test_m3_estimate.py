@@ -86,13 +86,22 @@ def _estimation_reproducible(spc: str) -> bool:
       * x11regression{} (irregular-component TD/holiday regression -- the golden
         loglikelihood reflects that GLS fit, not the pure regARIMA model; the
         x11reg compute is not yet ported),
-      * automatic outlier identification (outlier{}), which the regvar branch
-        still abends on,
       * automatic transform / AIC tests (function=auto, aictest),
-      * regressor families outside the ported set (user, change-of-regime,
-        outlier regressors ao/ls/tc/so/rp/tls, stock td),
-      * fixed-model or fixed-coefficient runs (a separate branch, unit-tested),
+      * user-defined change-of-regime regressors,
       * composite runs.
+
+    Two exclusions were dropped once what they stood for landed, and both were
+    stale for a while before anyone checked -- if a family here looks ported,
+    delete the line and run the gate; it costs one test run to find out:
+      * USER-SPECIFIED OUTLIER regressors (ao/ls/tc/so/rp/tls in a variables
+        list). The rule was written when regvar abended on them; all 14 corpus
+        specs that carry one pass with no other change. It was never about
+        AUTOMATIC outlier identification (outlier{}), which is separately
+        reproducible via the ported idotlr.
+      * FIXED coefficients (arima{ar=/ma=}, regression{b=} with a trailing `f`):
+        gtinvl.f/gtrgvl.f parse them, regfix.f/mdlfix.f set Iregfx/Imdlfx, and
+        arima.f:281-287/907-914's rmfix/addfix strip and restore the fixed
+        regression columns around the estimation.
     (sincos / trigonometric-seasonal regressors ARE now ported -- adsncs.f.)
     """
     txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
@@ -107,9 +116,6 @@ def _estimation_reproducible(spc: str) -> bool:
                 "x11regression{", "composite{"):
         if bad in flat:
             return False
-    # Outlier / change-of-regime regressors in a variables list.
-    if re.search(r"variables\s*=\s*\([^)]*\b(ao|ls|tc|so|rp|tls)\d", txt):
-        return False
     m = re.search(r"variables\s*=\s*\(([^)]*)\)", txt)
     if m and "/" in m.group(1):
         # change-of-regime (regressor/date split). seasonal/td/lom/loq/lpyear
@@ -119,11 +125,6 @@ def _estimation_reproducible(spc: str) -> bool:
                 r"(seasonal|tdstock(\[\d+\])?|lomstock|td|lom|loq|lpyear)\s*/.*",
                 m.group(1).strip()):
             return False
-    # Fixed coefficients (arima{ar=/ma=} and regression{b=} with a trailing `f`)
-    # ARE reproducible here: gtinvl.f/gtrgvl.f parse them, regfix.f/mdlfix.f set
-    # Iregfx/Imdlfx, and arima.f:281-287/907-914's rmfix/addfix strip and
-    # restore the fixed regression columns around the estimation. This
-    # exclusion used to stand because none of that was ported.
     return True
 
 
