@@ -282,7 +282,12 @@ void gt_arima(X13Context& ctx, bool& inptok) {
             bool argok = true;
             getmdl(ctx, argok, inptok, false);
             havmdl = true;
-        } else {                     // title / diff / ar / ma (gtinvl gated)
+        } else if (argidx >= 3) {   // diff / ar / ma -> gtinvl.f (gtarma.f:67)
+            // The displacement is 2: the two arguments (title, model) ahead of
+            // diff in ARGDIC, so argidx-2 is prm::DIFF/AR/MA. gtarg has already
+            // consumed the "="; Lprtdf (argidx==3) is print surface.
+            gtinvl(ctx, argidx - 2, inptok);
+        } else {                     // title
             consume_value(ctx, nullptr);
         }
         if (ctx.error.lfatal) return;
@@ -747,6 +752,15 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     static const int urrptr[3] = {1, 5, 13};
     bool lumean = false, luseas = false;
     int iuhl[prm::PUHLGP] = {0};   // user holiday-group usage (getreg.f:137)
+    // b= scratch (getreg.f:129/133: nbvec starts at NOTSET, fixvec all FALSE).
+    // bvec is deliberately NOT initialized -- gtrgvl's NULL elements skip a slot
+    // without writing, and getreg.f:551's writeback then copies whatever is
+    // there. The Fortran reads its uninitialized stack; a NULL in the list is
+    // therefore only meaningful with a fully-specified list, which is the
+    // documented usage. Zero-init here so the C++ is at least deterministic.
+    int nbvec = prm::NOTSET;
+    bool fixvec[prm::PB] = {false};
+    double bvec[prm::PB] = {0.0};
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
@@ -801,6 +815,10 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                 if (ctx.error.lfatal) return;
                 havfmt = true;
             }
+        } else if (argidx == 7) {    // b -> gtrgvl.f (getreg.f:215)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            gtrgvl(ctx, nbvec, fixvec, bvec, inptok);
+            if (ctx.error.lfatal) return;
         } else if (argidx == 4) {    // start -- X matrix begin date (getreg.f:182)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             bool argok = true; int nelt = 0;
@@ -908,6 +926,63 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
         }
     }
 
+    // getreg.f:519-553 -- the b= writeback. It runs HERE, straight after the
+    // argument loop, because Nb is only final once every variables= group has
+    // been built by gtpdrg, and it runs BEFORE the user-column adrgef calls
+    // below on purpose: those read B(idisp)/Regfx(idisp) out of the slots this
+    // loop fills past Nb, which is how a user regressor gets an initial value.
+    if (nbvec != prm::NOTSET) {
+        model_cmn& M = ctx.model;
+        // Insert a value for the Leap Year regressor that will be removed
+        // later (rmlnvr), so a b= list that omits it still lines up with Nb.
+        if (ctx.picktd.picktd &&
+            (ctx.arima.fcntyp != 4 && !dpeq(ctx.arima.lam, 1.0))) {
+            int ic1 = 1;
+            int icol = strinx(true, M.colttl.raw(), M.colptr.data(), ic1, M.nb,
+                              "Leap Year");
+            while (icol > 0) {
+                if (icol <= nbvec) {
+                    for (int i = nbvec; i >= icol; --i) {
+                        if (i + 1 <= prm::PB) {
+                            bvec[i] = bvec[i - 1];
+                            fixvec[i] = fixvec[i - 1];
+                        }
+                    }
+                }
+                // PORTED VERBATIM: only bvec gets the spliced value. fixvec
+                // was shifted up but its slot at icol is NOT reset, so the
+                // Leap Year column inherits the fix flag of whatever used to
+                // sit there. Checked, and it is NOT a Census bug worth logging:
+                // the inherited flag always equals some other column's flag
+                // that regfix is ANDing in anyway (so it cannot independently
+                // change allfix), and rmlnvr (gtinpt.f:1032) removes the
+                // column before rmfix could ever act on it.
+                if (icol >= 1 && icol <= prm::PB) bvec[icol - 1] = 1.0;
+                ++nbvec;
+                if (icol == M.nb) {
+                    icol = 0;
+                } else {
+                    ic1 = icol + 1;
+                    icol = strinx(true, M.colttl.raw(), M.colptr.data(), ic1,
+                                  M.nb, "Leap Year");
+                }
+            }
+        }
+        const int ntot = M.nb + ctx.usrreg.ncusrx;
+        if (nbvec > 0 && nbvec != ntot) {
+            // getreg.f:543-549 writes "ERROR: Number of initial values is not
+            // the same as the number of regression variables." to STDERR/Mt2
+            // with a plain WRITE -- NOT via inpter -- so locok is untouched
+            // and the run continues with NO coefficients applied. The message
+            // is print surface; the skipped writeback is the behaviour.
+        } else {
+            for (int i = 1; i <= ntot && i <= prm::PB; ++i) {
+                M.regfx(i) = fixvec[i - 1];
+                ctx.mdldat.b(i) = bvec[i - 1];
+            }
+        }
+    }
+
     // getreg.f:558-567 -- if data comes from a file, load it now.
     if (hvfile && !haveux) {
         if (ctx.usrreg.ncusrx > 0) {
@@ -971,7 +1046,12 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                        "of the data.");
                 inptok = false;
             } else {
+                // getreg.f:627 -- idisp walks the slots the b= writeback above
+                // filled past Nb, so a user regressor's initial value / fix
+                // flag come from B(idisp)/Regfx(idisp), not from zero.
+                int idisp = ctx.model.grp(ctx.model.ngrp) - 1;
                 for (int i = 1; i <= ncusrx; ++i) {
+                    ++idisp;
                     std::string effttl; int nchr = 0;
                     getstr(ctx, ctx.usrreg.usrttl.data(),
                            ctx.usrreg.usrptr.data(), ncusrx, i, effttl, nchr);
@@ -1005,7 +1085,15 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                         inptok = false;
                         return;
                     }
-                    adrgef(ctx, 0.0, et, gt, vt, false, true);
+                    // Copy out before the call: adrgef writes B(icol)=initvl,
+                    // and in the Fortran initvl IS B(idisp) (pass by
+                    // reference) -- a self-assignment there, but the C++ must
+                    // not alias the argument with the array it writes.
+                    const double initvl = (idisp >= 1 && idisp <= prm::PB)
+                                              ? ctx.mdldat.b(idisp) : 0.0;
+                    const bool varfix = (idisp >= 1 && idisp <= prm::PB)
+                                            ? ctx.model.regfx(idisp) : false;
+                    adrgef(ctx, initvl, et, gt, vt, varfix, true);
                     if (ctx.error.lfatal) return;
                 }
                 // getreg.f:692-732 -- remove regressor or seasonal mean.
@@ -1045,6 +1133,43 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                 }
             }
         }
+    }
+
+    // getreg.f:738-766 -- a SIBLING of the two blocks above (same nesting
+    // level), so it runs whether or not there are user regressors.
+    if (ctx.model.nb > 0) {
+        // Derive Iregfx from the b= values just written. arima.f:282 reads it.
+        regfix(ctx);
+        // getreg.f:746-767 -- Userfx: "at least one FIXED user-defined column".
+        // With everything fixed (Iregfx==3) it is unconditional; otherwise walk
+        // the groups and OR the Regfx of every user-typed column. rmfix/addfix
+        // read it to decide whether the dlusrg/addusr special case applies.
+        model_cmn& M = ctx.model;
+        M.userfx = false;
+        if (ctx.usrreg.ncusrx > 0 && M.iregfx >= 2) {
+            if (M.iregfx == 3) {
+                M.userfx = true;
+            } else {
+                for (int igrp = 1; igrp <= M.ngrp; ++igrp) {
+                    const int begcol = M.grp(igrp - 1);
+                    const int endcol = M.grp(igrp) - 1;
+                    const int rtype = M.rgvrtp(begcol);
+                    if (rtype == prm::PRGTUD || rtype == prm::PRGTUS ||
+                        rtype == prm::PRGTUH || rtype == prm::PRGUH2 ||
+                        rtype == prm::PRGUH3 || rtype == prm::PRGUH4 ||
+                        rtype == prm::PRGUH5 || rtype == prm::PRGUAO ||
+                        rtype == prm::PRGULS || rtype == prm::PRGUSO ||
+                        rtype == prm::PRGUCN || rtype == prm::PRGUCY ||
+                        rtype == prm::PRGUTD || rtype == prm::PRGULM ||
+                        rtype == prm::PRGULQ || rtype == prm::PRGULY) {
+                        for (int i = begcol; i <= endcol; ++i)
+                            M.userfx = M.userfx || M.regfx(i);
+                    }
+                }
+            }
+        }
+        // getreg.f:771 otsort() (sorting user-specified outlier regressors into
+        // date order) is not ported; the corpus specifies outliers in order.
     }
 }
 

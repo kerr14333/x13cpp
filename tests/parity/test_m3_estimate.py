@@ -119,9 +119,11 @@ def _estimation_reproducible(spc: str) -> bool:
                 r"(seasonal|tdstock(\[\d+\])?|lomstock|td|lom|loq|lpyear)\s*/.*",
                 m.group(1).strip()):
             return False
-    # Fixed coefficients (ar/ma/b = (...f)) -- a separate, unit-tested branch.
-    if re.search(r"\d\s*f[\s,)]", txt):
-        return False
+    # Fixed coefficients (arima{ar=/ma=} and regression{b=} with a trailing `f`)
+    # ARE reproducible here: gtinvl.f/gtrgvl.f parse them, regfix.f/mdlfix.f set
+    # Iregfx/Imdlfx, and arima.f:281-287/907-914's rmfix/addfix strip and
+    # restore the fixed regression columns around the estimation. This
+    # exclusion used to stand because none of that was ported.
     return True
 
 

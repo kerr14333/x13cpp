@@ -6,6 +6,7 @@
 #include "specparse/specparse.hpp"
 #include "notset.hpp"
 #include "srslen.hpp"
+#include "gen/model.hpp"   // prm::PB (gtrgvl's bvec/fixvec bound)
 
 #include <string>
 
@@ -222,6 +223,203 @@ void gtdpvc(X13Context& ctx, int grpchr, bool flgnul, int pelt, double* avec,
                 break;
             }
             if (broke) continue;
+            break;
+        }
+    }
+    inptok = inptok && locok;
+}
+
+// ---------------------------------------------------------------------------
+// gtinvl.f / gtrgvl.f -- the INITIAL/FIXED coefficient readers.
+//
+// Both parse a list of reals in which each value may carry a trailing `f`
+// (fixed) or `e` (estimated) name token: `ma = (0.55f, 0.35f)`,
+// `b = (0.05f, -0.04)`. FIXDIC is 'fe' and FIXVAL is 1, so the flag is
+// `fixidx == 1`. A NULL element (a bare comma) advances the cursor WITHOUT
+// writing either array -- the Fortran's `Bvec(ielt)=PTONE` /
+// `Arimap(ielt)=PTONE` writebacks are commented out upstream, so the slot
+// keeps whatever the model builder put there (DNOTST for "estimate me").
+// That is what makes `b = (,0.05f)` mean "leave column 1 alone".
+//
+// gtdcnm leaves the token unconsumed when it is a NAME that is not in the
+// dictionary, so a following argument name (`b = 0.05 print = ...`) is seen
+// by gtarg as usual -- but note it also reports argok=true there, hence the
+// Fortran's `IF(argok)` writes a FALSE flag in that case. Transcribed.
+// ---------------------------------------------------------------------------
+namespace {
+
+constexpr int FIXVAL = 1;
+constexpr char FIXDIC[] = "fe";
+constexpr int fixptr[3] = {1, 2, 3};
+constexpr int PFIX = 2;
+
+// The trailing f/e flag, shared by both readers (gtinvl.f:57-59 and its
+// three repetitions, gtrgvl.f:60-62 and its two).
+void read_fixflag(X13Context& ctx, bool& fixflg) {
+    int fixidx = 0;
+    bool argok = true;
+    gtdcnm(ctx, FIXDIC, fixptr, PFIX, fixidx, argok);
+    if (argok) fixflg = (fixidx == FIXVAL);
+}
+
+}  // namespace
+
+// gtinvl.f -- ARIMA operator coefficients (arima{ diff= / ar= / ma= }).
+// Optype is gtarma.f:67's `argidx-2`, i.e. prm::DIFF / AR / MA, and indexes
+// Mdl -> Opr to find the lag range this argument fills.
+void gtinvl(X13Context& ctx, int optype, bool& inptok) {
+    LexState& L = ctx.lex;
+    model_cmn& M = ctx.model;
+    mdldat_cmn& D = ctx.mdldat;
+
+    // OPDIC/opptr only exist to name the operator in the error message.
+    static const char* const OPNAME[3] = {"diff", "ar", "ma"};
+    const std::string opnm =
+        (optype >= 1 && optype <= 3) ? OPNAME[optype - 1] : "";
+    const std::string errmsg =
+        "Number of initial values must equal sum of all the " + opnm +
+        " parameters in all the factors.";
+
+    const int begopr = M.mdl(optype - 1);
+    const int endopr = M.mdl(optype) - 1;
+    const int beglag = M.opr(begopr - 1);
+    const int endlag = M.opr(endopr) - 1;
+    int ielt = beglag - 1;
+
+    bool locok = true;
+    bool hvcmma = false;
+    double tmp = 0.0;
+
+    if (L.nxtktp == EOFTOK) {
+        locok = false;
+    } else if (getdbl(ctx, tmp)) {
+        // Only a single value (gtinvl.f:54-59). Note the Fortran does NOT
+        // bound-check this branch against endlag; the tail check at :30 does.
+        ++ielt;
+        D.arimap(ielt) = tmp;
+        read_fixflag(ctx, M.arimaf(ielt));
+    } else if (L.nxtktp != LPAREN) {
+        inpter(ctx, PERROR, L.lstpos.data() + 1,
+               "Expected a real number or a list of real numbers, not \"" +
+               cur_tok(ctx) + "\"");
+        locok = false;
+    } else {
+        bool opngrp = true;
+        lex(ctx);
+        while (true) {
+            bool broke = false;
+            if (L.nxtktp != RPAREN) {
+                if (L.nxtktp == COMMA) {
+                    if (hvcmma || opngrp) {
+                        if (ielt >= endlag) {
+                            inpter(ctx, PERROR, L.errpos.data() + 1, errmsg);
+                            locok = false;
+                        } else {
+                            ++ielt;   // NULL: leave Arimap(ielt) alone
+                        }
+                    }
+                    lex(ctx);
+                    hvcmma = true;
+                    opngrp = false;
+                    continue;
+                }
+                if (!getdbl(ctx, tmp)) {
+                    inpter(ctx, PERROR, L.lstpos.data() + 1,
+                           "Expected an real number not \"" + cur_tok(ctx) + "\"");
+                    locok = false;
+                } else if (ielt >= endlag) {
+                    inpter(ctx, PERROR, L.errpos.data() + 1, errmsg);
+                    locok = false;
+                } else {
+                    ++ielt;
+                    D.arimap(ielt) = tmp;
+                    read_fixflag(ctx, M.arimaf(ielt));
+                    hvcmma = false;
+                    opngrp = false;
+                    broke = true;
+                }
+            } else if (hvcmma && !opngrp) {
+                if (ielt >= endlag) {
+                    inpter(ctx, PERROR, L.errpos.data() + 1, errmsg);
+                    locok = false;
+                } else {
+                    ++ielt;
+                }
+            }
+            if (broke) continue;
+            if (locok) lex(ctx); else skplst(ctx, RPAREN);
+            break;
+        }
+    }
+    // gtinvl.f:30 -- an empty list `ma=()` (ielt still beglag-1) is as if the
+    // argument had not been given; anything short of a full fill is an error.
+    if (ielt > beglag - 1 && ielt != endlag) {
+        inpter(ctx, PERROR, L.errpos.data() + 1, errmsg);
+        locok = false;
+    }
+    inptok = inptok && locok;
+}
+
+// gtrgvl.f -- regression{ b= }. Unlike gtinvl this writes CALLER-owned
+// scratch (bvec/fixvec), because Nb is not final until gtpdrg has run every
+// variables= group: getreg.f:519-553 does the writeback into B/Regfx at the
+// parse tail. It also has no bound check of its own -- the tail's
+// `nbvec != Nb+Ncusrx` test is what rejects a wrong-length list -- so the
+// PB cap here can only bite on a list longer than any admissible model,
+// which that test rejects anyway.
+void gtrgvl(X13Context& ctx, int& ielt, bool* fixvec, double* bvec,
+            bool& inptok) {
+    LexState& L = ctx.lex;
+    ielt = 0;
+    bool locok = true;
+    bool hvcmma = false;
+    double tmp = 0.0;
+
+    const auto put = [&](double v, bool haveval) {
+        ++ielt;
+        if (ielt >= 1 && ielt <= prm::PB && haveval) bvec[ielt - 1] = v;
+    };
+
+    if (L.nxtktp == EOFTOK) {
+        locok = false;
+    } else if (getdbl(ctx, tmp)) {
+        put(tmp, true);
+        if (ielt >= 1 && ielt <= prm::PB) read_fixflag(ctx, fixvec[ielt - 1]);
+    } else if (L.nxtktp != LPAREN) {
+        inpter(ctx, PERROR, L.lstpos.data() + 1,
+               "Expected a real number or a list of real numbers, not \"" +
+               cur_tok(ctx) + "\"");
+        locok = false;
+    } else {
+        bool opngrp = true;
+        lex(ctx);
+        while (true) {
+            bool broke = false;
+            if (L.nxtktp != RPAREN) {
+                if (L.nxtktp == COMMA) {
+                    if (hvcmma || opngrp) put(0.0, false);  // NULL: skip a slot
+                    lex(ctx);
+                    hvcmma = true;
+                    opngrp = false;
+                    continue;
+                }
+                if (!getdbl(ctx, tmp)) {
+                    inpter(ctx, PERROR, L.lstpos.data() + 1,
+                           "Expected an real number not \"" + cur_tok(ctx) + "\"");
+                    locok = false;
+                } else {
+                    put(tmp, true);
+                    if (ielt >= 1 && ielt <= prm::PB)
+                        read_fixflag(ctx, fixvec[ielt - 1]);
+                    hvcmma = false;
+                    opngrp = false;
+                    broke = true;
+                }
+            } else if (hvcmma && !opngrp) {
+                put(0.0, false);
+            }
+            if (broke) continue;
+            if (locok) lex(ctx); else skplst(ctx, RPAREN);
             break;
         }
     }

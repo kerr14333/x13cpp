@@ -98,10 +98,61 @@ void adrgef(X13Context& ctx, double initvl, std::string_view effttl,
                           vartyp == PRGTSO || vartyp == PRGTQI || vartyp == PRGTQD ||
                           vartyp == PRSQAO || vartyp == PRSQLS);
             if (isotl && !userin) {
-                // Sort-by-date insertion of program-supplied outliers needs
-                // rdotlr.f (outlier milestone).
-                not_ported(ctx, "automatic outlier regression ordering (rdotlr.f)");
-                return;
+                // adrgef.f:82-126 -- a program-supplied outlier group is
+                // inserted in DATE order (and, at equal dates, in OTLDIC type
+                // order), not appended. Reached by addfix.f:60 putting a FIXED
+                // outlier regressor back after estimation, and by any caller
+                // that adds an outlier group once other groups exist.
+                int otlidx = 0, begotl = 0, endotl = 0;
+                bool locok = true;
+                rdotlr(ctx, std::string(effttl), D.begspn.data(), M.sp, otlidx,
+                       begotl, endotl, locok);
+                if (!locok) { abend(ctx); return; }
+                bool havreg = false;
+                int jgrp = 1;
+                bool placed = false;
+                for (; jgrp <= M.ngrp; ++jgrp) {
+                    const int icol = M.grp(jgrp - 1);
+                    const int itype = M.rgvrtp(icol);
+                    const bool jsotl =
+                        (itype == PRGTAO || itype == PRGTLS || itype == PRGTRP ||
+                         itype == PRGTMV || itype == PRGTTC || itype == PRGTTL ||
+                         itype == PRGTSO || itype == PRGTQI || itype == PRGTQD ||
+                         itype == PRSQAO || itype == PRSQLS);
+                    if (jsotl) {
+                        std::string tmpttl; int nchr = 0;
+                        getstr(ctx, M.colttl.data(), M.colptr.data(), M.nb, icol,
+                               tmpttl, nchr);
+                        if (ctx.error.lfatal) return;
+                        int otlid2 = 0, bgotl2 = 0, eotl2 = 0;
+                        bool lok2 = true;
+                        rdotlr(ctx, tmpttl.substr(0, static_cast<std::size_t>(nchr)),
+                               D.begspn.data(), M.sp, otlid2, bgotl2, eotl2, lok2);
+                        if (!lok2) { abend(ctx); return; }
+                        havreg = true;
+                        if (begotl == bgotl2) {
+                            if (otlidx == otlid2) {
+                                // adrgef.f:107-111 -- the same outlier twice.
+                                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                                       "Regression variable " +
+                                       std::string(effttl) +
+                                       " has already been specified.");
+                                abend(ctx);
+                                return;
+                            } else if (otlidx < otlid2) {
+                                placed = true; break;
+                            }
+                        } else if (begotl < bgotl2) {
+                            placed = true; break;
+                        }
+                    } else if (havreg) {
+                        placed = true; break;
+                    }
+                }
+                // adrgef.f:127 `1 igrp=jgrp`: the loop's exit value, which for a
+                // Fortran DO that ran to completion is Ngrp+1 -- i.e. append.
+                (void)placed;
+                igrp = jgrp;
             } else if (vartyp == PRGTLM || vartyp == PRGTLQ || vartyp == PRGTLY ||
                        vartyp == PRRTLM || vartyp == PRRTLQ || vartyp == PRRTLY ||
                        vartyp == PRATLM || vartyp == PRATLQ || vartyp == PRATLY) {

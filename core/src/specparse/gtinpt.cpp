@@ -94,6 +94,20 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     // gtinpt.f 259, 271-279: estimation-control defaults (an estimate{} spec
     // overrides these; that reader is a later M3 step). DFTOL etc. from model.prm.
     constexpr double DFTOL = 1e-5;
+    // gtinpt.f:156 -- B defaults to DNOTST, i.e. "no initial value, estimate
+    // me". regfix() keys on exactly that, and the user-regressor adrgef calls
+    // in gt_regression pass B(idisp) through as their initial value, so a
+    // zero-init here would read as a supplied coefficient of 0.
+    setdp(prm::DNOTST, prm::PB, ctx.mdldat.b.data());
+    // gtinpt.f:267-270. Convrg defaults TRUE and rgarma only UPDATES it behind
+    // `Lestim .and. Nestpm > 0` (rgarma.f:387) -- so with every ARMA parameter
+    // fixed there is nothing to estimate, nothing touches the flag, and the
+    // default is what the .udg reports. Zero-init read as "did not converge".
+    ctx.mdldat.convrg = true;
+    ctx.mdldat.armaer = 0;
+    // Nothing is fixed until regfix/mdlfix say otherwise.
+    ctx.model.iregfx = 1;
+    ctx.model.imdlfx = 1;
     ctx.model.nintvl = 0;              // gtinpt.f:259
     ctx.arima.mxiter = 1500;
     ctx.arima.mxnlit = 40;

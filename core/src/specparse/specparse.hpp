@@ -265,6 +265,14 @@ void insopr(X13Context& ctx, int optype, const double* coef, const int* lag,
             bool& locok, bool& inptok);
 void getmdl(X13Context& ctx, bool& locok, bool& inptok, bool lauto);
 void mdlfix(X13Context& ctx);
+void regfix(X13Context& ctx);
+// gtinvl.f: arima{ diff= / ar= / ma= } initial/fixed coefficients. Optype is
+// gtarma.f:67's argidx-2 (prm::DIFF / AR / MA); writes Arimap/Arimaf directly.
+void gtinvl(X13Context& ctx, int optype, bool& inptok);
+// gtrgvl.f: regression{ b= }. Writes CALLER scratch (Nb is not final until
+// every variables= group is built); getreg.f:519-553 does the writeback.
+void gtrgvl(X13Context& ctx, int& ielt, bool* fixvec, double* bvec,
+            bool& inptok);
 
 // --------------------------------------------------------------------------
 // regression{ variables = ... } structure builders (getreg.f subtree).

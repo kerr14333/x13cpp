@@ -19,6 +19,7 @@
 #include "regarima/outlier.hpp"     // idotlr, setcv
 #include "automdl/automd.hpp"       // automd (automatic model selection)
 #include "automdl/aictst.hpp"       // explicit_aictest (arima.f:569 aictest)
+#include "automdl/automd_finalize.hpp"  // rmfix, addfix (arima.f:283/910)
 #include "numeric/numeric.hpp"      // dpeq
 #include "gen/srslen.hpp"           // prm::PLEN (residual work-vector sizing)
 #include "gen/model.hpp"            // prm::PORDER
@@ -440,8 +441,30 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                ctx.arima.begxy.data(), frstry, true, ctx.arima.elong);
         if (ctx.error.lfatal) return false;
         ctx.arima.nrxy = nrxy;
-        // (arima.f:282 Iregfx>=2 rmfix/regvar re-run: fixed regressors are not
-        // reachable in this pre-model slice.)
+        // arima.f:281-287 -- with any regression coefficient held FIXED
+        // (Iregfx>=2, i.e. regression{b=(.. f)} or estimate{fix=}), the fixed
+        // columns are STRUCK from the design and their contribution b*X is
+        // subtracted from the series, so what gets estimated is the residual
+        // model; arima.f:907-914 puts both back before the final prlkhd and the
+        // forecasts. This has to be here, ahead of automd/aictest/rgarma alike,
+        // because the Fortran does it before the branch.
+        // PORTED ASYMMETRY: regvar above is called with a backcast count of 0,
+        // so Fixfac is built over a design with no backcast rows -- yet
+        // arima.f:283 still hands rmfix the real Nbcst, shifting the
+        // subtraction by that many periods. Transcribed as written.
+        const bool fixed_reg = ctx.model.iregfx >= 2 && ctx.model.nb > 0;
+        if (fixed_reg) {
+            rmfix(ctx, trnsrs.data(), ctx.extend.nbcst, ctx.arima.nrxy, 1);
+            if (ctx.error.lfatal) return false;
+            int nrxyf = 0, frstryf = 0;
+            regvar(ctx, trnsrs.data(), nobspf, fctdrp, nfcst, 0,
+                   ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+                   ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom, nrxyf,
+                   ctx.arima.begxy.data(), frstryf, true, ctx.arima.elong);
+            if (ctx.error.lfatal) return false;
+            ctx.arima.nrxy = nrxyf;
+            frstry = frstryf;
+        }
         if (wants_save(ctx, "rmx")) {
             savmtx(ctx, LREGDT, ctx.arima.begxy.data(), sp, ctx.mdldat.xy.data(),
                    nrxy, ctx.model.ncxy, ctx.model.colttl.data(),
@@ -549,6 +572,24 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                     ctx.arima.nrxy = nrxy2;
                 }
             }
+            // arima.f:907-914 -- restore the fixed regressors to the design (and
+            // their effect to the series) now that estimation is done, so the
+            // final prlkhd (arima.f:968), the forecasts and the whole X-11 stage
+            // see the FULL model. Must precede prlkhd below, as in the Fortran.
+            if (fixed_reg) {
+                addfix(ctx, trnsrs.data(), ctx.extend.nbcst, /*rind=*/0, 1);
+                if (ctx.error.lfatal) return false;
+                int nrxya = 0, frstrya = 0;
+                regvar(ctx, trnsrs.data(), nobspf, fctdrp, nfcst, 0,
+                       ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+                       ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom,
+                       nrxya, ctx.arima.begxy.data(), frstrya, true,
+                       ctx.arima.elong);
+                if (ctx.error.lfatal) return false;
+                ctx.arima.nrxy = nrxya;
+                if (out_trnsrs) *out_trnsrs = trnsrs;
+            }
+
             // nefobs == Nspobs-Nintvl; the estimates live in mdldat. Record it
             // while Nspobs is still the ESTIMATION span (a model span narrows it
             // and setspn.f widens it back before X-11).

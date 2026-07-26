@@ -591,4 +591,31 @@ void mdlfix(X13Context& ctx) {
     if (lmdlfx && M.imdlfx > 0) M.imdlfx = 3;
 }
 
+// regfix.f -- the regression twin of mdlfix. Derives Iregfx from which
+// coefficients carry a VALUE (B != DNOTST, i.e. regression{b=} gave one) and
+// which of those are FIXED (Regfx, the trailing `f`):
+//   0 = nothing has a value (the default when there are no regressors, so
+//       automatic outlier identification is free to add some),
+//   1 = some have values, none of them fixed (initial values only),
+//   2 = some fixed,
+//   3 = every coefficient has a value and all are fixed.
+// arima.f:282 / :907 gate the rmfix/addfix strip-and-restore on `>= 2`.
+void regfix(X13Context& ctx) {
+    model_cmn& M = ctx.model;
+    M.iregfx = 0;
+    bool allfix = true;
+    if (M.nb > 0) {
+        for (int ieff = 1; ieff <= M.nb; ++ieff) {
+            if (dpeq(ctx.mdldat.b(ieff), prm::DNOTST)) {
+                if (allfix) allfix = false;
+            } else {
+                allfix = allfix && M.regfx(ieff);
+                if (M.iregfx == 0) M.iregfx = 1;
+                if (M.regfx(ieff) && M.iregfx == 1) M.iregfx = 2;
+            }
+        }
+    }
+    if (allfix && M.iregfx > 0) M.iregfx = 3;
+}
+
 }  // namespace x13
