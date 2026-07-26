@@ -61,6 +61,10 @@ endif()
 file(GLOB_RECURSE X13_CORE_SOURCES CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/core/src/*.cpp")
 list(FILTER X13_CORE_SOURCES EXCLUDE REGEX "/core/src/unported/")
+# The C / R ABI translation units belong to the SHARED `x13c` target only.
+# Leaving them in the static x13core too would put the same extern "C" symbols
+# in both, so anything linking x13core AND x13c would get duplicate definitions.
+list(FILTER X13_CORE_SOURCES EXCLUDE REGEX "/core/src/api/x13_(capi|rabi)\\.cpp$")
 
 add_library(x13core STATIC ${X13_CORE_SOURCES})
 target_include_directories(x13core PUBLIC
@@ -132,6 +136,34 @@ target_link_libraries(x13run_seats PRIVATE x13core)
 # ---------------------------------------------------------------------------
 add_executable(adjust_demo examples/adjust_demo.cpp)
 target_link_libraries(adjust_demo PRIVATE x13core)
+
+# ---------------------------------------------------------------------------
+# x13c -- the flat C ABI (core/include/x13/capi.h) as a SHARED library, so R
+# (dyn.load) and Python (ctypes) can call the engine in-process with no build
+# step and no packaging. Loaders: bindings/python/x13c.py, bindings/r/x13c.R.
+#
+# The ABI implementation compiles into x13core like the rest of core/src, but a
+# static library is not loadable from an interpreter -- hence this separate
+# shared target, which whole-archive-links x13core so every engine symbol the
+# ABI reaches is present in the .dll/.so. Without the whole-archive wrapper the
+# linker drops objects nothing in capi.cpp names directly and the library loads
+# but fails at the first engine call.
+# ---------------------------------------------------------------------------
+add_library(x13c SHARED
+  core/src/api/x13_capi.cpp     # the natural C ABI  (Python/ctypes, C, C++)
+  core/src/api/x13_rabi.cpp)    # the .C()-shaped shim (R, no R headers needed)
+target_link_libraries(x13c PRIVATE x13core)
+target_compile_definitions(x13c PRIVATE X13_CAPI_BUILD_SHARED)
+set_target_properties(x13c PROPERTIES
+  C_VISIBILITY_PRESET default
+  CXX_VISIBILITY_PRESET default
+  PREFIX "")
+if(MINGW)
+  # Static-link the toolchain runtimes: the .dll is loaded by R/Python, which
+  # will not have rtools' bin on their PATH.
+  target_link_options(x13c PRIVATE
+    -static-libgcc -static-libstdc++ -Wl,--enable-stdcall-fixup)
+endif()
 
 # ---------------------------------------------------------------------------
 # Unit tests (self-contained microtest framework; no external dependencies).

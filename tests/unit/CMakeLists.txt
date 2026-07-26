@@ -76,6 +76,25 @@ target_compile_definitions(test_api_facade PRIVATE
 target_link_libraries(test_api_facade PRIVATE x13core x13_fp_flags)
 add_test(NAME test_api_facade COMMAND test_api_facade)
 
+# test_capi drives the flat C ABI. It links the SHARED x13c target rather than
+# x13core, deliberately: the ABI's contract (NULL safety, the size protocol, the
+# FP-control-word restore) only means anything as the .dll/.so an interpreter
+# actually loads, so the test exercises that exact artifact.
+add_executable(test_capi test_capi.cpp)
+target_include_directories(test_capi PRIVATE
+  "${CMAKE_SOURCE_DIR}/core/include"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(test_capi PRIVATE x13c x13_fp_flags)
+add_test(NAME test_capi COMMAND test_capi)
+if(WIN32)
+  # Windows has no RPATH: the loader looks beside the .exe and along PATH, and
+  # x13c.dll is built into the top-level build dir. Copy it next to the test
+  # binary or the run dies with 0xc0000135 (DLL not found) before main().
+  add_custom_command(TARGET test_capi POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:x13c> $<TARGET_FILE_DIR:test_capi>)
+endif()
+
 # The fformat test validates against gfortran when available. Point it at the
 # gfortran the build already knows about (Fortran optional), and give it a
 # writable scratch directory. If gfortran cannot be found the test self-skips.
