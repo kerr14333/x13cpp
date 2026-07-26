@@ -228,6 +228,109 @@ def test_history_table(base: str, tag: str, ncol: int, kind: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# history{sadjlags= / trendlags= / target=}: the ALTERNATE REVISION TARGETS.
+#
+# Each surviving lag adds one column to every table of its family: the estimate
+# made `lag` periods AFTER the revision date, in place of the full-data final
+# one. getrev.f:57-70 (SA) / :86-99 (trend) file each span's value into the row
+# it is `lag` periods past; prtrev.f:174-226 does the arithmetic:
+#
+#   default (target=final)       column = Fin(0) - Fin(lag)   [/Fin(lag) x100]
+#   target=concurrent (Cnctar)   column = Fin(lag) - Conc     [/Conc      x100]
+#
+# and writes DNOTST (-999) into any row whose target estimate does not exist yet
+# (the span that would have made it runs past the data). setrvp.f:26-40 widens
+# Endsa -- the loop end AND that mask's cutoff -- by the largest lag GIVEN,
+# before revchk.f:1053-1110 sorts the list and drops the ones that do not fit.
+#
+# The one asymmetry: when both a 1-year and a 2-year lag survive, revchk sets
+# Lr1y2y and prtrev emits one more column, Fin(2yr)-Fin(1yr) -- but only on the
+# SA / SA-change / indirect tables. The trend calls pass the flag as a literal F
+# (revdrv.f:852/859), so those keep exactly one column per lag. See CB-22 for
+# the shared-flag defect that pairs with it.
+#
+# This gate compares EVERY column, and asserts the column COUNT first: a missing
+# or spurious target column is the failure mode the leading-column gate above is
+# structurally blind to (it reads only the first ncol values of each row).
+# ---------------------------------------------------------------------------
+
+_TARGET_TABLES = [("sae", "level"), ("tre", "level"),
+                  ("sar", "rev"), ("trr", "rev"),
+                  ("chr", "rev"), ("che", "rev"),
+                  ("tcr", "rev"), ("tce", "rev")]
+
+
+def _read_golden_all(path: str) -> dict[str, list[float]]:
+    """{date: [every value column]} from an oracle history save file."""
+    out: dict[str, list[float]] = {}
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for ln in f:
+            parts = ln.split()
+            if len(parts) < 2 or not re.match(r"^\d{6}$", parts[0]):
+                continue
+            out[parts[0]] = [_num(v) for v in parts[1:] if _NUM_RE.fullmatch(v)]
+    return out
+
+
+def _read_produced_all(text: str, tag: str) -> dict[str, list[float]]:
+    out: dict[str, list[float]] = {}
+    for ln in text.splitlines():
+        parts = ln.split()
+        if len(parts) < 3 or parts[0] != tag:
+            continue
+        out[parts[1]] = [float(v) for v in parts[2:]]
+    return out
+
+
+def _discover_targets() -> list[str]:
+    return [b for b in CASES
+            if "sadjlags" in _spec_text(b) or "trendlags" in _spec_text(b)]
+
+
+TARGET_CASES = _discover_targets()
+
+
+@pytest.mark.skipif(not TARGET_CASES, reason="no history spec sets sadjlags/trendlags")
+@pytest.mark.parametrize("base", TARGET_CASES)
+@pytest.mark.parametrize("tag,kind", _TARGET_TABLES)
+def test_history_target_columns(base: str, tag: str, kind: str) -> None:
+    goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
+    if not os.path.exists(goldpath):
+        pytest.skip(f"{base} does not produce the {tag} table")
+
+    gold = _read_golden_all(goldpath)
+    assert gold, f"{base}.{tag}: empty golden"
+    ncol = len(next(iter(gold.values())))
+
+    prod = _read_produced_all(_run(base), tag)
+    assert prod, f"{base}.{tag}: produced no rows"
+
+    missing = set(gold) - set(prod)
+    assert not missing, f"{base}.{tag}: missing {len(missing)} rows, e.g. {sorted(missing)[:5]}"
+
+    got_ncol = len(next(iter(prod.values())))
+    assert got_ncol == ncol, (
+        f"{base}.{tag}: emitted {got_ncol} value columns, golden has {ncol} "
+        f"(a target column is missing or spurious)")
+
+    worst, worst_key = 0.0, None
+    for d, gv in gold.items():
+        pv = prod[d]
+        for c in range(ncol):
+            # DNOTST (-999) rows are compared literally: an engine that filled a
+            # masked cell would miss by ~1e3, far past either tolerance.
+            if kind == "level":
+                err = abs(gv[c] - pv[c]) / abs(gv[c]) if gv[c] else abs(gv[c] - pv[c])
+                tol = RTOL_LEVEL_BY_SPEC.get(base, RTOL_LEVEL)
+            else:
+                err = abs(gv[c] - pv[c])
+                tol = ATOL_REV_BY_SPEC.get(base, ATOL_REV)
+            if err > worst:
+                worst, worst_key = err, (d, c)
+        assert worst <= tol, f"{base}.{tag}: worst {kind} err {worst} at {worst_key}"
+
+
+# ---------------------------------------------------------------------------
 # history{estimates=(fcst)}: the out-of-sample forecast-error history.
 #
 # prtfct.f:613 stores each span's original-scale forecast at the requested leads

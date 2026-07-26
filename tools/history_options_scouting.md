@@ -119,6 +119,48 @@ moves sae 3.23e-3. This port had to *suppress* its ssprep mirror to reproduce it
 
 Gated by `extra/airline_history-x11reg{,-fixx11reg,-nomodel-fixx11reg,-fixmdl}`.
 
+### `sadjlags=`/`trendlags=`/`target=` — CLOSED, and it was the OUTPUT gap
+
+**Status: ported and gated.** These were the biggest output gap on the table —
+whole columns absent, not values wrong. Each surviving lag adds one column per
+table of its family: "the estimate `lag` periods AFTER the revision date" in
+place of the full-data final one. Ported end to end:
+
+* `setrvp.f:26-40` — `Endsa += mxrlag` (capped at the last observation), so the
+  spans that make those estimates actually run. `Endtbl`/`Revnum` are fixed
+  before this, so the TABLE does not grow; only the loop and the DNOTST cutoff.
+* `revchk.f:1053-1110` — `intsrt` the list ascending, drop from the top any lag
+  that does not fit in the revision span, and set `Lr1y2y` when a 1-year and a
+  2-year lag both survive. **Order matters and is faithful: `setrvp` runs
+  BEFORE this**, so a lag that is about to be discarded still widens `Endsa`.
+* `getrev.f:57-70` (SA) / `:86-99` (trend) — each span files its estimate into
+  the row it is `lag` periods past, `Fin(t, Revptr-lag)` read at `Posfob-lag`.
+  The sorted list lets the Fortran `DO WHILE` stop at the first lag this span
+  cannot serve; the port keeps that break. It needs one guard the oracle gets
+  for free: `revdrv.f:416` turns `Lx11` off past `Endsa`, so getrev never runs
+  on the trailing spans, while this port adjusts every span to `Endrev`.
+* `prtrev.f:174-226` — the arithmetic, `Fin(0)-Fin(lag)` by default and
+  `Fin(lag)-Conc` under `target=concurrent` (`Cnctar`), each percented by its
+  own base on a level table; plus the DNOTST mask for rows whose target
+  estimate does not exist yet, whose cutoff `Cnctar` moves one row later.
+
+**The one asymmetry, and it is CB-22:** the extra `(1yr-2yr)` column exists only
+on the SA / SA-change / indirect tables — `revdrv.f:852/859` pass `Lr1y2y` to
+the two TREND calls as a literal `F` — even though `revchk` derives the flag
+from both lists, with the trend list overwriting the sadj list's verdict. That
+was caught by the gate asserting COLUMN COUNTS, not values: the engine emitted
+a 4th trend column against the golden's 3 while every value it did emit agreed.
+**A gate that reads the first N columns of a save file cannot see a wrong N.**
+
+Measured engine-vs-oracle after the port, all three specs, every column of all
+eight tables: revisions worst 1.4e-3 absolute (tolerance 5e-3), levels worst
+8.4e-6 relative (tolerance 1e-5) — the ordinary per-span re-estimation floor,
+the same one column 0 already sat at. Gated by
+`extra/airline_history-sadjlags` (the 1yr/2yr pair on both families),
+`-sadjlags-conc` (`target=concurrent`) and `-sadjlags-drop` (an unsorted list
+carrying one lag too long for the span, so `intsrt` + the drop + the
+widened-then-discarded `mxrlag` are all pinned).
+
 The original measurement that started it is kept below.
 
 ### The measurement: the whole `x11regression{} + history{}` family was wrong
@@ -213,8 +255,7 @@ next person does not re-derive it.
    needed. `x11outlier=` (`Rvxotl`) shares the `revdrv.f:309-350` `Ixreg` block
    and is still open; it needs `rmatot.f` (as `outlier=` does) on top of what
    landed here.
-4. `sadjlags=`/`trendlags=`/`target=` — the alternate revision targets; the
-   biggest OUTPUT gap (whole columns absent) and `target=` rides on it.
+4. ~~`sadjlags=`/`trendlags=`/`target=`~~ — DONE. See the section below.
 5. `outlier=`/`outlierwin=` — needs `rmatot.f` + `rmotrv.f`; the default is
    already right, so this is the least urgent of the movers.
 6. `additivesa=` — additive mode only, and the additive branches of

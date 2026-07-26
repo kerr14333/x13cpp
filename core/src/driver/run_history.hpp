@@ -58,18 +58,28 @@
 //     then switches Fixper off (nothing left to re-estimate once a year).
 //   * composite{}: the INDIRECT SA revision history (Indrev) -- see the
 //     HistoryOutput fields below and the run_history.cpp comment block.
-//   * No revision targets (Ntarsa==Ntartr==0 -> only the Fin(0,.) concurrent-
-//     vs-final column), no regression{}/outlier{}/x11regression{}. Without
+//   * history{sadjlags=/trendlags=/target=} (Targsa/Targtr/Cnctar) -- the
+//     ALTERNATE REVISION TARGETS. Each lag adds a column to every table of its
+//     family: "the estimate `lag` periods later" in place of the full-data final
+//     one. setrvp.f:26-40 widens Endsa by the largest lag so those spans run;
+//     revchk.f:1053-1110 sorts the list, drops any lag that does not fit in the
+//     revision span, and sets Lr1y2y when both a 1-year and a 2-year lag survive
+//     (which adds one more column, Fin(2yr)-Fin(1yr)); getrev.f:57-70/86-99
+//     files each span's estimate into the row it is `lag` periods past;
+//     prtrev.f:174-226 does the arithmetic, including the DNOTST mask for rows
+//     whose target estimate does not exist. `target=concurrent` (Cnctar) makes
+//     every column a revision FROM the concurrent estimate rather than TO the
+//     final one.
+//   * No regression{}/outlier{}/x11regression{}. Without
 //     fixmdl the model is re-estimated each span (restor_span resets Arimap to
 //     the main run's converged snapshot as the per-span starting values, then
 //     rgarma re-optimizes).
 //
 // Still NOT ported from history{}'s option surface, all parsed and currently
 // SILENT: outlier= / outlierwin= (Otlrev/Otlwin -- the per-span outlier
-// re-identification), refresh= (Lrfrsh), fixreg= (Rvfxrg/Nrvfxr),
-// fixx11reg= (Revfxx), sadjlags=/trendlags=/target= (Targsa/Targtr/Cnctar --
-// the alternate revision targets), endtable= (Irev==2), transparent= (Rvtran,
-// print surface) and additivesa= (Rvdiff, additive-mode only).
+// re-identification) and additivesa= (Rvdiff, additive-mode only). refresh=
+// (Lrfrsh) is measured structurally INERT and deliberately not ported;
+// transparent= (Rvtran) is print surface. See tools/history_options_scouting.md.
 #ifndef X13_DRIVER_RUN_HISTORY_HPP
 #define X13_DRIVER_RUN_HISTORY_HPP
 
@@ -159,6 +169,29 @@ struct HistoryOutput {
     std::vector<double> iar;         // Ind_SA_revision (percent)
     std::vector<double> iae_cnc;     // Conc_Ind_SA
     std::vector<double> iae_fin;     // Final_Ind_SA
+    // ALTERNATE REVISION TARGETS -- history{sadjlags=/trendlags=/target=}
+    // (Targsa/Targtr/Cnctar). Each lag adds one column to every table: the
+    // estimate made `lag` periods AFTER the revision date (getrev.f:57-70 stores
+    // Fin(i,Revptr-Targ) from the span ending Targ periods later) instead of the
+    // full-data final one. `sadjlags` drives the SA + SA-change + indirect
+    // tables, `trendlags` the trend + trend-change tables.
+    //   *_t   -- the extra columns of the REVISION tables (sar/trr/chr/tcr/iar),
+    //            row-major, `ncol_sa`/`ncol_tr` wide; column order is the save
+    //            file's own (lag ascending, then the r1y2y column last).
+    //   *e_t  -- the extra columns of the LEVEL tables (sae/tre/che/tce/iae):
+    //            the "N later" estimate itself, ntarsa/ntartr wide, no r1y2y.
+    // A row whose target estimate does not exist yet (the span that would have
+    // made it runs past the data) is DNOTST, exactly as prtrev.f:174-180 writes
+    // it into the save file.
+    int ntarsa = 0, ntartr = 0;      // SURVIVING target counts (revchk drops)
+    std::vector<int> targsa, targtr; // sorted ascending
+    bool r1y2y = false;              // Lr1y2y: the extra (1yr-2yr) column
+    bool cnctar = false;             // target=concurrent
+    int ncol_sa = 0, ncol_tr = 0;    // ntar (+1 when r1y2y) -- revision widths
+    std::vector<double> sar_t, chr_t, iar_t;   // ncol_sa per row
+    std::vector<double> trr_t, tcr_t;          // ncol_tr per row
+    std::vector<double> sae_t, che_t, iae_t;   // ntarsa per row
+    std::vector<double> tre_t, tce_t;          // ntartr per row
 };
 
 // Run the revisions-history analysis. No-op (returns true, leaves

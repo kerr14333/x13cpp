@@ -388,21 +388,40 @@ int main(int argc, char** argv) {
     // line per revision-table row (see tests/parity/test_history_tables.py).
     if (ctx.hist_out.ran) {
         const auto& ho = ctx.hist_out;
+        // history{sadjlags=/trendlags=} append one column per surviving lag (and
+        // a shared 1yr-2yr column on the revision tables), in the save file's own
+        // order -- so the leading columns every existing gate reads are unmoved.
+        auto ext = [&](const std::vector<double>& v, int n, std::size_t r) {
+            for (int k = 0; k < n; ++k)
+                std::printf(" %.15E", v[r * static_cast<std::size_t>(n) + k]);
+        };
         for (std::size_t r = 0; r < ho.dates.size(); ++r) {
             if (ho.have_sa) {
-                std::printf("sar %06d %.15E\n", ho.dates[r], ho.sar[r]);
-                std::printf("sae %06d %.15E %.15E\n", ho.dates[r],
+                std::printf("sar %06d %.15E", ho.dates[r], ho.sar[r]);
+                ext(ho.sar_t, ho.ncol_sa, r);
+                std::printf("\n");
+                std::printf("sae %06d %.15E %.15E", ho.dates[r],
                             ho.sae_cnc[r], ho.sae_fin[r]);
+                ext(ho.sae_t, ho.ntarsa, r);
+                std::printf("\n");
             }
             if (ho.have_tr) {
-                std::printf("trr %06d %.15E\n", ho.dates[r], ho.trr[r]);
-                std::printf("tre %06d %.15E %.15E\n", ho.dates[r],
+                std::printf("trr %06d %.15E", ho.dates[r], ho.trr[r]);
+                ext(ho.trr_t, ho.ncol_tr, r);
+                std::printf("\n");
+                std::printf("tre %06d %.15E %.15E", ho.dates[r],
                             ho.tre_cnc[r], ho.tre_fin[r]);
+                ext(ho.tre_t, ho.ntartr, r);
+                std::printf("\n");
             }
             if (ho.have_ch) {
-                std::printf("chr %06d %.15E\n", ho.dates[r], ho.chr[r]);
-                std::printf("che %06d %.15E %.15E\n", ho.dates[r],
+                std::printf("chr %06d %.15E", ho.dates[r], ho.chr[r]);
+                ext(ho.chr_t, ho.ncol_sa, r);
+                std::printf("\n");
+                std::printf("che %06d %.15E %.15E", ho.dates[r],
                             ho.che_cnc[r], ho.che_fin[r]);
+                ext(ho.che_t, ho.ntarsa, r);
+                std::printf("\n");
             }
             if (ho.have_sf) {
                 std::printf("sfr %06d %.15E %.15E\n", ho.dates[r],
@@ -411,9 +430,13 @@ int main(int argc, char** argv) {
                             ho.sfe_cnc[r], ho.sfe_proj[r], ho.sfe_fin[r]);
             }
             if (ho.have_tch) {
-                std::printf("tcr %06d %.15E\n", ho.dates[r], ho.tcr[r]);
-                std::printf("tce %06d %.15E %.15E\n", ho.dates[r],
+                std::printf("tcr %06d %.15E", ho.dates[r], ho.tcr[r]);
+                ext(ho.tcr_t, ho.ncol_tr, r);
+                std::printf("\n");
+                std::printf("tce %06d %.15E %.15E", ho.dates[r],
                             ho.tce_cnc[r], ho.tce_fin[r]);
+                ext(ho.tce_t, ho.ntartr, r);
+                std::printf("\n");
             }
         }
         // fcst history: fce/fch carry nfctlg columns per row and their own date

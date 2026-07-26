@@ -589,3 +589,58 @@ in the span loops writes them either, so stale == correct here.
   spec is the one that exercises `restor`'s ARMA-flag restore most directly:
   `history{fixmdl=yes}` sets all `PARIMA` flags true and relies on every span's
   `restor` to keep them true).
+
+---
+
+## CB-22 — `Lr1y2y` is derived from BOTH target lists but used only by the SA tables
+
+`history{sadjlags= trendlags=}` add "the estimate N periods later" columns to the
+revision tables. When both a 1-year and a 2-year lag survive, `revchk.f` sets
+`Lr1y2y`, which makes `prtrev` emit one MORE column — the 2-year estimate
+against the 1-year one:
+
+```fortran
+      IF(Ntarsa.gt.0)THEN
+       CALL intsrt(Ntarsa,Targsa)
+       ...
+         IF(Targsa(i).eq.Ny.or.Targsa(i).eq.2*Ny)i2=i2+1
+       END DO
+       Lr1y2y=i2.eq.2                        ! revchk.f:1080  (from sadjlags)
+      END IF
+      IF(Ntartr.gt.0)THEN
+       CALL intsrt(Ntartr,Targtr)
+       ...
+       Lr1y2y=i2.eq.2                        ! revchk.f:1109  (from trendlags)
+      END IF
+```
+
+There is one flag, and the trend block **overwrites whatever the sadj block
+decided**. But the flag is only ever *consumed* by the SA-family tables:
+
+```fortran
+      CALL prtrev(Finsa ,Cncsa ,Rvstrt,1,LREVR1,Ntarsa,Targsa,...,lr1y2y)
+      CALL prtrev(Finch ,Cncch ,Rvstrt,2,LREVR2,Ntarsa,Targsa,...,lr1y2y)
+      CALL prtrev(Finisa,Cncisa,Rvstrt,3,LREVR3,Ntarsa,Targsa,...,lr1y2y)
+      CALL prtrev(Fintrn,Cnctrn,Rvstrt,4,LREVR4,Ntartr,Targtr,...,F)   ! :852
+      CALL prtrev(Fintch,Cnctch,Rvstrt,5,LREVR5,Ntartr,Targtr,...,F)   ! :859
+```
+
+So the *trend* lag list silently decides whether the *seasonally adjusted*
+series' revision table gets its `(1yr-2yr)` column, and the trend tables can
+never have one of their own. Two observable consequences:
+
+* `sadjlags=(12 24)` with `trendlags=(6)` — the SA table LOSES the column it
+  would have had on its own (`Lr1y2y` ends up false).
+* `sadjlags=(6 18)` with `trendlags=(12 24)` — the SA table GAINS a column it
+  cannot fill: `prtrev.f:203-226` only assigns `rev(ncol,Revptr)` inside the
+  `Vtargt(i2).eq.2*Ny` branch, so with no 1yr/2yr lag among *its* lags the
+  column is written straight from the uninitialised `rev` scratch array.
+
+- **Port:** reproduced for the first case (`core/src/driver/run_history.cpp`
+  derives the flag from both lists in the same order and passes `false` for the
+  two trend tables), *not* for the second — an uninitialised-stack read has no
+  faithful value to reproduce; the port leaves that column at 0. Gated by
+  `tests/parity/test_history_tables.py::test_history_target_columns`, whose
+  corpus specs (`extra/airline_history-sadjlags*`) give BOTH lists the same
+  1yr/2yr pair or neither, which is the only configuration where the flag means
+  what its name says.

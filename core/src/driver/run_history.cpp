@@ -27,6 +27,7 @@
 #include "x11/slidingspans.hpp"      // restor_span
 #include "specparse/specparse.hpp"   // dfdate, addate
 #include "gen/model.hpp"            // prm:: regression-type constants (PRG*), AR/MA
+#include "gen/notset.hpp"           // prm::DNOTST (prtrev's "no such estimate yet")
 
 #include <algorithm>
 #include <cmath>
@@ -359,6 +360,77 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const int revnum = endtbl - begrev;            // # of revision-table rows
     if (revnum <= 0) return true;                  // not enough data (clean skip)
 
+    // --- the alternate revision TARGETS (history{sadjlags=/trendlags=}) -------
+    // setrvp.f:26-40: with targets the span loop has to run mxrlag periods
+    // further than the table, since the "N later" estimate for the LAST table
+    // row is made by a span N periods past it. Endtbl/Revnum are already fixed
+    // (setrvp sets them before this block), so only Endsa widens -- and Endsa is
+    // what prtrev's DNOTST mask keys on. Note the order in revchk.f: setrvp runs
+    // BEFORE the list is validated, so a lag that is about to be dropped still
+    // widens Endsa here.
+    revtrg_cmn& rt = ctx.revtrg;
+    if (rt.ntarsa > 0 || rt.ntartr > 0) {
+        int mxrlag = 0;
+        for (int i = 1; i <= rt.ntarsa; ++i)
+            if (mxrlag < rt.targsa(i)) mxrlag = rt.targsa(i);
+        for (int i = 1; i <= rt.ntartr; ++i)
+            if (mxrlag < rt.targtr(i)) mxrlag = rt.targtr(i);
+        endsa += mxrlag;
+        if (endsa > llda) endsa = llda;
+    }
+    // revchk.f:1053-1110 -- sort each list ascending (intsrt) and drop, from the
+    // top, any lag that does not fit inside the revision span (the oracle prints
+    // a NOTE and zeroes the entry). Lr1y2y is then "both a 1-year and a 2-year
+    // lag survive", which adds the extra Fin(2yr)-Fin(1yr) column.
+    bool r1y2y = false;
+    if (rt.ntarsa > 0 || rt.ntartr > 0) {
+        int nyrev = 0;
+        dfdate(rvend, rvstrt, ny, nyrev);
+        // CB-22: Lr1y2y is a single flag shared by BOTH tables' prtrev calls
+        // (revdrv.f:825/851 pass the same one), and the trend block below
+        // overwrites whatever the sadj block decided. So `sadjlags=(12 24)`
+        // together with a `trendlags=` that is not also a 1yr/2yr pair silently
+        // costs the SA table its (1yr-2yr) column -- and vice versa. Transcribed
+        // as written; see tools/census_bugs.md.
+        auto validate = [&](farray1<int, 5>& targ, int& ntarg) {
+            std::sort(targ.data(), targ.data() + ntarg);
+            int i2 = 0;
+            for (int i = ntarg; i >= 1; --i) {
+                if (nyrev <= targ(i)) {            // no room for this lag
+                    targ(i) = 0;
+                    ntarg -= 1;
+                } else if (targ(i) == ny || targ(i) == 2 * ny) {
+                    i2 += 1;
+                }
+            }
+            r1y2y = (i2 == 2);
+        };
+        if (rt.ntarsa > 0) validate(rt.targsa, rt.ntarsa);
+        if (rt.ntartr > 0) validate(rt.targtr, rt.ntartr);
+    }
+    const int ntarsa = rt.ntarsa, ntartr = rt.ntartr;
+    const bool cnctar = ctx.rev.cnctar;
+    // prtrev.f:90-91 -- the revision tables carry one column per surviving lag,
+    // plus the (1yr-2yr) one; the level tables carry only the lags. The TREND
+    // and trend-change calls pass Lr1y2y as a literal F (revdrv.f:852/859), so
+    // that extra column exists only on the SA / SA-change / indirect tables --
+    // even though revchk derives the flag from BOTH lists (CB-22).
+    const int ncol_sa = ntarsa + ((r1y2y && ntarsa > 0) ? 1 : 0);
+    const int ncol_tr = ntartr;
+    // Fin(1:Ntargt, .) for each table family, filled during the span loop.
+    const int nt_rows = revnum + 1;
+    // (the INDIRECT target columns go straight into /revdta/ Finisa(1:,.), the
+    // shared accumulator every component folds into -- same as Finisa(0,.).)
+    std::vector<std::vector<double>> finsa_t, finch_t, fintrn_t, fintch_t;
+    if (ntarsa > 0) {
+        finsa_t.assign(ntarsa + 1, std::vector<double>(nt_rows, 0.0));
+        finch_t.assign(ntarsa + 1, std::vector<double>(nt_rows, 0.0));
+    }
+    if (ntartr > 0) {
+        fintrn_t.assign(ntartr + 1, std::vector<double>(nt_rows, 0.0));
+        fintch_t.assign(ntartr + 1, std::vector<double>(nt_rows, 0.0));
+    }
+
     // --- revdrv.f expanding-span loop -----------------------------------------
     // Each span starts at the fixed series calendar origin (Im = Begspn month,
     // Lyr = Begspn year); only the endpoint grows. run_x11_span reads Im from
@@ -649,6 +721,43 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
                                 row.push_back(ctx.mdldat.arimap(ilag));
             }
             if (lrvtdrg) cnctdrg[static_cast<std::size_t>(revptr)] = rvtdrg(ctx);
+            // getrev.f:57-70 (SA) / :86-99 (trend) -- the alternate targets. A
+            // span more than Targ periods past the first revision date is the
+            // "Targ later" estimate for the row Targ periods back: Fin(t,i1)
+            // read at Posfob-Targ. The list is sorted ascending and the Fortran
+            // DO WHILE stops at the first lag this span cannot serve.
+            // `i <= endsa` is the oracle's own cutoff (revdrv.f:416 turns Lx11
+            // off past Endsa, so getrev never runs on those spans); this port
+            // adjusts every span, so the guard has to be explicit.
+            if (i <= endsa) {
+                for (int t = 1; t <= ntarsa; ++t) {
+                    if (revptr <= rt.targsa(t)) break;
+                    const int i1 = revptr - rt.targsa(t);
+                    const int pos = posfob - rt.targsa(t);
+                    if (i1 > revnum) continue;
+                    finsa_t[t][i1] = ctx.x11srs.stci(pos);
+                    if (ind_acc)
+                        ind_fold(ctx.revsrs.finisa(t, i1), ctx.x11srs.stci(pos),
+                                 iag, ctx.agr.w);
+                    if (lrvch) {
+                        const double a = ctx.x11srs.stci(pos);
+                        const double b = ctx.x11srs.stci(pos - 1);
+                        finch_t[t][i1] = ((a - b) / b) * 100.0;
+                    }
+                }
+                for (int t = 1; t <= ntartr; ++t) {
+                    if (revptr <= rt.targtr(t)) break;
+                    const int i1 = revptr - rt.targtr(t);
+                    const int pos = posfob - rt.targtr(t);
+                    if (i1 > revnum) continue;
+                    fintrn_t[t][i1] = ctx.x11srs.stc(pos);
+                    if (lrvtch) {
+                        const double a = ctx.x11srs.stc(pos);
+                        const double b = ctx.x11srs.stc(pos - 1);
+                        fintch_t[t][i1] = ((a - b) / b) * 100.0;
+                    }
+                }
+            }
         }
         // getrev Itype=0: at a year-boundary span (Posfob a multiple of Ny =
         // December for this Jan-start series) store the Ny projected factors
@@ -716,6 +825,82 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
         out.ind_yes = (ctx.rev.nrcomp == ctx.agr.ncomp && ctx.rev.indrev > 0);
         out.have_ind = out.ind_yes;
     }
+    out.ntarsa = ntarsa;
+    out.ntartr = ntartr;
+    out.ncol_sa = ncol_sa;
+    out.ncol_tr = ncol_tr;
+    out.r1y2y = r1y2y;
+    out.cnctar = cnctar;
+    for (int t = 1; t <= ntarsa; ++t) out.targsa.push_back(rt.targsa(t));
+    for (int t = 1; t <= ntartr; ++t) out.targtr.push_back(rt.targtr(t));
+
+    // prtrev.f:174-226 -- one table's alternate-target columns for one row.
+    // `rev_out` gets the ncol REVISION columns (the save file's own order: lag
+    // ascending, the shared 1yr-2yr column last), `lvl_out` the ntarg "N later"
+    // LEVELS the conc/final save table appends unmasked.
+    //   default (target=final)      column t = Fin(0) - Fin(t)   [/Fin(t)]
+    //   target=concurrent (Cnctar)  column t = Fin(t) - Conc     [/Conc]
+    // A row past `lstrev` has no such estimate yet and is written DNOTST.
+    auto targ_cols = [&](int revptr, int ntarg, int ncol,
+                         const farray1<int, 5>& targ,
+                         const std::vector<std::vector<double>>& fin_t,
+                         double cnc, double fin0, bool percent, bool use_1y2y,
+                         std::vector<double>& rev_out,
+                         std::vector<double>& lvl_out) {
+        const int i = begrev + revptr - 1;         // prtrev's absolute row index
+        double fin1yr = 0.0;
+        // NB when Lr1y2y came from the OTHER family (CB-22) this row's last
+        // column is never assigned -- in the Fortran it is then whatever the
+        // uninitialised `rev` scratch held. Left at 0 here.
+        std::vector<double> col(static_cast<std::size_t>(ncol) + 1, 0.0);
+        for (int i2 = 1; i2 <= ntarg; ++i2) {
+            const int v = targ(i2);
+            const double fint = fin_t[i2][revptr];
+            int lstrev = endsa - v;
+            if (cnctar) lstrev += 1;
+            double r;
+            if (i >= lstrev) {
+                r = prm::DNOTST;
+            } else if (cnctar) {
+                r = fint - cnc;
+                if (percent) r = (r / cnc) * 100.0;
+            } else {
+                r = fin0 - fint;
+                if (percent) r = (r / fint) * 100.0;
+            }
+            col[static_cast<std::size_t>(i2)] = r;
+            // prtrev.f:203-226 -- the extra (1yr-2yr) column, formed on the
+            // 2-year lag's pass from the 1-year lag's value saved on the
+            // previous one (the list is sorted, so 1yr comes first). Its mask
+            // is one row LOOSER than the others' and ignores Cnctar.
+            if (use_1y2y) {
+                if (v == ny) fin1yr = fint;
+                if (v == 2 * ny) {
+                    if (i >= endsa - v) {
+                        col[static_cast<std::size_t>(ncol)] = prm::DNOTST;
+                    } else {
+                        double q = fint - fin1yr;
+                        if (percent) q = (q / fin1yr) * 100.0;
+                        col[static_cast<std::size_t>(ncol)] = q;
+                    }
+                }
+            }
+        }
+        for (int k = 1; k <= ncol; ++k)
+            rev_out.push_back(col[static_cast<std::size_t>(k)]);
+        for (int k = 1; k <= ntarg; ++k) lvl_out.push_back(fin_t[k][revptr]);
+    };
+
+    // The indirect target levels live in the shared /revdta/ accumulator (every
+    // component folded into it above); lift them into the same shape.
+    std::vector<std::vector<double>> finisa_t;
+    if (out.have_ind && ntarsa > 0) {
+        finisa_t.assign(ntarsa + 1, std::vector<double>(nt_rows, 0.0));
+        for (int t = 1; t <= ntarsa; ++t)
+            for (int r = 1; r <= revnum; ++r)
+                finisa_t[t][r] = ctx.revsrs.finisa(t, r);
+    }
+
     for (int revptr = 1; revptr <= revnum; ++revptr) {
         int idate[2];
         addate(rvstrt, ny, revptr - 1, idate);
@@ -727,6 +912,9 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.sae_cnc.push_back(cnc);
             out.sae_fin.push_back(fin);
             out.sar.push_back(r);
+            if (ntarsa > 0)
+                targ_cols(revptr, ntarsa, ncol_sa, rt.targsa, finsa_t, cnc, fin,
+                          rvper, r1y2y, out.sar_t, out.sae_t);
         }
         if (out.have_ind) {
             // prtrev Tbltyp=3: the same level-table arithmetic as Tbltyp=1, run
@@ -738,6 +926,9 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.iae_cnc.push_back(cnc);
             out.iae_fin.push_back(fin);
             out.iar.push_back(r);
+            if (ntarsa > 0)
+                targ_cols(revptr, ntarsa, ncol_sa, rt.targsa, finisa_t, cnc, fin,
+                          rvper, r1y2y, out.iar_t, out.iae_t);
         }
         if (lrvtrn) {
             const double cnc = cnctrn[revptr], fin = fintrn[revptr];
@@ -746,6 +937,9 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.tre_cnc.push_back(cnc);
             out.tre_fin.push_back(fin);
             out.trr.push_back(r);
+            if (ntartr > 0)
+                targ_cols(revptr, ntartr, ncol_tr, rt.targtr, fintrn_t, cnc, fin,
+                          rvper, false, out.trr_t, out.tre_t);
         }
         if (lrvch) {
             // Change table (Tbltyp=2): the conc/final values are already the
@@ -755,6 +949,9 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.che_cnc.push_back(cnc);
             out.che_fin.push_back(fin);
             out.chr.push_back(fin - cnc);
+            if (ntarsa > 0)                        // Tbltyp=2 also takes Targsa
+                targ_cols(revptr, ntarsa, ncol_sa, rt.targsa, finch_t, cnc, fin,
+                          /*percent=*/false, r1y2y, out.chr_t, out.che_t);
         }
         if (lrvsf) {
             // prtrv2: two revisions, Final-Conc and Final-Proj; Rvper (Muladd!=1)
@@ -774,6 +971,9 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             out.tce_cnc.push_back(cnc);
             out.tce_fin.push_back(fin);
             out.tcr.push_back(fin - cnc);
+            if (ntartr > 0)                        // Tbltyp=5 also takes Targtr
+                targ_cols(revptr, ntartr, ncol_tr, rt.targtr, fintch_t, cnc, fin,
+                          /*percent=*/false, false, out.tcr_t, out.tce_t);
         }
     }
 

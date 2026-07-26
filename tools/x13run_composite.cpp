@@ -371,24 +371,42 @@ int main(int argc, char** argv) {
         if (ctx.hist_out.ran) {
             const auto& ho = ctx.hist_out;
             char hbuf[160];
+            // history{sadjlags=} appends one "N later" column per surviving lag
+            // (plus the 1yr-2yr one on the revision tables), in the save file's
+            // own order, so the leading columns stay where every gate expects.
+            auto ext = [&](const std::vector<double>& v, int n, std::size_t r) {
+                for (int k = 0; k < n; ++k) {
+                    std::snprintf(hbuf, sizeof hbuf, " %.15E",
+                                  v[r * static_cast<std::size_t>(n) + k]);
+                    out += hbuf;
+                }
+            };
             for (std::size_t r = 0; r < ho.dates.size(); ++r) {
                 if (ho.have_sa) {
-                    std::snprintf(hbuf, sizeof hbuf, "%ssar %06d %.15E\n",
+                    std::snprintf(hbuf, sizeof hbuf, "%ssar %06d %.15E",
                                   prefix.c_str(), ho.dates[r], ho.sar[r]);
                     out += hbuf;
-                    std::snprintf(hbuf, sizeof hbuf, "%ssae %06d %.15E %.15E\n",
+                    ext(ho.sar_t, ho.ncol_sa, r);
+                    out += "\n";
+                    std::snprintf(hbuf, sizeof hbuf, "%ssae %06d %.15E %.15E",
                                   prefix.c_str(), ho.dates[r], ho.sae_cnc[r],
                                   ho.sae_fin[r]);
                     out += hbuf;
+                    ext(ho.sae_t, ho.ntarsa, r);
+                    out += "\n";
                 }
                 if (ho.have_ind) {
-                    std::snprintf(hbuf, sizeof hbuf, "%siar %06d %.15E\n",
+                    std::snprintf(hbuf, sizeof hbuf, "%siar %06d %.15E",
                                   prefix.c_str(), ho.dates[r], ho.iar[r]);
                     out += hbuf;
-                    std::snprintf(hbuf, sizeof hbuf, "%siae %06d %.15E %.15E\n",
+                    ext(ho.iar_t, ho.ncol_sa, r);
+                    out += "\n";
+                    std::snprintf(hbuf, sizeof hbuf, "%siae %06d %.15E %.15E",
                                   prefix.c_str(), ho.dates[r], ho.iae_cnc[r],
                                   ho.iae_fin[r]);
                     out += hbuf;
+                    ext(ho.iae_t, ho.ntarsa, r);
+                    out += "\n";
                 }
             }
             if (ho.ind_reported) {

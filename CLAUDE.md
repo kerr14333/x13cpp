@@ -953,9 +953,39 @@ diagnostics front (force / slidingspans / history) is now closed.
   problem) and the whole model-free case (`sfs` 2.0e+2).
   Gated by `extra/airline_history-x11reg{,-fixx11reg,-nomodel-fixx11reg,-fixmdl}`
   in `test_history_tables.py`.
+- **`history{sadjlags= trendlags= target=}` — the ALTERNATE REVISION TARGETS —
+  CLOSED (at the per-span floor).** The biggest OUTPUT gap left in `history{}`:
+  whole columns absent, not values wrong. Each surviving lag adds one column per
+  table of its family — "the estimate `lag` periods AFTER the revision date" in
+  place of the full-data final one. Ported: `setrvp.f:26-40`'s `Endsa += mxrlag`
+  (the spans that make those estimates have to run; `Endtbl`/`Revnum` are fixed
+  before it, so the TABLE does not grow — only the loop and the DNOTST cutoff),
+  `revchk.f:1053-1110`'s `intsrt` + drop-what-does-not-fit + `Lr1y2y`,
+  `getrev.f:57-70`/`:86-99`'s per-span file-into-the-row-`lag`-periods-back, and
+  `prtrev.f:174-226`'s arithmetic — `Fin(0)-Fin(lag)` by default,
+  `Fin(lag)-Conc` under `target=concurrent` (`Cnctar`), each percented by its own
+  base on a level table, plus the DNOTST mask whose cutoff `Cnctar` moves one row
+  later. **Order is faithful and matters: `revchk` calls `setrvp` BEFORE it
+  validates**, so a lag about to be discarded still widens `Endsa`. One guard the
+  oracle gets for free: `revdrv.f:416` turns `Lx11` off past `Endsa` so getrev
+  never runs on the trailing spans, while this port adjusts every span to
+  `Endrev` — the target store is explicitly `i <= endsa`. **CB-22**: the extra
+  `(1yr-2yr)` column exists only on the SA / SA-change / indirect tables
+  (`revdrv.f:852/859` pass `Lr1y2y` to the two TREND calls as a literal `F`) even
+  though `revchk` derives the flag from BOTH lists, trend overwriting sadj — so a
+  `trendlags=` that is not a 1yr/2yr pair silently costs the SA table its column.
+  **How that was found is the generalizable part: the gate asserts COLUMN COUNTS
+  before values.** The engine emitted a 4th trend column against the golden's 3
+  while every value it did emit agreed — a gate that reads the first N columns of
+  a save file cannot see a wrong N, which is exactly what the pre-existing
+  `test_history_table` does (and why it kept passing). Gated by
+  `test_history_target_columns` over `extra/airline_history-sadjlags` (the
+  1yr/2yr pair on both families), `-sadjlags-conc` (`target=concurrent`) and
+  `-sadjlags-drop` (an UNSORTED list carrying one lag too long for the span, so
+  the sort, the drop and the widened-then-discarded `mxrlag` are all pinned).
   - Still open, all measured as moving: `outlier=`/`outlierwin=`, `x11outlier=`
     (shares the `revdrv.f:309-350` block but additionally needs `rmatot.f`),
-    `sadjlags=`/`trendlags=`/`target=`, `additivesa=`. Suggested order is in the
+    `additivesa=`. Suggested order is in the
     scouting doc — note it has now been wrong three times: it ranked `fixreg` as
     cheapest (it needed the rmfix seam), listed `endtable=` as unported (it was
     already correct), and its model-free `x11regression{}` row was measured on a
