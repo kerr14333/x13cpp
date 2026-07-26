@@ -320,30 +320,53 @@ sar 1.2e+0.
 
 Gated by `extra/airline_history-outlier-{reg,pre,auto-keep,remove}`.
 
-### `x11outlier=` — transcribed, INERT, and the blocker is not in `history{}`
+### `x11outlier=` — DEFAULT closed; the blocker was in `x11regression{}`
 
-`revdrv.f:332-350` (pre-loop) and `:731-741` (per span) run the same two
-routines again on the X11REGRESSION design, with `loadxr(false)`/`loadxr(true)`
-swapping that store into the working model arrays. `x11outlier=` (`Rvxotl`,
-DEFAULT **yes**) picks which: yes deletes the automatically identified x11reg
-outliers so each span re-identifies its own, no holds them back by date the way
-the regARIMA side does. Both blocks are ported.
+`revdrv.f:336-338` (pre-loop) and `:601-603` (per span) run the same
+rmatot/rmotrv/chkorv machinery on the X11REGRESSION design, with
+`loadxr(false)`/`loadxr(true)` swapping that store into the working model arrays.
+`x11outlier=` (`Rvxotl`, DEFAULT **yes**) picks which: yes deletes the
+automatically identified x11reg outliers so each span re-identifies its own on
+its own data, no holds them back by date the way the regARIMA side does. Nothing
+restores the x11reg store between spans, so the change sticks via `loadxr(true)`
+alone — no ssprep mirror, the same reasoning as `fixx11reg`.
 
-**They are currently inert, and the measurement says why.** Reaching them needs
-the x11reg design to CARRY automatic outliers, which needs
-`x11regression{critical=}` → `Otlxrg`. That argument is accepted by the parser
-and **silently dropped**: `core/src/x11/x11reg.cpp:541` hardcodes
-`setcv(nobxot, 0.05)` and never reads `ctx.x11reg.critxr`; `sigma=` (`Sigxrg`)
-is dropped the same way (`sigxrg` is a hardcoded 2.5). So the engine identifies
-a different outlier set from the oracle **on the main run** — measured d11
-1.7e-4 relative on airline + `critical=3.0` with no `history{}` in the spec at
-all. Instrumenting `ctx.xrgmdl` at the pre-loop block confirms it: six
-trading-day columns, no outliers, so the blocks do nothing and adding them moves
-the history numbers by exactly zero (sar stays 5.2e-1 default / 7.5e-1 `no` /
-5.3e-1 model-free).
+**The blocker was somewhere else entirely, and only measurement found it.**
+Transcribing both blocks moved the numbers by *exactly zero*. Instrumenting
+`ctx.xrgmdl` at the pre-loop block showed why: six trading-day columns and no
+outliers. The x11reg design can only carry automatic outliers if
+`x11regression{critical=}` set `Otlxrg` — and **that argument, and `sigma=`,
+were accepted by the parser and silently dropped**. `x11reg.cpp` derived the
+critical value from the span length unconditionally (`setcv`) and hardcoded the
+2.5-sigma `tdxtrm` limit, so `critical = 3.0` identified the DEFAULT's outlier
+set. That is a MAIN-RUN defect: d11 off 1.7e-4 relative on airline with no
+`history{}` in the spec at all.
 
-**That is an `x11regression{}` front item, not a `history{}` one**, and it has to
-land before `x11outlier=` can be gated — measuring this family today measures
-the main-run gap. Note also what it says about the earlier `x11regression{}`
-measurements in this document: they were taken on `variables=(td)` alone, where
-`critical=` never appears, so they are unaffected.
+Ported (`gtxreg.f:288-322` parse + `editor.f:1729-1757`'s resolution, with the
+`Sigxrg`/`Critxr` DNOTST defaults `gtinpt.f:457-458` that the port had left at
+the struct's zero-init — `critical=0` is a MEANINGFUL value meaning "identify,
+but derive the threshold", so "not given" has to be distinguishable from it).
+The main run is bit-exact after it, and the history family then falls out:
+
+| family | before | after |
+| --- | --- | --- |
+| `x11outlier=yes` (DEFAULT), with a model | sar 5.15e-1 | **4.73e-4** (per-span floor) |
+| model-free | sar 5.30e-1 | **5.33e-15** (bit-exact) |
+| `x11outlier=no` | sar 7.50e-1 | 7.48e-1 — STILL OPEN |
+
+**`no` is measured and left open**, deliberately, with what is known written
+down: the engine produces the DEFAULT (delete-and-re-identify) numbers where the
+oracle keeps the main run's outliers and accumulates. The deletion path is the
+one that WORKS, so it is not the `rmatot` call that is wrong; and on this corpus
+every x11reg outlier is dated before the revision start, so `rmotrv` holds none
+back and `chkorv` never runs — both branches should be doing nothing, and the
+difference is in how the per-span `x11mdl` re-identifies against a design that
+already carries AO columns. Not this seam.
+
+Gated by `extra/airline_x11regression-critical` (the main run: xrm, b16/c16,
+d10-d13) and `extra/airline_history-x11outlier{,-nomodel}`.
+
+**Generalizable:** three of the last four items on this list turned out to be
+blocked by, or already fixed in, something that was not the option being
+scouted. An oracle on-vs-off table tells you a flag matters; it cannot tell you
+where the engine's disagreement lives.

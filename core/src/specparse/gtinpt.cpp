@@ -153,6 +153,14 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                                       // editor.f defaults it to -2 (monthly/qtly)
     for (int i = 1; i <= 7; ++i)
         ctx.x11reg.dwt(i) = prm::DNOTST;   // gtinpt.f:470 setdp(DNOTST,7,Dwt)
+    // gtinpt.f:457-458/478 -- x11regression{sigma= critical= cvalpha=}. The
+    // first two must default to DNOTST, not to the struct's zero-init: 0.0 is a
+    // MEANINGFUL value of critical= (gtxreg.f:311-313 reads it as "identify
+    // outliers, but let editor derive the critical value"), so "not given" has
+    // to be distinguishable from it.
+    ctx.x11reg.sigxrg = prm::DNOTST;
+    ctx.x11reg.critxr = prm::DNOTST;
+    ctx.xrgmdl.cvxalf = 0.05;          // PT5
     ctx.picktd.tdzero = 0;
     ctx.picktd.lnzero = 0;
     setint(prm::NOTSET, 2, ctx.picktd.tddate.data());

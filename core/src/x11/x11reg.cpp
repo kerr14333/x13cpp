@@ -440,10 +440,19 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     double* sti = ctx.x11srs.sti.data();
 
     // editor.f:1729-1736: the 2.5-sigma tdxtrm exclusion is used only for a
-    // TD-only irregular regression with no easter/holiday/AO group; when easter
-    // (etc.) is present the extreme values are handled by automatic AO outlier
-    // identification instead (Otlxrg), so Sigxrg stays 0 and tdxtrm is skipped.
-    const double sigxrg = ctx.x11log.xeastr ? 0.0 : 2.5;
+    // TD-only irregular regression with no easter/holiday/AO group AND no
+    // explicit critical value; when easter (etc.) or a critical= is present the
+    // extreme values are handled by automatic AO outlier identification instead
+    // (Otlxrg), so Sigxrg stays 0 and tdxtrm is skipped. An explicit
+    // x11regression{sigma=} overrides the whole rule.
+    double sigxrg;
+    if (!dpeq(ctx.x11reg.sigxrg, prm::DNOTST))
+        sigxrg = ctx.x11reg.sigxrg;
+    else if (!ctx.x11log.xeastr && dpeq(ctx.x11reg.critxr, prm::DNOTST) &&
+             !ctx.x11log.otlxrg)
+        sigxrg = 2.5;
+    else
+        sigxrg = 0.0;
     int nfcst = ctx.extend.nfcst;
     // x11mdl.f:120-134: on the final (C) iteration, restore the X-11-regression
     // forecast horizon (Nfcstx >= 1 seasonal year) so the design & TD factor span
@@ -537,8 +546,16 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         int nobxot = 0;
         dfdate(endxot, begxot, sp, nobxot);
         nobxot += 1;
-        // Default (Ljung) critical value; the Cvxtyp corrected variant is deferred.
-        const double critxr = setcv(nobxot, 0.05);   // Cvxalf default = PT5 = 0.05
+        // editor.f:1749-1757 -- an explicit x11regression{critical=} IS the
+        // critical value; only when none was given is it derived from the
+        // outlier-span length. (The Cvxtyp corrected variant, setcvl, is
+        // deferred.) Reading the parsed value is the fix for a main-run
+        // wrong-numbers bug: this used to be the derived value unconditionally,
+        // so `critical=3.0` identified the default's outlier set instead of the
+        // user's -- measured d11 1.7e-4 relative on airline.
+        const double critxr = dpeq(ctx.x11reg.critxr, prm::DNOTST)
+                                  ? setcv(nobxot, ctx.xrgmdl.cvxalf)
+                                  : ctx.x11reg.critxr;
         double cvec[3] = {critxr, critxr, critxr};
         int nefobs = nefotl;
         idotlr(ctx, /*ltstao=*/true, /*ltstls=*/false, /*ltsttc=*/false,

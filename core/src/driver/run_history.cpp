@@ -637,20 +637,24 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // x11reg outliers outright (each span re-identifies its own), no holds them
     // back by date the way the regARIMA side does.
     //
-    // TRANSCRIBED BUT CURRENTLY INERT, AND UNGATED -- deliberately, with the
-    // blocker measured. Reaching it needs the x11reg design to CARRY
-    // automatically identified outliers, which needs `x11regression{critical=}`
-    // -> Otlxrg. That argument is accepted by the parser and silently dropped:
-    // x11reg.cpp:541 hardcodes `setcv(nobxot, 0.05)` and never reads
-    // ctx.x11reg.critxr, and `sigma=` is dropped the same way -- so the engine
-    // identifies a different outlier set from the oracle on the MAIN run
-    // (measured d11 1.7e-4 relative on airline + critical=3.0, with no
-    // history{} involved at all). Until that is fixed, an engine-vs-oracle
-    // history measurement on this family measures the main-run gap: airline +
-    // `x11regression{variables=(td) critical=3.0}` + `history{}` sits at sar
-    // 5.2e-1 (default) / 7.5e-1 (`x11outlier=no`) / 5.3e-1 (model-free) and does
-    // NOT move when this block is added, because ctx.xrgmdl holds six trading-day
-    // columns and no outliers. Verified by instrumenting the store here.
+    // Reaching this at all needs the x11reg design to CARRY automatically
+    // identified outliers, i.e. `x11regression{critical=}` -> Otlxrg -- and that
+    // argument used to be accepted by the parser and dropped, so these blocks
+    // were inert (ctx.xrgmdl held six trading-day columns and no outliers, and
+    // the whole family measured the resulting MAIN-run gap instead). With
+    // critical= honoured, the DEFAULT gates at the per-span floor (sar
+    // 5.2e-1 -> 4.7e-4) and the MODEL-FREE case gates BIT-EXACT (5.3e-1 ->
+    // 5.3e-15) -- nothing re-estimates there, so the only thing moving is the
+    // per-span identification, which is exactly what this pins.
+    //
+    // STILL OPEN and measured: `x11outlier=no` sits at sar 7.5e-1, i.e. the
+    // engine produces the DEFAULT (delete-and-re-identify) numbers where the
+    // oracle keeps the main run's outliers and accumulates. Note the deletion
+    // path is the one that works, so it is not the rmatot call that is wrong;
+    // on this corpus every x11reg outlier is dated BEFORE the revision start, so
+    // rmotrv holds none back and chkorv never runs -- both branches should be
+    // doing nothing, and the difference is somewhere in how the per-span x11mdl
+    // re-identifies against a design that already carries AO columns. Ungated.
     RevOtlStore otx;
     // revdrv.f:246 -- `mdl2x`, the MAIN run's Endxrg, the x11reg counterpart of
     // mdl2. Each span's Endxrg is its own end unless the main run's x11reg span

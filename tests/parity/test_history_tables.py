@@ -102,10 +102,18 @@ RTOL_LEVEL_BY_SPEC = {"airline_history-fixper": 2e-5,
                       "airline_history-fixmdl": 1e-12,
                       "airline_history-fixper-fixmdl": 1e-12,
                       "airline_history-x11reg-fixx11reg": 2e-5,
-                      "airline_history-x11reg-nomodel-fixx11reg": 1e-12}
+                      "airline_history-x11reg-nomodel-fixx11reg": 1e-12,
+                      # Model-free + x11regression{critical=}: nothing
+                      # re-estimates a regARIMA model per span, so the only
+                      # thing moving is the per-span x11reg outlier
+                      # identification -- and that is bit-exact. Gate it there,
+                      # which is what pins the per-span rmatot to the flag
+                      # rather than to the estimation floor.
+                      "airline_history-x11outlier-nomodel": 1e-11}
 ATOL_REV_BY_SPEC = {"airline_history-fixmdl": 1e-11,
                     "airline_history-fixper-fixmdl": 1e-11,
-                    "airline_history-x11reg-nomodel-fixx11reg": 1e-11}
+                    "airline_history-x11reg-nomodel-fixx11reg": 1e-11,
+                    "airline_history-x11outlier-nomodel": 1e-11}
 
 # (tag, n_value_columns, kind) -- kind "level" uses RTOL_LEVEL, "rev" uses ATOL_REV.
 # che (month-to-month SA % change, conc+final) is a difference of two re-estimated

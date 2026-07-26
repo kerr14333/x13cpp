@@ -991,21 +991,37 @@ diagnostics front (force / slidingspans / history) is now closed.
   per-span rmatot at `revdrv.f:723` — a sub-engine `run_x11_span` does not have.
   `outlierwin=` is reachable only from it. Gated by
   `extra/airline_history-outlier-{reg,pre,auto-keep,remove}`.
-  **`x11outlier=` (`Rvxotl`) is transcribed alongside it — `revdrv.f:332-350` +
-  `:731-741`, the same two routines on the X11REGRESSION design via
-  `loadxr(false)`/`loadxr(true)` — but is INERT and deliberately UNGATED, and
-  the blocker is not in `history{}`.** Reaching it needs the x11reg design to
-  carry automatic outliers, i.e. `x11regression{critical=}` → `Otlxrg`, and
-  **that argument is accepted by the parser and silently dropped**:
-  `x11reg.cpp:541` hardcodes `setcv(nobxot, 0.05)` instead of reading
-  `ctx.x11reg.critxr`, and `sigma=` (`Sigxrg`) is a hardcoded 2.5 the same way.
-  So the engine identifies a different outlier set from the oracle **on the main
-  run** — measured d11 1.7e-4 relative on airline + `critical=3.0` with no
-  `history{}` in the spec at all — and a history measurement on this family
-  measures that, not the flag (instrumenting `ctx.xrgmdl` at the block shows six
-  trading-day columns and no outliers; adding the blocks moves nothing).
-  **`x11regression{critical=}`/`sigma=` is the next thing to port on that
-  front**, and it is an x11regression item, not a history one.
+  **`x11outlier=` (`Rvxotl`) landed alongside it — `revdrv.f:336-338` +
+  `:601-603`, the same machinery on the X11REGRESSION design via
+  `loadxr(false)`/`loadxr(true)` (nothing restores that store between spans, so
+  it sticks without an ssprep mirror, same as `fixx11reg`) — but the blocker
+  turned out to be in `x11regression{}`, not here.** Transcribing both blocks
+  moved the numbers by EXACTLY ZERO; instrumenting `ctx.xrgmdl` showed six
+  trading-day columns and no outliers, because the store can only carry
+  automatic outliers if `x11regression{critical=}` set `Otlxrg` — and **that
+  argument, and `sigma=`, were accepted by the parser and silently dropped**
+  (`x11reg.cpp` derived the critical value from the span length unconditionally
+  and hardcoded the 2.5-sigma `tdxtrm` limit, so `critical=3.0` identified the
+  DEFAULT's outlier set). A MAIN-run defect: d11 off 1.7e-4 relative on airline
+  with no `history{}` in the spec at all. Ported (`gtxreg.f:288-322` parse +
+  `editor.f:1729-1757`'s resolution, plus the `Sigxrg`/`Critxr` **DNOTST**
+  defaults from `gtinpt.f:457-458` that the port had left at the struct's
+  zero-init — `critical=0` is a MEANINGFUL value, "identify but derive the
+  threshold", so "not given" has to be distinguishable from it). The main run is
+  bit-exact after it and the history family falls out: `x11outlier=yes` (default)
+  sar 5.15e-1 → **4.73e-4**, model-free 5.30e-1 → **5.33e-15 (bit-exact)**.
+  **`x11outlier=no` is still wrong (7.48e-1) and is left OPEN with what is known
+  written down**: the engine gives the DEFAULT's delete-and-re-identify numbers,
+  the deletion path is the one that works, and on this corpus every x11reg
+  outlier predates the revision start so `rmotrv`/`chkorv` never fire on either
+  branch — the difference is in how the per-span `x11mdl` re-identifies against a
+  design that already carries AO columns. Gated by
+  `extra/airline_x11regression-critical` and
+  `extra/airline_history-x11outlier{,-nomodel}`.
+  **The generalizable bit:** three of the last four `history{}` options were
+  blocked by, or already fixed in, something that was not the option being
+  scouted. An oracle on-vs-off table tells you a flag matters; it cannot tell you
+  where the engine's disagreement lives.
 - **`history{sadjlags= trendlags= target=}` — the ALTERNATE REVISION TARGETS —
   CLOSED (at the per-span floor).** The biggest OUTPUT gap left in `history{}`:
   whole columns absent, not values wrong. Each surviving lag adds one column per

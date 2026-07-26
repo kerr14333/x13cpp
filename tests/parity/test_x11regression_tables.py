@@ -103,7 +103,7 @@ def _run(base: str) -> str:
 
 
 CASES = [
-    b for b in ("airline_x11regression-td",)
+    b for b in ("airline_x11regression-td", "airline_x11regression-critical")
     if os.path.exists(os.path.join(_CORPUS, b + ".spc"))
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".xrm"))
 ]

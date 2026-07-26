@@ -2891,6 +2891,47 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                        "Must have seven prior trading day weights.");
                 inptok = false;
             }
+        } else if (argidx == 11 || argidx == 12) {
+            // gtxreg.f:288-322 -- sigma= (Sigxrg, the trading-day extreme-value
+            // sigma limit) and critical= (Critxr, the AO critical value, which
+            // also SWITCHES ON automatic outlier identification in the irregular
+            // regression). Both were accepted and silently dropped, and the
+            // effect is a main-run one: x11mdl's identification used a hardcoded
+            // default critical value instead (measured d11 1.7e-4 relative on
+            // airline + `critical=3.0`).
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            double dvec[1] = {0.0};
+            int nelt = 0;
+            bool argok = true;
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (argidx == 11) {
+                    if (dvec[0] <= 0.0) {
+                        inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                               "Trading day sigma limit must be greater than "
+                               "zero.");
+                        inptok = false;
+                    } else {
+                        ctx.x11reg.sigxrg = dvec[0];
+                    }
+                } else {
+                    // critical=0 means "identify outliers, but derive the
+                    // critical value" -- hence the DNOTST, not a stored 0.
+                    if (dpeq(dvec[0], 0.0)) {
+                        ctx.x11reg.critxr = prm::DNOTST;
+                        ctx.x11log.otlxrg = true;
+                    } else if (dvec[0] < 0.0) {
+                        inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                               "Critical value for outlier detection must be "
+                               "greater than zero.");
+                        inptok = false;
+                    } else {
+                        ctx.x11reg.critxr = dvec[0];
+                        ctx.x11log.otlxrg = true;
+                    }
+                }
+            }
         } else if (argidx == 19) {   // aictest (gtxreg.f:387-411)
             std::vector<std::string> toks;
             consume_value(ctx, &toks);
