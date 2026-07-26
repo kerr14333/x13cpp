@@ -363,8 +363,14 @@ back and `chkorv` never runs — both branches should be doing nothing, and the
 difference is in how the per-span `x11mdl` re-identifies against a design that
 already carries AO columns. Not this seam.
 
-Gated by `extra/airline_x11regression-critical` (the main run: xrm, b16/c16,
-d10-d13) and `extra/airline_history-x11outlier{,-nomodel}`.
+Gated by `extra/airline_x11regression-critical` and
+`extra/airline_x11regression-sigma` (the main run: xrm, b16/c16, d10-d13) and
+`extra/airline_history-x11outlier{,-nomodel}`. Both arguments needed their own
+spec: they are the two ALTERNATIVES in editor.f:1729-1736 (an explicit
+`critical=` switches on outlier identification and leaves `Sigxrg` at 0, so
+`tdxtrm` is skipped entirely), and `sigma=` shipped in the same commit with no
+measurement of its own until one was taken — oracle `sigma=2.0` vs the 2.5
+default moves d11 1.6e-1, and the engine matches bit-exactly.
 
 **Generalizable:** three of the last four items on this list turned out to be
 blocked by, or already fixed in, something that was not the option being

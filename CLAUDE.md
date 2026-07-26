@@ -1010,6 +1010,11 @@ diagnostics front (force / slidingspans / history) is now closed.
   threshold", so "not given" has to be distinguishable from it). The main run is
   bit-exact after it and the history family falls out: `x11outlier=yes` (default)
   sar 5.15e-1 → **4.73e-4**, model-free 5.30e-1 → **5.33e-15 (bit-exact)**.
+  `sigma=` is the OTHER branch of that same editor rule (an explicit `critical=`
+  leaves `Sigxrg` at 0 and skips `tdxtrm` entirely, so the two are alternatives
+  and each needs its own spec); measured separately after the fact — oracle
+  `sigma=2.0` vs the 2.5 default moves d11 1.6e-1 and the engine matches
+  bit-exactly.
   **`x11outlier=no` is still wrong (7.48e-1) and is left OPEN with what is known
   written down**: the engine gives the DEFAULT's delete-and-re-identify numbers,
   the deletion path is the one that works, and on this corpus every x11reg
