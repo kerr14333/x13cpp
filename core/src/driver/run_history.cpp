@@ -199,6 +199,10 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
                  const int* endmdl_full) {
     ctx.hist_out = HistoryOutput{};
     if (!ctx.captured.has_history) return true;   // history{} not requested
+    // revdrv.f:5 takes Lseats and hands it to x11ari, which substitutes the
+    // SEATS chain for x11pt3 per span (seatdg.f:148-181 then feeds the same
+    // getrev). Derived exactly as run_slidingspans derives it.
+    const bool lseats = ctx.captured.has_seats && !ctx.captured.has_x11;
     const rev_cmn& rev = ctx.rev;
     const bool lrvsa = rev.lrvsa;
     const bool lrvtrn = rev.lrvtrn;
@@ -835,7 +839,7 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             if (has_model) restor_span(ctx);
         }
         if (!run_x11_span(ctx, trnsrs_full, has_model, nlen, nfcst_full,
-                          /*nbcst=*/0, /*nbcst2=*/0, lsp, nend_mdl))
+                          /*nbcst=*/0, /*nbcst2=*/0, lsp, nend_mdl, lseats))
             return false;
         if (ctx.error.lfatal) return false;
         const int posfob = ctx.x11ptr.posfob;      // = nlen = i

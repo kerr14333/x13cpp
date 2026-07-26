@@ -109,7 +109,20 @@ RTOL_LEVEL_BY_SPEC = {"airline_history-fixper": 2e-5,
                       # identification -- and that is bit-exact. Gate it there,
                       # which is what pins the per-span rmatot to the flag
                       # rather than to the estimation floor.
-                      "airline_history-x11outlier-nomodel": 1e-11}
+                      "airline_history-x11outlier-nomodel": 1e-11,
+                      # SEATS amplifies the per-span floor once, the way the
+                      # forecast-error family does. An X-11 span turns the
+                      # re-estimated coefficients into filter weights; a SEATS
+                      # span feeds them through the canonical decomposition
+                      # (roots -> canonical denominators -> Wiener-Kolmogorov
+                      # solve), so a 1e-8 coefficient difference reaches the
+                      # component level larger. Measured on airline: sae worst
+                      # 1.74e-5, tre worst 1.21e-5, both on the SHORTEST spans
+                      # (1955.02 / 1956.02, rows 2-3 of 71), median ~1e-8; the
+                      # revision tables sar/trr stay inside the shared 5e-3
+                      # absolute bound. Same mechanism as the entries above, one
+                      # amplification further -- not a different one.
+                      "airline_seats-history": 5e-5}
 ATOL_REV_BY_SPEC = {"airline_history-fixmdl": 1e-11,
                     "airline_history-fixper-fixmdl": 1e-11,
                     "airline_history-x11reg-nomodel-fixx11reg": 1e-11,
@@ -203,6 +216,30 @@ def _spec_text(base: str) -> str:
     return open(os.path.join(_CORPUS, base + ".spc"),
                 encoding="utf-8", errors="replace").read().lower()
 
+# A SEATS spec reaches the span drivers through the same revdrv/sspdrv the X-11
+# path does (x11ari.f takes Lseats and substitutes the SEATS chain for x11pt3),
+# but this port's harness is split by decomposition method -- so pick the driver
+# the spec actually selects. `seats{}` with no `x11{}` is the SEATS path.
+def _seats_binary() -> str:
+    for c in (os.path.join(_REPO, "build", "x13run_seats.exe"),
+              os.path.join(_REPO, "build", "x13run_seats"),
+              os.path.join(_REPO, "build", "Release", "x13run_seats.exe")):
+        if os.path.exists(c):
+            return c
+    env = os.environ.get("X13RUN_SEATS")
+    if env and os.path.exists(env):
+        return env
+    raise FileNotFoundError(
+        "x13run_seats binary not found; build it first (cmake --build build).")
+
+
+SEATS_BIN = _seats_binary()
+
+
+def _binary_for(base: str) -> str:
+    txt = _spec_text(base)
+    return SEATS_BIN if ("seats{" in txt and "x11{" not in txt) else BIN
+
 
 def _discover() -> list[str]:
     specs: list[str] = []
@@ -227,7 +264,7 @@ CASES = _discover()
 
 def _run(base: str) -> str:
     specpath = os.path.join(_CORPUS, base + ".spc")
-    proc = subprocess.run([BIN, specpath], cwd=_CORPUS, capture_output=True,
+    proc = subprocess.run([_binary_for(base), specpath], cwd=_CORPUS, capture_output=True,
                            text=True, timeout=180)
     assert proc.returncode == 0, (
         f"{base}: x13run_x11 exited {proc.returncode}\n"

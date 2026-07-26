@@ -17,6 +17,8 @@
 // seats_not_ported() only when the decomposition chain itself fails.
 #include "specparse/specparse.hpp"
 #include "driver/run_seats.hpp"  // seats_restore_mean, seats_decompose
+#include "driver/run_history.hpp"     // run_history (revdrv.f, Lseats)
+#include "driver/x11_prestage.hpp"  // x11_prestage (x11ari.f:60-199, shared with run_x11)
 #include "gen/model.hpp"       // prm::PRGTCN (mean-regressor type), prm::DIFF
 #include "regarima/regvar.hpp" // ratpos (rebuild the undifferenced Constant column)
 #include "seats/canonical_denoms.hpp"
@@ -110,6 +112,20 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     // the wm centering in estbur carry the mean regardless of d.
     seats_restore_mean(ctx);
 
+    // x11ari.f:60-199 -- the oracle reaches SEATS through the SAME adjustment
+    // entry X-11 uses: the editor's span/filter setup, setxpt, x11int, x11pt1 and
+    // (at :199, gated `(.not.Lcmpaq).or.Lx11`, true for a non-composite run
+    // either way) x11pt2 all run, and only THEN does :204-243 substitute the
+    // SEATS chain for x11pt3. This port had two separate drivers and run_seats
+    // skipped the whole pre-stage -- invisible for the decomposition (SEATS reads
+    // ctx.series.tsrs and the fitted model, not the X-11 buffers), but it left
+    // the span GEOMETRY unset (Length from x11pt2, Pos1ob from setxpt, Lyr from
+    // editor.f:235, the ssprep snapshot), which is exactly what setssp/
+    // run_x11_span read -- so slidingspans{}/history{} under seats{} were
+    // silently dropped. Runs AFTER seats_restore_mean so the mean add-back still
+    // happens on the pristine post-estimation tsrs.
+    if (!x11_prestage(ctx, /*has_model=*/true, trnsrs, /*lseats=*/true)) return false;
+
     if (!seats_decompose(ctx)) return false;
 
     // x11ari.f returns to x12run.f, which then calls sspdrv/revdrv -- the span
@@ -123,7 +139,7 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     // runs; this port dumps at exit, so the main decomposition has to be put
     // back afterwards. Same snapshot discipline run_x11.cpp already applies to
     // /x11srs/, /adxser/, /x11fac/, /x11ptr/ and /lkhd/.
-    if (ctx.captured.has_slidingspans) {
+    if (ctx.captured.has_slidingspans || ctx.captured.has_history) {
         // The restore set is run_x11.cpp's, plus the three things only the
         // SEATS path has: the published components (ctx.seats_*), the
         // decomposition INPUT (ctx.series.tsrs -- each span's rgarma leaves its
@@ -149,7 +165,13 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         const auto cmbadd_main = ctx.seats_combined_add;
         const auto cmbfac_main = ctx.seats_combined_factor;
 
-        const bool ok = run_slidingspans(ctx, trnsrs);
+        // x12run.f:225/257 order: sspdrv then revdrv, both after x11ari.
+        const int begspn_full[2] = {ctx.mdldat.begspn(1), ctx.mdldat.begspn(2)};
+        const int endmdl_full[2] = {ctx.arima.endmdl(1), ctx.arima.endmdl(2)};
+        bool ok = run_slidingspans(ctx, trnsrs);
+        if (ok && !ctx.error.lfatal)
+            ok = run_history(ctx, trnsrs, begspn_full, nspobs_main, ctx.extend.nfcst,
+                             endmdl_full);
 
         ctx.lkhd = lkhd_main;
         ctx.x11srs = x11srs_main;

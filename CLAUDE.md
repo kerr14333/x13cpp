@@ -1189,17 +1189,61 @@ diagnostics front (force / slidingspans / history) is now closed.
   `issap = 0` wall), and run_seats' span-driver tail. **Scale note:** Seatsf is
   a ratio after `seatad.f:33-35`'s `/100`, which is exactly what
   `ctx.seats_seasonal_add` (= s10) already carries, and ssrit multiplies it
-  back. **STILL BLOCKED, deliberately not faked:** `setssp` reads the main run's
-  `Length`/`Pos1ob`, which x11pt2 sets — and `run_seats` skips the X-11
-  pre-stage entirely, though the ORACLE runs it. Sharing run_x11's editor +
-  setxpt/x11int/x11pt1/x11pt2 block is the next increment; until then
-  run_slidingspans still bails at `issap = 0` for a SEATS spec, and
-  `history{}` under seats{} (seatdg.f:146-180's three getrev calls) is
-  untouched. **The restore set is wider than run_x11's**: ctx.seats_*,
+  back. **The restore set is wider than run_x11's**: ctx.seats_*,
   ctx.series.tsrs (each span's rgarma leaves its own residuals there) and
   Nspobs, because `x13run_seats` re-derives the whole ESTBUR chain from ctx
   AFTER the driver returns — a miss shows up as the LAST SPAN's decomposition
   under the main run's dates.
+- **`slidingspans{}` / `history{}` under `seats{}` — NOW CLOSED.** Two things,
+  and the second is the one worth remembering.
+  - **The X-11 PRE-STAGE is shared, because the oracle has ONE adjustment
+    entry.** `x11ari.f` is reached with Lx11 *or* Lseats and runs the editor's
+    span/filter setup, setxpt, x11int, x11pt1 and — at `:199`, gated
+    `(.not.Lcmpaq).or.Lx11`, true for any non-composite run either way —
+    x11pt2, and only THEN branches (`:204-243` substitutes the SEATS chain for
+    x11pt3). This port grew two drivers and `run_seats` skipped the whole
+    pre-stage: invisible for the decomposition (SEATS reads `ctx.series.tsrs`
+    and the fitted model, not the X-11 buffers) but it left the span GEOMETRY
+    unset — `Length` (x11pt2), `Pos1ob` (setxpt), `Lyr` (editor.f:235) and the
+    ssprep snapshot — which is exactly what `setssp`/`run_x11_span` read.
+    Extracted verbatim into `core/src/driver/x11_prestage.{hpp,cpp}` and called
+    from both drivers; the refactor is byte-neutral (3978/0 unchanged) and the
+    SEATS corpus still gates at ~5e-15, i.e. running x11pt1/x11pt2 on the SEATS
+    main path — as the oracle does — disturbs nothing.
+  - **The decisive fix: `Tsrs` is NOT refilled when the model is held fixed, and
+    the oracle does not care because it never uses Tsrs for SEATS.**
+    `/csrs/ Tsrs` has exactly two writers, both `resid` calls inside rgarma
+    (`rgarma.f:372/436`) and both behind `lnxstp`/`Convrg`, i.e. behind
+    `Nestpm > 0` (`:347`). A sliding-spans replay holds the model FIXED, so
+    neither fires and Tsrs still holds the MAIN run's linearized series. The
+    oracle hands SEATS `Orixs` instead (`arima.f:1337-1341`); this port
+    pre-linearizes into tsrs, equal on the main run and bit-exact there, so a
+    span has to rebuild it — otherwise **every span decomposes the full series
+    and reports ~the main run's own factors** (measured 6.2e-3 off, vs a 5e-15
+    target). Rebuilt in the TRANSFORMED scale from `orix` minus the regeff
+    effect arrays, which is where `adjreg.f:50-56` works — it forms `orixa`
+    that way and only inverse-transforms at `:65`. **Two traps here**: `Orixs`
+    itself is `orixmv`, the ORIGINAL-scale, *missing-value-only* adjusted series
+    (the oracle's SEATS linearizes internally from the PATD/PAEAST/PAOUTR/
+    PAOUIR/PAOUS factor arrays `ansub9.f:1395-1406` hands it), so taking that
+    buffer directly overflows a log-domain estbur (measured: seasonal factors of
+    6e24); and `adjreg` inverse-transforms `orix` IN PLACE, so the
+    reconstruction must run BEFORE the adjreg call, not after (measured: 1e-38).
+  - `history{}` then fell out for free: the per-span SEATS components are
+    published into `ctx.x11srs.sts/stci/stc`, which is where `run_history`'s
+    inlined getrev already reads them — `seatdg.f:148-181` passes Seatsf/Seatsa/
+    Seattr to the SAME getrev x11pt3 feeds Sts/Stci/Stc, and the scales already
+    agree (Seatsf is the `/100` ratio, which is what getrev's `Muladd!=1` ×100
+    expects). Clobbering is safe: x11pt3 never runs on that path and both
+    callers save/restore `/x11srs/` around the loop.
+  - **What the tolerances say:** slidingspans is bit-exact (sfs 4.6e-14, chs
+    4.7e-12); history sits one amplification above the X-11 per-span floor
+    (sae 1.74e-5, tre 1.21e-5, both on the two SHORTEST spans, median ~1e-8;
+    sar/trr inside the shared 5e-3 absolute bound) because a SEATS span feeds
+    the re-estimated coefficients through the canonical decomposition rather
+    than into filter weights. Gated by `extra/airline_seats-{slidingspans,
+    history}`; both gates now pick the harness from the spec (`_binary_for`)
+    instead of hardcoding `x13run_x11`.
 - **A 7-way Codex review pass over the engine — what it found, and what it
   didn't.** Reported clean: the SEATS core (roots/poly/canonical denoms/estbur/
   every sign hand-off), the optimizer + automdl (the Census-MODIFIED lmdif's

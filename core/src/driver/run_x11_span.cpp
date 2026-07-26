@@ -130,6 +130,11 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     x11pt1(ctx, lmodel, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
 
+    // arima.f:1337-1341 -- Orixs, the series SEATS decomposes. Filled from
+    // adjreg's orixmv below (see the note at the copy); hoisted out of the
+    // model block so the Lseats branch at the tail can read it.
+    std::vector<double> orixs_span;
+
     if (has_model) {
         // Model-coefficient replay: rgarma with the model held fixed
         // (ctx.model.arimaf, set by the caller before the span loop -- see
@@ -308,6 +313,42 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    fls.data(), ftc.data(), fso.data(), fsea.data(), fcyc.data(),
                    fusr.data(), fmv.data(), lseats);
         }
+        // The series SEATS decomposes, rebuilt for THIS span.
+        //
+        // ctx.series.tsrs is a COMMON (/csrs/ Tsrs) that ONLY rgarma writes, and
+        // only from its two `resid` calls -- both behind `lnxstp`/`Convrg`, i.e.
+        // behind `Nestpm > 0` (rgarma.f:347/372/436). A span replay holds the
+        // model FIXED, so Nestpm==0, so neither fires and Tsrs still holds the
+        // MAIN run's linearized series. The oracle has the identical gap and does
+        // not care: it hands SEATS `Orixs` (arima.f:1337-1341), not Tsrs. This
+        // port pre-linearizes into tsrs instead (equal on the main run, and
+        // bit-exact there), so a span has to rebuild it -- otherwise every span
+        // decomposes the full series and reports ~the main run's own factors
+        // (measured 6.2e-3 off the oracle on airline).
+        //
+        // Rebuilt in the TRANSFORMED scale, which is where adjreg.f:53-55 works:
+        // it subtracts the regeff effect arrays from `orix` and only THEN
+        // inverse-transforms (:65). So orix minus every effect is exactly
+        // trnsrs - X*b -- what `resid` would have produced. (Orixs itself is the
+        // ORIGINAL-scale, missing-value-adjusted series post-invfcn, because the
+        // oracle's SEATS linearizes internally from the PATD/PAEAST/PAOUTR/
+        // PAOUIR/PAOUS factor arrays ansub9.f:1395-1406 hands it; taking that
+        // buffer directly overflows this port's log-domain estbur.)
+        // The effect arrays are 1-based from Pos1bk (adjreg's own indexing).
+        if (lseats) {
+            const int nobspf_s = ctx.mdldat.nspobs + nfcst;
+            const int pos1bk_s = ctx.x11ptr.pos1bk;
+            orixs_span.assign(static_cast<std::size_t>(nobspf_s), 0.0);
+            for (int k = 0; k < nobspf_s; ++k) {
+                const int ib = pos1ob + k;             // padded-buffer index
+                const int ie = ib - pos1bk_s;          // 0-based effect index
+                double v = orix[ib - 1];
+                if (have_eff)
+                    v -= ftd[ie] + fhol[ie] + fao[ie] + fls[ie] + ftc[ie] +
+                         fso[ie] + fsea[ie] + fcyc[ie] + fusr[ie] + fmv[ie];
+                orixs_span[k] = v;
+            }
+        }
         int n = 0;
         adjreg(ctx, orix.data(), orixmv.data(), orixot.data(), ftd.data(),
                fao.data(), fls.data(), ftc.data(), fso.data(), fsea.data(),
@@ -327,6 +368,12 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         // SEATS chain (seats -> seatad -> seatfc -> seatdg). x11pt2 above still
         // runs: x11ari.f:199 gates it on `(.not.Lcmpaq).or.Lx11`, so a
         // non-composite SEATS run takes it exactly as the X-11 one does.
+        //
+        // Install this span's Orixs as the decomposition input (estbur reads
+        // ctx.series.tsrs(1..Nspobs)) before the mean add-back, exactly as the
+        // main run has it after estimation.
+        for (std::size_t i = 0; i < orixs_span.size() && i < prm::PLEN; ++i)
+            ctx.series.tsrs(static_cast<int>(i) + 1) = orixs_span[i];
         seats_restore_mean(ctx);
         if (!seats_decompose(ctx)) return false;
         if (ctx.error.lfatal) return false;
@@ -339,23 +386,40 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         // below. Scale matches: seatad.f:33-35 divides Seatsf by 100 under
         // Muladd!=1 and ssrit multiplies it straight back, which is the ratio
         // scale ctx.seats_seasonal_add already carries (= the s10 save table).
+        const int pos1ob_s = ctx.x11ptr.pos1ob;
+        const int posfob_s = ctx.x11ptr.posfob;
+        auto lift = [&](const std::vector<double>& src) {
+            std::vector<double> buf(prm::PLEN, 0.0);
+            const int n = static_cast<int>(src.size());
+            for (int k = 0; k < n; ++k) {
+                const int i = pos1ob_s + k;          // 1-based buffer index
+                if (i >= 1 && i <= prm::PLEN) buf[i - 1] = src[k];
+            }
+            return buf;
+        };
+        const std::vector<double> sf = lift(ctx.seats_seasonal_add);
+        // Lrndsa / Iyrt>0 (the rounded and forced SA series) select Stsarn /
+        // Setsa2 instead -- neither is produced by this port's SEATS path,
+        // so the plain Seatsa branch is the only reachable one.
+        const std::vector<double> sa_v = lift(ctx.seats_sa);
+        const std::vector<double> tr_v = lift(ctx.seats_trend);
+
+        // seatdg.f:148-181 -- the history store passes Seatsf/Seatsa/Seattr to
+        // the SAME getrev that x11pt3 feeds Sts/Stci/Stc. This port inlines
+        // getrev's arithmetic in run_history, which reads those three x11srs
+        // buffers by padded-buffer position, so a SEATS span publishes its
+        // components there and run_history needs no SEATS branch at all. Scales
+        // already agree: Seatsf is the /100 ratio after seatad.f:33-35, which is
+        // what Sts carries and what getrev's Muladd!=1 x100 (putrev Itype=0)
+        // expects. Safe to clobber -- x11pt3 never runs on this path, and both
+        // span-driver callers save/restore /x11srs/ around the whole loop.
+        for (int i = 0; i < prm::PLEN; ++i) {
+            ctx.x11srs.sts(i + 1) = sf[i];
+            ctx.x11srs.stci(i + 1) = sa_v[i];
+            ctx.x11srs.stc(i + 1) = tr_v[i];
+        }
+
         if (ctx.hiddn.issap == 2) {
-            const int pos1ob_s = ctx.x11ptr.pos1ob;
-            const int posfob_s = ctx.x11ptr.posfob;
-            auto lift = [&](const std::vector<double>& src) {
-                std::vector<double> buf(prm::PLEN, 0.0);
-                const int n = static_cast<int>(src.size());
-                for (int k = 0; k < n; ++k) {
-                    const int i = pos1ob_s + k;          // 1-based buffer index
-                    if (i >= 1 && i <= prm::PLEN) buf[i - 1] = src[k];
-                }
-                return buf;
-            };
-            const std::vector<double> sf = lift(ctx.seats_seasonal_add);
-            // Lrndsa / Iyrt>0 (the rounded and forced SA series) select Stsarn /
-            // Setsa2 instead -- neither is produced by this port's SEATS path,
-            // so the plain Seatsa branch is the only reachable one.
-            const std::vector<double> sa_v = lift(ctx.seats_sa);
             const double* series = ctx.inpt.series.data();
             ssrit(ctx, sf.data(), pos1ob_s, posfob_s, 2, series);
             ssrit(ctx, sa_v.data(), pos1ob_s, posfob_s, 3, series);

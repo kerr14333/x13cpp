@@ -151,6 +151,30 @@ def _spec_text(base: str) -> str:
     return open(os.path.join(_CORPUS, base + ".spc"),
                 encoding="utf-8", errors="replace").read().lower()
 
+# A SEATS spec reaches the span drivers through the same revdrv/sspdrv the X-11
+# path does (x11ari.f takes Lseats and substitutes the SEATS chain for x11pt3),
+# but this port's harness is split by decomposition method -- so pick the driver
+# the spec actually selects. `seats{}` with no `x11{}` is the SEATS path.
+def _seats_binary() -> str:
+    for c in (os.path.join(_REPO, "build", "x13run_seats.exe"),
+              os.path.join(_REPO, "build", "x13run_seats"),
+              os.path.join(_REPO, "build", "Release", "x13run_seats.exe")):
+        if os.path.exists(c):
+            return c
+    env = os.environ.get("X13RUN_SEATS")
+    if env and os.path.exists(env):
+        return env
+    raise FileNotFoundError(
+        "x13run_seats binary not found; build it first (cmake --build build).")
+
+
+SEATS_BIN = _seats_binary()
+
+
+def _binary_for(base: str) -> str:
+    txt = _spec_text(base)
+    return SEATS_BIN if ("seats{" in txt and "x11{" not in txt) else BIN
+
 
 def _discover() -> list[str]:
     specs: list[str] = []
@@ -175,7 +199,7 @@ CASES = _discover()
 
 def _run(base: str) -> str:
     specpath = os.path.join(_CORPUS, base + ".spc")
-    proc = subprocess.run([BIN, specpath], cwd=_CORPUS, capture_output=True,
+    proc = subprocess.run([_binary_for(base), specpath], cwd=_CORPUS, capture_output=True,
                            text=True, timeout=120)
     assert proc.returncode == 0, (
         f"{base}: x13run_x11 exited {proc.returncode}\n"
