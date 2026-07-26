@@ -10,6 +10,7 @@
 #include "regarima/estimate.hpp"     // rgarma, prlkhd
 #include "regarima/forecast.hpp"     // fcstout
 #include "regarima/regvar.hpp"       // regvar
+#include "automdl/automd_finalize.hpp"  // rmfix, addfix (arima.f:283/910)
 #include "x11/x11parts.hpp"          // x11pt1, x11pt2, x11pt3
 #include "x11/x11drv.hpp"            // setxpt, x11int, chkadj, extend, adjreg, regeff
 #include "gen/notset.hpp"            // prm::NOTSET, prm::DNOTST
@@ -135,6 +136,32 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         if (ctx.error.lfatal) return false;
         ctx.arima.nrxy = nrxy;
 
+        // arima.f:281-287 -- with any regression coefficient held FIXED
+        // (Iregfx>=2), the fixed columns are struck from the design and their
+        // contribution b*X subtracted from the series before estimation, so what
+        // is estimated is the residual model; arima.f:909-914 puts both back
+        // afterwards. history{fixreg=} is what makes this reachable in a span
+        // (the fixed flags are set once, before the loop, in run_history).
+        // rmfix WRITES its series argument, and trnsrs_span points into the
+        // caller's full-run buffer, so the fixed path works on a copy.
+        std::vector<double> trnfix;
+        const double* trn_est = trnsrs_span;
+        const bool fixed_reg = ctx.model.iregfx >= 2 && ctx.model.nb > 0;
+        if (fixed_reg) {
+            trnfix.assign(trnsrs_span,
+                          trnsrs_full.data() + trnsrs_full.size());
+            rmfix(ctx, trnfix.data(), /*nbcst=*/0, ctx.arima.nrxy, 1);
+            if (ctx.error.lfatal) return false;
+            int nrxyf = 0, frstryf = 0;
+            regvar(ctx, trnfix.data(), ctx.extend.nobspf, fctdrp, nfcst, 0,
+                   ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+                   ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom, nrxyf,
+                   ctx.arima.begxy.data(), frstryf, true, ctx.arima.elong);
+            if (ctx.error.lfatal) return false;
+            ctx.arima.nrxy = nrxyf;
+            trn_est = trnfix.data();
+        }
+
         constexpr int PA = prm::PLEN + 2 * prm::PORDER;
         std::vector<double> a(static_cast<std::size_t>(PA));
         int na = 0, nefobs = 0;
@@ -153,6 +180,22 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         prlkhd(ctx, aptr, &ctx.adj.adj(ctx.adj.adj1st), ctx.adj.adjmod,
                ctx.arima.fcntyp, ctx.arima.lam);
         if (ctx.error.lfatal) return false;
+
+        // arima.f:909-914 -- restore the fixed regressors to the design (and
+        // their effect to the series) now that estimation is done, so the
+        // forecasts and everything downstream see the FULL model.
+        if (fixed_reg) {
+            addfix(ctx, trnfix.data(), /*nbcst=*/0, /*rind=*/0, 1);
+            if (ctx.error.lfatal) return false;
+            int nrxya = 0, frstrya = 0;
+            regvar(ctx, trnfix.data(), ctx.extend.nobspf, fctdrp, nfcst, 0,
+                   ctx.arima.userx.data(), ctx.arima.bgusrx.data(),
+                   ctx.arima.nrusrx, ctx.prior.priadj, ctx.arima.reglom, nrxya,
+                   ctx.arima.begxy.data(), frstrya, true, ctx.arima.elong);
+            if (ctx.error.lfatal) return false;
+            ctx.arima.nrxy = nrxya;
+        }
+        (void)trn_est;
 
         // arima.f:1144-1158 (setspn.f) -- put the span END back BEFORE
         // forecasting, so the forecasts start after the last observation of the

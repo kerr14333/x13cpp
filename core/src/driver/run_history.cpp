@@ -122,6 +122,73 @@ std::vector<double> rvtdrg(X13Context& ctx) {
     return out;
 }
 
+// rvfixd.f -- history{fixreg=}: hold every regressor belonging to one of the
+// named GROUPS fixed for the whole analysis. Called twice by revdrv.f:131-134,
+// once for the regARIMA design and once for the x11regression design, which is
+// why it takes its arrays rather than reading model.cmn directly.
+//
+// A user-defined column carries the group it was DECLARED with (usertype=), not
+// the generic PRGTUD it occupies in Rgvrtp, so the walk has to advance the
+// user-column cursor `iusr` in lockstep -- and, faithfully, it advances that
+// cursor for the user HOLIDAY and SEASONAL types too without substituting them
+// (only PRGTUD is re-typed). Note that `usrfix` and `tdfix` both claim the
+// user-TD/length-of-period types, so fixreg=(td) fixes a usertype=td column.
+void rvfixd(bool tdfix, bool holfix, bool otlfix, bool usrfix, int& iregfx,
+            x13::farray1<bool, 80>& regfx, int nb,
+            const x13::farray1<int, 80>& rgvrtp, int nusrrg,
+            const x13::farray1<int, 52>& usrtyp, int ncusrx, bool& userfx) {
+    using namespace prm;
+    int iusr = 1;
+    bool allfix = true;
+    for (int i = 1; i <= nb; ++i) {
+        int rtype = rgvrtp(i);
+        if (nusrrg > 0) {
+            if (rtype == PRGTUD) {
+                rtype = usrtyp(iusr);
+                iusr += 1;
+            } else if ((rtype >= PRGTUH && rtype <= PRGUH5) ||
+                       rtype == PRGTUS) {
+                iusr += 1;
+            }
+        }
+        const bool istd =
+            (rtype == PRGTTD || rtype == PRGTST || rtype == PRRTTD ||
+             rtype == PRRTST || rtype == PRATTD || rtype == PRATST ||
+             rtype == PRG1TD || rtype == PRR1TD || rtype == PRA1TD ||
+             rtype == PRG1ST || rtype == PRR1ST || rtype == PRA1ST) ||
+            (rtype == PRGTLM || rtype == PRGTSL || rtype == PRGTLQ ||
+             rtype == PRGTLY || rtype == PRRTLQ || rtype == PRRTLM ||
+             rtype == PRRTSL || rtype == PRATSL || rtype == PRRTLY ||
+             rtype == PRATLM || rtype == PRATLQ || rtype == PRATLY) ||
+            rtype == PRGUTD || rtype == PRGULY || rtype == PRGULM ||
+            rtype == PRGULQ;
+        const bool ishol =
+            rtype == PRGTEA || rtype == PRGTEC || rtype == PRGTES ||
+            rtype == PRGTLD || rtype == PRGTTH ||
+            (rtype >= PRGTUH && rtype <= PRGUH5);
+        const bool isusr =
+            rtype == PRGTUD || rtype == PRGTUS ||
+            (rtype >= PRGTUH && rtype <= PRGUH5) || rtype == PRGUTD ||
+            rtype == PRGULY || rtype == PRGULM || rtype == PRGULQ ||
+            rtype == PRGUAO || rtype == PRGULS || rtype == PRGUCN ||
+            rtype == PRGUCY || rtype == PRGUSO;
+        const bool isotl =
+            rtype == PRGTAO || rtype == PRGTLS || rtype == PRGTRP ||
+            rtype == PRGTTC || rtype == PRGTSO || rtype == PRGTAL ||
+            rtype == PRGTAA || rtype == PRGTAT || rtype == PRGTQD ||
+            rtype == PRGTQI || rtype == PRGTTL || rtype == PRGUAO ||
+            rtype == PRGULS || rtype == PRGUSO;
+        if ((tdfix && istd) || (holfix && ishol) || (usrfix && isusr) ||
+            (otlfix && isotl)) {
+            regfx(i) = true;
+            if (iregfx <= 1) iregfx = 2;
+        }
+        allfix = allfix && regfx(i);
+    }
+    if (allfix && iregfx == 2) iregfx = 3;
+    if (!userfx) userfx = (usrfix && ncusrx > 0);
+}
+
 }  // namespace
 
 bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
@@ -160,7 +227,50 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // revchk.f:161-192 -- the model histories need a regARIMA model to exist.
     const bool lrvaic = rev.lrvaic && ctx.captured.has_model;
     const bool lrvarma = rev.lrvarma && ctx.captured.has_model;
-    const bool lrvtdrg = rev.lrvtdrg && ctx.captured.has_model;
+    bool lrvtdrg = rev.lrvtdrg && ctx.captured.has_model;
+    // revchk.f:230-287 -- the trading-day COEFFICIENT history has nothing to
+    // report unless a free TD regressor exists to re-estimate: the oracle drops
+    // it (with an ERROR) when there is no TD regressor at all, when fixreg=(td)
+    // is holding them, or when they are all individually fixed (fixmdl=yes being
+    // one way to get there). The same user-column cursor walk as rvfixd.
+    if (lrvtdrg) {
+        using namespace prm;
+        const model_cmn& m = ctx.model;
+        int ntd = 0, iusr = 1;
+        bool isfixed = true;
+        for (int icol = 1; icol <= m.nb; ++icol) {
+            int rtype = m.rgvrtp(icol);
+            if (ctx.x11adj.nusrrg > 0) {
+                if (rtype == PRGTUD) {
+                    rtype = ctx.usrreg.usrtyp(iusr);
+                    iusr += 1;
+                } else if ((rtype >= PRGTUH && rtype <= PRGUH5) ||
+                           rtype == PRGTUS) {
+                    iusr += 1;
+                }
+            }
+            const bool istd =
+                (rtype == PRGTTD || rtype == PRGTST || rtype == PRRTTD ||
+                 rtype == PRRTST || rtype == PRATTD || rtype == PRATST ||
+                 rtype == PRG1TD || rtype == PRR1TD || rtype == PRA1TD ||
+                 rtype == PRG1ST || rtype == PRR1ST || rtype == PRA1ST) ||
+                (rtype == PRGTLM || rtype == PRGTSL || rtype == PRGTLQ ||
+                 rtype == PRGTLY || rtype == PRRTLM || rtype == PRRTSL ||
+                 rtype == PRRTLQ || rtype == PRRTLY || rtype == PRATLM ||
+                 rtype == PRATSL || rtype == PRATLQ || rtype == PRATLY) ||
+                (rtype == PRGUTD || rtype == PRGULM || rtype == PRGULQ ||
+                 rtype == PRGULY);
+            if (istd) {
+                ntd += 1;
+                if (!rev.revfix) isfixed = isfixed && m.regfx(icol);
+            }
+        }
+        bool tdfix = false;
+        if (ntd > 0 && rev.nrvfxr > 0)
+            for (int i = 1; i <= rev.nrvfxr; ++i)
+                if (rev.rvfxrg(i) == 1) tdfix = true;
+        if (ntd == 0 || tdfix || isfixed) lrvtdrg = false;
+    }
     if (!(lrvsa || lrvtrn || lrvch || lrvsf || lrvtch || lrvfct ||
           lrvaic || lrvarma || lrvtdrg))
         return true;                               // nothing this driver emits
@@ -294,6 +404,44 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             lupbeg[0] -= 1;
         }
         if (beglup < 1) beglup = 1;
+    }
+
+    // revdrv.f:112-134 -- history{fixreg=} (Rvfxrg): hold the named regression
+    // GROUPS at the main run's converged values for every span. Unlike fixmdl
+    // the ARMA parameters still re-estimate, so this rides the ordinary per-span
+    // re-estimation floor rather than being bit-exact.
+    //
+    // Iregfx/Regfx are NOT part of this port's ssprep snapshot (restor_span
+    // restores Arimap/Arimaf and the x11 filter state only), so unlike the fixmdl
+    // block below there is no snapshot copy to keep in step -- setting the live
+    // model once here persists across every span.
+    if (rev.nrvfxr > 0 &&
+        ((ctx.model.nb > 0 && ctx.model.iregfx < 3) || ctx.xrgmdl.nbx > 0)) {
+        bool tdfix = false, holfix = false, usrfix = false, otlfix = false;
+        for (int i = 1; i <= rev.nrvfxr; ++i) {
+            switch (rev.rvfxrg(i)) {
+            case 1: tdfix = true; break;
+            case 2: holfix = true; break;
+            case 3: usrfix = true; break;
+            case 4: otlfix = true; break;
+            default: break;
+            }
+        }
+        // revdrv.f:131-134: the flags are decoded under the guard above but the
+        // two rvfixd calls sit OUTSIDE it -- with Nrvfxr==0 every flag is false
+        // and both calls are no-ops apart from the allfix/Iregfx bookkeeping,
+        // which is why the oracle can afford to make them unconditional. This
+        // port keeps them inside, where they are observationally identical.
+        if (ctx.model.nb > 0)
+            rvfixd(tdfix, holfix, otlfix, usrfix, ctx.model.iregfx,
+                   ctx.model.regfx, ctx.model.nb, ctx.model.rgvrtp,
+                   ctx.x11adj.nusrrg, ctx.usrreg.usrtyp, ctx.usrreg.ncusrx,
+                   ctx.model.userfx);
+        if (ctx.xrgmdl.nbx > 0)
+            rvfixd(tdfix, holfix, otlfix, usrfix, ctx.xrgmdl.irgxfx,
+                   ctx.xrgmdl.regfxx, ctx.xrgmdl.nbx, ctx.xrgmdl.rgxvtp,
+                   ctx.xrgmdl.nusxrg, ctx.usrxrg.usxtyp, ctx.xrgmdl.nusxrg,
+                   ctx.xrgmdl.usrxfx);
     }
 
     // revdrv.f:250-262 -- history{fixmdl=yes} (Revfix): hold the WHOLE model at

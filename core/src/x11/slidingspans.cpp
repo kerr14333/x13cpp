@@ -64,6 +64,17 @@ void ssprep_snapshot(X13Context& ctx) {
     if (!ctx.captured.has_model) return;
     const model_cmn& m = ctx.model;
     const mdldat_cmn& d = ctx.mdldat;
+    // ssprep.f:56-62 -- Priadj is NOT a plain snapshot. x11pt2's tdlom NEGATES
+    // it after folding the length-of-month/leap-year prior into the model TD
+    // factor, so that nothing downstream removes the prior a second time; the
+    // negated value must never become the snapshot, or every span replay would
+    // restore a Priadj<=0 and skip the fold. When tdlom has already run
+    // (Priadj<=0 on the aictest-td log path) the flow is the other way round --
+    // the LIVE value is restored FROM the snapshot.
+    if (ctx.picktd.picktd && ctx.arima.fcntyp == 1 && ctx.prior.priadj <= 0)
+        ctx.prior.priadj = p.pri2;
+    else
+        p.pri2 = ctx.prior.priadj;
     copy(d.arimap.data(), prm::PARIMA, 1, p.ap2.data());
     copylg(m.arimaf.data(), prm::PARIMA, 1, p.fxa.data());
     p.v2 = d.var;
@@ -89,6 +100,12 @@ void restor_span(X13Context& ctx) {
     if (!ctx.captured.has_model) return;
     model_cmn& m = ctx.model;
     mdldat_cmn& d = ctx.mdldat;
+    // restor.f:55 -- put Priadj back to its PRE-tdlom value, so this span's
+    // x11pt2 folds the length-of-month/leap-year prior into Factd again. The
+    // main run's x11pt2 left it negated (see ssprep_snapshot); without this the
+    // replay's Factd carries no prior at all and every February of the span's
+    // D11/D16 is off by exactly the leap-year factor (0.9912 / 1.0265).
+    ctx.prior.priadj = p.pri2;
     copy(p.ap2.data(), prm::PARIMA, 1, d.arimap.data());
     copylg(p.fxa.data(), prm::PARIMA, 1, m.arimaf.data());
     d.var = p.v2;
