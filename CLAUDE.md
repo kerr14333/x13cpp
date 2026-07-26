@@ -836,10 +836,9 @@ diagnostics front (force / slidingspans / history) is now closed.
   - **`arima.f:283`'s `rmfix(...,1)` had NO call site in the port**, so FIXED
     regression coefficients were ignored by the estimator outright. rmfix/addfix
     were ported long ago but only ever reached from automdl with `fxindx=2`.
-    Wired into `run_x11_span` with arima.f:909-914's restore. **`run_pre_model`
-    still has the same gap on the MAIN estimation path** — `regression{b=(..)}`
-    fixed coefficients are silently ignored there. Out of scope when found;
-    still open.
+    Wired into `run_x11_span` with arima.f:909-914's restore. The same gap on the
+    MAIN estimation path is now **CLOSED** — see the FIXED/INITIAL COEFFICIENTS
+    entry below.
   - **The real find: `Priadj` was not restored between span replays.** x11pt2's
     tdlom NEGATES Priadj after folding the length-of-month/leap-year prior into
     the model TD factor (so nothing removes it twice); `ssprep.f:56-62` saves the
@@ -878,6 +877,72 @@ diagnostics front (force / slidingspans / history) is now closed.
     `additivesa=`. Suggested order is in the scouting doc — note it originally
     ranked `fixreg` as cheapest and was wrong (it needed the rmfix seam);
     `endtable=` is the genuinely self-contained one.
+- **FIXED / INITIAL COEFFICIENTS — `regression{b=}` and `arima{ar= ma= diff=}`
+  — CLOSED (bit-exact), and both were the silent wrong-numbers class.** Two
+  documented, ordinary user options whose values were **parsed and thrown away**:
+  `gt_regression` had no `argidx == 7` branch at all and `gt_arima` sent diff/ar/
+  ma to `consume_value(nullptr)`, so the model was estimated freely and the run
+  came back `OUTCOME: OK` with the wrong coefficients. Measured oracle
+  on-vs-off — `b=` fixed: 1.1e-2 d10/d11/d16, 2.3e-2 d12, 2.5e-2 d13; `ma=`
+  fixed: 6.2e-3..7.9e-3; `b=` under td+log: 1.2e-2..3.0e-2. What landed:
+  - **`gtinvl.f` / `gtrgvl.f`** (`readers_val.cpp`) — the list readers, each
+    value optionally carrying a trailing `f`/`e` (`FIXDIC='fe'`, `FIXVAL=1`). A
+    NULL element (bare comma) advances the cursor and writes NEITHER array: the
+    Fortran's `Bvec(ielt)=PTONE` / `Arimap(ielt)=PTONE` writebacks are commented
+    out, which is what makes `b=(,0.05f)` mean "leave column 1 alone".
+  - **`regfix.f`** (next to the already-ported `mdlfix.f` in `getmdl.cpp`) —
+    derives `Iregfx` 0/1/2/3 from which coefficients have a VALUE (`B != DNOTST`)
+    and which of those are FIXED. `arima.f:282/907` gate on `>= 2`.
+  - **`getreg.f:519-553`'s writeback**, which runs straight after the argument
+    loop (Nb is only final once every `variables=` group is built) and **before**
+    the user-column `adrgef` calls, because those read `B(idisp)/Regfx(idisp)`
+    out of the slots it fills past Nb — that is how a user regressor gets an
+    initial value. The C++ had been passing a hardcoded `0.0`/`false` there.
+  - **`arima.f:281-287` / `:907-914` in `run_pre_model`** — the rmfix/addfix
+    strip-and-restore, previously commented "not reachable in this pre-model
+    slice". Placement matters twice: rmfix sits ahead of the automd/aictest/
+    rgarma branch (the Fortran does it before the branch), and addfix must
+    precede the final `prlkhd` (arima.f:968), not follow it.
+  - **`adrgef.f:82-126`'s date-ordered outlier insertion**, which had been a
+    `not_ported` fatal ("automatic outlier regression ordering (rdotlr.f)").
+    `addfix` re-adds a fixed AO/LS *after* rmfix deleted its group, so the group
+    no longer exists and adrgef takes the create path — where a program-supplied
+    outlier is inserted by DATE (and at equal dates by OTLDIC type order), not
+    appended. `rdotlr` was ported years ago; only this call site was missing.
+  - **Three gtinpt.f defaults that were never ported**, each of which the port
+    read as its zero-init: `B = DNOTST` (:156 — regfix keys on exactly that, and
+    a zero would read as a supplied coefficient of 0), `Iregfx=1`/`Imdlfx=1`
+    (:269-270), and **`Convrg = T` (:267)**. That last one is the subtle one:
+    rgarma only UPDATES Convrg behind `Lestim .and. Nestpm > 0` (rgarma.f:387),
+    so with every ARMA parameter fixed nothing touches the flag and the DEFAULT
+    is what the `.udg` reports — the engine was printing `converged: no` against
+    the oracle's `yes`. (`Imdlfx >= 1` is also what `estimate{parms=fixed}`
+    requires, so that argument was unusable before this too.)
+  **Ported asymmetry**: arima.f:281 calls regvar with a backcast count of 0, so
+  Fixfac is built over a design with no backcast rows — yet :283 still hands
+  rmfix the real `Nbcst`, shifting the subtraction by that many periods.
+  Transcribed as written. **Nearly logged a CB and it would have been wrong**:
+  the Leap Year splice (getreg.f:519-541) shifts `fixvec` up but never resets
+  the spliced slot, so that column inherits its neighbour's fix flag — except
+  the inherited flag always equals another column regfix is ANDing in anyway
+  (it cannot independently change `allfix`) and `rmlnvr` (gtinpt.f:1032) deletes
+  the column before rmfix could act on it. Not observable; not a bug. Gated by
+  six new `generated/` specs — `airline_regb-{fixed,mixed,initial,td-fixed,
+  td-seasonal-fixed}` and `airline_arima-fixedma` — through b1/d10-d13/d16, the
+  f2/f3 diagnostics, the bindings, and (for the two without outlier regressors)
+  `test_m3_estimate`, whose `_estimation_reproducible` exclusion for fixed
+  coefficients is now dropped. Three of those specs exist for a specific reason:
+  `-mixed` is the only one that exercises `Iregfx==2`'s PARTIAL strip and hence
+  adrgef's re-insertion beside a surviving group; `-td-seasonal-fixed` is the
+  only one that reaches the splice's SHIFT branch (with `variables=(td)` alone
+  Leap Year is the last column, `icol <= nbvec` is false, and the splice
+  degenerates to a write past the end); and `-initial` is the negative control
+  that pins the strip to `Iregfx>=2` rather than to "b= was given" — the oracle
+  moves 0.000e+00 there. Still open: `test_m3_estimate` skips
+  `airline_regb-{fixed,mixed}` because its discovery excludes any spec with an
+  `ao|ls|tc|so|rp|tls` regressor; that exclusion predates the outlier port and
+  is probably stale, but widening it would newly admit many existing corpus
+  specs and is its own investigation.
 - **PRIORITY #2 STARTED: R and Python can now call the engine in-process.**
   Both wrapper trees were pure stubs (`py-pkg`'s `seasonal_adjust()` raised
   `NotImplementedError`) because `core/` had no entry point anything but C++
