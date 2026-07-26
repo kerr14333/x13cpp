@@ -11,7 +11,9 @@
 #include "regarima/forecast.hpp"     // fcstout
 #include "regarima/regvar.hpp"       // regvar
 #include "automdl/automd_finalize.hpp"  // rmfix, addfix (arima.f:283/910)
+#include "transform/transform.hpp"   // trnfcn (arima.f:157's estimation input)
 #include "x11/x11parts.hpp"          // x11pt1, x11pt2, x11pt3
+#include "x11/xrgdrv.hpp"            // xrgdrv (x11ari.f:88-95, per span)
 #include "x11/x11drv.hpp"            // setxpt, x11int, chkadj, extend, adjreg, regeff
 #include "gen/notset.hpp"            // prm::NOTSET, prm::DNOTST
 #include "gen/srslen.hpp"            // prm::PLEN
@@ -105,6 +107,20 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     for (int i = 0; i < nlen; ++i) ctx.inpt.series(pos1ob + i) = aptr[i];
     for (int i = 0; i < norig; ++i) ctx.inpt.orig(pos1ob + i) = aptr[i];
 
+    // x11ari.f:88-95 -- the transparent x11regression prior-TD/holiday pass, run
+    // on THIS span's data. The caller demoted Ixreg 3->1/2 at the span head
+    // (revdrv.f:530-532 / ssx11a.f:93-95), so a span that re-estimates the
+    // irregular-component regression arrives here at 2 and leaves at 3 with its
+    // own Faccal in ctx.x11_faccal_prior; the x11pt1 below then folds THAT out of
+    // Sto, which is what makes the estimation input and D-tables this span's own.
+    // Without it every span silently reused the main run's x11reg coefficients,
+    // i.e. behaved as history{fixx11reg=yes} (measured sar 8.2e-1 on airline).
+    const bool span_xrg = (ctx.hiddn.ixreg == 2 || ctx.x11opt.khol == 1);
+    if (span_xrg) {
+        if (!xrgdrv(ctx, /*span_mode=*/true)) return false;
+        if (ctx.error.lfatal) return false;
+    }
+
     x11int(ctx);
 
     const bool lmodel = has_model, lgraf = false, lgrfxr = false, lseats = false;
@@ -119,6 +135,24 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         // over just this span's window (Nspobs==nlen); Nestpm==0 means it
         // takes exactly one pass and never perturbs ctx.mdldat.arimap.
         const double* trnsrs_span = trnsrs_full.data() + offset;
+        // arima.f:156-157 -- the estimation input is a COPY of the X-11 buffer
+        // Sto starting at Pos1ob, i.e. whatever x11pt1 just left there, and the
+        // Box-Cox transform is applied to that. Every other path in this port can
+        // shortcut it with the caller's pre-transformed series because x11pt1's
+        // divides reproduce the same prior adjustment the caller already applied;
+        // the per-span xrgdrv does NOT (this span's Faccal differs from the main
+        // run's), so on that path the input is rebuilt the way the oracle builds
+        // it. Scoped to span_xrg so every already-gated path stays byte-identical.
+        std::vector<double> trnsrs_xrg;
+        if (span_xrg) {
+            const int ntrn = ctx.extend.nobspf;
+            trnsrs_xrg.assign(ctx.orisrs.sto.data() + (pos1ob - 1),
+                              ctx.orisrs.sto.data() + (pos1ob - 1) + ntrn);
+            trnfcn(ctx, trnsrs_xrg.data(), ntrn, ctx.arima.fcntyp, ctx.arima.lam,
+                   trnsrs_xrg.data());
+            if (ctx.error.lfatal) return false;
+            trnsrs_span = trnsrs_xrg.data();
+        }
         // arima.f:142-152 -- narrow onto the model span. With nbeg==0 only
         // Nspobs and Nobspf move; Frstsy/Nomnfy/Adj1st are Begspn-derived and
         // Begspn has not changed, so the estimation input still starts at
@@ -148,8 +182,10 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         const double* trn_est = trnsrs_span;
         const bool fixed_reg = ctx.model.iregfx >= 2 && ctx.model.nb > 0;
         if (fixed_reg) {
-            trnfix.assign(trnsrs_span,
-                          trnsrs_full.data() + trnsrs_full.size());
+            const double* trn_end = span_xrg
+                ? trnsrs_xrg.data() + trnsrs_xrg.size()
+                : trnsrs_full.data() + trnsrs_full.size();
+            trnfix.assign(trnsrs_span, trn_end);
             rmfix(ctx, trnfix.data(), /*nbcst=*/0, ctx.arima.nrxy, 1);
             if (ctx.error.lfatal) return false;
             int nrxyf = 0, frstryf = 0;

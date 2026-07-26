@@ -16,6 +16,7 @@
 
 #include "common/x13context.hpp"
 #include "regarima/estimate.hpp"   // olsreg, resid, xrlkhd
+#include "automdl/automd_finalize.hpp"  // rmfix, addfix (x11mdl.f:390/459)
 #include "regarima/regvar.hpp"     // regvar
 #include "regarima/outlier.hpp"    // idotlr, setcv
 #include "automdl/aictst.hpp"      // addeas
@@ -499,6 +500,25 @@ void x11mdl_td(X13Context& ctx, int kpart) {
            ar.begxy.data(), frstry, /*xmeans=*/true, ar.elong);
     if (ctx.error.lfatal) return;
     ar.nrxy = nrxy;
+    // x11mdl.f:390-395 -- x11regression coefficients held FIXED (Iregfx>=2 on the
+    // WORKING model, i.e. loadxr's copy of Irgxfx/Regfxx) are struck from the
+    // design and their effect subtracted from the irregular before the OLS; the
+    // matching addfix below puts both back before the factor is built. This is
+    // what history{fixx11reg=yes} / slidingspans reach: with every column fixed
+    // the OLS has nothing left to estimate and each span reuses the main run's
+    // daily weights.
+    const bool xrg_fixed = ctx.model.iregfx >= 2 && ctx.model.nb > 0;
+    if (xrg_fixed) {
+        rmfix(ctx, trnsrs.data(), ctx.extend.nbcst, nrxy, 1);
+        if (ctx.error.lfatal) return;
+        int nrxyf = 0, frstryf = 0;
+        regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst, 0, ar.userx.data(),
+               ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxyf,
+               ar.begxy.data(), frstryf, /*xmeans=*/true, ar.elong);
+        if (ctx.error.lfatal) return;
+        nrxy = nrxyf;
+        ar.nrxy = nrxy;
+    }
     // Initial OLS fit; capture the residuals + effective-obs count so the
     // outlier-ID robust mse has its starting values (x11mdl.f:416 regx11(a)).
     std::vector<double> aotl(PLEN, 0.0);
@@ -535,6 +555,21 @@ void x11mdl_td(X13Context& ctx, int kpart) {
                ar.begxy.data(), frstry2, /*xmeans=*/true, ar.elong);
         if (ctx.error.lfatal) return;
         nrxy = nrxy2;
+        ar.nrxy = nrxy;
+    }
+
+    // x11mdl.f:459-467 -- restore the fixed columns (and their effect) now that
+    // the OLS is done, so the factor below is built from the FULL design.
+    if (xrg_fixed) {
+        addfix(ctx, trnsrs.data(), ctx.extend.nbcst, /*rind=*/1, 1);
+        if (ctx.error.lfatal) return;
+        int nrxya = 0, frstrya = 0;
+        regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst, ctx.extend.nbcst,
+               ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
+               ar.reglom, nrxya, ar.begxy.data(), frstrya, /*xmeans=*/true,
+               ar.elong);
+        if (ctx.error.lfatal) return;
+        nrxy = nrxya;
         ar.nrxy = nrxy;
     }
 

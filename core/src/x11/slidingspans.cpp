@@ -503,6 +503,19 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
                 if (!ctx.model.arimaf(i)) ctx.mdldat.arimap(i) = prm::DNOTST;
             // (Nb==0: the B/Bx DNOTST reset lines are no-ops.)
         }
+        // NOT PORTED, and MEASURED: ssx11a.f:93-95's `Ixreg=1; IF(Lmodel)Ixreg=2`
+        // demote -- the slidingspans twin of revdrv.f:530-532, which run_history
+        // now does. Adding it here makes results WORSE, so the oracle must reach
+        // the same numbers by another route: on airline + x11regression{
+        // variables=(td)} + a regARIMA model, `sfs` is currently BIT-EXACT
+        // (4.7e-15) against the oracle with Ixreg left at 3, and demoting takes it
+        // to 4.1e+0. Whatever ssx11a's demote costs is evidently paid back inside
+        // sspdrv (Ssinit/Ssxint hold the irregular regression across spans), which
+        // is not ported. Do not "fix" this by copying the history change.
+        // Still open and separately wrong on this family: `chs` (5.5e+0 -- the
+        // same per-span prior-phase problem airline_slidingspans-td already
+        // records) and the whole MODEL-FREE case (sfs 2.0e+2). Neither moves with
+        // the demote, so neither is this seam.
         const int lsp = l0 + (j - 1) * ny + sa.im - nbcst2 - 1;
         if (!run_x11_span(ctx, trnsrs_full, has_model, si.nlen, nfcst, nbcst,
                            nbcst2, lsp))

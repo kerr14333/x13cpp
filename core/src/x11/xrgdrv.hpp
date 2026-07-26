@@ -31,7 +31,22 @@ struct X13Context;
 // ctx.x11_faccal_prior over the observed span and sets ctx.hiddn.ixreg=3.
 // Returns false (ctx.error.lfatal set) on any unported sub-branch or numeric
 // fatal. A no-op returning true when Ixreg<2 / Axrgtd is false.
-bool xrgdrv(X13Context& ctx);
+//
+// `span_mode` selects the CALL SITE this is standing in for:
+//   false -- the hoisted main-run call from run_pre_model. Nothing has set up
+//            the X-11 span yet, so this builds its own (setxpt, Frstsy/Nomnfy,
+//            Lsp, the Series/Orig buffer fill).
+//   true  -- the per-span call from run_x11_span, which IS x11ari.f:88-95's
+//            call site: the caller has already set the pointers, the calendar
+//            span and the input buffers, so this reproduces xrgdrv.f:134-150's
+//            in-place Nfcst/Nbcst zeroing + pointer nudge instead and puts them
+//            back at :167-178. It also save/restores the ssprep snapshot, which
+//            the oracle does not need (its revdrv `restor` immediately precedes
+//            this ssprep, so the snapshot is rewritten with the state it was
+//            just restored from) but this port does, because ctx.saved carries
+//            three non-oracle fields (ksdev0/lterm0/nterm0) that the span loop
+//            reads back.
+bool xrgdrv(X13Context& ctx, bool span_mode = false);
 
 }  // namespace x13
 #endif  // X13_X11_XRGDRV_HPP

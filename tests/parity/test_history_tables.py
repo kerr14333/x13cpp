@@ -80,11 +80,20 @@ ATOL_REV = 5e-3
 # history{fixmdl=yes} holds every model parameter at the main run's converged
 # values, so no span re-optimizes anything and the whole family collapses to the
 # arithmetic floor -- gate it there, not at the shared estimation tolerance.
+# history{fixx11reg=yes} WITH a regARIMA model amplifies the same floor once
+# more: the x11regression daily weights are held, but the regARIMA model still
+# re-estimates per span AND the held weights then enter the D-tables through
+# Faccal, so one early span (1955.02) lands at 1.25e-5 where the median row is
+# ~2e-8. The MODEL-FREE twin has nothing to re-estimate and gates bit-exact --
+# which is what pins the tolerance here to the re-estimation, not to the flag.
 RTOL_LEVEL_BY_SPEC = {"airline_history-fixper": 2e-5,
                       "airline_history-fixmdl": 1e-12,
-                      "airline_history-fixper-fixmdl": 1e-12}
+                      "airline_history-fixper-fixmdl": 1e-12,
+                      "airline_history-x11reg-fixx11reg": 2e-5,
+                      "airline_history-x11reg-nomodel-fixx11reg": 1e-12}
 ATOL_REV_BY_SPEC = {"airline_history-fixmdl": 1e-11,
-                    "airline_history-fixper-fixmdl": 1e-11}
+                    "airline_history-fixper-fixmdl": 1e-11,
+                    "airline_history-x11reg-nomodel-fixx11reg": 1e-11}
 
 # (tag, n_value_columns, kind) -- kind "level" uses RTOL_LEVEL, "rev" uses ATOL_REV.
 # che (month-to-month SA % change, conc+final) is a difference of two re-estimated

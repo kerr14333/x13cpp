@@ -457,17 +457,55 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // undo it on the very first span. Same mechanism, same trap, as
     // slidingspans' ssmdl_fix_model. (The Userfx/bakusr arm needs user
     // regressors, which this driver does not carry.)
+    // WITH x11regression{} the flag is INERT, and faithfully so: revdrv.f:309-350's
+    // Ixreg block ends with `CALL loadxr(T); IF(Lmodel)CALL restor(Lmodel,F,F)`,
+    // which reinstates Arimaf/Regfx/Iregfx FROM the ssprep snapshot before the
+    // span loop ever starts -- and Revfix only ever set the LIVE copy (the ssprep
+    // at revdrv.f:380 is commented out in the Fortran). Measured: the oracle's
+    // `fixmdl=yes` and default runs are byte-identical on airline +
+    // x11regression{variables=(td)} + history{}. So the ssprep mirror below,
+    // which is what makes the fix survive restor_span at all, is applied only
+    // when there is no x11regression -- with one, the live fix is undone by the
+    // first span's restor_span exactly as the oracle's restor undoes it.
     if (rev.revfix && has_model) {
+        const bool sticks = ctx.hiddn.ixreg == 0;
         for (int i = 1; i <= prm::PARIMA; ++i) {
             ctx.model.arimaf(i) = true;
-            ctx.ssprep.fxa(i) = true;
+            if (sticks) ctx.ssprep.fxa(i) = true;
         }
         for (int i = 1; i <= ctx.model.nb; ++i) {
             ctx.model.regfx(i) = true;
-            ctx.ssprep.regfx2(i) = true;    // restor_span restores from here
+            if (sticks) ctx.ssprep.regfx2(i) = true;  // restor_span restores here
         }
         ctx.model.iregfx = 3;
-        ctx.ssprep.irfx2 = 3;
+        if (sticks) ctx.ssprep.irfx2 = 3;
+    }
+
+    // revdrv.f:309-330 -- history{fixx11reg=yes} (Revfxx): hold the
+    // x11regression{} daily weights at the main run's values for every span. The
+    // fix goes on the x11reg STORE (Irgxfx/Regfxx), not the working model, and
+    // each span's loadxr(F) copies it in; x11mdl's Iregfx>=2 rmfix/addfix then
+    // strikes every fixed column, so the per-span OLS has nothing to estimate.
+    // Unlike the regARIMA fixes above nothing restores the store between spans,
+    // so no ssprep mirror is needed. (The Usrxfx/bakusr arm needs user x11reg
+    // regressors, which this driver does not carry.)
+    if (rev.revfxx && ctx.hiddn.ixreg > 0 && ctx.xrgmdl.nbx > 0) {
+        for (int i = 1; i <= prm::PB; ++i) ctx.xrgmdl.regfxx(i) = true;
+        if (ctx.xrgmdl.irgxfx < 3) ctx.xrgmdl.irgxfx = 3;
+        // revdrv.f:323-330 -- with the trading-day group held fixed there is
+        // nothing for the negative-weight reweighting to act on.
+        if (ctx.x11log.lxrneg) {
+            const int igrp = strinx(true, ctx.xrgmdl.grpttx.raw(),
+                                    ctx.xrgmdl.gpxptr.data(), 1,
+                                    ctx.xrgmdl.ngrptx, "Trading Day");
+            if (igrp > 0) {
+                bool all = true;
+                for (int c = ctx.xrgmdl.grpx(igrp - 1);
+                     c <= ctx.xrgmdl.grpx(igrp) - 1; ++c)
+                    all = all && ctx.xrgmdl.regfxx(c);
+                ctx.x11log.lxrneg = !all;
+            }
+        }
     }
 
     const int nspan = endrev - begrev + 1;         // includes the final full span
@@ -516,23 +554,19 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
         // via MSR / the I/C ratio instead of inheriting the first span's choice.
         ctx.x11opt.lterm = ctx.saved.lterm0;
         ctx.x11opt.nterm = ctx.saved.nterm0;
-        // NOT PORTED, deliberately, and MEASURED: revdrv.f:530-532 demotes Ixreg
-        // from 3 back to 1/2 at every span head, so each span re-runs the
-        // x11regression irregular OLS on its own data. Left at 3 (what this port
-        // does), every span reuses the MAIN run's x11reg coefficients -- i.e. it
-        // silently behaves as though history{fixx11reg=yes} had been given.
-        //
-        // Adding the demote alone makes things WORSE, which is the whole finding:
-        // in the oracle Ixreg==2 means "run the transparent xrgdrv pass", and
-        // this port HOISTS xrgdrv into run_pre_model (see xrgdrv.hpp) rather than
-        // reaching it from x11pt2, so a demoted span takes x11pt2's INLINE
-        // x11mdl_td path (the Ixreg==1 semantic) instead. Closing this needs
-        // xrgdrv run per span, against the span's own pointers, with the span's
-        // pre-model divide by that span's Faccal -- not a flag fix.
-        // Measured (airline + x11regression{variables=(td)} + history, sar/sae,
-        // tolerances 5e-3 abs / 1e-5 rel): the whole family is out, both with a
-        // regARIMA model and without, so this is NOT specific to fixx11reg=.
-        // See tools/history_options_scouting.md for the table.
+        // revdrv.f:530-532 -- demote Ixreg 3->1/2 at the span head, so this span
+        // re-estimates the x11regression irregular OLS on its own data instead of
+        // reusing the main run's coefficients. Ixreg==2 is what makes
+        // run_x11_span run the transparent xrgdrv pass (x11ari.f:88-95); at 1 the
+        // inline x11mdl_td in x11pt2 does the work, which is also what the oracle
+        // does there. Left at 3 (what this port used to do) every span silently
+        // behaved as history{fixx11reg=yes} -- measured sar 8.2e-1 on airline +
+        // x11regression{variables=(td)}, against a 5e-3 tolerance.
+        if (ctx.hiddn.ixreg == 3) {
+            ctx.hiddn.ixreg = 1;
+            if (has_model || ctx.x11reg.fxprxr > 0 || ctx.x11opt.khol > 0)
+                ctx.hiddn.ixreg = 2;
+        }
         const int nlen = i;                        // Length = Posfob - Pos1ob + 1
         const int lsp = 1;                         // Pos1ob = Nbcst2(0) + Lsp = 1
         // revdrv.f:479-497 -- this span's model span end. Endspn = the span's

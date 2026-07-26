@@ -633,6 +633,12 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     const auto x11ptr_main = ctx.x11ptr;
     const auto mdlbegspn_main = ctx.mdldat.begspn;
     const std::vector<double> frcfac_main = ctx.x11_frcfac;
+    // x11regression{}: each span demotes Ixreg and re-estimates its own prior-TD
+    // factor into ctx.x11_faccal_prior (run_x11_span -> xrgdrv). Both are main-run
+    // state here -- Ixreg==3 is what x11pt1 keys its Faccal restore on -- so put
+    // them back for anything that reads the main adjustment afterwards.
+    const int ixreg_main = ctx.hiddn.ixreg;
+    const std::vector<double> faccal_main = ctx.x11_faccal_prior;
 
     if (!run_slidingspans(ctx, trnsrs)) return false;
 
@@ -649,6 +655,8 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.x11ptr = x11ptr_main;
     ctx.mdldat.begspn = mdlbegspn_main;
     ctx.x11_frcfac = frcfac_main;
+    ctx.hiddn.ixreg = ixreg_main;
+    ctx.x11_faccal_prior = faccal_main;
 
     return !ctx.error.lfatal;
 }

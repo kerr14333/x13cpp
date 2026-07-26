@@ -907,19 +907,59 @@ diagnostics front (force / slidingspans / history) is now closed.
     modelled family worse and breaks its previously floor-accurate fixed branch**,
     because `Ixreg==2` in the oracle means "run the transparent `xrgdrv` pass" and
     this port HOISTS xrgdrv into `run_pre_model` rather than reaching it from
-    x11pt2, so a demoted span takes the `Ixreg==1` inline route instead. Closing
-    it needs xrgdrv per span (span pointers, the span's pre-model divide by that
-    span's `Faccal`, and a check that xrgdrv's `Lterm`/`Ksdev` save-restore
-    survives nesting in a replay) and it subsumes both `fixx11reg=` and
-    `x11outlier=`, which share the `revdrv.f:309-350` `Ixreg` block. Measurement
-    table + the reasoning are in `tools/history_options_scouting.md`, and the note
-    sits at the call site in `run_history.cpp`.
-  - Still open, all measured as moving: `outlier=`/`outlierwin=`, `fixx11reg=` +
-    `x11outlier=` (blocked on the per-span xrgdrv above),
+    x11pt2, so a demoted span takes the `Ixreg==1` inline route instead.
+- **PER-SPAN `xrgdrv` — CLOSED, and with it `history{fixx11reg=}`.** The demote
+  above landed together with `x11ari.f:88-95`'s transparent pass, run against
+  each span's own pointers (`xrgdrv(ctx, span_mode=true)`: no `setxpt`, no buffer
+  refill, `xrgdrv.f:143-146`'s in-place pointer nudge instead, undone at
+  `:167-178`). DEFAULT with a model went **sar 8.22e-1 → 6.8e-4, sae
+  8.27e-3 → 6.7e-6**, i.e. the ordinary per-span floor; `fixx11reg=yes` gates at
+  1.3e-3/1.2e-5 with a model and **bit-exact (5e-15) model-free**. Four things
+  worth knowing:
+  (1) **The estimation input, not just the factor.** `arima.f:156-157` copies
+  `Sto` from `Pos1ob` AFTER x11pt1 divided out THIS span's Faccal, and transforms
+  that. Every other path can shortcut it with the caller's pre-transformed
+  series; this one cannot, because the span's Faccal differs from the main run's.
+  Rebuilt the oracle's way, scoped to the xrgdrv path so gated paths stay
+  byte-identical.
+  (2) **The state leak was the whole residual, and it is the `Lterm`/`Ksdev`/
+  `Priadj` class again.** The transparent pass is a full x11pt1/x11pt2 and
+  resolves `Lmsr`, `Kersa`, `Lstabl`, `L3x5`, `Nterm` in place. On the main path
+  `run_x11`'s editor block re-derives all of them after xrgdrv returns; a span
+  has no editor block. Without handing them back, the LAST span — which covers
+  the whole series and produced a Faccal **verified identical** to the main
+  run's, with a **verified identical** estimation input — was still 1.2e-4 off.
+  A per-span pass must restore everything the main path's editor would re-derive,
+  not merely what `restor` restores.
+  (3) **`fixx11reg=` fixes the x11reg STORE (`Irgxfx`/`Regfxx`), not the working
+  model** — each span's `loadxr(F)` copies it in and `x11mdl.f:390-395/459-467`'s
+  `Iregfx>=2` rmfix/addfix (newly ported into `x11reg.cpp`) strikes every fixed
+  column. Nothing restores the store between spans, so unlike fixmdl/fixreg it
+  needs no ssprep mirror.
+  (4) **`fixmdl=yes` is INERT when `x11regression{}` is present, faithfully.**
+  `revdrv.f:309-350` ends with `CALL restor(Lmodel,F,F)`, which reinstates
+  `Arimaf`/`Regfx`/`Iregfx` from the ssprep snapshot before the loop starts, and
+  `Revfix` only ever set the LIVE copy (the re-snapshot at `revdrv.f:380` is
+  commented out in the Fortran). Oracle `fixmdl=yes` and default are
+  BYTE-IDENTICAL here; without `x11regression{}` the same flag moves sae 3.23e-3.
+  This port had to SUPPRESS its ssprep mirror — the thing that makes the fix
+  stick at all — to reproduce that.
+  **`slidingspans{}` is NOT the same fix.** `ssx11a.f:93-95` has the identical
+  demote, but measured: with a regARIMA model `sfs` is **bit-exact (4.7e-15) with
+  `Ixreg` left at 3** and goes to 4.1e+0 with the demote added — the oracle pays
+  it back inside `sspdrv` (`Ssinit`/`Ssxint`), unported. Left undemoted with the
+  measurement at the call site. Still separately wrong on that family and NOT
+  this seam: `chs` (5.5e+0, the `airline_slidingspans-td` per-span prior-phase
+  problem) and the whole model-free case (`sfs` 2.0e+2).
+  Gated by `extra/airline_history-x11reg{,-fixx11reg,-nomodel-fixx11reg,-fixmdl}`
+  in `test_history_tables.py`.
+  - Still open, all measured as moving: `outlier=`/`outlierwin=`, `x11outlier=`
+    (shares the `revdrv.f:309-350` block but additionally needs `rmatot.f`),
     `sadjlags=`/`trendlags=`/`target=`, `additivesa=`. Suggested order is in the
-    scouting doc — note it has now been wrong twice: it ranked `fixreg` as
-    cheapest (it needed the rmfix seam) and listed `endtable=` as unported (it
-    was already correct).
+    scouting doc — note it has now been wrong three times: it ranked `fixreg` as
+    cheapest (it needed the rmfix seam), listed `endtable=` as unported (it was
+    already correct), and its model-free `x11regression{}` row was measured on a
+    spec that still carried `transform{function=log}` and is bit-exact without it.
 - **FIXED / INITIAL COEFFICIENTS — `regression{b=}` and `arima{ar= ma= diff=}`
   — CLOSED (bit-exact), and both were the silent wrong-numbers class.** Two
   documented, ordinary user options whose values were **parsed and thrown away**:

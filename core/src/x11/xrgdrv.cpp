@@ -38,7 +38,7 @@ static bool xrgdrv_supported(X13Context& ctx) {
            ctx.x11reg.xdsp == 0;
 }
 
-bool xrgdrv(X13Context& ctx) {
+bool xrgdrv(X13Context& ctx, bool span_mode) {
     if (!(ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd)) return true;  // no-op
     if (!xrgdrv_supported(ctx)) {
         xrg_not_ported(ctx, "xrgdrv OLS prior trading-day (Ixreg>=2): only the "
@@ -56,6 +56,13 @@ bool xrgdrv(X13Context& ctx) {
     const double* aptr = ctx.arima.y.data() + offset;   // 1-based over the span
 
     // --- xrgdrv.f:57-87: save SA/model state; zero the model Adj* indicators.
+    // The oracle's ssprep here is harmless because revdrv/ssx11a call `restor`
+    // immediately before x11ari, so this snapshot rewrites what it just read.
+    // In this port ctx.saved additionally carries ksdev0/lterm0/nterm0, which
+    // the span loop reads back to give each span a fresh filter/spread start --
+    // so inside a span the whole snapshot is preserved rather than rewritten.
+    const ssprep_cmn sv_ssprep = ctx.ssprep;
+    const auto sv_saved = ctx.saved;   // anonymous struct type
     ssprep_snapshot(ctx);
     x11adj_cmn& adj = ctx.x11adj;
     const int sv_adjtd = adj.adjtd, sv_adjhol = adj.adjhol, sv_adjao = adj.adjao,
@@ -106,12 +113,27 @@ bool xrgdrv(X13Context& ctx) {
     // --- xrgdrv.f:129: load the x11regression TD design into the working model.
     loadxr(ctx, /*toxreg=*/false);
 
-    // --- Model-free, no-forecast/backcast X-11 setup (mirrors run_x11.cpp's
-    // no-model path, lines 110-216, with Nfcst==Nbcst==0). xrgdrv.f:131-159.
+    // --- xrgdrv.f:131-159. Two shapes, because this stands in for two call
+    // sites (see hpp). The oracle only ever has the span-mode shape: it zeroes
+    // Nfcst/Nbcst in place and NUDGES the four derived pointers, keeping the
+    // Pos1ob/Posfob its caller already set. The hoisted main-run call has no
+    // caller to have set them, so it builds the span from scratch instead.
     extend_cmn& ext = ctx.extend;
     const int sv_nfcst = ext.nfcst, sv_nbcst = ext.nbcst;
-    ctx.arima.frstsy = offset + 1;
-    ctx.arima.nomnfy = ctx.arima.nobs - ctx.arima.frstsy + 1;
+    const int sv_nbcst2 = ext.nbcst2, sv_nfdrp = ext.nfdrp;
+    const int sv_nobspf = ext.nobspf;
+    const int sv_nofpob = ext.nofpob, sv_nbfpob = ext.nbfpob;
+    const int sv_lsp = ctx.lzero.lsp;
+    const int sv_pos1bk = ctx.x11ptr.pos1bk, sv_posffc = ctx.x11ptr.posffc;
+    const int sv_setpri = ctx.adj.setpri;
+    const int sv_nterm = ctx.x11opt.nterm;
+    const int sv_lmsr = ctx.x11opt.lmsr;
+    const int sv_kersa = ctx.xtrm.kersa;
+    const bool sv_lstabl = ctx.work2.lstabl, sv_l3x5 = ctx.work2.l3x5;
+    if (!span_mode) {
+        ctx.arima.frstsy = offset + 1;
+        ctx.arima.nomnfy = ctx.arima.nobs - ctx.arima.frstsy + 1;
+    }
     ext.nfcst = 0;
     ext.nbcst = 0;
     ext.nbcst2 = 0;
@@ -119,46 +141,64 @@ bool xrgdrv(X13Context& ctx) {
     ext.nobspf = std::min(nspobs, ctx.arima.nomnfy);
     ext.nofpob = nspobs;
     ext.nbfpob = nspobs;
-    ctx.lzero.lsp = 1;
+    if (!span_mode) ctx.lzero.lsp = 1;
 
     ctx.x11opt.ny = sp;
-    ctx.x11opt.lyr = begspn[0];
+    if (!span_mode) ctx.x11opt.lyr = begspn[0];
     ctx.xtrm.kersa = 0;
     // (Cnstnt is a COMMON and survives the transparent pass; do not clear it.)
 
-    // editor.f 2042-2103 seasonal-filter default resolution (base branch).
-    ctx.work2.lstabl = false;
-    ctx.work2.l3x5 = false;
-    if (ctx.x11opt.lterm == prm::NOTSET) {
-        ctx.x11opt.lterm = 6;
-        for (int i = 1; i <= sp; ++i) ctx.x11opt.lter(i) = 6;
-    }
-    if (ctx.x11opt.lterm == 5) ctx.work2.lstabl = true;
-    if (ctx.x11opt.lterm == 2 || ctx.x11opt.lterm == 0) ctx.work2.l3x5 = true;
-    ctx.x11opt.lmsr = (ctx.x11opt.lterm == 6) ? 6 : 0;
+    // editor.f 2042-2103 / 2130-2135 -- the seasonal-filter and trend I/C-ratio
+    // defaults. Only the hoisted call needs them: editor runs once, at parse,
+    // and in a span replay `restor` (restor_span) has already reinstated Lter/
+    // Ktcopt/Tic from the main run's snapshot and the caller has reset Lterm.
+    if (!span_mode) {
+        ctx.work2.lstabl = false;
+        ctx.work2.l3x5 = false;
+        if (ctx.x11opt.lterm == prm::NOTSET) {
+            ctx.x11opt.lterm = 6;
+            for (int i = 1; i <= sp; ++i) ctx.x11opt.lter(i) = 6;
+        }
+        if (ctx.x11opt.lterm == 5) ctx.work2.lstabl = true;
+        if (ctx.x11opt.lterm == 2 || ctx.x11opt.lterm == 0) ctx.work2.l3x5 = true;
+        ctx.x11opt.lmsr = (ctx.x11opt.lterm == 6) ? 6 : 0;
 
-    // editor.f 2130-2135 initial trend I/C ratio (Tic) default (base branch).
-    if (ctx.x11opt.tic == 0.0) {
-        ctx.x11opt.tic = 3.5;
-        const int ktc = ctx.x11opt.ktcopt;
-        if (ktc <= 9 && ktc > 0) ctx.x11opt.tic = 1.0;
-        if (ktc > 13) ctx.x11opt.tic = 4.5;
-        if (ktc <= 5 && sp == 4) ctx.x11opt.tic = 0.001;
-        if (ktc >= 7 && sp == 4) ctx.x11opt.tic = 4.5;
+        if (ctx.x11opt.tic == 0.0) {
+            ctx.x11opt.tic = 3.5;
+            const int ktc = ctx.x11opt.ktcopt;
+            if (ktc <= 9 && ktc > 0) ctx.x11opt.tic = 1.0;
+            if (ktc > 13) ctx.x11opt.tic = 4.5;
+            if (ktc <= 5 && sp == 4) ctx.x11opt.tic = 0.001;
+            if (ktc >= 7 && sp == 4) ctx.x11opt.tic = 4.5;
+        }
     }
 
     const bool lsadj = true;
     const int fctdrp = ctx.arima.fctdrp;
-    setxpt(ctx, /*nfdrp=*/0, lsadj, fctdrp);
+    if (span_mode) {
+        // xrgdrv.f:143-146 -- with Nfcst/Nbcst now zero the derived pointers
+        // collapse onto the observed span; Pos1ob/Posfob are the caller's and
+        // are deliberately NOT recomputed (the oracle never calls setxpt here).
+        ctx.x11ptr.pos1bk = ctx.x11ptr.pos1ob;
+        ctx.x11ptr.posffc = ctx.x11ptr.posfob;
+    } else {
+        setxpt(ctx, /*nfdrp=*/0, lsadj, fctdrp);
+    }
     const int pos1ob = ctx.x11ptr.pos1ob;
     const int posfob = ctx.x11ptr.posfob;
     ctx.adj.setpri = ctx.x11ptr.pos1bk;
 
     // Populate the X-11 input buffers from the raw span (no model, no transform-
-    // extension: the transparent pass runs on the observed series only).
-    const int norig = std::min(nspobs, ctx.arima.nomnfy);
-    for (int i = 0; i < nspobs; ++i) ctx.inpt.series(pos1ob + i) = aptr[i];
-    for (int i = 0; i < norig; ++i)  ctx.inpt.orig(pos1ob + i) = aptr[i];
+    // extension: the transparent pass runs on the observed series only). In span
+    // mode the caller has already done exactly this, as ssx11a/revdrv do before
+    // x11ari -- refilling would be a no-op at best and would use a different
+    // Orig length at worst.
+    if (!span_mode) {
+        const int norig = std::min(nspobs, ctx.arima.nomnfy);
+        for (int i = 0; i < nspobs; ++i) ctx.inpt.series(pos1ob + i) = aptr[i];
+        for (int i = 0; i < norig; ++i)  ctx.inpt.orig(pos1ob + i) = aptr[i];
+    }
+    (void)aptr;
 
     // x11int initializes /x11fac/ (Faccal=base) and the working arrays for this
     // transparent decomposition. xrgdrv.f:163-165: x11pt1 + x11pt2 (Lx11=T); the
@@ -194,6 +234,36 @@ bool xrgdrv(X13Context& ctx) {
     // 2042-2103 block) and Ksdev (-> main run re-runs the Bundesbank spread test).
     ctx.x11opt.lterm = sv_lterm;
     ctx.xtrm.ksdev = sv_ksdev;
+
+    if (span_mode) {
+        // xrgdrv.f:167-178 puts Nfcst/Nbcst/Nfdrp and the four derived pointers
+        // back so the caller's x11pt1/arima/x11pt2 see the span it set up. The
+        // Fortran's other state is restored by COMMONs it never wrote; this port
+        // writes some of them, so they are undone here.
+        ext.nbcst2 = sv_nbcst2;
+        ext.nfdrp = sv_nfdrp;
+        ext.nobspf = sv_nobspf;
+        ext.nofpob = sv_nofpob;
+        ext.nbfpob = sv_nbfpob;
+        ctx.lzero.lsp = sv_lsp;
+        ctx.x11ptr.pos1bk = sv_pos1bk;
+        ctx.x11ptr.posffc = sv_posffc;
+        ctx.adj.setpri = sv_setpri;
+        // The transparent pass's x11pt2/vtc resolves the Henderson length in
+        // place. Every span must re-select it from its own I/C ratio, exactly as
+        // Lterm above, so restore what the caller had set.
+        ctx.x11opt.nterm = sv_nterm;
+        // Same class: the transparent pass's x11pt2 resolves the MSR selector,
+        // the extreme-value mode and the stable/3x5 filter flags in place. On the
+        // main path run_x11's editor block re-derives all of them AFTER this
+        // returns; a span has no editor block, so hand them back.
+        ctx.x11opt.lmsr = sv_lmsr;
+        ctx.xtrm.kersa = sv_kersa;
+        ctx.work2.lstabl = sv_lstabl;
+        ctx.work2.l3x5 = sv_l3x5;
+        ctx.ssprep = sv_ssprep;
+        ctx.saved = sv_saved;
+    }
 
     if (ctx.error.lfatal) return false;
 
