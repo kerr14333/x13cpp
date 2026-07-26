@@ -82,13 +82,23 @@ CASES = [
                 # fell through both and returned OUTCOME: OK with the prior TD
                 # missing from B1 and d10-d13 -- off by exactly a factor of a4
                 # (~2e-2..3.8e-2), while a4 itself stayed bit-exact.
-                "airline_x11regression-tdprior-logadd")
+                "airline_x11regression-tdprior-logadd",
+                # x11pt1.f:229-230's ENTRY condition, not the block itself: with
+                # the classic X-11 Easter on (Khol==2) and no x11-regression
+                # prior calendar, the oracle SKIPS the prior-TD block and
+                # adjusts without one. It does not reject the spec -- it writes
+                # d10-d13 normally. The engine used to FATAL there (measured:
+                # oracle 144 d10 rows, engine none), because the guard could not
+                # tell "unported branch" from "branch the oracle declines to
+                # enter". This spec therefore ships NO a4 golden by design --
+                # pritd never runs -- which is why the filter below keys on d10.
+                "airline_x11regression-tdprior-x11easter")
     if os.path.exists(os.path.join(_CORPUS, b + ".spc"))
-    and os.path.exists(os.path.join(_GOLDEN, b, b + ".a4"))
+    and os.path.exists(os.path.join(_GOLDEN, b, b + ".d10"))
 ]
 
 
-@pytest.mark.skipif(not CASES, reason="no tdprior spec ships the a4 golden")
+@pytest.mark.skipif(not CASES, reason="no tdprior spec ships the d10 golden")
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag,tol", _TABLES)
 def test_tdprior_table(base: str, tag: str, tol: float) -> None:

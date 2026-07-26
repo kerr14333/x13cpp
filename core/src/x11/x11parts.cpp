@@ -205,11 +205,21 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
     // silent wrong-numbers bug -- see run_pre_model.cpp). Additive and
     // pseudo-additive weights never get this far: editor.f:1518-1530 rejects
     // them at parse, ported in gtinpt.cpp, so the muladd/psuadd arms below are
-    // belt-and-braces. The classic X-11 Easter (Khol>=2) user-weight combine is
-    // a real unported branch -- but note the oracle does not fatal on it either,
-    // it SKIPS the whole prior-TD block unless (Axrghl||Axrgtd)&&Ixreg==3
-    // (x11pt1.f:229-230), which this guard does not yet distinguish.
-    if (opt.kswv == 1) {
+    // belt-and-braces.
+    //
+    // x11pt1.f:229-230's entry condition is
+    //     Kswv==1 .and. (((Axrghl.or.Axrgtd).and.Ixreg==3) .or. Khol<2)
+    // -- so with the classic X-11 Easter on (Khol>=2) and no x11-regression
+    // prior calendar, the oracle SKIPS the whole prior-TD block and adjusts
+    // without a prior TD. This guard used to FATAL there instead, on a spec the
+    // oracle runs to completion: `x11{x11easter=yes}` + `x11regression{
+    // tdprior=}` writes d10/d11 in the oracle and returned OUTCOME: FATAL here
+    // (measured). Now the skip is reproduced and only the genuinely unported
+    // arm -- entering WITH Khol>=2 via the x11-regression branch, which needs
+    // the classic-Easter user-weight combine -- keeps the wall.
+    const bool xrg_prior =
+        (ctx.x11log.axrghl || ctx.x11log.axrgtd) && ctx.hiddn.ixreg == 3;
+    if (opt.kswv == 1 && (xrg_prior || opt.khol < 2)) {
         if (muladd != 0 || ctx.x11msc.psuadd || opt.khol >= 2) {
             x11_not_ported(ctx, "x11pt1 prior trading-day adjustment (pritd/ssrit)");
             return;
@@ -889,7 +899,14 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // (x11pt3.f:311). No RETURN here in the oracle -- falls through to the
     // Irev check (and beyond, to D12/D11) regardless.
     if (hid.issap == 2) ssrit(ctx, sts, pos1ob, posfob, 2, series);
-    if (hid.irev == 4) {
+    // x11pt3.f:311-313 -- `IF(Irev.eq.4 .and. Lrvsf)`. The Lrvsf half was
+    // missing, making the wall fire for any Irev==4 even when SEASONAL-factor
+    // revisions were not among `estimates=`. Currently unobservable either way:
+    // Irev only ever takes 0 or 1 in this port (readers_spec.cpp:2271 is the
+    // only assignment; revdrv.f:387's Irev=4 has no counterpart, because
+    // run_history inlines getrev's arithmetic instead of reaching it through
+    // x11pt3). Tightened so the guard says what the Fortran says.
+    if (hid.irev == 4 && ctx.rev.lrvsf) {
         x11_not_ported(ctx, "x11pt3 revisions seasonal store (getrev)");
         return;
     }
@@ -1090,7 +1107,10 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         ssrit(ctx, stci, pos1ob, posfob, 3, series);
         return;
     }
-    if (hid.irev == 4 && frc.iyrt == 0) {
+    // x11pt3.f:677-685 -- `IF(Irev.eq.4 .and. (Lrvsa.or.Lrvch) .and.
+    // Iyrt.eq.0)`. See the seasonal-store note above for why the missing
+    // disjunct is unobservable here.
+    if (hid.irev == 4 && (ctx.rev.lrvsa || ctx.rev.lrvch) && frc.iyrt == 0) {
         x11_not_ported(ctx, "x11pt3 revisions SA store (getrev)");
         return;
     }
@@ -1192,7 +1212,8 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
                 ssrit(ctx, stci2, pos1ob, posfob, 3, series);
                 return;
             }
-            if (hid.irev == 4) {
+            // x11pt3.f:815-829 -- `IF(Irev.eq.4 .and. (Lrvsa.or.Lrvch))`.
+            if (hid.irev == 4 && (ctx.rev.lrvsa || ctx.rev.lrvch)) {
                 x11_not_ported(ctx, "x11pt3 revisions forced-SA store (getrev)");
                 return;
             }

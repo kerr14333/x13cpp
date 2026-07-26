@@ -13,8 +13,13 @@ are gitignored.
 **Baseline (this commit):** lines **72.7%** (6756/9288), functions **88.7%**
 (244/275), branches 47.2%, over `core/src/` (generated `gen/` headers excluded).
 The uncovered lines are mostly: deferred print/error branches, and —
-- **`adqtst.cpp` 0%**: the banked adequacy routines (mdlchk/tstmd2/testodf/
-  bkdfmd/tstmd1) have NO caller yet (wire pending the automd finalization).
+- ~~**`adqtst.cpp` 0%**: the banked adequacy routines (mdlchk/tstmd2/testodf/
+  bkdfmd/tstmd1) have NO caller yet (wire pending the automd finalization).~~
+  **STALE as of 2026-07-26** — `automd.cpp` now calls all five: `mdlchk` at
+  :186/:252/:264/:433/:637, `testodf` at :260, `tstmd2` at :291, `bkdfmd` at
+  :464, `tstmd1` at :582. The percentages above are from the commit that wrote
+  them and have not been re-measured since; re-run `tools/coverage.ps1` before
+  quoting any of them.
 - **`getreg_vars.cpp` 45% / `readers_val.cpp` 43%**: untested regression-variable
   TYPES and value-reader branches — directly raised by the "more calendar/holiday
   regressors" sweep below.

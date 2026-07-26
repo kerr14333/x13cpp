@@ -1171,5 +1171,85 @@ diagnostics front (force / slidingspans / history) is now closed.
     `dump()`); `bindings/r/test_x13c.R` (the R binding vs the same goldens plus
     the R surface — data.frame shapes, `ts()` conversion, use-after-close,
     double-close).
+- **`slidingspans{}` / `history{}` under `seats{}` — MEASURED SILENTLY DROPPED,
+  partially closed.** The largest two-features-at-once blind spot left: ZERO
+  corpus specs combined SEATS with either span driver. Measured on airline
+  `(0 1 1)(0 1 1)`: the oracle writes `.sfs`/`.chs` (and `.sar`/`.sae`/`.trr`/
+  `.tre`, 73 rows) and the engine returned **`OUTCOME: OK` with no tables at
+  all**. Not a harness artifact — `x13_capi.cpp:347` dispatches
+  `wantSeats ? run_seats : run_x11` and the span drivers live inside `run_x11`,
+  so the R/Python bindings had the identical hole. The Fortran needs no new
+  driver: `sspdrv.f:2` and `revdrv.f:5` both take `Lseats` and hand it to
+  `x11ari`, where `:199` still runs x11pt2 (gated `(.not.Lcmpaq).or.Lx11`, true
+  for a non-composite SEATS run) and `:204-243` substitutes the SEATS chain for
+  x11pt3. Landed: `run_seats.hpp`'s `seats_restore_mean`/`seats_decompose`
+  split (so a span can run the decomposition), `lseats` as a run_x11_span
+  PARAMETER driving `seatdg.f:101-110`'s ssrit store on Seatsf/Seatsa,
+  `getsma.f`+`mdssln.f` (the Findley (2003) span length, replacing an
+  `issap = 0` wall), and run_seats' span-driver tail. **Scale note:** Seatsf is
+  a ratio after `seatad.f:33-35`'s `/100`, which is exactly what
+  `ctx.seats_seasonal_add` (= s10) already carries, and ssrit multiplies it
+  back. **STILL BLOCKED, deliberately not faked:** `setssp` reads the main run's
+  `Length`/`Pos1ob`, which x11pt2 sets — and `run_seats` skips the X-11
+  pre-stage entirely, though the ORACLE runs it. Sharing run_x11's editor +
+  setxpt/x11int/x11pt1/x11pt2 block is the next increment; until then
+  run_slidingspans still bails at `issap = 0` for a SEATS spec, and
+  `history{}` under seats{} (seatdg.f:146-180's three getrev calls) is
+  untouched. **The restore set is wider than run_x11's**: ctx.seats_*,
+  ctx.series.tsrs (each span's rgarma leaves its own residuals there) and
+  Nspobs, because `x13run_seats` re-derives the whole ESTBUR chain from ctx
+  AFTER the driver returns — a miss shows up as the LAST SPAN's decomposition
+  under the main run's dates.
+- **A 7-way Codex review pass over the engine — what it found, and what it
+  didn't.** Reported clean: the SEATS core (roots/poly/canonical denoms/estbur/
+  every sign hand-off), the optimizer + automdl (the Census-MODIFIED lmdif's
+  control flow, AICC, the amdid/tdaic/easaic tie-break rules), and the X-11
+  arithmetic (Muladd 2->0 collapse ordering, both divsub arms, Part-E constant
+  round-trip order). Real finds, all verified against the Fortran before acting:
+  - **CB-23** (`chkorv.f:54-58`) — the span-outlier end-date guard can never
+    fire, because the second disjunct's type test groups as
+    `(t/=RP and t/=TLS) or t/=QI or t/=QD`, TRUE for every type, collapsing the
+    whole condition to `begotl<=Endrev`. **This had been mis-ported as the
+    INTENDED ternary**: the comment named the quirk correctly and the code then
+    "improved" the Fortran. A comment that documents a Census bug is not the
+    same as code that reproduces it — check that the code below it agrees.
+  - **`x11pt1.f:229-230`'s prior-TD ENTRY condition** — the guard tested only
+    `Khol>=2` and so could not distinguish "unported branch" from "branch the
+    oracle declines to enter". With the classic X-11 Easter on and no
+    x11-regression prior calendar the oracle SKIPS the block and adjusts
+    without a prior TD; the engine FATALED on a spec the oracle runs to
+    completion (measured: 144 d10 rows vs none). Now gated bit-exact (4.8e-15)
+    by `extra/airline_x11regression-tdprior-x11easter`, which ships **no `a4`
+    golden by design** — pritd never runs — so the tdprior gate's case filter
+    keys on d10 rather than a4.
+  - Three `x11pt3` getrev walls omitted their `Lrvsf` / `Lrvsa||Lrvch`
+    disjuncts. Tightened to match, but **unobservable**: `Irev` only ever takes
+    0 or 1 in this port (`readers_spec.cpp:2271` is the sole assignment;
+    `revdrv.f:387`'s `Irev=4` has no counterpart because run_history inlines
+    getrev's arithmetic instead of reaching it through x11pt3).
+  - CB-22 gained a third face: `trendlags=` with no `sadjlags=` gives
+    `Ntarsa==0` + `Lr1y2y==T`, and prtrev sizes the SA table to one column its
+    own `DO i2=0,Ntargt` loop then never assigns — an uninitialised-storage
+    column. The port omits it; that is now documented at the line as a
+    deliberate deviation rather than reading as a transcription.
+  - **The C/R ABI crash class** (new code, no Fortran counterpart, so nothing in
+    the parity contract covered it): a use-after-free where the R shim's
+    `lookup()` released the registry mutex before the caller dereferenced the
+    handle — the string accessors are the subtle half, since the returned
+    `const char*` aliases a run-owned std::string, so the COPY has to happen
+    under the lock too; and exceptions crossing the ABI, where `runSpec`'s own
+    no-throw guarantee did not cover its std::string PARAMETERS constructed at
+    the call site, `x13_run_spec_file` did its path/substr/concat work outside
+    its single try, and no R `X13_CAPI` entry point had a handler at all.
+  - Stale doc corrected: `adqtst.cpp` is NOT dead code — `automd.cpp` calls all
+    five routines. `tools/TEST_COVERAGE.md:16` and `tools/FABLE_REVIEW.md:69`
+    still say otherwise.
+  - **Harness weaknesses reported but NOT yet acted on**, worth knowing before
+    trusting a green suite: `run_parity.py:245` turns `NotImplementedError` into
+    a "skip" that still exits PASS (so `--engine cpp` could skip every case and
+    report green); `compare.py:260` makes NaN==NaN compare EQUAL; and several
+    gates ignore EXTRA produced dates/columns rather than asserting set
+    equality (`test_x11_tables.py:138`, `test_history_tables.py:176/231`,
+    `test_seats_tables.py:682`).
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
