@@ -872,11 +872,54 @@ diagnostics front (force / slidingspans / history) is now closed.
     Begadj) is indexed for a span starting at a different date, NOT a repeat of
     the Priadj bug. Golden blessed and committed; the gate skips that one cell
     with the measurement written at the skip.
-  - Still open, all measured as moving: `outlier=`/`outlierwin=`, `fixx11reg=`,
-    `x11outlier=`, `endtable=`, `sadjlags=`/`trendlags=`/`target=`,
-    `additivesa=`. Suggested order is in the scouting doc — note it originally
-    ranked `fixreg` as cheapest and was wrong (it needed the rmfix seam);
-    `endtable=` is the genuinely self-contained one.
+  - **`endtable=` — CLOSED by GATING it; the engine was already right.** The
+    scouting table's whole method was ORACLE on-vs-off, which proves a flag
+    *matters* and says nothing about whether the engine honours it — and nobody
+    had run engine-vs-oracle. `gt_history` case 6 already parses it into
+    `rv.rvend` and `run_history` already derives `endsa`/`endtbl`/`revnum`; with
+    `endtable=1957.dec` both sides emit 36 rows instead of 71 and every retained
+    value agrees at the usual per-span floor. **Before porting anything off that
+    table, measure engine-vs-oracle too.** The two neighbouring `revchk.f` pieces
+    need no port either: `:616-624`'s `.not.Revsa` warning-and-reset is
+    observationally INERT (nothing surviving that branch reads `Endtbl` — the
+    model histories run over `Begrev..Endrev` and the forecast history keys on
+    `Revptr+Rfctlg`; measured 72/71 rows agreeing either way), and `:629`'s
+    `IF(Irev.eq.2)` override is DEAD CODE — `Irev` is only ever 0, 1
+    (`gtrvst.f:349`) or 4 (`revdrv.f:387`). Gated by
+    `extra/airline_history-endtable` (all ten revision tables).
+  - **`fixx11reg=` opened something much bigger: the whole
+    `x11regression{} + history{}` family is SILENTLY WRONG in its DEFAULT
+    configuration.** Zero corpus specs combine `x11regression{}` with a
+    span-replay driver (checked), so nothing ever gated it — the same
+    two-features-at-once blind spot as the Priadj restore and the ssprep
+    regression half. Measured on airline + `x11regression{variables=(td)}` +
+    `history{}` at the gate's own tolerances (5e-3 abs revisions / 1e-5 rel
+    levels): **with a regARIMA model the engine silently IS `fixx11reg=yes`** —
+    it matches the oracle's FIXED run at the floor (sar 1.3e-3, sae 1.2e-5) and
+    misses the DEFAULT by the full flag delta (8.2e-1 / 8.3e-3) — because
+    `revdrv.f:530-532` demotes `Ixreg` 3→1/2 at every span head so each span
+    re-runs the x11reg irregular OLS, and this port leaves it at 3 (= "already
+    removed as a prior by xrgdrv", so x11pt2 skips `x11mdl`). **Model-free, BOTH
+    branches are wrong** (7.9e-1 / 1.4e-2 default, 1.2e+0 / 1.5e-2 fixed) — there
+    `Ixreg` is never promoted, the inline `x11mdl_td` IS running per span, and it
+    reproduces neither oracle branch: a second, independent defect in the same
+    family. **Adding the demote is NOT the fix — tried and measured, it makes the
+    modelled family worse and breaks its previously floor-accurate fixed branch**,
+    because `Ixreg==2` in the oracle means "run the transparent `xrgdrv` pass" and
+    this port HOISTS xrgdrv into `run_pre_model` rather than reaching it from
+    x11pt2, so a demoted span takes the `Ixreg==1` inline route instead. Closing
+    it needs xrgdrv per span (span pointers, the span's pre-model divide by that
+    span's `Faccal`, and a check that xrgdrv's `Lterm`/`Ksdev` save-restore
+    survives nesting in a replay) and it subsumes both `fixx11reg=` and
+    `x11outlier=`, which share the `revdrv.f:309-350` `Ixreg` block. Measurement
+    table + the reasoning are in `tools/history_options_scouting.md`, and the note
+    sits at the call site in `run_history.cpp`.
+  - Still open, all measured as moving: `outlier=`/`outlierwin=`, `fixx11reg=` +
+    `x11outlier=` (blocked on the per-span xrgdrv above),
+    `sadjlags=`/`trendlags=`/`target=`, `additivesa=`. Suggested order is in the
+    scouting doc — note it has now been wrong twice: it ranked `fixreg` as
+    cheapest (it needed the rmfix seam) and listed `endtable=` as unported (it
+    was already correct).
 - **FIXED / INITIAL COEFFICIENTS — `regression{b=}` and `arima{ar= ma= diff=}`
   — CLOSED (bit-exact), and both were the silent wrong-numbers class.** Two
   documented, ordinary user options whose values were **parsed and thrown away**:

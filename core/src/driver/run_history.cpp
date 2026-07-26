@@ -516,6 +516,23 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
         // via MSR / the I/C ratio instead of inheriting the first span's choice.
         ctx.x11opt.lterm = ctx.saved.lterm0;
         ctx.x11opt.nterm = ctx.saved.nterm0;
+        // NOT PORTED, deliberately, and MEASURED: revdrv.f:530-532 demotes Ixreg
+        // from 3 back to 1/2 at every span head, so each span re-runs the
+        // x11regression irregular OLS on its own data. Left at 3 (what this port
+        // does), every span reuses the MAIN run's x11reg coefficients -- i.e. it
+        // silently behaves as though history{fixx11reg=yes} had been given.
+        //
+        // Adding the demote alone makes things WORSE, which is the whole finding:
+        // in the oracle Ixreg==2 means "run the transparent xrgdrv pass", and
+        // this port HOISTS xrgdrv into run_pre_model (see xrgdrv.hpp) rather than
+        // reaching it from x11pt2, so a demoted span takes x11pt2's INLINE
+        // x11mdl_td path (the Ixreg==1 semantic) instead. Closing this needs
+        // xrgdrv run per span, against the span's own pointers, with the span's
+        // pre-model divide by that span's Faccal -- not a flag fix.
+        // Measured (airline + x11regression{variables=(td)} + history, sar/sae,
+        // tolerances 5e-3 abs / 1e-5 rel): the whole family is out, both with a
+        // regARIMA model and without, so this is NOT specific to fixx11reg=.
+        // See tools/history_options_scouting.md for the table.
         const int nlen = i;                        // Length = Posfob - Pos1ob + 1
         const int lsp = 1;                         // Pos1ob = Nbcst2(0) + Lsp = 1
         // revdrv.f:479-497 -- this span's model span end. Endspn = the span's
