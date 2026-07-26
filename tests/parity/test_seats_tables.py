@@ -683,6 +683,18 @@ def test_seats_mdc(base: str) -> None:
         gold_keys = [k for k in gold if k == base_key or k.startswith(base_key + ".")]
         if not gold_keys:
             continue  # this .mdc doesn't ship this key (e.g. no seasonal structure)
+        # Within a gated family, the produced key set must EQUAL the golden's.
+        # Iterating gold_keys alone accepted produced > gold, so a component
+        # polynomial emitted one degree too long -- an extra snum./sden. element
+        # past what the oracle wrote -- matched on every element it shared and
+        # passed. (Keys OUTSIDE the gated families are deliberately unchecked;
+        # only these two lists are contract.)
+        prod_keys = [k for k in produced
+                     if k == base_key or k.startswith(base_key + ".")]
+        extra = sorted(set(prod_keys) - set(gold_keys))
+        assert not extra, (
+            f"{base}: harness produced MDC keys the golden does not have: "
+            f"{extra} (golden has {sorted(gold_keys)})")
         for k in gold_keys:
             assert k in produced, (
                 f"{base}: golden has {k}={gold[k]!r} but harness produced no MDC_{k} line\n"

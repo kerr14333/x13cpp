@@ -257,8 +257,20 @@ class CompareReport:
 def numbers_close(a: float, b: float, rtol: float, atol: float) -> bool:
     if a == b:
         return True
-    if math.isnan(a) and math.isnan(b):
-        return True
+    # NaN is NEVER a match, not even against another NaN.
+    #
+    # This used to return True for isnan(a) and isnan(b), on the reasonable-
+    # sounding grounds that two NaNs "agree". They do not agree about anything
+    # an engine is supposed to produce: the oracle does not emit NaN in valid
+    # output, so a NaN on the golden side means the golden is junk and a NaN on
+    # the engine side is a defect -- and the rule made both invisible at once.
+    # Checked when this was tightened: no golden in tests/golden/ contains a NaN
+    # numeric token (the 400-odd files matching /nan/i all match "Hannan", as in
+    # Hannan-Quinn), so the branch was dead and removing it changes no current
+    # result. It is the NEXT NaN that matters -- x11pt4's Pbar/Q came back NaN
+    # from an all-zero Sprior once already.
+    if math.isnan(a) or math.isnan(b):
+        return False
     if math.isinf(a) or math.isinf(b):
         return a == b
     return abs(a - b) <= atol + rtol * abs(b)

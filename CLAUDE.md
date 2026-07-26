@@ -1244,12 +1244,38 @@ diagnostics front (force / slidingspans / history) is now closed.
   - Stale doc corrected: `adqtst.cpp` is NOT dead code — `automd.cpp` calls all
     five routines. `tools/TEST_COVERAGE.md:16` and `tools/FABLE_REVIEW.md:69`
     still say otherwise.
-  - **Harness weaknesses reported but NOT yet acted on**, worth knowing before
-    trusting a green suite: `run_parity.py:245` turns `NotImplementedError` into
-    a "skip" that still exits PASS (so `--engine cpp` could skip every case and
-    report green); `compare.py:260` makes NaN==NaN compare EQUAL; and several
-    gates ignore EXTRA produced dates/columns rather than asserting set
-    equality (`test_x11_tables.py:138`, `test_history_tables.py:176/231`,
-    `test_seats_tables.py:682`).
+  - **Harness weaknesses — now CLOSED.** All five were verified before being
+    changed, and each was measured to be free (no gate's result moved), which
+    is the point: they were latent, waiting for the NEXT regression.
+    - `run_parity.py` reported **PASS having compared nothing**. `CppEngine.run`
+      raises `NotImplementedError` for every spec and the handler recorded a
+      "skip", while `ParitySummary.failed` only counted fail/error — so
+      `--engine cpp` skipped the whole corpus and exited 0. `make_engine` now
+      rejects `cpp` outright (the C++ engine is driven by the pytest gates, not
+      this script), and `failed` is additionally true when NO outcome is a
+      pass-or-blessed, or when the case list is empty — a `--filter` matching
+      nothing used to be a PASS too. Both verified to exit 1; blessing
+      unaffected.
+    - `compare.py`'s `numbers_close` returned **True for NaN vs NaN**. The
+      oracle emits no NaN in valid output, so a NaN on either side is a defect,
+      and the rule hid both at once. Confirmed dead before removing it: every
+      one of the ~400 goldens matching /nan/i matches "Hannan" (Hannan-Quinn),
+      not a numeric token. (x11pt4's Pbar/Q came back NaN once already, from an
+      all-zero Sprior — that is the case this protects.)
+    - Three gates compared date sets in **one direction only** (`missing`, never
+      `extra`), so an engine emitting rows the oracle does not — a span loop
+      past Endtbl, an off-by-one revision range — passed while looking like a
+      full match: `test_x11_tables`, `test_history_tables` (five call sites,
+      now one `_assert_same_dates` helper) and `test_seats_tables`' `.mdc` key
+      families (where the failure mode is a component polynomial one degree too
+      long). **Mutation-tested**: dropping one row from a `sar` golden now fails
+      with `extra ['195712']`, and passed before the change.
+      NB the COLUMN truncation in the history gates is deliberate and stays —
+      both sides slice to the same leading `ncol`, and the alternate-target
+      columns are gated by `test_history_target_columns`, which asserts the
+      count first.
+    - `test_bindings` **skipped** when the engine declined a run. Its cases are
+      selected because the ORACLE produced a golden, so declining one is a
+      regression; now an assert. No case reached that branch, so it was free.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

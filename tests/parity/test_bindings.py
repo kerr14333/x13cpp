@@ -116,8 +116,12 @@ def test_binding_matches_oracle_golden(spec_id: str, spec: str, golden: str):
     """Every table the binding exposes matches the blessed oracle golden."""
     base = os.path.basename(golden)
     with x13c.adjust(spec, check=False) as run:
-        if not run.ok:
-            pytest.skip(f"{spec_id}: engine declined the run ({run.error})")
+        # FAIL, not skip. These cases were selected because the ORACLE produced
+        # a golden for them, so the engine declining one is a regression -- a
+        # binding dispatch break, a newly-tripped fatal -- and reporting it as a
+        # skip hides exactly the failure this gate exists to catch. Verified
+        # free when tightened: no case reached this branch.
+        assert run.ok, f"{spec_id}: engine declined a spec the oracle ran ({run.error})"
 
         rtol = RTOL_ESTIMATION if run.model_based else RTOL_ARITHMETIC
         compared = 0
@@ -171,8 +175,8 @@ def test_seats_binding_matches_oracle_golden(spec_id: str, spec: str,
     """
     base = os.path.basename(golden)
     with x13c.adjust(spec, check=False) as run:
-        if not run.ok:
-            pytest.skip(f"{spec_id}: engine declined the run ({run.error})")
+        # FAIL, not skip -- see the note in the X-11 twin above.
+        assert run.ok, f"{spec_id}: engine declined a spec the oracle ran ({run.error})"
 
         compared = 0
         for tag in _SEATS_TAGS:

@@ -135,10 +135,19 @@ def test_x11_table(base: str, tag: str) -> None:
     gold = _read_golden(goldpath)
     assert gold, f"{base}.{tag}: empty golden"
 
+    # Set EQUALITY, not "every golden date was produced". The overlap-only form
+    # accepted produced > gold, so an engine emitting extra rows under the same
+    # tag -- a widened punch range, a forecast/backcast row that does not belong
+    # -- passed while looking like a full match. Both directions are named in
+    # the message because they mean different things: missing = the engine did
+    # not emit a date the oracle did; extra = it emitted one the oracle did not.
     keys = sorted(set(gold) & set(produced))
-    assert len(keys) == len(gold), (
-        f"{base}.{tag}: produced {len(produced)} rows, golden {len(gold)}, "
-        f"overlap {len(keys)}")
+    missing = sorted(set(gold) - set(produced))
+    extra = sorted(set(produced) - set(gold))
+    assert not missing and not extra, (
+        f"{base}.{tag}: produced {len(produced)} rows, golden {len(gold)}; "
+        f"missing {missing[:6]}{'...' if len(missing) > 6 else ''}, "
+        f"extra {extra[:6]}{'...' if len(extra) > 6 else ''}")
 
     worst = 0.0
     worst_k = None

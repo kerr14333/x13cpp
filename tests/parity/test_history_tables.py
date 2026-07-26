@@ -177,6 +177,28 @@ def _read_produced(text: str, tag: str, ncol: int) -> dict[str, list[float]]:
     return out
 
 
+def _assert_same_dates(base: str, tag: str, gold: dict, prod: dict) -> None:
+    """Golden and produced must cover EXACTLY the same revision dates.
+
+    Every call site here used to check `missing` only, so a history driver
+    emitting rows the oracle does not -- a span loop running past Endtbl, an
+    off-by-one in the revision-date range, a target lag widening Endsa without
+    widening the table -- passed while looking like a full match.
+
+    (The COLUMN truncation in _read_golden/_read_produced is deliberate by
+    contrast: both sides slice to the same leading `ncol`, so the alternate-
+    target columns this harness appends are ignored here and gated instead by
+    test_history_target_columns, which reads every column and asserts the count
+    before any value.)
+    """
+    missing = sorted(set(gold) - set(prod))
+    extra = sorted(set(prod) - set(gold))
+    assert not missing and not extra, (
+        f"{base}.{tag}: golden {len(gold)} rows, produced {len(prod)}; "
+        f"missing {missing[:5]}{'...' if len(missing) > 5 else ''}, "
+        f"extra {extra[:5]}{'...' if len(extra) > 5 else ''}")
+
+
 def _spec_text(base: str) -> str:
     return open(os.path.join(_CORPUS, base + ".spc"),
                 encoding="utf-8", errors="replace").read().lower()
@@ -228,8 +250,7 @@ def test_history_table(base: str, tag: str, ncol: int, kind: str) -> None:
     prod = _read_produced(out, tag, ncol)
     assert prod, f"{base}.{tag}: produced no rows (history driver likely inert)"
 
-    missing = set(gold) - set(prod)
-    assert not missing, f"{base}.{tag}: missing {len(missing)} rows, e.g. {sorted(missing)[:5]}"
+    _assert_same_dates(base, tag, gold, prod)
 
     worst = 0.0
     worst_key = None
@@ -325,8 +346,7 @@ def test_history_target_columns(base: str, tag: str, kind: str) -> None:
     prod = _read_produced_all(_run(base), tag)
     assert prod, f"{base}.{tag}: produced no rows"
 
-    missing = set(gold) - set(prod)
-    assert not missing, f"{base}.{tag}: missing {len(missing)} rows, e.g. {sorted(missing)[:5]}"
+    _assert_same_dates(base, tag, gold, prod)
 
     got_ncol = len(next(iter(prod.values())))
     assert got_ncol == ncol, (
@@ -428,9 +448,7 @@ def test_history_fcst_table(base: str, tag: str) -> None:
 
     prod = _read_produced(_run(base), tag, ncol)
     assert prod, f"{base}.{tag}: produced no rows (fcst history likely inert)"
-    missing = set(gold) - set(prod)
-    assert not missing, (
-        f"{base}.{tag}: missing {len(missing)} rows, e.g. {sorted(missing)[:5]}")
+    _assert_same_dates(base, tag, gold, prod)
 
     worst, worst_key, worst_kind = 0.0, None, None
     for d, gv in gold.items():
@@ -560,9 +578,7 @@ def test_history_model_table(base: str, tag: str, ncol_fixed: int) -> None:
 
     prod = _read_produced(_run(base), tag, ncol)
     assert prod, f"{base}.{tag}: produced no rows ({tag} history likely inert)"
-    missing = set(gold) - set(prod)
-    assert not missing, (
-        f"{base}.{tag}: missing {len(missing)} rows, e.g. {sorted(missing)[:5]}")
+    _assert_same_dates(base, tag, gold, prod)
 
     tol = _MDL_RTOL if tag == "lkh" else _MDL_COEF_TOL
     # Absolute floor per column, from that column's own scale in the golden.
@@ -672,9 +688,7 @@ def test_history_composite_table(base: str, prefix: str, tag: str, ncol: int,
 
     prod = _read_produced(_run_metafile(), prefix + tag, ncol)
     assert prod, f"{base}.{tag}: produced no rows (indirect history likely inert)"
-    missing = set(gold) - set(prod)
-    assert not missing, (
-        f"{base}.{tag}: missing {len(missing)} rows, e.g. {sorted(missing)[:5]}")
+    _assert_same_dates(base, tag, gold, prod)
 
     worst, worst_key = 0.0, None
     tol = _IND_RTOL_LEVEL if kind == "level" else _IND_ATOL_REV

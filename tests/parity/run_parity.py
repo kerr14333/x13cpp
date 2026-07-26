@@ -113,7 +113,17 @@ def make_engine(kind: str, binary: Optional[str], timeout=None) -> Engine:
             raise SystemExit("--binary is required for the oracle engine")
         return OracleEngine(binary, timeout=timeout)
     if kind == "cpp":
-        return CppEngine(binary)
+        # Reject rather than hand back an engine whose run() raises for every
+        # spec: that produced a full sweep of "skipped" outcomes and an exit
+        # code of 0, i.e. a PASS that had compared nothing. The C++ engine is
+        # driven by the pytest gates (tests/parity/test_*.py), which invoke the
+        # x13run_* harnesses directly; this script's job is blessing goldens
+        # from the oracle.
+        raise SystemExit(
+            "--engine cpp is not supported by run_parity.py: CppEngine is a "
+            "stub and would skip every case. Use the pytest gates "
+            "(python -m pytest tests/parity) to run the C++ engine."
+        )
     raise SystemExit(f"unknown engine: {kind}")
 
 
@@ -141,7 +151,20 @@ class ParitySummary:
 
     @property
     def failed(self) -> bool:
-        return any(o.status in ("fail", "error") for o in self.outcomes)
+        if any(o.status in ("fail", "error") for o in self.outcomes):
+            return True
+        # A run that compared NOTHING is not a pass.
+        #
+        # Every non-comparing outcome here is a "skipped", and skips used to be
+        # invisible to this property -- so a run in which every single case
+        # skipped exited 0 and printed PASS. That is not hypothetical: it is
+        # exactly what `--engine cpp` did, because CppEngine.run raises
+        # NotImplementedError for every spec (now rejected up front in
+        # make_engine, but this is the backstop). An empty case list -- a
+        # --filter that matches nothing -- reported PASS for the same reason.
+        if not self.outcomes:
+            return True
+        return not any(o.status in ("pass", "blessed") for o in self.outcomes)
 
     @property
     def exit_code(self) -> int:
