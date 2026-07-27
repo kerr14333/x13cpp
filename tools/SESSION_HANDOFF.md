@@ -5,7 +5,7 @@ findings are still accurate and are not repeated here.
 
 ## Where things stand
 
-**Tree clean at `a5b119f` on `checkpoint/m5-seats-slidingspans`.** Nothing
+**Tree clean at `583efde` on `checkpoint/m5-seats-slidingspans`.** Nothing
 uncommitted, no background work outstanding.
 
 | check | result |
@@ -24,7 +24,7 @@ regenerate). Build with
 
 | commit | what |
 |---|---|
-| `9d0be0e` | `spectrum{robustsa=}` — parsed-and-dropped, plus the D13 it reads |
+| `2a3812c` | `spectrum{robustsa=}` — parsed-and-dropped, plus the D13 it reads |
 | `a5b119f` | the spectrum block on the SEATS path — 51 specs unskipped |
 
 `test_spectrum_peaks` 225 → 276. Suite 5261/529 → 5324/478 (the 51 SEATS skips
