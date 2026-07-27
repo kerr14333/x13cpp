@@ -49,21 +49,27 @@ residuals, so an r that agrees to ~1e-5 (which is what a 1e-6 coefficient
 agreement buys) lands here. The fallback is restricted to the two residual keys
 so a drift in any X-11 statistic still fails loudly.
 
-NOT COVERED YET, deliberately and visibly (these skip with the reason written at
-the skip rather than being filtered out of discovery):
+SEATS specs run through ``x13run_seats`` rather than ``x13run_x11`` -- the two
+harnesses share the emit (``tools/dump_diag.hpp``) because ``x11ari.f`` reaches
+genqs (:277) and gennpsa (:322) only after its Lseats/Lx11 branch rejoins. What
+the SEATS arms read is described in genqs.cpp's header; the short version is
+that ``Seatsa``/``Stocsa`` and ``Seatir``/``Stocir`` are the SAME sigex arrays
+and only ``seatad.f`` separates them, so ``qsirr`` and ``qsirrevadj`` are
+provably identical on that path in both modes.
 
-  * SEATS specs. genqs's SEATS arms read ``Seatsa``/``Seatir``/``Stocsa``/
-    ``Stocir`` behind ``Hvstsa``/``Hvstir`` -- COMMONs this port's SEATS chain
-    does not fill, because it publishes its decomposition onto ctx instead. The
-    same blocker the spectrum peak increment hit, and a different INPUT rather
-    than just a different driver.
-  * MODEL-ONLY specs. ``x12run.f:181`` reaches ``x11ari`` with neither Lx11 nor
-    Lseats, so the oracle still emits ``qsori``/``qsorievadj``/``qsrsd`` (plus
-    twins) on a spec asking for no adjustment at all. This port's model-only
-    harness runs no part of the X-11 pre-stage, so ``Stcsi`` -- which
-    ``qsorievadj`` needs -- does not exist there.
+Note what the SEATS goldens can and cannot discriminate. Every one of them
+reports ``qssadj``/``qsirr`` as ``0.00000`` except ``payems_seats``, and
+``payems_seats`` has ``npsi==1`` (no seasonal component, so ``sa == z`` and
+``qssadj`` is trivially ``qsori``). The one genuinely non-degenerate SEATS value
+in the corpus is its ``qsirr`` 0.01133 / ``qssirr`` 0.00498. The real coverage
+these specs add is the ``qsori``/``qsorievadj``/``qsrsd`` block -- nonzero and
+discriminating (167.64858 on the airline family) -- which the whole-spec skip
+was throwing away along with the rest.
+
+NOT COVERED YET, deliberately and visibly:
+
   * The ``Iagr==4`` indirect names (``qsindsadj`` etc.), which belong with the
-    composite front.
+    composite front. Pinned by ``test_indirect_keys_are_not_claimed``.
 
 Run:  python -m pytest tests/parity/test_qs_diagnostics.py -q
 """
@@ -124,20 +130,21 @@ def _close(key: str, want: str, got: str) -> bool:
     return all(abs(a - b) <= max(_ATOL, _RTOL * abs(a)) for a, b in pairs)
 
 
-def _find_binary() -> str:
-    for c in (os.path.join(_REPO, "build", "x13run_x11.exe"),
-              os.path.join(_REPO, "build", "x13run_x11"),
-              os.path.join(_REPO, "build", "Release", "x13run_x11.exe")):
+def _find_binary(stem: str) -> str:
+    for c in (os.path.join(_REPO, "build", stem + ".exe"),
+              os.path.join(_REPO, "build", stem),
+              os.path.join(_REPO, "build", "Release", stem + ".exe")):
         if os.path.exists(c):
             return c
-    env = os.environ.get("X13RUN_X11")
+    env = os.environ.get(stem.upper())
     if env and os.path.exists(env):
         return env
     raise FileNotFoundError(
-        "x13run_x11 binary not found; build it first (cmake --build build).")
+        f"{stem} binary not found; build it first (cmake --build build).")
 
 
-BIN = _find_binary()
+BIN = _find_binary("x13run_x11")
+BIN_SEATS = _find_binary("x13run_seats")
 
 
 def _read_block(lines) -> dict[str, str]:
@@ -184,10 +191,9 @@ CASES = _discover()
 def _run(rel: str) -> dict[str, str]:
     spec = os.path.join(_CORPUS, rel + ".spc")
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
-    if "seats{" in txt:
-        pytest.skip("genqs's SEATS arms read Seatsa/Seatir/Stocsa/Stocir behind "
-                    "Hvstsa/Hvstir -- COMMONs this port's SEATS chain does not "
-                    "fill. Next increment; see the module docstring.")
+    # seats{} and x11{} are mutually exclusive, so the spec text picks the
+    # harness. Both emit the identical two blocks (tools/dump_diag.hpp).
+    binary = BIN_SEATS if "seats{" in txt else BIN
     if "pickmdl{" in txt:
         pytest.skip("pickmdl{} model selection is parse-only (M1); the model "
                     "the engine fits is not the oracle's")
@@ -200,7 +206,7 @@ def _run(rel: str) -> dict[str, str]:
             "tools/automdl_scouting.md. Visible here as the residual span "
             "starting a period earlier, so `qssrsd` is emitted where the "
             "oracle emits none.")
-    r = subprocess.run([BIN, spec], capture_output=True, text=True,
+    r = subprocess.run([binary, spec], capture_output=True, text=True,
                        cwd=os.path.dirname(spec))
     assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"
     first = r.stdout.splitlines()[0].strip() if r.stdout else ""

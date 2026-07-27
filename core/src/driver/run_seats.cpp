@@ -19,6 +19,7 @@
 #include "driver/run_seats.hpp"  // seats_restore_mean, seats_decompose
 #include "driver/run_history.hpp"     // run_history (revdrv.f, Lseats)
 #include "driver/x11_prestage.hpp"  // x11_prestage (x11ari.f:60-199, shared with run_x11)
+#include "diag/genqs.hpp"      // genqs / gennpsa (QS + NP seasonality, x11ari.f:277/322)
 #include "gen/model.hpp"       // prm::PRGTCN (mean-regressor type), prm::DIFF
 #include "regarima/regvar.hpp" // ratpos (rebuild the undifferenced Constant column)
 #include "seats/canonical_denoms.hpp"
@@ -27,6 +28,7 @@
 #include "seats/model_decode.hpp"
 #include "seats/seatopts.hpp"
 #include "seats/spectru.hpp"
+#include "x11/x11filt.hpp"     // addmul (invert seatad's Adjsea divide)
 #include "gen/notset.hpp"      // prm::DNOTST
 #include "numeric/numeric.hpp" // dpeq
 
@@ -45,6 +47,59 @@ void seats_not_ported(X13Context& ctx, const char* what) {
     writln(ctx, std::string("ERROR: ") + what + " not yet ported (SEATS decomposition).",
            stdio::STDERR, ctx.units.mt2, true);
     abend(ctx);
+}
+
+// Publish the decomposition into the four /seatcm/ buffers the QS and NP
+// diagnostics read, plus their /seatlg/ presence flags.
+//
+// The oracle fills these through the ansub9.f USRENTRY bridge from inside
+// seats(): `sa` arrives twice, as 1309 -> Seatsa (1..Nz) and 1203 -> Stocsa
+// (1..Nz+lfor), and `ir` twice, as 1312 -> Seatir and 1204 -> Stocir. They are
+// the SAME arrays at that point; what separates them is seatad.f, which
+// post-processes only the Seat* pair -- :27's `/100` on Seatir under Muladd!=1,
+// and on Seatsa the forecast append (Posfob+1.. only) and the Adjsea==1 Facsea
+// divide. This port has no pre-seatad buffer to copy, so the Stoc* pair is
+// reconstructed by inverting exactly those two steps over [Pos1ob,Posfob].
+//
+// Anchored at Pos1ob because ansub9 stores at `i+Pos1ob-1`, and taken from
+// ctx.seats_* (which the span drivers save/restore) rather than from inside
+// seats_decompose, so a slidingspans/history replay cannot leave the LAST
+// span's components here -- the same snapshot discipline /x11srs/, /lkhd/ and
+// ctx.d8bd9a already need. It matches the oracle's own ansub9.f:110 guard
+// (`IF(Issap.eq.2.or.Irev.eq.4)RETURN`), which skips the Stoc* store on a
+// replay outright.
+void publish_seats_commons(X13Context& ctx) {
+    const int pos1ob = ctx.x11ptr.pos1ob;
+    const int posfob = ctx.x11ptr.posfob;
+    const int muladd = ctx.x11opt.muladd;
+    const int adjsea = ctx.x11adj.adjsea;
+
+    auto store = [&](const std::vector<double>& src, farray1<double, 1020>& seat,
+                     farray1<double, 1020>& stoc, bool ir, bool& have) {
+        have = false;
+        const int n = static_cast<int>(src.size());
+        for (int k = 0; k < n; ++k) {
+            const int i = pos1ob + k;
+            if (i < 1 || i > 1020) continue;
+            const double v = src[static_cast<std::size_t>(k)];
+            seat(i) = v;
+            // Invert seatad. The irregular: undo the `/100`, which seatad only
+            // applied under Muladd!=1. The SA series: undo the Facsea divide,
+            // which only happened with a regARIMA seasonal regressor -- no
+            // corpus spec pairs one with seats{}, so this arm is transcribed
+            // from seatad.f:56 rather than measured.
+            stoc(i) = ir ? (muladd != 1 ? v * 100.0 : v) : v;
+            if (i >= pos1ob && i <= posfob && !dpeq(v, 0.0)) have = true;
+        }
+        if (!ir && adjsea == 1)
+            addmul(stoc.data(), ctx.x11fac.facsea.data(), stoc.data(), pos1ob,
+                   posfob, muladd);
+    };
+
+    store(ctx.seats_sa, ctx.seatcm.seatsa, ctx.seatcm.stocsa, /*ir=*/false,
+          ctx.seatlg.hvstsa);
+    store(ctx.seats_ir, ctx.seatcm.seatir, ctx.seatcm.stocir, /*ir=*/true,
+          ctx.seatlg.hvstir);
 }
 
 // Imean!=0: the model carries a Constant (mean) regressor. SEATS keeps the mean
@@ -195,6 +250,20 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
 
         if (!ok || ctx.error.lfatal) return false;
     }
+
+    // x11ari.f:272-326 -- the diagnostics block sits AFTER the Lseats/Lx11
+    // branch and is common to both, so a SEATS run reaches genqs and gennpsa
+    // exactly as an X-11 run does. Neither is gated on any spec (see genqs.cpp),
+    // and the publish has to come first because the SEATS arms read /seatcm/.
+    //
+    // spcdrv sits BETWEEN them in the oracle and is deliberately not called
+    // here: its SEATS branch reads Hvstsa/Hvstir over a different construction
+    // again (spcdrv.f:299/436) and is the separate open front tracked in
+    // tools/spectrum_peaks_scouting.md. gennpsa reads none of spcdrv's state, so
+    // the order between the two that ARE ported is preserved.
+    publish_seats_commons(ctx);
+    if (!genqs(ctx, /*lseats=*/true)) return false;
+    if (!gennpsa(ctx, /*lseats=*/true)) return false;
     return true;
 }
 

@@ -56,6 +56,27 @@ bool parse_spec(X13Context& ctx, const std::string& spec_text,
         for (int i = 1; i <= ctx.arima.nobs; ++i)
             if (!dpeq(ctx.arima.y(i), mv)) ctx.arima.y(i) += c;
     }
+
+    // editor.f:517-518 -- on a run with NO x11{} (SEATS, or model-only) that is
+    // not taking a log, the adjustment mode is forced ADDITIVE, overriding the
+    // multiplicative default gtinpt.f:956 just resolved. gtinpt cannot do this
+    // itself: its own rule keys on Fcntyp alone and cannot see Lx11, so a
+    // no-transform SEATS spec comes out of the parser with Muladd 0.
+    //
+    // NOT print surface. genqs/gennpsa re-centre a ratio irregular by
+    // subtracting one under `Muladd != 1`, and a SEATS decomposition without a
+    // log produces an ADDITIVE irregular centred on zero -- so the missing rule
+    // shifted the whole series to about -1 and turned a QS of 0.00000 into
+    // 1460.26951 on every `unrate_*-seats` spec. It reaches divsub/addmul on
+    // this path too.
+    //
+    // Tmpma is deliberately NOT updated: gtinpt.f:970 sets it at parse time from
+    // the pre-editor value and editor.f:518 touches only Muladd.
+    if (inptok && !ctx.error.lfatal && !ctx.captured.has_x11) {
+        const int fcntyp = ctx.arima.fcntyp;
+        if (fcntyp == 4 || fcntyp == 0 || dpeq(ctx.arima.lam, 1.0))
+            ctx.x11opt.muladd = 1;
+    }
     return inptok && !ctx.error.lfatal;
 }
 

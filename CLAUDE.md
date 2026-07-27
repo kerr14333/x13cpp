@@ -1638,12 +1638,8 @@ diagnostics front (force / slidingspans / history) is now closed.
   `qsrsd`/`qssrsd` for the two `airline_automdl-x11` specs (measured 2.30823 vs
   2.30858) -- the same bound and reason as `test_check_diagnostics`, restricted
   to those two keys so an X-11 statistic drifting still fails loudly.
-  Still open, skipped with the reason written AT the skip: the SEATS branch
-  (`Seatsa`/`Seatir`/`Stocsa`/`Stocir` behind Hvstsa/Hvstir -- the same
-  different-INPUT blocker as the spectrum peak block), the MODEL-ONLY path
-  (`qsorievadj` needs `Stcsi`, which only x11pt1 fills and the model-only
-  harness never runs -- closing either probably closes both), and the `Iagr==4`
-  indirect names. Map: **`tools/genqs_scouting.md`**.
+  Still open: only the `Iagr==4` indirect names (the MODEL-ONLY path and the
+  SEATS path are both closed -- see below). Map: **`tools/genqs_scouting.md`**.
   **`gennpsa.f`'s NP residual-seasonality verdict landed alongside it** (the
   `nplog`/`npsadj`/`npsadjevadj`/`npssadj`/`npssadjevadj` keys, 230 goldens) --
   same call chain (`x11ari.f:322-326`, straight after spcdrv, again with no
@@ -1727,5 +1723,62 @@ diagnostics front (force / slidingspans / history) is now closed.
   **No corpus spec combines an EXPLICIT aictest with `x11{}`** (only
   automdl+aictest is covered), which is why nothing had ever compared this
   path's B1 until the model-only path started producing output.
+- **The QS / NP diagnostics under `seats{}` -- CLOSED (byte-exact), and it
+  found a wrong-numbers bug on EVERY non-x11 run that is not taking a log.**
+  `test_qs_diagnostics` 249 -> 313, still **zero new goldens**. SEATS specs now
+  run through `x13run_seats`, which shares the emit with `x13run_x11` via the
+  new `tools/dump_diag.hpp` -- x11ari.f reaches genqs (`:277`) and gennpsa
+  (`:322`) only after the Lseats/Lx11 branch REJOINS, so both blocks belong to
+  every adjustment path, not to X-11.
+  **The four buffers, and why only two are independent.** The oracle fills them
+  through the `ansub9.f` USRENTRY bridge from inside `seats()`: `sa` arrives
+  TWICE, as 1309 -> `Seatsa` and 1203 -> `Stocsa`, and `ir` twice as
+  1312 -> `Seatir` and 1204 -> `Stocir`. At `sigex.f:3623-3631` they are
+  literally the same two local arrays; what separates them is `seatad.f`, which
+  post-processes only the `Seat*` pair -- `:27`'s `/100` on `Seatir` under
+  `Muladd!=1`, and on `Seatsa` the forecast append (`Posfob+1..` only) plus the
+  `Adjsea==1` Facsea divide. So over the observed span `Stocir/100` IS `Seatir`
+  (hence genqs's ONEHND divide on one and not the other) and `Stocsa == Seatsa`
+  unless a regARIMA seasonal regressor is present. **`qsirr` and `qsirrevadj`
+  are therefore provably identical on the SEATS path in BOTH modes** --
+  multiplicative by that identity, additive because `calcqs` is scale-invariant
+  and the `-1` re-centring is skipped. `publish_seats_commons` (run_seats.cpp)
+  reconstructs the `Stoc*` pair by inverting exactly those two steps from
+  `ctx.seats_sa`/`ctx.seats_ir`; the Facsea arm is TRANSCRIBED, not measured (no
+  corpus spec pairs a seasonal regressor with `seats{}`). Taken from `ctx.seats_*`
+  rather than from inside `seats_decompose` on purpose -- those are what the span
+  drivers save/restore, matching the oracle's own `ansub9.f:110`
+  `IF(Issap.eq.2.or.Irev.eq.4)RETURN`, which skips the `Stoc*` store on a replay.
+  **The real find: `editor.f:517-518` was unported.**
+  `IF(.not.Lx11.and.(Fcntyp.eq.4.or.Fcntyp.eq.0.or.dpeq(Lam,1D0))) Muladd=1` --
+  on a run with NO `x11{}` that is not taking a log, the adjustment mode is
+  forced ADDITIVE, overriding the multiplicative default `gtinpt.f:956` just
+  resolved. gtinpt cannot do it itself: its rule keys on `Fcntyp` alone and
+  cannot see `Lx11`. This port had the gtinpt half and not the editor half, so a
+  no-transform SEATS spec carried `Muladd 0`. Not print surface -- genqs
+  re-centres a ratio irregular by subtracting one under `Muladd != 1`, and a
+  SEATS decomposition without a log produces an ADDITIVE irregular centred on
+  ZERO, so the missing rule shifted the series to about `-1` and turned a QS of
+  0.00000 into **1460.26951** on every `unrate_*-seats` spec. It reaches
+  `divsub`/`addmul` on this path too. Ported at the tail of `parse_spec.cpp`
+  beside `editor.f:429-434`'s constant shift, the one place unambiguously "after
+  gtinpt, before everything else". `Tmpma` is deliberately NOT updated
+  (`gtinpt.f:970` sets it pre-editor; `:518` touches only Muladd).
+  Fixed in passing: `genqs.f:148-160`'s SA arm sets `lplog` on its ELSE (SEATS /
+  model-only, keyed on `Lam==0`) arm and not on its Lx11 arm; the port was
+  dropping it for both. Inert -- no corpus spec sets `spectrum{logqs=yes}`.
+  **What the SEATS goldens can and cannot discriminate, and a mutation that was
+  WRONG.** Every SEATS golden reports `qssadj`/`qsirr` as `0.00000` except
+  `payems_seats`, and that one has `npsi==1` (`sa == z`, so `qssadj` is trivially
+  `qsori`) -- the corpus's one non-degenerate SEATS value is its `qsirr` 0.01133.
+  The real coverage the 64 specs add is the nonzero `qsori`/`qsorievadj`/`qsrsd`
+  block the whole-spec skip had been discarding along with the rest. Because of
+  that degeneracy the arms were mutation-tested explicitly, and **the first
+  mutation was worthless: a 1% SCALING of the published SA series fails ZERO
+  specs, because QS differences the series and then takes autocorrelations -- a
+  pure scale factor is invariant by construction.** Only a SHAPE change
+  discriminates; a 5% spike every 12th observation fails **62 of 62** through
+  the SA arm and **50 of 62** through the irregular (the other 12 have no
+  irregular, i.e. `Hvstir` false). Map: **`tools/genqs_scouting.md`**.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

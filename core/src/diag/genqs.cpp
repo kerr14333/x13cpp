@@ -9,12 +9,28 @@
 // editor.f:855-859's monthly-only Savtab clear covers LSPCS0..LSPS0C (93..102)
 // and LSPCTP/LSPCQC (115/116), NOT LSPCQS -- so quarterly specs are in scope.
 //
-// This increment covers the DIRECT X-11 path (Iagr<4, Lx11). Still open, and
-// skipped with the reason written at the gate's skip rather than filtered out
-// of discovery: the SEATS branch (Seatsa/Seatir/Stocsa/Stocir + Hvstsa/Hvstir,
-// buffers this port's SEATS chain does not fill), the MODEL-ONLY path
-// (x12run.f:181 reaches x11ari with neither Lx11 nor Lseats, which the port's
-// model-only harness does not run at all), and the Iagr==4 indirect names.
+// Covers the DIRECT X-11 path (Iagr<4, Lx11), the MODEL-ONLY path (x12run.f:181
+// reaches x11ari with neither Lx11 nor Lseats) and the SEATS path. Still open:
+// the Iagr==4 indirect names, which belong with the composite front.
+//
+// THE SEATS ARMS read four COMMONs the oracle fills through the ansub9 USRENTRY
+// bridge and this port publishes onto ctx instead -- see the publish in
+// run_seats.cpp, which fills ctx.seatcm from ctx.seats_sa/seats_ir. The pairing
+// is not symmetric and is worth stating once:
+//
+//   Seatsa (1309) / Stocsa (1203)  are the SAME sigex array `sa`. seatad.f
+//     post-processes only Seatsa (the forecast append at Posfob+1.., and the
+//     Adjsea==1 Facsea divide), so over [Pos1ob,Posfob] they differ ONLY when a
+//     regARIMA seasonal regressor is present.
+//   Seatir (1312) / Stocir (1204)  are the same array `ir`, but seatad.f:27
+//     divides Seatir by 100 when Muladd!=1 and leaves Stocir alone -- which is
+//     exactly why genqs divides Stocir by ONEHND here and does not divide
+//     Seatir. The two EV/non-EV irregular statistics are therefore IDENTICAL on
+//     the SEATS path in both modes: multiplicative because Stocir/100 IS
+//     Seatir, additive because calcqs is scale-invariant (the autocorrelations
+//     r(k) are unchanged by the 1/100) and the `-1` re-centring is skipped.
+//     Every corpus golden agrees -- payems_seats is the one non-degenerate
+//     case, qsirr == qsirrevadj == 0.01133.
 #include "diag/genqs.hpp"
 
 #include <algorithm>
@@ -185,14 +201,6 @@ bool genqs(X13Context& ctx, bool lseats) {
     const int nnsedf = ctx.model.nnsedf;
     const int nseadf = ctx.model.nseadf;
 
-    // The SEATS branch reads Seatsa/Seatir/Stocsa/Stocir behind Hvstsa/Hvstir
-    // (genqs.f:140/188/230/248) -- COMMONs this port's SEATS chain does not
-    // fill, since it publishes its decomposition onto ctx instead. Same blocker
-    // the spectrum increment hit: a different INPUT, not just a different
-    // driver. Declined here rather than silently reported from the (empty)
-    // X-11 buffers.
-    if (lseats) return false;
-
     auto& q = ctx.qs;
     q.ran = true;
 
@@ -277,27 +285,37 @@ bool genqs(X13Context& ctx, bool lseats) {
         if (lseats) gosa = ctx.seatlg.hvstsa;
     }
     if (gosa) {
-        const double* stci = ctx.x11srs.stci.data();
-        for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stci[i - 1];
-        // Ported asymmetry (genqs.f:148-154): this branch's Lx11 arm is the ONE
-        // of the five that does not set `lplog` after logging. Every other
-        // series records it. Left as written -- it only matters when the SA
-        // series is the sole thing logged, which cannot happen (the original is
-        // logged first, under the same condition).
-        if (llogqs) taklog();
+        const double* sa = lseats ? ctx.seatcm.seatsa.data()
+                                  : ctx.x11srs.stci.data();
+        for (int i = 1; i <= PLEN; ++i) srs[i - 1] = sa[i - 1];
+        // Ported asymmetry (genqs.f:148-160): this branch's Lx11 arm is the ONE
+        // of the five that does not set `lplog` after logging. Its ELSE arm --
+        // the one SEATS and model-only runs take, keyed on Lam==0 rather than
+        // Muladd -- DOES set it, like every other series. Left as written; it
+        // only matters when the SA series is the sole thing logged, which cannot
+        // happen (the original is logged first, under the same condition), and
+        // no corpus spec sets `spectrum{logqs=yes}` at all.
+        if (llogqs && taklog() && !lx11) q.lplog = true;
         both_spans(q.qssadj, q.qssadjs);
     }
 
     // --- the SA series adjusted for extreme values and outliers (:173-214) --
     if (gosa) {
-        const double* stcime = ctx.adxser.stcime.data();
-        for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stcime[i - 1];
-        // The same unconditional Facls divide spcdrv.f:318 makes before the SA
-        // spectrum: the level shift is taken back OUT of the series before its
-        // seasonality is tested.
-        if (ctx.x11adj.adjls == 1)
-            divsub(srs.data(), srs.data(), ctx.x11fac.facls.data(), pos1ob,
-                   posfob, muladd);
+        if (lseats) {
+            // genqs.f:188. NOTE this arm takes NO Facls divide -- the level
+            // shift is put back only on the X-11 (Stcime) branch below.
+            const double* stocsa = ctx.seatcm.stocsa.data();
+            for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stocsa[i - 1];
+        } else {
+            const double* stcime = ctx.adxser.stcime.data();
+            for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stcime[i - 1];
+            // The same unconditional Facls divide spcdrv.f:318 makes before the
+            // SA spectrum: the level shift is taken back OUT of the series
+            // before its seasonality is tested.
+            if (ctx.x11adj.adjls == 1)
+                divsub(srs.data(), srs.data(), ctx.x11fac.facls.data(), pos1ob,
+                       posfob, muladd);
+        }
         maybe_log();
         both_spans(q.qssadj2, q.qssadjs2);
     }
@@ -312,7 +330,8 @@ bool genqs(X13Context& ctx, bool lseats) {
         if (lseats) goirr = ctx.seatlg.hvstir;
     }
     if (goirr) {
-        const double* sti = x11_sti_live(ctx);
+        const double* sti = lseats ? ctx.seatcm.seatir.data()
+                                   : x11_sti_live(ctx);
         for (int i = pos1ob; i <= posfob; ++i) {
             srs[i - 1] = sti[i - 1];
             if (muladd != 1) srs[i - 1] -= 1.0;
@@ -320,9 +339,15 @@ bool genqs(X13Context& ctx, bool lseats) {
         q.qsirr = calcqs(srs.data(), pos1ob - 1, posfob, ny);
         if (have_span) q.qsirrs = calcqs(srs.data(), ipos, posfob, ny);
 
-        const double* stime = ctx.mq5a_stime.data();
+        // genqs.f:246-249. The ONEHND divide is the SEATS arm's alone: Stocir is
+        // the pre-seatad `ir` and Seatir is the same array already divided by
+        // 100 (seatad.f:27, under Muladd!=1). See the header note -- this makes
+        // the two irregular statistics identical on the SEATS path in BOTH
+        // modes, which is what every corpus golden shows.
+        const double* stime = lseats ? ctx.seatcm.stocir.data()
+                                     : ctx.mq5a_stime.data();
         for (int i = pos1ob; i <= posfob; ++i) {
-            srs[i - 1] = stime[i - 1];
+            srs[i - 1] = lseats ? stime[i - 1] / 100.0 : stime[i - 1];
             if (muladd != 1) srs[i - 1] -= 1.0;
         }
         q.qsirr2 = calcqs(srs.data(), pos1ob - 1, posfob, ny);
@@ -380,9 +405,6 @@ int npsa(const double* sa, int n1, int nz, bool lmodel, int d, int bd, int mq,
 
 // gennpsa.f:1-107.
 bool gennpsa(X13Context& ctx, bool lseats) {
-    // Same SEATS blocker as genqs (Seatsa / Stocsa).
-    if (lseats) return false;
-
     const int ny = ctx.model.sp;
     const bool lx11 = ctx.captured.has_x11;
     const int muladd = ctx.x11opt.muladd;
@@ -428,8 +450,9 @@ bool gennpsa(X13Context& ctx, bool lseats) {
     // a non-log X-11 run with logqs=yes the two series are tested on different
     // scales. Left as written.
     {
-        const double* stci = ctx.x11srs.stci.data();
-        for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stci[i - 1];
+        const double* sa = lseats ? ctx.seatcm.seatsa.data()
+                                  : ctx.x11srs.stci.data();
+        for (int i = 1; i <= PLEN; ++i) srs[i - 1] = sa[i - 1];
         np.npsadj = npsa(srs.data(), pos1ob, posfob, lmodel, nnsedf, nseadf, ny,
                          np.lplog);
         if (have_span)
@@ -437,13 +460,20 @@ bool gennpsa(X13Context& ctx, bool lseats) {
                               nseadf, ny, np.lplog);
     }
 
-    // ... and its extreme-value twin, with the level shift divided back out.
+    // ... and its extreme-value twin, with the level shift divided back out on
+    // the X-11 arm. The SEATS arm (gennpsa.f:101) takes Stocsa with no divide,
+    // exactly as genqs.f:188 does.
     {
-        const double* stcime = ctx.adxser.stcime.data();
-        for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stcime[i - 1];
-        if (ctx.x11adj.adjls == 1)
-            divsub(srs.data(), srs.data(), ctx.x11fac.facls.data(), pos1ob,
-                   posfob, muladd);
+        if (lseats) {
+            const double* stocsa = ctx.seatcm.stocsa.data();
+            for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stocsa[i - 1];
+        } else {
+            const double* stcime = ctx.adxser.stcime.data();
+            for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stcime[i - 1];
+            if (ctx.x11adj.adjls == 1)
+                divsub(srs.data(), srs.data(), ctx.x11fac.facls.data(), pos1ob,
+                       posfob, muladd);
+        }
         np.npsadj2 = npsa(srs.data(), pos1ob, posfob, lmodel, nnsedf, nseadf,
                           ny, llogqs);
         if (have_span)

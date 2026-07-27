@@ -31,6 +31,7 @@
 #include "common/x13context.hpp"
 #include "numeric/numeric.hpp"    // dpeq
 #include "gen/notset.hpp"         // prm::DNOTST
+#include "dump_diag.hpp"          // dump_qs / dump_np (shared with x13run_x11)
 #include "seats/model_decode.hpp"
 #include "seats/canonical_denoms.hpp"
 #include "seats/spectru.hpp"
@@ -120,6 +121,13 @@ int main(int argc, char** argv) {
     }
 
     std::printf("OUTCOME: %s\n", ok ? "OK" : "FATAL");
+
+    // x11ari.f:277-326's QS + NP savelog blocks. They sit AFTER the Lseats/Lx11
+    // branch rejoins, so a SEATS run emits them exactly as an X-11 run does --
+    // same two blocks, same formats, shared with x13run_x11 through
+    // tools/dump_diag.hpp. run_seats fills ctx.qs / ctx.np.
+    dump_qs(ctx);
+    dump_np(ctx);
 
     // Model-decode + canonical-denominator + SPECTRU + DecompSpectrum +
     // ESTBUR probe (tools/seats_scope.md next-increment #1/#2/#3, sessions

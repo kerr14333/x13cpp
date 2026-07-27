@@ -34,6 +34,7 @@
 #include "common/x13context.hpp"
 #include "numeric/numeric.hpp"    // dpeq
 #include "gen/notset.hpp"         // prm::DNOTST
+#include "dump_diag.hpp"          // dump_qs / dump_np (shared with x13run_seats)
 
 namespace {
 std::string dirname_of(const std::string& p) {
@@ -158,65 +159,9 @@ static void dump_sfmsr(const x13::X13Context& ctx) {
 }
 
 
-// genqs.f:439-517 -- the QS seasonality savelog block. Two formats:
-//   1030 FORMAT(a,':',f16.5,1x,f10.5)   -- NOTE no space after the colon
-//   1040 FORMAT(a,': ',a)               -- the qslog yes/no line
-// A DNOTST statistic suppresses its row entirely, and the whole `qss*` block
-// only appears when the diagnostic span starts after the series does.
-static void dump_qs(const x13::X13Context& ctx) {
-    using x13::fwrite_fmt;
-    const auto& q = ctx.qs;
-    if (!q.ran) return;
-    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
-    auto stat = [&](const char* key, double v) {
-        if (v == x13::prm::DNOTST) return;
-        line(fwrite_fmt("(a,':',f16.5,1x,f10.5)", key, v, x13::chisq(v, 2)));
-    };
-    if (q.lqs()) {
-        line(fwrite_fmt("(a,': ',a)", "qslog", q.lplog ? "yes" : "no"));
-        stat("qsori", q.qsori);
-        stat("qsorievadj", q.qsori2);
-        stat("qsrsd", q.qsrsd);
-        stat("qssadj", q.qssadj);
-        stat("qssadjevadj", q.qssadj2);
-        stat("qsirr", q.qsirr);
-        stat("qsirrevadj", q.qsirr2);
-    }
-    if (q.lqss()) {
-        stat("qssori", q.qsoris);
-        stat("qssorievadj", q.qsoris2);
-        stat("qssrsd", q.qsrsd2);
-        stat("qsssadj", q.qssadjs);
-        stat("qsssadjevadj", q.qssadjs2);
-        stat("qssirr", q.qsirrs);
-        stat("qssirrevadj", q.qsirrs2);
-    }
-}
-
-
-// gennpsa.f:133-178 -- the NP residual-seasonality savelog block. One format
-// (`1040 FORMAT(a,': ',a)`) and four yes/no verdicts plus `nplog`, all through
-// getstr(YSNDIC) on `NPsadj+1`. Absent entirely from a run that produces no
-// seasonal adjustment, since only the SA series is tested.
-static void dump_np(const x13::X13Context& ctx) {
-    using x13::fwrite_fmt;
-    const auto& np = ctx.np;
-    if (!np.ran) return;
-    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
-    auto verdict = [&](const char* key, int v) {
-        if (v == x13::prm::NOTSET) return;
-        line(fwrite_fmt("(a,': ',a)", key, v ? "yes" : "no"));
-    };
-    if (np.lnp()) {
-        line(fwrite_fmt("(a,': ',a)", "nplog", np.lplog ? "yes" : "no"));
-        verdict("npsadj", np.npsadj);
-        verdict("npsadjevadj", np.npsadj2);
-    }
-    if (np.lnps()) {
-        verdict("npssadj", np.npsadjs);
-        verdict("npssadjevadj", np.npsadjs2);
-    }
-}
+// dump_qs / dump_np now live in tools/dump_diag.hpp -- x11ari.f runs genqs and
+// gennpsa after the Lseats/Lx11 branch rejoins, so x13run_seats needs the same
+// two blocks in the same formats.
 
 
 // svfreq.f / svpeak.f / smpeak.f / mxpeak.f / savpk.f -- the spectrum peak

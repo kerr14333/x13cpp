@@ -1,9 +1,10 @@
 # `genqs.f` — the QS seasonality statistics — scouting
 
-**Status: the DIRECT X-11 path is CLOSED for BOTH `genqs.f` and its sibling
-`gennpsa.f` (byte-exact, gated by `tests/parity/test_qs_diagnostics.py`, 157
-specs, zero new goldens). SEATS, the model-only path and the `Iagr==4` indirect
-names are still open -- see "What is still open".** Originally written 2026-07-27.
+**Status: CLOSED for BOTH `genqs.f` and its sibling `gennpsa.f` on the DIRECT
+X-11 path, the MODEL-ONLY path and the SEATS path (byte-exact, gated by
+`tests/parity/test_qs_diagnostics.py`, 313 specs, zero new goldens). Only the
+`Iagr==4` indirect names are still open -- see "What is still open".**
+Originally written 2026-07-27.
 
 327 of the 331 `.udg` goldens carry a `qs*` key and the port emitted none of
 them.
@@ -142,12 +143,7 @@ Mutation-tested twice: a 1% perturbation of `calcqs` fails 113 of 157, of
 
 ## What is still open
 
-* **SEATS specs.** genqs's SEATS arms read `Seatsa`/`Seatir`/`Stocsa`/`Stocir`
-  behind `Hvstsa`/`Hvstir` — COMMONs this port's SEATS chain does not fill,
-  because it publishes its decomposition onto ctx instead. The same blocker the
-  spectrum peak increment hit: a different INPUT, not just a different driver.
-  `Seatsa`/`Seatir` map onto `ctx.seats_sa`/`ctx.seats_ir`; `Stocsa`/`Stocir`
-  (the `/100` outlier-adjusted pair) need scouting first.
+* ~~SEATS specs~~ -- **CLOSED** (313 specs). See the section below.
 * ~~Model-only specs~~ -- **CLOSED**, and it did close both fronts at once
   (`test_qs_diagnostics` 157 -> 249, `test_spectrum_peaks` 140 -> 222). See the
   section below.
@@ -156,6 +152,103 @@ Mutation-tested twice: a 1% perturbation of `calcqs` fails 113 of 157, of
   — a *savelog* index used as a `Savtab` subscript — which wants checking before
   it is ported.
 (`gennpsa.f` is CLOSED -- see the section below.)
+
+## The SEATS path (CLOSED)
+
+`test_qs_diagnostics` 249 -> 313; SEATS specs now run through `x13run_seats`,
+which shares the emit with `x13run_x11` via `tools/dump_diag.hpp` (x11ari.f
+reaches genqs at :277 and gennpsa at :322 only after the Lseats/Lx11 branch
+rejoins, so both blocks belong to every adjustment path).
+
+### The four buffers, and why only two of them are independent
+
+The oracle fills them through the `ansub9.f` USRENTRY bridge from inside
+`seats()`. `sa` arrives **twice** — 1309 -> `Seatsa` (1..Nz) and
+1203 -> `Stocsa` (1..Nz+lfor) — and `ir` twice, 1312 -> `Seatir` and
+1204 -> `Stocir`. At `sigex.f:3623-3631` they are literally the same two local
+arrays. What separates them is `seatad.f`, which post-processes only the `Seat*`
+pair:
+
+| | seatad does | so over `[Pos1ob,Posfob]` |
+|---|---|---|
+| `Seatsa` vs `Stocsa` | forecast append (`Posfob+1..` only) + the `Adjsea==1` Facsea divide (`:53-56`) | identical unless a regARIMA **seasonal regressor** is present |
+| `Seatir` vs `Stocir` | `/100` under `Muladd!=1` (`:27`) | `Stocir/100 == Seatir` exactly — which is why genqs divides `Stocir` by ONEHND and does not divide `Seatir` |
+
+So **`qsirr` and `qsirrevadj` are provably identical on the SEATS path in both
+modes**: multiplicative because `Stocir/100` *is* `Seatir`, additive because
+`calcqs` is scale-invariant (the `r(k)` are unchanged by the `1/100`) and the
+`-1` re-centring is skipped. Every corpus golden agrees.
+
+This port has no pre-seatad buffer to copy, so `publish_seats_commons`
+(`run_seats.cpp`) reconstructs the `Stoc*` pair by inverting exactly those two
+steps from `ctx.seats_sa`/`ctx.seats_ir`. **The Facsea arm is transcribed, not
+measured** — no corpus spec pairs a seasonal regressor with `seats{}`.
+
+Taken from `ctx.seats_*` rather than from inside `seats_decompose` deliberately:
+those are what the span drivers save/restore, so a slidingspans/history replay
+cannot leave the LAST span's components here. That matches the oracle's own
+`ansub9.f:110` guard (`IF(Issap.eq.2.or.Irev.eq.4)RETURN`), which skips the
+`Stoc*` store on a replay outright.
+
+### The real find: `editor.f:517-518`, and it was NOT print surface
+
+```fortran
+      IF(.not.Lx11.and.(Fcntyp.eq.4.or.Fcntyp.eq.0.or.dpeq(Lam,1D0)))
+     &   Muladd=1
+```
+
+**On a run with no `x11{}` that is not taking a log, the adjustment mode is
+forced ADDITIVE**, overriding the multiplicative default `gtinpt.f:956` just
+resolved. `gtinpt` cannot do this itself — its rule keys on `Fcntyp` alone and
+cannot see `Lx11` — so a no-transform SEATS spec comes out of the parser with
+`Muladd 0`. This port had the `gtinpt` half and not the `editor` half.
+
+Measured: genqs re-centres a ratio irregular by subtracting one under
+`Muladd != 1`, and a SEATS decomposition without a log produces an **additive**
+irregular centred on zero. The missing rule shifted the whole series to about
+`-1` and turned a QS of `0.00000` into **1460.26951** on every `unrate_*-seats`
+spec (`qssirr` 122.49252 against 0.00000). It reaches `divsub`/`addmul` on this
+path too, so it is not confined to the diagnostics.
+
+Ported at the tail of `parse_spec.cpp`, next to `editor.f:429-434`'s constant
+shift — the one place in this port that is unambiguously "after gtinpt, before
+everything else". `Tmpma` is deliberately NOT updated: `gtinpt.f:970` sets it
+from the pre-editor value and `editor.f:518` touches only `Muladd`.
+
+### One more ported asymmetry, fixed in passing
+
+`genqs.f:148-160`'s SA arm: its **Lx11** arm is the one of the five that does
+not set `lplog` after logging, but its **ELSE** arm — the one SEATS and
+model-only runs take, keyed on `Lam==0` rather than `Muladd` — *does*. The port
+was dropping it for both. Inert on this corpus (no spec sets
+`spectrum{logqs=yes}` at all) but now written as the Fortran has it.
+
+### What the SEATS goldens can and cannot discriminate
+
+Read this before trusting a green run here. Every SEATS golden reports
+`qssadj`/`qsirr` as `0.00000` except `payems_seats`, and `payems_seats` has
+`npsi==1` (no seasonal component, so `sa == z` and `qssadj` is trivially
+`qsori`). The one genuinely non-degenerate SEATS value in the corpus is its
+`qsirr` 0.01133 / `qssirr` 0.00498. The real coverage these 64 specs add is the
+`qsori`/`qsorievadj`/`qsrsd` block — nonzero and discriminating (167.64858 on
+the airline family) — which the whole-spec skip had been throwing away along
+with the rest.
+
+Because of that degeneracy the arms were **mutation-tested explicitly**, and the
+first mutation was a bad one worth recording: a 1% **scaling** of the published
+SA series fails **zero** specs, because QS differences the series and then takes
+autocorrelations — a pure scale factor is invariant by construction. Only a
+SHAPE change discriminates. Injecting a 5% spike every 12th observation fails
+**62 of 62** SEATS specs through the SA arm and **50 of 62** through the
+irregular (the other 12 have no irregular component, i.e. `Hvstir` false).
+
+### Not called here: `spcdrv`
+
+The oracle runs it BETWEEN genqs and gennpsa. Its SEATS branch reads
+`Hvstsa`/`Hvstir` over a different construction again (`spcdrv.f:299/436`) and
+is the separate open front in `tools/spectrum_peaks_scouting.md`. `gennpsa`
+reads none of `spcdrv`'s state, so the order between the two that ARE ported is
+preserved.
 
 ## `gennpsa.f` -- the NP residual-seasonality verdict (CLOSED)
 
