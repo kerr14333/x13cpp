@@ -7,7 +7,16 @@ Durbin, but the AIC order-selection is dead code (CB-12) so it returns the
 full order l=min(Mxarsp,n-1); spgrh = the AR transfer-function spectrum
 sgme2/|1+sum coef_k e^{-i2pi k f}|^2. Wired via a spec_est selector (spgrh for
 spctyp==0, spgrh2 for ==1) across sp0/sp1/sp2/spr; st0/st1/st2 stay Tukey.
-gt_spectrum captures maxar. **596 parity pass, spectrum{} fully closed.**
+gt_spectrum captures maxar. **spectrum{} fully closed** (596 parity pass at the
+time of writing; 5261 as of 2026-07-27).
+
+> **Scope note added 2026-07-27.** "Closed" here means the `spectrum{}` SPEC
+> SURFACE — the seven tables and their options. It predates three later fronts
+> that are tracked in `tools/spectrum_peaks_scouting.md`, not here: the peak
+> savelog block, `getTPeaks`' Tukey peak probabilities, and the fact that the
+> oracle runs the whole spectrum block on EVERY monthly run rather than only
+> when `spectrum{}` is present. The remaining open item is spcdrv's SEATS
+> branch.
 
 ## (historical) increments 1+2 LANDED (periodogram sp0/sp1/sp2 + spr, bit-exact ~5e-14)
 `core/src/driver/run_spectrum.{cpp,hpp}` + `gt_spectrum` option capture +

@@ -95,7 +95,11 @@ New: `tools/dump_diag.hpp`. Two Census bugs: **CB-27**, **CB-28**.
 
 Ran `/staleness-audit` against HEAD `c11b05e`. Ground truth = code + tests.
 
-**CONFIRMED stale, safe to fix:**
+**All of the below were FIXED in the follow-up `chore:` commit** — kept here as
+the record of what was wrong and why, since several are the kind of claim that
+tends to grow back.
+
+**CONFIRMED stale, fixed:**
 
 * `tools/FABLE_REVIEW.md:69` — "`mdlchk`, `tstmd2`, `testodf`, `bkdfmd`,
   `tstmd1` … are ported but **NOT wired** into automd". False: `automd.cpp`
@@ -111,19 +115,32 @@ Ran `/staleness-audit` against HEAD `c11b05e`. Ground truth = code + tests.
   file total; the rest were not individually re-checked.
 * `tools/spectrum_scope.md:10` — "**596 parity pass**". Now 5261.
 
-**Needs a human call:**
+**The worktrees — REMOVED.** There were 12 stale checkouts under
+`.claude/worktrees/agent-*` from old parallel-agent runs, all clean. Five of
+their branches carried a commit that is not an ancestor of HEAD, but every
+file in those commits (`x11filt.cpp`, `x11seas.cpp`, `seats/roots.cpp`,
+`aictst.cpp`, `seats_scouting.md`) is present in HEAD in its later, rewritten
+form — the work landed, the commits were just never merged as such. So the
+**worktrees** were removed and the **12 `worktree-agent-*` branches were kept**,
+which is the zero-risk split: nothing is unrecoverable. One of the twelve
+directories was an empty husk that git had never registered.
 
-* **12 registered git worktrees under `.claude/worktrees/agent-*`**, left over
-  from old parallel-agent runs. All twelve are CLEAN (`git status --porcelain`
-  empty) and each is a full stale checkout carrying its own `CLAUDE.md`
-  ("1033 pass") and `SESSION_HANDOFF.md` ("HEAD `13d03c2`, 1102 pass") — they
-  poison every repo-wide grep and `du` on them times out. `git worktree remove`
-  keeps the branch, so removal loses nothing, but whether the
-  `worktree-agent-*` branch commits still hold unmerged work was not checked.
-* Dated snapshot docs left alone per the audit's own rule: `tools/engine_scope.md`
-  (2026-07-20), `tools/x11_regeff_handoff.md` ("LATEST STATUS (session 7)"),
-  `tools/spectrum_scope.md`'s "STATUS: COMPLETE" (true of the `spectrum{}` spec
-  surface, but the doc predates the peak / Tukey / model-only work).
+**Do not skip this class of cleanup as cosmetic.** Each worktree was a full
+checkout carrying its own stale `CLAUDE.md` and `SESSION_HANDOFF.md`, so every
+repo-wide grep returned ~11 false hits per real one — and that noise was
+actively hiding a real defect: **`CLAUDE.md:60`, the project's own build-and-test
+section, still advertised `1033 pass / 0 fail / 0 xfail / 25 skip`** against an
+actual 5261 / 0 / 0 / 529. The audit's own grep had surfaced it and it was
+buried. It reads as current guidance, not as a dated snapshot, so it is the
+single most misleading stale line the sweep found — and it was found only after
+the clutter went.
+
+**Dated snapshot docs, deliberately left alone** per the audit's own rule:
+`tools/engine_scope.md` (2026-07-20) and `tools/x11_regeff_handoff.md`
+("LATEST STATUS (session 7)"). `tools/spectrum_scope.md` was NOT left alone —
+its "STATUS: COMPLETE" is true of the `spectrum{}` spec surface but predates the
+peak / Tukey / model-only work, so it gained a scope note pointing at
+`spectrum_peaks_scouting.md` rather than a rewrite.
 
 ## Environment notes
 

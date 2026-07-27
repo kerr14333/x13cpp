@@ -57,8 +57,8 @@ improvise:
 - **Python is `python`** (3.14). `python3` is a Windows App alias → "Permission
   denied".
 - **Parity tests:** `python -m pytest tests/parity -q`. Green = `NNN passed`, with
-  expected `s` skips (parse-gap / no-golden specs). Currently 1033 pass / 0 fail /
-  0 xfail / 25 skip.
+  expected `s` skips (parse-gap / no-golden specs). Currently 5261 pass / 0 fail /
+  0 xfail / 529 skip (~4m).
 - After adding a `core/src/*.cpp`, the first build prints `GLOB mismatch!` and
   stops — just rerun once.
 
@@ -1286,8 +1286,8 @@ diagnostics front (force / slidingspans / history) is now closed.
     the call site, `x13_run_spec_file` did its path/substr/concat work outside
     its single try, and no R `X13_CAPI` entry point had a handler at all.
   - Stale doc corrected: `adqtst.cpp` is NOT dead code — `automd.cpp` calls all
-    five routines. `tools/TEST_COVERAGE.md:16` and `tools/FABLE_REVIEW.md:69`
-    still say otherwise.
+    five routines. Both offending docs (`tools/TEST_COVERAGE.md:16`,
+    `tools/FABLE_REVIEW.md:69`) now carry the correction in place.
   - **Harness weaknesses — now CLOSED.** All five were verified before being
     changed, and each was measured to be free (no gate's result moved), which
     is the point: they were latent, waiting for the NEXT regression.

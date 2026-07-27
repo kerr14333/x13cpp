@@ -251,6 +251,15 @@ summary/variance/M-stat diagnostics that feed the `.udg`.
 
 ### 2. Every CALL: PORTED vs UNPORTED
 
+> **Refreshed 2026-07-27.** This table was written 2026-07-20, before x11pt4
+> landed. Ten rows that said UNPORTED are now ported and are corrected in place:
+> `sumry`, `avedur`, `vars`, `varlog`, `varian`, `issame`, `isfals`, `f3cal`
+> (all `core/src/x11/x11summ.cpp`), `ftest` (`x11tests.cpp`) and `svf2f3` (the
+> `f2.*`/`f3.*` savelog block, emitted from `tools/x13run_x11.cpp`). The
+> remaining UNPORTED rows are print/save emitters this port defers by design,
+> plus `svchsd` (the `%`-change std-dev savelog), which is genuinely still open.
+> Rows elsewhere in this document were NOT re-verified.
+
 | CALL (lines) | status | maps to / role |
 |---|---|---|
 | `change` (182,194,219,230,244,246,257,259) | **PORTED** | `x11filt.cpp:58` (has muladd+Gudval) |
@@ -263,22 +272,22 @@ summary/variance/M-stat diagnostics that feed the `.udg`.
 | `copy` (377,413,485,525,593,617,630,653) | **PORTED** | x11 core copy |
 | `setdp` (705) / `setlg` (267,334) | **PORTED** | `specparse.hpp:84/85` |
 | `copylg` (266,334) | **PORTED** | `strvec.cpp:96` |
-| `sumry` (339,358,361,382,393,425,428,517,604,641,685) | **UNPORTED** | `sumry.f` (84) — per-period summary measures (Xbar/Xbar2/Xsq/Xsd), uses Gudval+Muladd |
-| `avedur` (362,476,605,686) | **UNPORTED** | `avedur.f` (51) — average duration of run |
-| `vars` (fn; 340,359,394,426,477,529) | **UNPORTED** | `vars.f` (14) — dispatch: Muladd!=1 -> `varlog`, else `varian` |
-| `varlog` (via vars, base) | **UNPORTED** | `varlog.f` (44) — log-variance |
-| `varian` (fn; 703 + via vars add-mode) | **UNPORTED** | `varian.f` (27) — plain variance |
-| `issame` (fn; 383,429,492 + Sti/Stc/Series) | **UNPORTED** | `issame.f` (29) — constant-series predicate (drives lsame/RETURN) |
-| `isfals` (fn; 335) | **UNPORTED** | `isfals.f` (18) — all-false Gudval predicate (OFF base) |
-| `f3cal` (713) | **UNPORTED** | `f3cal.f` (142) — F3 M1-M11/Q/Q2; needs `sdev.f` (46) |
-| `ftest` (99,101) | **UNPORTED** | `ftest.f` (294) — residual-seasonality F-test (diagnostic) |
+| `sumry` (339,358,361,382,393,425,428,517,604,641,685) | **PORTED** (x11summ.cpp) | `sumry.f` (84) — per-period summary measures (Xbar/Xbar2/Xsq/Xsd), uses Gudval+Muladd |
+| `avedur` (362,476,605,686) | **PORTED** (x11summ.cpp) | `avedur.f` (51) — average duration of run |
+| `vars` (fn; 340,359,394,426,477,529) | **PORTED** (x11summ.cpp) | `vars.f` (14) — dispatch: Muladd!=1 -> `varlog`, else `varian` |
+| `varlog` (via vars, base) | **PORTED** (x11summ.cpp) | `varlog.f` (44) — log-variance |
+| `varian` (fn; 703 + via vars add-mode) | **PORTED** (x11summ.cpp) | `varian.f` (27) — plain variance |
+| `issame` (fn; 383,429,492 + Sti/Stc/Series) | **PORTED** (x11summ.cpp) | `issame.f` (29) — constant-series predicate (drives lsame/RETURN) |
+| `isfals` (fn; 335) | **PORTED** (x11summ.cpp; see CB-18) | `isfals.f` (18) — all-false Gudval predicate (OFF base) |
+| `f3cal` (713) | **PORTED** (x11summ.cpp) | `f3cal.f` (142) — F3 M1-M11/Q/Q2; needs `sdev.f` (46) |
+| `ftest` (99,101) | **PORTED** (x11tests.cpp) | `ftest.f` (294) — residual-seasonality F-test (diagnostic) |
 | `x11plt` (75,77,752,754,771,773) | **UNPORTED (print)** | `x11plt.f` — E0/R1/R2 charts, DEFER |
 | `prtagr` (85,92,107,275,302,316) | **UNPORTED (print/save)** | table emitter, DEFER |
 | `pragr2` (186,198,220,231,248,261) | **UNPORTED (print/save)** | E5-E8 emitter, DEFER |
 | `table` (156) | **UNPORTED (print)** | E4 emitter, DEFER |
 | `svchsd` (189,201,223,234,251,264) | **UNPORTED (savelog)** | %-change std-dev -> `.pe5/.pe6/.pe7/.pe8`, Lsumm-gated, DEFER |
 | `fgen` (719,724) | **UNPORTED (print)** | F2/F3 table printer (`prtf2`/`f3gen`), DEFER |
-| `svf2f3` (720,725) | **UNPORTED (savelog)** | writes `f2.*`/`f3.*` -> `.udg`; reads computed COMMON state |
+| `svf2f3` (720,725) | **PORTED** (emitted by tools/x13run_x11.cpp) | writes `f2.*`/`f3.*` -> `.udg`; reads computed COMMON state |
 | `prtdtb` (733) | **UNPORTED (print)** | TD-type table, DEFER |
 | `writln` (many) | **UNPORTED (print)** | stderr notes, DEFER |
 

@@ -65,9 +65,18 @@ A. **[FIXED] Codegen mis-sized `xtrm_cmn.Stdev` (PYRS collision).** `cmn2hpp.py`
    it is plain arithmetic downstream of the (bit-exact) roots. Re-confirm once the
    canonical decomposition (SECOND/PARFRA/MAK1) actually consumes these roots.
 
-1. **Banked adequacy routines are UNGATED** — `mdlchk`, `tstmd2`, `testodf`,
+1. ~~**Banked adequacy routines are UNGATED** — `mdlchk`, `tstmd2`, `testodf`,
    `bkdfmd`, `tstmd1` (`core/src/automdl/adqtst.cpp`) are ported but NOT wired
-   into automd. `tstmd1` in isolation DOES correctly revert usdeaths to
+   into automd.~~
+   **STALE as of 2026-07-27** — all five ARE wired now, and as one unit exactly
+   as the analysis below predicted was necessary: `automd.cpp` calls `mdlchk` at
+   :186/:252/:264/:433/:637, `testodf` at :260, `tstmd2` at :291, `bkdfmd` at
+   :464 and `tstmd1` at :582. `adqtst.cpp` is not dead code. The rest of this
+   entry is kept because it is still the correct explanation of WHY the stage
+   has to be wired whole; only the "not wired" status is out of date.
+   Historical text follows.
+
+   `tstmd1` in isolation DOES correctly revert usdeaths to
    `(0 1 1)(0 1 1)` (ichk=4, near-unit AR verified live). BUT wiring only tstmd1
    broke parity on the 4 non-revert automd-estimation cases: the oracle
    re-estimates AFTER tstmd1 (the redomd + testodf finalization + a final rgarma,
