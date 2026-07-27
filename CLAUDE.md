@@ -1321,5 +1321,65 @@ diagnostics front (force / slidingspans / history) is now closed.
     - `test_bindings` **skipped** when the engine declined a run. Its cases are
       selected because the ORACLE produced a golden, so declining one is a
       regression; now an assert. No case reached that branch, so it was free.
+- **`check{}` -- the regARIMA RESIDUAL DIAGNOSTICS -- CLOSED (line-exact), and
+  the whole spec was parsed-and-dropped.** `gt_check` routed every argument
+  through `gt_generic`, so `maxlag`/`acflimit`/`qtype`/`qlimit` were consumed
+  and thrown away -- and with them the entire front that reads them, which had
+  no C++ at all. Ported into `core/src/diag/checkres.{hpp,cpp}`: `acf.f`
+  (sample ACF + Bartlett standard errors + the Ljung-Box and Box-Pierce Q
+  sequences), `pacf.f` (Yule-Walker partial ACF, which OVERWRITES its `r`
+  argument), `acfdgn.f` (which lags are significant, at `acflimit`/`qlimit`),
+  `nrmtst.f` + `intrpp.f` + `nrmtst.var` (skewness / Geary's a / kurtosis, each
+  against a one-percent point interpolated from its own table), the
+  Durbin-Watson statistic inlined at `arima.f:1075-1090`, and the
+  Friedman/Kendall seasonality test (`ansub11.f:1303`) at `arima.f:1092-1101`.
+  **Why it reaches 275 corpus specs with ZERO new goldens blessed:** no spec
+  needs a `check{}` spec for any of it -- `editor.f:909-910` sets
+  `Mxcklg = 2*Sp` on ANY model run with `Lsumm > 0`, i.e. the `-s` flag every
+  golden here was blessed with, so the oracle emits the block regardless. 287
+  of the 331 `.udg` goldens already carried it. Gated by
+  `tests/parity/test_check_diagnostics.py` (275 specs), and the gate is
+  **line-exact against the golden text** on 271 of them -- the emit goes
+  through the port's own `fwrite_fmt` with each line's actual Fortran format,
+  not printf. Five things worth knowing:
+  (1) **Fortran FIELD OVERFLOW is part of the contract.** A partial
+  autocorrelation with |t| = 10.169 does not fit acfdgn's `f7.4`, so the oracle
+  prints `*******` -- `generated/unrate_sar-seats` `sigpacf$24`. Going through
+  `fwrite_fmt` reproduces it; a printf would have printed the number.
+  (2) **Three Mxcklg defaults, applied in three different places, and the LAST
+  one wins only if the earlier two left it 0**: `getchk.f:63-67` (check{}
+  present -> 10 or 2*Sp, BEFORE its own argument loop, so an explicit
+  `maxlag=` overrides it), `gtinpt.f:1169` (Lseats and still 0 -> 3*Sp), then
+  `editor.f:909` (Lmodel and Lsumm>0 and still 0 -> 2*Sp). The last needs
+  Lmodel, so it lives on the model path in `run_pre_model`, not in the parser.
+  (3) **`Qcheck`'s default is `PT5 = 0.05D0`** (`gtinpt.f:21`) -- a
+  probability, despite the name. Exactly the trap that already bit
+  x11regression's `Cvxalf`; the parameter name means nothing.
+  (4) **The acfdgn seasonal-ACF udg block (`acf$NN`, `:79-91`) is DEAD CODE.**
+  Its loop counter `i` is initialised only inside the *log-file* block above
+  it, so when that block is off `i` is whatever the preceding `DO i=1,Nlagbl`
+  left (Nlagbl+1); `i=i+1` then makes the first lag `Sp*(Nlagbl+2)`, far past
+  Mxlag. Even with the log block ON, `i` lands past the last seasonal lag. No
+  golden in the corpus contains a single `acf$NN` line. Not reproduced (there
+  is nothing to reproduce) but recorded as **CB-24**.
+  (5) **Tolerance is byte-exact with a measured, documented fallback**, not a
+  blanket bound: `max(5e-4 abs, 5e-5 rel)` on the statistics only (integers,
+  significance markers and lag lists stay exact). Four specs need it, all
+  auto-selecting their model, and both places it bites are RATIOS that resolve
+  what the coefficients themselves round away -- `durbinwatson` (E15.8, eight
+  digits, 4.7e-6..1.3e-5) and the `sigacf`/`sigpacf` t-column, `(p)acf/se`,
+  where `airline_seats` `sigpacf$19` is -1.6001 vs -1.6000 with both other
+  columns identical. That t is what `acflimit` tests for list MEMBERSHIP, so a
+  threshold-straddling lag could in principle differ; it does not on this
+  corpus, and the gate asserts key sets in BOTH directions so it would fail
+  loudly rather than silently.
+  **The gate also surfaced a real, previously ungated defect elsewhere:**
+  `generated/usdeaths_automdl` had no test covering it at all, and automd
+  selects `(1 0 1)(0 1 1)` there against the oracle's `(0 1 1)(0 1 1)` -- an
+  iddiff regular-differencing (d=0 vs d=1) discrepancy that only NSA data
+  reaches, visible as `nefobs` 60 vs 59 before any statistic differs. Already
+  known at `test_m4_iddiff.py`'s `_AUTOMD_EST_CASES` omission and in
+  `tools/automdl_scouting.md`; skipped here with the measurement written at
+  the skip rather than absorbed into a tolerance.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

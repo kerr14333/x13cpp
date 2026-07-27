@@ -2335,11 +2335,94 @@ void gt_history(X13Context& ctx, bool& havesp, bool& inptok) {
 }
 
 // ---- check{} (getchk.f) ----------------------------------------------------
+// All three numeric arguments used to go through gt_generic, i.e. were parsed
+// and dropped -- along with the whole diagnostics front that reads them (see
+// core/src/diag/checkres.hpp).
 void gt_check(X13Context& ctx, bool& inptok) {
     constexpr int PARG = 7;
     static const char ARGDIC[] = "maxlagprintsavesavelogacflimitqtypeqlimit";
     static const int argptr[PARG + 1] = {1, 7, 12, 16, 23, 31, 36, 42};
-    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+    static const char QDIC[] = "ljungboxlbboxpiercebp";     // getchk.f QDIC
+    static const int qptr[5] = {1, 9, 11, 21, 23};
+
+    // getchk.f:58-67 -- check{} present flips Mxcklg off its unset 0 BEFORE the
+    // argument loop, so an explicit maxlag= below overrides this default rather
+    // than the other way round.
+    ctx.chkopt.mxcklg = (ctx.model.sp == 1) ? 10 : 2 * ctx.model.sp;
+
+    int arglog[2 * PARG];
+    for (auto& v : arglog) v = prm::NOTSET;
+    int argidx;
+    while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
+        if (ctx.error.lfatal) return;
+        const int* ep = ctx.lex.errpos.data() + 1;
+        int ivec[1]; double dvec[1]; int nelt = 0; bool argok = true;
+        switch (argidx) {
+        case 1:   // maxlag (getchk.f:76-89)
+            getivc(ctx, LPAREN, true, 1, ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (ivec[0] < 0) {
+                    inpter(ctx, PERROR, ep,
+                           "Value of maxlag must be greater than or equal to 0.");
+                    inptok = false;
+                } else {
+                    ctx.chkopt.mxcklg = ivec[0];
+                }
+            }
+            break;
+        case 2: getprt(ctx, 0, 11, inptok); break;
+        case 3: getsav(ctx, 0, 11, inptok); break;
+        case 4: getsvl(ctx, 0, 11, inptok); break;
+        case 5:   // acflimit (getchk.f:109-119)
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] <= 0.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Value of acflimit must be greater than 0.");
+                    inptok = false;
+                } else {
+                    ctx.chkopt.acflim = dvec[0];
+                }
+            }
+            break;
+        case 6: {  // qtype (getchk.f:123-136) -- ljungbox/lb -> 0, boxpierce/bp -> 1
+            gtdcvc(ctx, LPAREN, true, 1, QDIC, qptr, 4,
+                   "Improper entry for qtype: valid choices are ",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt <= 0) {
+                writln(ctx, "       ljungbox, lb, boxpierce or bp.",
+                       stdio::STDERR, ctx.units.mt2, false);
+            } else {
+                ctx.chkopt.iqtype = (ivec[0] > 2) ? 1 : 0;
+            }
+            break;
+        }
+        case 7:   // qlimit (getchk.f:140-154)
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] <= 0.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Value of qlimit must be greater than 0.");
+                    inptok = false;
+                } else if (dvec[0] > 1.0) {
+                    // Ported asymmetry: getchk.f:148-150 raises the error but
+                    // does NOT clear Inptok, so an out-of-range qlimit is
+                    // reported and the run continues with the default.
+                    inpter(ctx, PERROR, ep,
+                           "Value of qlimit must be less than 1.");
+                } else {
+                    ctx.chkopt.qcheck = dvec[0];
+                }
+            }
+            break;
+        default: break;
+        }
+    }
+    ctx.captured.has_check = true;
 }
 
 // ---- identify{} (getid.f) --------------------------------------------------

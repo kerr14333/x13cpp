@@ -4,6 +4,7 @@
 #include "x13/x13error.hpp"
 #include "x13/channels.hpp"
 #include "x13/savestate.hpp"
+#include "diag/checkres.hpp"   // CheckDiagnostics (check{} residual diagnostics)
 #include "common/gen/adj_cmn.hpp"
 #include "common/gen/adxser_cmn.hpp"
 #include "common/gen/agr_cmn.hpp"
@@ -11,6 +12,7 @@
 #include "common/gen/arima_cmn.hpp"
 #include "common/gen/autoq_cmn.hpp"
 #include "common/gen/bstmdl_cmn.hpp"
+#include "common/gen/checkopt_cmn.hpp"
 #include "common/gen/chrt_cmn.hpp"
 #include "common/gen/error_cmn.hpp"
 #include "common/gen/extend_cmn.hpp"
@@ -194,6 +196,14 @@ struct X13Context {
     // its own span's statistics. Snapshot, not live read.
     tests_cmn x11_f2tests{};
     bool x11_f2tests_set = false;
+
+    // check{}'s residual diagnostics (arima.f:1044-1102 -- acf/pacf
+    // significance, Ljung-Box + Box-Pierce Q, normality, Durbin-Watson,
+    // Friedman). Diagnostic only; nothing downstream reads it, which is why
+    // the whole front was missing without any gate noticing. See
+    // core/src/diag/checkres.hpp.
+    checkopt_cmn chkopt{};
+    CheckDiagnostics check{};
     // The INTERNAL (pre-publication) D13 and D12 as they stand at the end of
     // x11pt3, i.e. before the AO/TC outliers are folded back into the published
     // D13 and the level shift into the published D12. x11pt4 reads those

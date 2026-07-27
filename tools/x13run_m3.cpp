@@ -23,6 +23,9 @@
 #include <unistd.h>
 #endif
 
+#include <cmath>
+#include <vector>
+#include "x13/fformat.hpp"
 #include "specparse/specparse.hpp"
 #include "gen/model.hpp"  // prm::AR, prm::MA
 
@@ -36,6 +39,81 @@ std::string basename_of(const std::string& p) {
     return (s == std::string::npos) ? p : p.substr(s + 1);
 }
 }  // namespace
+
+// arima.f / acfdgn.f / nrmtst.f savelog block -- the check{} residual
+// diagnostics, written through the port's own Fortran-format facility with the
+// EXACT format each line is emitted with in the oracle, so the gate can compare
+// against the golden `.udg` text directly:
+//   acfdgn 1110: (a,': ',f7.4)                            qlimit / acflimit
+//   acfdgn 1160: ('n',a,'q: ',i3)                         nlbq / nbpq
+//   acfdgn 1150: (a,'q$',i2.2,': ',f7.3,5x,i3,5x,f6.3)    lbq$NN / bpq$NN
+//   acfdgn 1170: ('nsig',a,': ',i3)                       nsigacf / nsigpacf
+//   acfdgn 1180: ('sig',a,'$',i2.2,': ',f7.4,5x,f7.4,3x,f7.4)
+//   acfdgn 1190: (a,'lags: ',a)                           lblags / bplags / sig*lags
+//   nrmtst 1030: (a,':',f10.4,1x,a)                       skewness / a / kurtosis
+//   arima  9000: (a,e15.8)                                durbinwatson
+//   arima  9001: (a,e15.8,1x,i3,1x,e15.8)                 friedman
+//
+// Going through fwrite_fmt rather than printf matters: a value too wide for its
+// field is filled with '*' in Fortran, and the corpus reaches that -- a partial
+// autocorrelation with |t| = 10.169 does not fit acfdgn's f7.4, so the oracle
+// prints `*******` (unrate_sar-seats, sigpacf$24).
+static void dump_check(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    const auto& ck = ctx.check;
+    if (!ck.ran) return;
+
+    auto lags = [](const std::vector<x13::CheckLag>& v) {
+        if (v.empty()) return std::string("0");
+        std::string s;
+        for (const auto& L : v) s += std::to_string(L.lag) + " ";
+        return s;
+    };
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+
+    line(fwrite_fmt("(a,': ',f7.4)", "qlimit", ck.qlimit));
+    line(fwrite_fmt("('n',a,'q: ',i3)", "lb", static_cast<int>(ck.lbq.size())));
+    for (const auto& L : ck.lbq)
+        line(fwrite_fmt("(a,'q$',i2.2,': ',f7.3,5x,i3,5x,f6.3)", "lb", L.lag,
+                        L.a, L.df, L.b));
+    line(fwrite_fmt("(a,'lags: ',a)", "lb", lags(ck.lbq)));
+
+    line(fwrite_fmt("('n',a,'q: ',i3)", "bp", static_cast<int>(ck.bpq.size())));
+    for (const auto& L : ck.bpq)
+        line(fwrite_fmt("(a,'q$',i2.2,': ',f7.3,5x,i3,5x,f6.3)", "bp", L.lag,
+                        L.a, L.df, L.b));
+    line(fwrite_fmt("(a,'lags: ',a)", "bp", lags(ck.bpq)));
+
+    line(fwrite_fmt("(a,': ',f7.4)", "acflimit", ck.acflimit));
+    line(fwrite_fmt("('nsig',a,': ',i3)", "acf",
+                    static_cast<int>(ck.sigacf.size())));
+    for (const auto& L : ck.sigacf)
+        line(fwrite_fmt("('sig',a,'$',i2.2,': ',f7.4,5x,f7.4,3x,f7.4)", "acf",
+                        L.lag, L.a, L.b, L.t));
+    line(fwrite_fmt("(a,'lags: ',a)", "sigacf", lags(ck.sigacf)));
+
+    line(fwrite_fmt("('nsig',a,': ',i3)", "pacf",
+                    static_cast<int>(ck.sigpacf.size())));
+    for (const auto& L : ck.sigpacf)
+        line(fwrite_fmt("('sig',a,'$',i2.2,': ',f7.4,5x,f7.4,3x,f7.4)", "pacf",
+                        L.lag, L.a, L.b, L.t));
+    line(fwrite_fmt("(a,'lags: ',a)", "sigpacf", lags(ck.sigpacf)));
+
+    if (ck.have_skew)
+        line(fwrite_fmt("(a,':',f10.4,1x,a)", "skewness", ck.skewness,
+                        std::string(1, ck.skew_mark)));
+    if (ck.have_geary)
+        line(fwrite_fmt("(a,':',f10.4,1x,a)", "a", ck.geary,
+                        std::string(1, ck.geary_mark)));
+    if (ck.have_kurt)
+        line(fwrite_fmt("(a,':',f10.4,1x,a)", "kurtosis", ck.kurtosis,
+                        std::string(1, ck.kurt_mark)));
+    if (ck.have_dw)
+        line(fwrite_fmt("(a,e15.8)", "durbinwatson: ", ck.dw));
+    if (ck.have_friedman)
+        line(fwrite_fmt("(a,e15.8,1x,i3,1x,e15.8)", "friedman: ", ck.friedman,
+                        ck.friedman_df, ck.friedman_pv));
+}
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -100,6 +178,7 @@ int main(int argc, char** argv) {
     std::printf("aicc: %.14E\n", lk.aicc);
     std::printf("bic: %.14E\n", lk.bic);
     std::printf("hq: %.14E\n", lk.hnquin);
+    dump_check(ctx);
 
     // ARMA coefficients in operator/lag order (AR then MA), skipping the fixed
     // differencing slots; label each free coef by type + lag.

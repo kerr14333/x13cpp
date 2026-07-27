@@ -687,3 +687,31 @@ a deliberate rule.
 - **Reachability:** needs an `rp`/`tls`/`qi`/`qd` regressor in a `history{}`
   run whose end date falls past the revision span. No corpus spec has one, so
   it is currently unreachable and ungated.
+
+## CB-24 -- `acfdgn.f`'s seasonal-ACF `.udg` block is unreachable
+
+`acfdgn.f:79-91` writes an `acf$NN` line per SEASONAL lag to the unified
+diagnostics file:
+
+```fortran
+      IF(Ldiag.and.(Sp.eq.4.or.Sp.eq.12))THEN
+       i=i+1
+       ilag=Sp*i
+       DO WHILE (ilag.le.Mxlag)
+```
+
+`i` is never initialised in this block. It is set to 1 only inside the
+*log-file* block at `:64-77`, which is behind `Svltab(LSLSAC)`; with that off,
+`i` still holds whatever the preceding counting loop at `:57` left it --
+`Nlagbl+1`. `i=i+1` then starts the walk at `Sp*(Nlagbl+2)`, which is past
+`Mxlag` for every admissible Mxcklg, so the DO WHILE body never runs. And when
+the log block IS on, it leaves `i` one past the last seasonal lag it printed,
+so `i=i+1` overshoots by one more -- the udg block never fires either way.
+
+Not reproduced: there is no output to reproduce. Confirmed empirically -- not
+one of the 331 `.udg` goldens in `tests/golden/` contains an `acf$NN` line,
+including the 287 that carry the rest of the check{} block.
+
+Pinned by: `tests/parity/test_check_diagnostics.py`, whose key-set assertion
+runs in BOTH directions -- if the port ever emitted an `acf$NN` line the gate
+would fail with "keys the oracle does not emit".

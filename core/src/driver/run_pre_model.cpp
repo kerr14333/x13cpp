@@ -11,6 +11,7 @@
 #include "transform/transform.hpp"
 #include "transform/trnaic.hpp"     // trnaic (automatic transform selection)
 #include "regarima/priadj.hpp"
+#include "diag/checkres.hpp"   // check_residuals (arima.f:1044-1102)
 #include "regarima/regvar.hpp"
 #include "x11/x11reg.hpp"            // pritd, tdset_td (x11regression tdprior)
 #include "x11/xrgdrv.hpp"            // xrgdrv (x11regression OLS prior TD, Ixreg>=2)
@@ -610,6 +611,27 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // prior factors are `fac` (all 1 with no prior).
             prlkhd(ctx, aptr, facspn, ctx.adj.adjmod, ctx.arima.fcntyp,
                    ctx.arima.lam);
+            if (ctx.error.lfatal) return false;
+
+            // arima.f:1044-1102 -- check{}'s residual diagnostics, on the final
+            // converged residuals: the ACF/PACF significance lists, the
+            // Ljung-Box and Box-Pierce Q sequences, the normality battery
+            // (skewness / Geary's a / kurtosis), Durbin-Watson and Friedman.
+            // Diagnostic only -- nothing downstream reads ctx.check -- but the
+            // oracle writes every one of them to the .udg on ANY model run with
+            // Lsumm>0 (editor.f:909 defaults Mxcklg to 2*Sp there), which is why
+            // 287 of the 331 .udg goldens carry the block and none of it was
+            // ported. See core/src/diag/checkres.hpp.
+            //
+            // editor.f:909-910 -- the LAST of the three Mxcklg defaults, applied
+            // here rather than in the parser because it needs Lmodel, and this
+            // is the model path. gtinpt.f:1169 (Lseats && still 0 -> 3*Sp) runs
+            // first, and getchk's own default first of all.
+            if (ctx.chkopt.mxcklg == 0) {
+                if (ctx.captured.has_seats) ctx.chkopt.mxcklg = 3 * sp;
+                else ctx.chkopt.mxcklg = 2 * sp;
+            }
+            check_residuals(ctx, a.data(), na, nefobs);
             if (ctx.error.lfatal) return false;
 
             // NOTE (deferred): forecasting on a post-outlier model with other
