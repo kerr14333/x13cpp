@@ -2858,7 +2858,8 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
         // Tukey/arspec compute.
         std::vector<std::string> cap;
         const bool want = (argidx == 2 || argidx == 3 || argidx == 4 ||
-                           argidx == 7 || argidx == 14 || argidx == 16);
+                           argidx == 7 || argidx == 14 || argidx == 16 ||
+                           argidx == 19);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
         if (cap.empty()) continue;
@@ -2893,6 +2894,9 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
             break;
         case 16:  // startdiff: yes | no (gtspec.f:279)
             r.lstdff = (v == "yes");
+            break;
+        case 19:  // logqs: yes | no (gtspec.f:288) -- log the series genqs
+            r.llogqs = (v == "yes");   // tests, and report it as `qslog`.
             break;
         default:
             break;

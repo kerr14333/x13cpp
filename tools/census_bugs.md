@@ -715,3 +715,56 @@ including the 287 that carry the rest of the check{} block.
 Pinned by: `tests/parity/test_check_diagnostics.py`, whose key-set assertion
 runs in BOTH directions -- if the port ever emitted an `acf$NN` line the gate
 would fail with "keys the oracle does not emit".
+
+## CB-25 -- `QsRsd`/`QsRsd2` are initialised inside `arima`, so a model-free run reports an uninitialised COMMON as a statistic
+
+`genqs.f` reports seven QS seasonality statistics; six it computes itself, and
+the seventh -- the regARIMA RESIDUAL pair `QsRsd`/`QsRsd2` -- it only reads:
+
+```fortran
+      IF(.not.dpeq(QSrsd,DNOTST).and.Iagr.lt.4)
+     &    WRITE(Nform,1030)'qsrsd',QSrsd,chisq(QSrsd,2)
+```
+
+Both live in `/arima/` (`arima.cmn:126-127`) and are assigned in exactly two
+places, both inside `arima` itself: the reset at `arima.f:129-130`
+
+```fortran
+      QsRsd=DNOTST
+      QsRsd2=DNOTST
+```
+
+and the computation at `arima.f:1105-1118`. But `x11ari.f:106` calls `arima`
+only `IF(Lmodel)`. On a run with no regARIMA model at all -- an `x11{}` spec
+with no `arima{}`/`regression{}`/`estimate{}` -- that routine is never entered,
+so neither assignment happens and `genqs` reads the COMMON's static zero. The
+test is `.not.dpeq(QSrsd,DNOTST)`, and 0.0 is not DNOTST, so the row is emitted:
+
+```
+qsrsd:         0.00000    1.00000
+```
+
+reported as "no evidence of residual seasonality" for a run that has no
+residuals. `tests/golden/generated/airline_x11-default` is one of many.
+
+The contrast that proves the mechanism is `tests/golden/extra/airline_identify`:
+`identify{}` sets `Lmodel`, so `arima` DOES run and the reset fires, but nothing
+is estimated (`Var` stays zero) so the `:1105` block does not -- and that golden
+correctly carries no `qsrsd`/`qssrsd` line at all.
+
+Because it is a COMMON rather than a local, the value also SURVIVES between the
+specs of a metafile: a model-free spec that follows one with a model inherits
+its predecessor's value or its predecessor's DNOTST. That is visible in
+`tests/golden/census-examples/composite-history-mismatch/total`, whose
+model-free total carries no `qsrsd` row -- it inherited DNOTST from a component.
+
+- **Port:** reproduced. `QsStats::qsrsd`/`qsrsd2` (`core/src/diag/genqs.hpp`)
+  default to **0.0**, not DNOTST, and `run_pre_model` resets them to DNOTST at
+  the `arima` entry point under `ctx.captured.has_model` -- nowhere else. The
+  metafile carry-over is NOT reproduced: `tools/x13run_composite.cpp` carries
+  only the aggregation COMMONs between specs, and the composite goldens are not
+  in this gate's discovery.
+- **Pinned by:** `tests/parity/test_qs_diagnostics.py`, which compares key sets
+  in BOTH directions -- dropping the zero default makes every no-model spec fail
+  with "keys missing from the engine: ['qsrsd', 'qssrsd']", and dropping the
+  reset makes `extra/airline_identify` fail the other way.

@@ -26,6 +26,7 @@
 #include "x11/x11easter.hpp"      // holday (classic X-11 Easter estimation)
 #include "driver/run_history.hpp"  // run_history
 #include "driver/run_spectrum.hpp"  // run_spectrum
+#include "diag/genqs.hpp"           // genqs (the QS seasonality statistics)
 #include "composite/agr2.hpp"       // agr2_component / agr2_compare (composite)
 #include "composite/agr3.hpp"       // agr3, agrxpt (indirect adjustment)
 
@@ -111,6 +112,12 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // overwrites ctx.arima.endmdl with each span's own end, so history{} cannot
     // read it back after run_slidingspans has run.
     const int endmdl_full[2] = {ctx.arima.endmdl(1), ctx.arima.endmdl(2)};
+
+    // genqs.f (x11ari.f:277-281): the QS seasonality statistics. Sits just ahead
+    // of spcdrv in the oracle's own order, and like it runs on the pristine
+    // main-run state -- before the sliding-spans/history replays overwrite the
+    // X-11 buffers it reads. Unlike spcdrv it is NOT monthly-only.
+    if (!genqs(ctx, /*lseats=*/false)) return false;
 
     // spectrum{} (spcdrv.f): the data-based periodogram diagnostic (sp0/sp1/sp2).
     // Runs on the pristine main-run X-11 state -- BEFORE the sliding-spans/history

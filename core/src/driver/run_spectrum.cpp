@@ -284,24 +284,12 @@ bool run_spectrum(X13Context& ctx) {
         spdfor = lmodel ? std::max(ctx.model.nnsedf + ctx.model.nseadf - 1, 1) : 1;
     if (spdfor == 0) spcdff = false;
 
-    // Bgspec (gtspec.f:324-327 default): eight years back from Endspn, clamped
-    // to the series start. Begbk2 (backcast-extended begin) is not tracked as a
-    // date in this port; derive it from begspn + (pos1bk - pos1ob).
+    // Bgspec is resolved at the parse tail (gtinpt.f:1282-1286 / gtspec.f:324-
+    // 327), because the residual QS statistic reads it during estimation.
+    // Begbk2 (the backcast-extended begin) is not tracked as a date in this
+    // port; derive it from begspn + (pos1bk - pos1ob).
     const int* begspn = ctx.mdldat.begspn.data();
-    // Series span end (ctx.arima.endspn is not populated on this path): the last
-    // observed date = begspn + (nspobs - 1).
-    int endspn[2];
-    addate(begspn, sp, ctx.mdldat.nspobs - 1, endspn);
-    int bgspec[2];
-    if (ctx.rho.bgspec(1) == prm::NOTSET) {
-        addate(endspn, sp, -95, bgspec);
-        int nspec = 0;
-        dfdate(bgspec, begspn, sp, nspec);
-        if (nspec < 0) { bgspec[0] = begspn[0]; bgspec[1] = begspn[1]; }
-    } else {
-        bgspec[0] = ctx.rho.bgspec(1);
-        bgspec[1] = ctx.rho.bgspec(2);
-    }
+    int bgspec[2] = {ctx.rho.bgspec(1), ctx.rho.bgspec(2)};
     int begbk2[2];
     addate(begspn, sp, pos1bk - pos1ob, begbk2);
     // spcrsd (spr) runs in the regARIMA phase, before spcdrv applies any Lstdff

@@ -637,14 +637,38 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 ctx.x11adj.finhol = false;
         }
 
-        // gtinpt.f:1285-1288 / gtspec.f:355 -- resolve Peakwd. The oracle writes
-        // it in two different places depending on whether a spectrum{} spec was
-        // present (gtspec's own tail when it was, gtinpt's `hvspec` ELSE when it
-        // was not), and both resolve to the same value, so one site covers it.
-        // Everything keyed on Peakwd silently declines while it is NOTSET.
+        // gtinpt.f:1282-1286 / gtspec.f:324-327 -- resolve Bgspec, the start of
+        // the spectrum/QS diagnostic span: eight years (95 periods) back from
+        // the end of the series span, clamped forward to the series start. The
+        // oracle resolves it in gtspec's own tail when a spectrum{} spec was
+        // present and in gtinpt's `hvspec` ELSE when it was not; the two
+        // branches are identical for the default, so one site covers both.
+        // It has to happen HERE rather than in run_spectrum, because genqs's
+        // residual pair (arima.f:1110-1111) keys on it during estimation.
+        if (ctx.rho.bgspec(1) == prm::NOTSET) {
+            int endspn[2];
+            addate(ctx.mdldat.begspn.data(), ctx.model.sp,
+                   ctx.mdldat.nspobs - 1, endspn);
+            int bgspec[2];
+            addate(endspn, ctx.model.sp, -95, bgspec);
+            int nspec = 0;
+            dfdate(bgspec, ctx.mdldat.begspn.data(), ctx.model.sp, nspec);
+            if (nspec < 0) {
+                bgspec[0] = ctx.mdldat.begspn(1);
+                bgspec[1] = ctx.mdldat.begspn(2);
+            }
+            ctx.rho.bgspec(1) = bgspec[0];
+            ctx.rho.bgspec(2) = bgspec[1];
+        }
+
+        // gtinpt.f:1287-1290 / gtspec.f:355 -- resolve Peakwd. The two sites
+        // are NOT equivalent: gtspec's is a bare `Peakwd=1` with the quarterly
+        // override commented out, so a quarterly spec carrying a spectrum{}
+        // block gets 1 where one without gets 3. Inert today (Peakwd is only
+        // read by the monthly peak grid) but transcribed as written.
         if (ctx.rho.peakwd == prm::NOTSET) {
             ctx.rho.peakwd = 1;
-            if (ctx.model.sp == 4) ctx.rho.peakwd = 3;
+            if (ctx.model.sp == 4 && !ctx.spcout.requested) ctx.rho.peakwd = 3;
         }
 
         // gtinpt.f:220: finalize the ARMA model dimensions for estimation

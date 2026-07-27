@@ -14,6 +14,7 @@
 #include "diag/checkres.hpp"   // check_residuals (arima.f:1044-1102)
 #include "diag/estdgn.hpp"     // est_diagnostics (savotl.f counts + prtrts.f roots)
 #include "diag/amdfct.hpp"     // aape_diagnostics (amdfct.f forecast error)
+#include "diag/genqs.hpp"      // calcqs (arima.f:1107's residual QS statistic)
 #include "regarima/regvar.hpp"
 #include "x11/x11reg.hpp"            // pritd, tdset_td (x11regression tdprior)
 #include "x11/xrgdrv.hpp"            // xrgdrv (x11regression OLS prior TD, Ixreg>=2)
@@ -436,6 +437,17 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // parsed regression groups and the transformed series. Pre-model this is
     // fully calendar-determined (constant/seasonal/td/holiday columns), so the
     // rmx save table (savmtx.f, arima.f:1013) is reproducible here.
+    // arima.f:129-130 -- the ONLY place QsRsd/QsRsd2 are initialised, and they
+    // are initialised at the top of `arima`, which x11ari.f:132 calls only when
+    // Lmodel. See CB-25 (core/src/diag/genqs.hpp): a model-free run reports the
+    // COMMON's static zero as the residual QS statistic, and this reset is what
+    // separates that from an identify-only run, where arima DOES run but the
+    // :1105 block does not fire.
+    if (ctx.captured.has_model) {
+        ctx.qs.qsrsd = prm::DNOTST;
+        ctx.qs.qsrsd2 = prm::DNOTST;
+    }
+
     if (ctx.captured.has_model && have_trn) {
         int nrxy, frstry;
         regvar(ctx, trnsrs.data(), nobspf, fctdrp, nfcst, 0,
@@ -614,6 +626,22 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 // as ctx.est_nefobs just above.
                 addate(ctx.mdldat.begspn.data(), ctx.model.sp,
                        ctx.mdldat.nspobs - na, ctx.resid_begdate.data());
+
+                // arima.f:1105-1118 -- the RESIDUAL half of the QS seasonality
+                // block (`qsrsd`/`qssrsd`). genqs.f computes the other six
+                // series but not this one: it lives here because it needs the
+                // residuals and the estimation-time span, both of which are
+                // gone by the time x11ari runs. Sp>1 is the oracle's own gate
+                // (a QS statistic on a non-seasonal series is meaningless, and
+                // calcqs returns 0 for mq==1 anyway).
+                if (ctx.model.sp > 1) {
+                    ctx.qs.qsrsd = calcqs(a.data(), na - nefobs, na, ctx.model.sp);
+                    int qpos = 0;
+                    const int bg[2] = {ctx.rho.bgspec(1), ctx.rho.bgspec(2)};
+                    dfdate(bg, ctx.resid_begdate.data(), ctx.model.sp, qpos);
+                    if (qpos > 0)
+                        ctx.qs.qsrsd2 = calcqs(a.data(), qpos, na, ctx.model.sp);
+                }
             }
 
             // Likelihood statistics (arima.f:742 prlkhd): the transform-Jacobian-

@@ -1582,5 +1582,68 @@ diagnostics front (force / slidingspans / history) is now closed.
   adjustment, and that path takes a different detrend -- spcdrv.f:193-200 keys
   on `dpeq(Lam,ZERO)` rather than `Muladd.ne.1`). Map:
   **`tools/spectrum_peaks_scouting.md`**.
+- **The QS SEASONALITY statistics (`genqs.f`) -- the DIRECT X-11 path CLOSED
+  (byte-exact), and the whole block was silently absent.** 327 of the 331
+  `.udg` goldens carry a `qs*` key and the port emitted none of them. Same
+  "every golden was blessed with `-s`" leverage as the last six increments, but
+  reached by a different route worth knowing: genqs's gate is
+  `Savtab(LSPCQS)`, not `Lsumm>0`, and `gtinpt.f:121-123` copies `sumtab` into
+  `Savtab` wholesale when `Lsumm>0` -- with `sumtab.var` entry 113 (LSPCQS)
+  TRUE. **And unlike the spectrum block there is no `IF(Ny.eq.12)` in front of
+  it**: `editor.f:855-863`'s monthly-only `Savtab` clear covers
+  `LSPCS0..LSPS0C` (93..102) plus LSPCTP/LSPCQC (115/116) and NOT 113, so
+  quarterly specs are in scope (41 of the corpus). Ported into
+  `core/src/diag/genqs.{hpp,cpp}`: `calcqs.f`, `calcqs2.f`, `qsdiff.f` and
+  genqs.f's own six-series body, plus `arima.f:1105-1118`'s residual pair in
+  `run_pre_model`. Gated by `tests/parity/test_qs_diagnostics.py` (157 specs,
+  **zero new goldens**, byte-exact through `fwrite_fmt`); mutation-tested twice
+  (a 1% perturbation of `calcqs` fails 113/157, of `calcqs2` 140/157).
+  **Three things worth knowing.**
+  (1) **CB-25: `QsRsd`/`QsRsd2` are initialised INSIDE `arima`** (arima.f:129-
+  130) and computed there too (`:1105`), but `x11ari.f:106` calls `arima` only
+  `IF(Lmodel)` -- so a model-free `x11{}` run reads the COMMON's static zero and
+  reports `qsrsd: 0.00000 1.00000` as a statistic about residuals that do not
+  exist. The contrast that proves the mechanism is `extra/airline_identify`:
+  `identify{}` sets Lmodel, so the reset fires but the `:1105` block does not
+  (Var is zero), and that golden correctly carries no `qsrsd` row at all.
+  Reproduced by defaulting the pair to **0.0** and resetting to DNOTST in
+  run_pre_model under `has_model`, nowhere else.
+  (2) **`/x11srs/ Sti` and `Stc` are NOT the published D13/D12 -- and this port
+  makes them so.** `x11pt3.f:1089-1103` builds the AO/TC-restored D13 in a
+  LOCAL `sti2` and punches that; `Sti` itself is never touched, so x11pt4 and
+  genqs both see the outlier-REMOVED irregular. This port copies the published
+  values back over `x11srs.sti`/`.stc` at the tail of x11pt3 so the harness can
+  punch d13/d12 off the COMMON mirror, keeping the oracle's live values in
+  `ctx.x11_sti_int`/`ctx.x11_stc_int`. Invisible to every table gate, and
+  exactly what genqs tripped over: on `generated/expgs_fixed-airline-x11` the
+  published D13 gives `qsirr` 0.03946 against the oracle's 0.00000, because
+  folding the AOs back in flips the lag-4 autocorrelation positive and
+  **`calcqs` is a step function in the sign of `r(1)`** -- a small input change
+  is a categorical output change. **Anything new that reads `/x11srs/` after
+  x11pt3 must take the snapshot, not the mirror.** Localised by recomputing
+  calcqs in Python off the blessed `.d13` file: it reproduced the ENGINE's
+  0.03946, not the oracle's `.udg`, which said the difference was downstream of
+  the save rather than in the arithmetic.
+  (3) **`Bgspec` had two resolutions and now has one.** `gtspec.f:324-327`
+  (spectrum spec present) and `gtinpt.f:1282-1286` (absent) set the same default
+  -- eight years back from Endspn, clamped forward to Begspn -- and the port had
+  NEITHER, with `run_spectrum` computing it locally. That does not work for
+  genqs, whose residual pair keys on Bgspec during ESTIMATION; it is now
+  resolved once at the parse tail next to Peakwd. Found alongside it: the two
+  `Peakwd` sites are **not** equivalent -- `gtspec.f:355` is a bare `Peakwd=1`
+  with the `Sp.eq.4 -> 3` override commented out, so a quarterly spec carrying
+  a `spectrum{}` block gets 1 where one without gets 3 (inert today, only the
+  monthly peak grid reads it). `spectrum{logqs=}` was also parsed-and-dropped.
+  Tolerance is byte-exact on 155 of 157, with `max(5e-4 abs, 5e-5 rel)` on
+  `qsrsd`/`qssrsd` for the two `airline_automdl-x11` specs (measured 2.30823 vs
+  2.30858) -- the same bound and reason as `test_check_diagnostics`, restricted
+  to those two keys so an X-11 statistic drifting still fails loudly.
+  Still open, skipped with the reason written AT the skip: the SEATS branch
+  (`Seatsa`/`Seatir`/`Stocsa`/`Stocir` behind Hvstsa/Hvstir -- the same
+  different-INPUT blocker as the spectrum peak block), the MODEL-ONLY path
+  (`qsorievadj` needs `Stcsi`, which only x11pt1 fills and the model-only
+  harness never runs -- closing either probably closes both), the `Iagr==4`
+  indirect names, and `gennpsa.f`'s `np*` family (230 goldens, a separate
+  routine). Map: **`tools/genqs_scouting.md`**.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

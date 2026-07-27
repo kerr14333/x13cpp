@@ -8,6 +8,7 @@
 #include "diag/estdgn.hpp"     // EstDiagnostics (outlier counts + ARMA roots)
 #include "diag/amdfct.hpp"     // AapeDiagnostics (average absolute forecast error)
 #include "x11/d8bd9a.hpp"      // D8bD9aOutput (the D8B/D9A savelog blocks)
+#include "diag/genqs.hpp"      // QsStats (the QS seasonality statistics)
 #include "common/gen/adj_cmn.hpp"
 #include "common/gen/adxser_cmn.hpp"
 #include "common/gen/agr_cmn.hpp"
@@ -415,6 +416,12 @@ struct X13Context {
     SlidingSpansOutput ssout;
     HistoryOutput hist_out;
     SpectrumOutput spcout;
+    // genqs.f's QS seasonality statistics. The residual pair (qsrsd/qsrsd2) is
+    // filled earlier, in run_pre_model (arima.f:1105-1118), because it reads
+    // the estimation-time span; the other twelve come from genqs itself, which
+    // runs at x11ari.f:277 -- BEFORE sspdrv/revdrv, so unlike the D8B/D9A block
+    // this needs no span-replay save/restore.
+    QsStats qs;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;
