@@ -49,9 +49,8 @@ suffixes so a wrong label or a wrong peak count can never be absorbed by it.
 NOT COVERED YET, deliberately and visibly (these skip with a reason rather than
 being filtered out of discovery):
 
-  * ``.tukey.*`` and ``peaks.tukey.*`` -- getTPeaks (specpeak.f), a separate
-    ~850-line front. The Tukey SPECTRA are already ported; only the peak
-    probabilities are missing.
+  * The INDIRECT tukey names (``peaks.tukey.seas.ind`` etc., Iagr>3), which
+    belong with the composite front -- 3 goldens carry them.
   * SEATS specs (51 of the 278). ``run_seats`` does not call ``run_spectrum``
     at all, and spcdrv's SEATS branch reads ``Hvstsa``/``Hvstir`` (the SEATS SA
     and irregular) where the X-11 branch reads Stcime/Stime -- a different
@@ -82,13 +81,21 @@ _FREQ_RE = re.compile(r"^[st][0-9]\.(freq|index|index\.lower|index\.upper)$")
 _PEAK_RE = re.compile(
     r"^spc(ori|sa|irr|rsd|extrsd|comp|indsa|indirr)\."
     r"(median|range|dom|[st]\.dom|[st][0-9])$")
+# getTPeaks (specpeak.f Tpeaks2): the Tukey window and the six seasonal + one
+# trading-day peak PROBABILITIES, plus svtukp.f's four accumulated label lists.
+# `spcindsa`/`spcindirr` are deliberately absent -- the Iagr>3 indirect names go
+# with the composite front, and their `.ind` label rows with them.
+_TUKEY_RE = re.compile(
+    r"^spc(ori|sa|irr|rsd)\.tukey\.(m|td|s[1-6])$")
+_TUKEY_SCALARS = {"peaks.tukey.seas", "peaks.tukey.td",
+                  "peaks.tukey.p90.seas", "peaks.tukey.p90.td"}
 
 _KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9._$]*):(.*)$")
 
 
 def _is_peak_key(key: str) -> bool:
     if "tukey" in key:
-        return False       # getTPeaks -- see the module docstring
+        return key in _TUKEY_SCALARS or bool(_TUKEY_RE.match(key))
     return (key in _SCALARS or bool(_FREQ_RE.match(key))
             or bool(_PEAK_RE.match(key)))
 
@@ -225,16 +232,17 @@ def test_every_owned_key_is_readable() -> None:
     assert not unreadable, f"keys this gate owns but cannot parse: {unreadable}"
 
 
-def test_tukey_keys_are_not_claimed() -> None:
-    """The `.tukey.*` families belong to the unported getTPeaks front.
+def test_indirect_tukey_keys_are_not_claimed() -> None:
+    """The Iagr>3 tukey names belong to the unported composite/indirect path.
 
-    They must be excluded from BOTH sides, or the golden's tukey keys would
-    show up as `missing` on every spec. Pinned so that porting getTPeaks has
-    to come here and delete this deliberately.
+    They must be excluded from BOTH sides, or a composite total's indirect rows
+    would read as `missing`. Pinned so that porting them has to come here and
+    do it deliberately -- this is what the old `test_tukey_keys_are_not_claimed`
+    became when getTPeaks landed.
     """
-    for k in ("spcori.tukey.s1", "spcrsd.tukey.m", "peaks.tukey.seas",
-              "peaks.tukey.p90.td"):
-        assert not _is_peak_key(k), f"{k} is claimed but getTPeaks is unported"
+    for k in ("spcindsa.tukey.s1", "spcindirr.tukey.m",
+              "peaks.tukey.seas.ind", "peaks.tukey.p90.td.ind"):
+        assert not _is_peak_key(k), f"{k} is claimed but the indirect path is unported"
 
 
 @pytest.mark.skipif(not CASES, reason="no corpus golden ships the peak block")

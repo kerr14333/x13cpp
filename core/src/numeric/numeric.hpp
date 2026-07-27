@@ -66,6 +66,22 @@ double fvalue(double& x, int m, int n);
 // by chitst for the regressor-group chi-square test p-value.
 double chisq(double x, int n);
 
+// special.f -- the TRAMO/SEATS special-function trio, distinct from the Census
+// routines above (different author, different conventions). Only the F CDF is
+// reached: Tpeaks2 (specpeak.f) scores every Tukey spectral peak against it.
+//
+// special.f:10 log_gamma  -- Lanczos, 6 coefficients.
+// special.f:35 beta_inc   -- the regularized incomplete beta I_x(a,b), via
+//                            special.f:62's Lentz continued fraction (EPS 1e-7,
+//                            MaxItera 1000, no convergence failure signalled --
+//                            it writes to stdout and returns the last iterate).
+//                            NOTE the exponent is floored at -500 before EXP,
+//                            deliberately, to avoid an underflow trap.
+// special.f:108 fcdf      -- P(F(x,y) <= f) = 1 - I_{y/(y+x*f)}(y/2, x/2).
+double log_gamma(double a);
+double beta_inc(double x, double a, double b);
+double fcdf(double f, double x, double y);
+
 // sumf.f: left-to-right sum of x over the 1-based inclusive range [n1,n2]
 // (x[0]==X(1)). Accumulation order is preserved for bit-parity.
 double sumf(const double* x, int n1, int n2);

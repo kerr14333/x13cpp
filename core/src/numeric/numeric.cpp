@@ -479,6 +479,84 @@ double chisq(double x, int n) {
     return 1.0 - gauss(c2) + C * c3 * std::exp(-y / 2.0) / c2;
 }
 
+// special.f:10 -- Lanczos log-Gamma. NOTE the argument reduction differs from
+// the textbook form: the oracle divides by `a` INSIDE the log rather than
+// subtracting log(a) afterwards.
+double log_gamma(double a) {
+    static const double c[6] = {
+        76.18009172947146, -86.50532032941677, 24.01409824083091,
+        -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5};
+    const double s2pi = 2.5066282746310005;
+    double y = a;
+    double tmp = a + 5.5;
+    tmp = (a + 0.5) * std::log(tmp) - tmp;
+    double suma = 1.000000000190015;
+    for (int j = 0; j < 6; ++j) {
+        y += 1.0;
+        suma += c[j] / y;
+    }
+    return tmp + std::log(s2pi * suma / a);
+}
+
+namespace {
+// special.f:62 -- Lentz's continued fraction for the incomplete beta.
+//
+// Two things are transcribed rather than tidied. (1) The first two `if` tests
+// on `d` use `<=` and the two in the odd step use `<`, an asymmetry with no
+// numerical meaning. (2) On non-convergence the oracle prints to stdout and
+// returns the last iterate instead of signalling -- reproduced by returning `f`
+// silently, since this port writes nothing to stdout from the engine.
+double beta_cfra(double a, double b, double x) {
+    const int MaxItera = 1000;
+    const double EPS = 1.0e-7, FP_MIN = 1.0e-78;
+    double d = 1.0 - (a + b) * x / (a + 1.0);
+    if (std::fabs(d) <= FP_MIN) d = FP_MIN;
+    d = 1.0 / d;
+    double c = 1.0;
+    double f = d;
+    for (int m = 1; m <= MaxItera; ++m) {
+        const int m2 = 2 * m;
+        // even step
+        double aa = m * (b - m) * x / ((a - 1.0 + m2) * (a + m2));
+        d = 1.0 + aa * d;
+        if (std::fabs(d) <= FP_MIN) d = FP_MIN;
+        d = 1.0 / d;
+        c = 1.0 + aa / c;
+        if (std::fabs(c) <= FP_MIN) c = FP_MIN;
+        f = f * d * c;
+        // odd step
+        aa = -(a + m) * (a + b + m) * x / ((a + m2) * (a + 1.0 + m2));
+        d = 1.0 + aa * d;
+        if (std::fabs(d) < FP_MIN) d = FP_MIN;
+        d = 1.0 / d;
+        c = 1.0 + aa / c;
+        if (std::fabs(c) < FP_MIN) c = FP_MIN;
+        const double del = d * c;
+        f = f * d * c;
+        if (std::fabs(del - 1.0) < EPS) return f;
+    }
+    return f;
+}
+}  // namespace
+
+// special.f:35.
+double beta_inc(double x, double a, double b) {
+    if (x <= 0.0) return 0.0;
+    if (x >= 1.0) return 1.0;
+    const double e = log_gamma(a + b) - log_gamma(a) - log_gamma(b) +
+                     a * std::log(x) + b * std::log(1.0 - x);
+    // Floored before EXP on purpose (special.f:53's own comment: "To avoid
+    // underflow exception").
+    const double bt = std::exp(std::max(e, -500.0));
+    if (x < (a + 1.0) / (a + b + 2.0)) return bt * beta_cfra(a, b, x) / a;
+    return 1.0 - bt * beta_cfra(b, a, 1.0 - x) / b;
+}
+
+// special.f:108.
+double fcdf(double f, double x, double y) {
+    return 1.0 - beta_inc(y / (y + x * f), y / 2.0, x / 2.0);
+}
+
 double fvalue(double& x, int m, int n) {
     if (x > 0.0) {
         if (x <= 90.0 && (x <= 40.0 || n <= 150)) {

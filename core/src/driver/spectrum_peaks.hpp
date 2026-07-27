@@ -71,6 +71,50 @@ SpecPeaks spectrum_peaks(const std::vector<double>& sxx,
                          bool ltdfrq, double plocal, int sp,
                          const std::string& prefix);
 
+// --- the Tukey half (specpeak.f) ----------------------------------------
+//
+// getTPeaks is getWind(Tukey) + covWind + Tpeaks2. The first two are already
+// `tukey_spectrum` in run_spectrum.cpp (they produce the st0/st1/st2 save
+// tables, bit-exact); only Tpeaks2 was missing, which is where the peak
+// PROBABILITIES come from.
+//
+// Unlike the AR-spectrum peaks above, these are not star heights against a
+// median: each candidate frequency is scored by an F test on the ratio of its
+// own spectral ordinate to its neighbours', with degrees of freedom
+// interpolated from the window size and the series length (dfPeaks).
+struct TukeyPeaks {
+    bool ok = false;      // false when the series is too short for any window
+    int m = -1;           // the Tukey window (120 / 112 / 79 / 44)
+    double ptd = 0.0;     // P(trading-day peak)
+    double ps[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};  // P(seasonal peak k)
+    double mv[14] = {0.0};  // the wide-peak test values (computed, unemitted)
+};
+
+// specpeak.f:333 -- the four F degrees of freedom for a given window/length.
+// m==79 uses four constants; every other window interpolates a quadratic in
+// nz/100 and 100/nz from its own 3x4 table.
+void df_peaks(int m, int nz, double& df1, double& df2, double& df3,
+              double& df4);
+
+// specpeak.f:400 -- score every candidate peak of the RAW (not decibel) Tukey
+// spectrum `h`, 1-based over h[0..m/2]. `nz` is the series length the spectrum
+// was built from.
+TukeyPeaks tpeaks2(const double* h, int m, int mq, int nz);
+
+// svtukp.f -- the four accumulated label lists. `entries` is the Itukey order
+// (spcrsd files its entry during the regARIMA phase, so `rsd` comes FIRST).
+// `lsadj` is x11ari.f:76's `Lx11.or.Lseats`.
+struct TukeyEntry {
+    std::string label;   // "rsd" / "ori" / "sa" / "irr"
+    TukeyPeaks pk;
+};
+struct TukeyLabels {
+    std::string seas = "none", td = "none";
+    std::string p90_seas = "none", p90_td = "none";
+};
+TukeyLabels tukey_peak_labels(const std::vector<TukeyEntry>& entries,
+                              bool lsadj);
+
 }  // namespace x13
 
 #endif  // X13_DRIVER_SPECTRUM_PEAKS_HPP

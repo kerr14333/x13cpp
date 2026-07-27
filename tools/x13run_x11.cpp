@@ -246,6 +246,29 @@ static void dump_spec_peaks(const x13::X13Context& ctx) {
         line(fwrite_fmt("(a,a)", "peaks.seas: ", sp.peaks_seas));
         line(fwrite_fmt("(a,a)", "peaks.td: ", sp.peaks_td));
     }
+
+    // The Tukey half. Two emit points in the oracle, in this order:
+    //   spcdrv.f:996 / spcrsd.f  1080 FORMAT(a,'.tukey.m: ',i5)  -- at compute
+    //     time, so all four `.m` rows come out before any probability row.
+    //   svtukp.f                 1010 FORMAT(a,a,i1,a,f9.4)      -- the s1..s6
+    //                            1020 FORMAT(a,a,f9.4)           -- the td row
+    // then savtpk.f:81-88's four label lists.
+    if (!sp.tukey.empty()) {
+        for (const auto& e : sp.tukey)
+            line(fwrite_fmt("(a,'.tukey.m: ',i5)", "spc" + e.label, e.pk.m));
+        for (const auto& e : sp.tukey) {
+            for (int k = 1; k <= 6; ++k)
+                line(fwrite_fmt("(a,a,i1,a,f9.4)", "spc" + e.label, ".tukey.s",
+                                k, ": ", e.pk.ps[k - 1]));
+            line(fwrite_fmt("(a,a,f9.4)", "spc" + e.label, ".tukey.td: ",
+                            e.pk.ptd));
+        }
+        const auto& L = sp.tukey_labels;
+        line(fwrite_fmt("(a,a)", "peaks.tukey.seas: ", L.seas));
+        line(fwrite_fmt("(a,a)", "peaks.tukey.td: ", L.td));
+        line(fwrite_fmt("(a,a)", "peaks.tukey.p90.seas: ", L.p90_seas));
+        line(fwrite_fmt("(a,a)", "peaks.tukey.p90.td: ", L.p90_td));
+    }
 }
 
 

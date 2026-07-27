@@ -52,6 +52,12 @@ struct SpectrumOutput {
     // (spcdrv.f:750-794), "none" when the family found no visually significant
     // peak in any table.
     std::string peaks_seas, peaks_td;
+    // getTPeaks' peak PROBABILITIES (`spcXXX.tukey.m/.s1-.s6/.td`), one entry
+    // per Tukey table in Itukey order -- `rsd` first, because spcrsd.f files its
+    // entry during the regARIMA phase, before spcdrv runs at all.
+    std::vector<TukeyEntry> tukey;
+    // svtukp.f -- the four accumulated `peaks.tukey.*` label lists.
+    TukeyLabels tukey_labels;
 };
 
 // Compute the spectrum diagnostics after the X-11 decomposition. NOT gated on

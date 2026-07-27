@@ -283,4 +283,168 @@ SpecPeaks spectrum_peaks(const std::vector<double>& sxx,
     return out;
 }
 
+// --- specpeak.f:333, dfPeaks --------------------------------------------
+void df_peaks(int m, int nz, double& df1, double& df2, double& df3,
+              double& df4) {
+    // df[row][col], row 0..2 = the quadratic's three coefficients, col 0..3 =
+    // which of the four degrees of freedom. Fortran df(3,4), column-major.
+    double df[3][4] = {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}};
+    if (m == 120) {
+        df[0][0] =  0.317;   df[1][0] = 2.7706;  df[2][0] =  2.6516;
+        df[0][1] =  2.0934;  df[1][1] = 7.0464;  df[2][1] = 10.5217;
+        df[0][2] = -0.4336;  df[1][2] = 1.4463;  df[2][2] =  3.0668;
+        df[0][3] =  0.6411;  df[1][3] = 3.6073;  df[2][3] =  7.9892;
+    } else if (m == 112) {
+        df[0][0] =  0.5463;  df[1][0] = 2.9303;  df[2][0] =  2.2042;
+        df[0][1] =  1.1329;  df[1][1] = 7.6924;  df[2][1] = 10.8795;
+        df[0][2] = -0.3492;  df[1][2] = 1.533;   df[2][2] =  2.7696;
+        df[0][3] =  0.9829;  df[1][3] = 3.8217;  df[2][3] =  6.9345;
+    } else if (m == 44) {
+        df[0][0] =  1.3779;  df[1][0] = 7.2620;  df[2][0] =  0.3725;
+        df[0][1] =  3.1495;  df[1][1] = 18.0654; df[2][1] =  3.5564;
+        df[0][2] =  0.2504;  df[1][2] = 3.6616;  df[2][2] =  0.7929;
+        df[0][3] =  0.504;   df[1][3] = 9.7201;  df[2][3] =  3.0605;
+    } else if (m == 79) {
+        // The one window with no length dependence at all.
+        df1 = 6.35251; df2 = 19.6308; df3 = 2.29316; df4 = 6.55412;
+    }
+    if (m == 112 || m == 44 || m == 120) {
+        const double n100 = static_cast<double>(nz) / 100.0;
+        const double n_100 = 100.0 / static_cast<double>(nz);
+        df1 = df[0][0] + df[1][0] * n100 + df[2][0] * n_100;
+        df2 = df[0][1] + df[1][1] * n100 + df[2][1] * n_100;
+        df3 = df[0][2] + df[1][2] * n100 + df[2][2] * n_100;
+        df4 = df[0][3] + df[1][3] * n100 + df[2][3] * n_100;
+    }
+    // NOTE: no ELSE. An m outside {120,112,79,44} leaves all four UNSET, which
+    // the Fortran would read as whatever the stack held. Tpeaks2 is only ever
+    // reached with one of the four, so this is unreachable rather than latent.
+}
+
+// --- specpeak.f:400, Tpeaks2 --------------------------------------------
+TukeyPeaks tpeaks2(const double* h, int m, int mq, int nz) {
+    TukeyPeaks out;
+    out.m = m;
+    // 1-based access, matching the Fortran's H(1..m/2+1).
+    auto H = [&](int i) { return h[i - 1]; };
+
+    double df1 = 0.0, df2 = 0.0, df3 = 0.0, df4 = 0.0;
+    df_peaks(m, nz, df1, df2, df3, df4);
+
+    int indM[5] = {0, 0, 0, 0, 0};
+    int nIndM = 0, indTD = -1, indPI = -1;
+    if (m == 120) {
+        indM[0] = 11; indM[1] = 21; indM[2] = 31; indM[3] = 41; indM[4] = 51;
+        nIndM = 5; indTD = 43; indPI = 61;
+    } else if (m == 112) {
+        indM[0] = 10; indM[1] = 20; indM[2] = 29; indM[3] = 38; indM[4] = 48;
+        nIndM = 5; indTD = 40; indPI = 57;
+    } else if (m == 79) {
+        indM[0] = 8; indM[1] = 14; indM[2] = 21; indM[3] = 27; indM[4] = 34;
+        nIndM = 5; indTD = 29; indPI = 40;
+    } else {
+        // The m==44 (non-monthly) branch. Unreachable from this port today --
+        // x11ari.f gates the whole spectrum block on IF(Ny.eq.12) and
+        // getTPeaks only selects 44 when mq!=12 -- but transcribed so the
+        // quarterly path is a wiring change rather than a port.
+        indTD = -1; indPI = 22; nIndM = 0;
+        if (mq == 6) { indM[0] = 8; indM[1] = 15; nIndM = 2; }
+        else if (mq == 4) { indTD = 14; indM[0] = 12; nIndM = 1; }
+        else if (mq == 3) { indPI = -1; indM[0] = 15; nIndM = 1; }
+        else if (mq == 1) { indPI = -1; }
+    }
+
+    for (int i = 1; i <= nIndM; ++i) {
+        const int ix = indM[i - 1];
+        double incH = 2.0 * H(ix);
+        incH = incH / (H(ix + 1) + H(ix - 1));
+        out.ps[i - 1] = fcdf(incH, df1, df2);
+        // The "wide peak" test values. Computed and stored into mv, which no
+        // savelog or print path in this port reads -- prtukp.f's table is print
+        // surface. Kept because Tpeaks2 fills it unconditionally and dropping it
+        // would make the transcription hard to check against the Fortran.
+        const double mv1 = H(ix) / H(ix - 1);
+        const double mv2 = H(ix) / H(ix + 1);
+        double vA1 = 2.0 * H(ix) / (H(ix - 1) + H(ix - 2));
+        double vA2 = 2.0 * H(ix) / (H(ix + 1) + H(ix + 2));
+        out.mv[i * 2 - 2] = (mv1 < mv2) ? mv1 : mv2;
+        if (vA1 < mv1) vA1 = mv1;
+        if (vA2 < mv2) vA2 = mv2;
+        const double mv3 = (vA1 < vA2) ? vA1 : vA2;
+        out.mv[i * 2 - 1] = ((mq == 12 && i == 4) || mq == 4) ? vA1 : mv3;
+    }
+
+    int k = nIndM;
+    if (indPI > 0) {
+        const double incH = H(indPI) / H(indPI - 1);
+        // NOTE the pi-radian peak is filed at MQ/2, not at k+1: for monthly that
+        // is ps[5] (the sixth slot), which is why `spcXXX.tukey.s6` exists at
+        // all. It also uses df3/df4 rather than df1/df2 -- a one-sided ratio
+        // against a single neighbour, not a two-sided one.
+        out.ps[mq / 2 - 1] = fcdf(incH, df3, df4);
+        ++k;
+        out.mv[k * 2 - 2] = H(indPI) / H(indPI - 1);
+        const double vA1 = 2.0 * H(indPI) / (H(indPI - 1) + H(indPI - 2));
+        out.mv[k * 2 - 1] = (vA1 > out.mv[2 * k - 2]) ? vA1 : out.mv[k * 2 - 2];
+    }
+    if (indTD > 0) {
+        const double incH = 2.0 * H(indTD) / (H(indTD + 1) + H(indTD - 1));
+        out.ptd = fcdf(incH, df1, df2);
+        ++k;
+        const double mv1 = H(indTD) / H(indTD - 1);
+        const double mv2 = H(indTD) / H(indTD + 1);
+        double vA2 = 2.0 * H(indTD) / (H(indTD + 1) + H(indTD + 2));
+        out.mv[k * 2 - 2] = (mv1 < mv2) ? mv1 : mv2;
+        if (vA2 < mv2) vA2 = mv2;
+        // Ported asymmetry: the seasonal loop above takes min(vA1,vA2) after
+        // flooring BOTH, and this one compares the floored vA2 against the
+        // UNFLOORED mv1.
+        out.mv[k * 2 - 1] = (vA2 < mv1) ? vA2 : mv1;
+    }
+    out.ok = true;
+    return out;
+}
+
+// --- svtukp.f -----------------------------------------------------------
+TukeyLabels tukey_peak_labels(const std::vector<TukeyEntry>& entries,
+                              bool lsadj) {
+    // CB-27, transcribed. `oriIdx` is the ORI table's position in the Itukey
+    // list (an index over TABLES, 1-based), and the loop below then compares it
+    // against `k`, an index over the six seasonal FREQUENCIES. The evident
+    // intent is "leave the original series out of the peak lists on a run that
+    // produces no adjustment"; what it actually does is drop one frequency --
+    // whichever number happens to match that table's slot -- from EVERY table's
+    // counts. It stays NOTSET on any adjustment run, so the defect is confined
+    // to model-only specs.
+    const int NOTSET = -32767;
+    int ori_idx = NOTSET;
+    for (std::size_t i = 0; i < entries.size(); ++i)
+        if (entries[i].label == "ori" && !lsadj)
+            ori_idx = static_cast<int>(i) + 1;
+
+    std::string s99, t99, s90, t90;
+    auto append = [](std::string& dst, const std::string& lab) {
+        if (!dst.empty()) dst += " ";
+        dst += lab;
+    };
+    for (const TukeyEntry& e : entries) {
+        int npk = 0, npk90 = 0;
+        for (int k = 1; k <= 6; ++k) {
+            if (k == ori_idx) continue;
+            if (e.pk.ps[k - 1] > 0.90) ++npk90;
+            if (e.pk.ps[k - 1] > 0.99) ++npk;
+        }
+        if (npk90 > 0) append(s90, e.label);
+        if (npk > 0) append(s99, e.label);
+        if (e.pk.ptd > 0.90) append(t90, e.label);
+        if (e.pk.ptd > 0.99) append(t99, e.label);
+    }
+    TukeyLabels out;
+    if (!s99.empty()) out.seas = s99;
+    if (!t99.empty()) out.td = t99;
+    if (!s90.empty()) out.p90_seas = s90;
+    if (!t90.empty()) out.p90_td = t90;
+    return out;
+}
+
 }  // namespace x13

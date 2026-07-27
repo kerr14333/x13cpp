@@ -1,9 +1,10 @@
 # Spectrum peak diagnostics — scouting
 
-**Status: steps 1–3 CLOSED (byte-exact, gated by
-`tests/parity/test_spectrum_peaks.py`, 140 specs, zero new goldens). Steps 4–5
-(getTPeaks, genqs) still open, plus two paths this port cannot reach yet — see
-"What is still open" at the bottom.** Originally written 2026-07-27.
+**Status: steps 1–4 CLOSED (byte-exact, gated by
+`tests/parity/test_spectrum_peaks.py`, 222 specs, zero new goldens); step 5
+(genqs) closed separately in `tools/genqs_scouting.md`. Only the SEATS branch
+and the Iagr>3 indirect names are still open — see "What is still open" at the
+bottom.** Originally written 2026-07-27.
 
 This is the largest remaining `.udg` diagnostic block, and it is **silently
 absent on every monthly run**, not merely on specs that ask for `spectrum{}`.
@@ -152,11 +153,11 @@ back to ~230s.
 
 ## What is still open
 
-* **`getTPeaks`** (specpeak.f, ~850 lines) — the `.tukey.*` families and
-  `peaks.tukey.*`. The Tukey SPECTRA are already ported and bit-exact; only the
-  peak probabilities are missing. `test_spectrum_peaks.py` explicitly asserts
-  these keys are NOT claimed, so porting them has to come delete that assertion.
-* **`genqs.f`** (the QS block, 324 goldens) — independent of everything above.
+* ~~`getTPeaks`~~ — **CLOSED**. See the section below.
+* ~~`genqs.f`~~ — **CLOSED**, see `tools/genqs_scouting.md`.
+* **The `Iagr>3` indirect tukey names** (`spcindsa.tukey.*`,
+  `peaks.tukey.seas.ind`, …), 3 goldens, with the composite front. Pinned by
+  `test_indirect_tukey_keys_are_not_claimed`.
 * **SEATS specs** (51 of the 278 goldens): `run_seats` never calls
   `run_spectrum`, and spcdrv's SEATS branch reads `Hvstsa`/`Hvstir`/`Stocsa`/
   `Stocir` where the X-11 branch reads Stcime/Stime. A different INPUT, not just
@@ -205,3 +206,83 @@ publish-back is reached).
 neither `robustsa=no` nor a pseudo-additive spectrum case -- so the first step is
 to measure the ORACLE on-vs-off and confirm the branch moves at all before
 porting anything.
+
+## getTPeaks — CLOSED
+
+`.tukey.*` (283 goldens for `spcori`, 239 `spcrsd`, 198 each for `spcsa`/
+`spcirr`) plus `peaks.tukey.{seas,td,p90.seas,p90.td}` (283). **Zero new
+goldens**, no new tests — the keys were previously excluded from BOTH sides of
+`test_spectrum_peak_block` and are now compared inside the same 222 specs.
+
+### It was ~130 lines, not ~850
+
+`specpeak.f` is 850 lines but `getTPeaks` itself is nine:
+
+```fortran
+      call getWind(iWindow,m,window)
+      call covWind(H,m,serie,nz,window,nw2)
+      call Tpeaks2(H,m,MQ,nz,pTDpeak,pSpeaks,mv)
+```
+
+The first two were **already ported** as `tukey_spectrum` in
+`run_spectrum.cpp` — they produce the bit-exact `st0/st1/st2` save tables. Only
+`Tpeaks2` (`:400-544`) and its `dfPeaks` helper (`:333-399`) were missing, plus
+the `Fcdf` → `BetaInc` → `LogGamma`/`BetaCfra` chain from `special.f` (now in
+`numeric.cpp`, flagged there as TRAMO/SEATS rather than Census code). The rest
+of `specpeak.f` is `GetPeaks`/`GetPeak1`/`pARpeak`/`rellPico2` — a different
+front (the AR-spectrum peak probabilities, print surface here).
+
+**The scouting estimate was wrong by a factor of six, and in a direction worth
+noting: a routine's FILE is not its size.** Cross-check what is already ported
+before sizing the next front off a line count.
+
+### What Tpeaks2 does that the AR peak block does not
+
+The AR-spectrum peaks (`svpeak`/`smpeak`) are star heights against a median.
+These are F tests: each candidate frequency is scored on the ratio of its own
+ordinate to its neighbours',
+
+* seasonal `k`: `Fcdf(2*H(i) / (H(i+1)+H(i-1)), df1, df2)`
+* the pi-radian peak: `Fcdf(H(i) / (H(i-1)), df3, df4)` — one-sided, one
+  neighbour, and **filed at `ps[MQ/2]`, not at the next free slot**, which is
+  why `spcXXX.tukey.s6` exists for monthly data at all
+* trading day: `Fcdf(2*H(i) / (H(i+1)+H(i-1)), df1, df2)`
+
+with the four degrees of freedom interpolated from the window size and the
+series length (`dfPeaks`: a quadratic in `nz/100` and `100/nz` per window,
+except `m==79`, which has four constants and no length dependence).
+
+**`Tpeaks2` reads the RAW spectrum, not the decibel one.** `savstp` applies
+`10*log10` when it punches `st0/st1/st2`; these statistics are ratios of
+neighbouring ordinates, which a log would turn into differences. `tukey_spectrum`
+therefore scores the peaks off its internal `p` before converting.
+
+`Tpeaks2` also fills a 14-element `mv` — the "wide peak" test values, which
+prtukp.f's table prints and no savelog key carries. Ported anyway: the routine
+fills it unconditionally and dropping it would make the transcription hard to
+check line-by-line against the Fortran.
+
+### Two Census bugs, both in the plumbing rather than the arithmetic
+
+* **CB-27** (`svtukp.f:43/85`) — `oriIdx` is a TABLE index and the loop that
+  reads it is over FREQUENCIES. Intended to keep the unadjusted original out of
+  the peak lists on a model-only run; actually drops one seasonal frequency from
+  every table's counts. Confined to model-only specs (`oriIdx` stays NOTSET
+  whenever `Lx11.or.Lseats`).
+* **CB-28** (`spcrsd.f:113-119`) — the residual span is repacked into `Temp` and
+  then `a` is passed to `getTPeaks`. Only the LENGTH reflects the diagnostic
+  start; the spectrum is always taken from the FIRST `ntmp` residuals. The three
+  `spcdrv.f` call sites do the same repack correctly.
+
+### One-observation asymmetry worth knowing
+
+`spcdrv.f:252` gates the Tukey block on `nsrs.gt.80` and `spcrsd.f:112` on
+`ntmp.ge.80` — the same routine, two call sites, a strict vs non-strict bound.
+`tukey_spectrum` takes the bound as a parameter rather than baking it in.
+
+### Mutation test
+
+A 1% perturbation of `fcdf` fails **218 of 224** — the six survivors are the
+specs whose series is too short for any Tukey window. That check is the only
+evidence these keys are compared at all: the change added no test and moved no
+test count, since the keys joined an existing gate on both sides at once.

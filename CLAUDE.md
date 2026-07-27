@@ -1780,5 +1780,48 @@ diagnostics front (force / slidingspans / history) is now closed.
   discriminates; a 5% spike every 12th observation fails **62 of 62** through
   the SA arm and **50 of 62** through the irregular (the other 12 have no
   irregular, i.e. `Hvstir` false). Map: **`tools/genqs_scouting.md`**.
+- **`getTPeaks` -- the TUKEY SPECTRAL PEAK probabilities -- CLOSED
+  (byte-exact), and it was ~130 lines, not the ~850 the scouting doc predicted.**
+  The `.tukey.*` families (283 goldens for `spcori`, 239 `spcrsd`, 198 each for
+  `spcsa`/`spcirr`) plus `peaks.tukey.{seas,td,p90.seas,p90.td}` (283).
+  **Zero new goldens AND zero new tests** -- the keys were previously excluded
+  from BOTH sides of `test_spectrum_peak_block` and are now compared inside the
+  same 222 specs, so the mutation test below is the only evidence they are read.
+  **The size estimate was wrong by a factor of six, in a way worth
+  generalizing: a routine's FILE is not its size.** `getTPeaks` is nine lines --
+  `getWind` + `covWind` + `Tpeaks2` -- and the first two were ALREADY PORTED as
+  `tukey_spectrum` (they produce the bit-exact st0/st1/st2 save tables). Only
+  `Tpeaks2` (specpeak.f:400-544) and `dfPeaks` (:333-399) were missing, plus the
+  `Fcdf` -> `BetaInc` -> `LogGamma`/`BetaCfra` chain from `special.f` (now in
+  `numeric.cpp`, flagged there as TRAMO/SEATS code rather than Census). The rest
+  of specpeak.f is the AR-spectrum peak front, which is print surface here.
+  Cross-check what is already ported before sizing a front off a line count.
+  **What these are:** not star heights against a median (that is svpeak/smpeak)
+  but F tests on the ratio of each candidate ordinate to its neighbours, with
+  the four degrees of freedom interpolated from the window size and series
+  length. Three things to know. (1) The pi-radian peak is one-sided
+  (`H(i)/H(i-1)`, df3/df4 rather than df1/df2) and is **filed at `ps[MQ/2]`, not
+  at the next free slot** -- which is the only reason `spcXXX.tukey.s6` exists
+  for monthly data. (2) **`Tpeaks2` reads the RAW spectrum, not the decibel
+  one**: savstp applies the `10*log10` when it punches st0/st1/st2, and these
+  statistics are ratios that a log would turn into differences -- so the peaks
+  are scored off `tukey_spectrum`'s internal `p`. (3) `spcdrv.f:252` gates the
+  Tukey block on `nsrs.gt.80` and `spcrsd.f:112` on `ntmp.ge.80` -- same
+  routine, two call sites, strict vs non-strict -- so the bound is a parameter.
+  **Two Census bugs, both plumbing rather than arithmetic. CB-27**
+  (`svtukp.f:43/85`): `oriIdx` is a TABLE index (the original series' slot in
+  `Itukey`) and the loop that tests it is over the six seasonal FREQUENCIES. The
+  intent is to keep an unadjusted original out of the `peaks.tukey.*` lists on a
+  model-only run; the effect is to drop one seasonal frequency -- whichever
+  number matches that slot -- from EVERY table's counts. Confined to model-only
+  specs, since `oriIdx` stays NOTSET whenever `Lx11.or.Lseats`. **CB-28**
+  (`spcrsd.f:113-119`): the residual diagnostic span is repacked into `Temp` and
+  then `a` is passed to getTPeaks, so only the LENGTH reflects `ipos` and the
+  residual Tukey spectrum is always taken from the FIRST `ntmp` residuals rather
+  than the last. The three spcdrv call sites do the identical repack correctly,
+  which is what makes it a slip rather than a convention.
+  Mutation-tested: a 1% perturbation of `fcdf` fails **218 of 224**, the six
+  survivors being specs whose series is too short for any Tukey window. Map:
+  **`tools/spectrum_peaks_scouting.md`**.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

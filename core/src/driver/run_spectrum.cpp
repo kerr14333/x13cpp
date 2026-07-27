@@ -7,9 +7,10 @@
 //
 // This is NOT gated on a `spectrum{}` spec: x11ari.f:282-287 calls spcdrv under
 // a plain IF(Ny.eq.12), so the oracle computes the whole block on every monthly
-// run. Still follow-on: getTPeaks' Tukey peak probabilities, genqs, the plots
-// and warnings, the SEATS branch (Hvstsa/Hvstir), and the model-only path
-// (x12run.f calls x11ari with neither Lx11 nor Lseats).
+// run. getTPeaks' Tukey peak probabilities (specpeak.f Tpeaks2, in
+// spectrum_peaks.cpp), genqs and the model-only path are all closed. Still
+// follow-on: the plots and warnings, the SEATS branch (spcdrv's Hvstsa/Hvstir
+// arms), and the Iagr>3 indirect names.
 #include "driver/run_spectrum.hpp"
 
 #include <cmath>
@@ -209,9 +210,13 @@ int tukey_window(int nz, bool ltk120) {
 // the getTPeaks window. Returns false (no table) when nz<=80 or m<0. crosco.f:
 // biased autocovariance c(i)=(1/nz)*sum x(j+i)x(j), no mean removal.
 bool tukey_spectrum(const double* x, int n1, int n2, bool ltk120,
-                    std::vector<double>& st, std::vector<double>& frq) {
+                    std::vector<double>& st, std::vector<double>& frq,
+                    TukeyPeaks* peaks = nullptr, int mq = 12, int min_nz = 81) {
     const int nz = n2 - n1 + 1;
-    if (nz <= 80) return false;   // spcdrv.f gate: nsrs > 80
+    // spcdrv.f:252 gates on `nsrs.gt.80` and spcrsd.f:112 on `ntmp.ge.80` -- a
+    // one-observation difference between two call sites of the same routine,
+    // so the bound is a parameter rather than baked in.
+    if (nz < min_nz) return false;
     const int m = tukey_window(nz, ltk120);
     if (m < 0) return false;
     // Repack to 0-based x[0..nz-1] = series[n1..n2].
@@ -245,6 +250,10 @@ bool tukey_spectrum(const double* x, int n1, int n2, bool ltk120,
         st[i] = 10.0 * std::log10(std::fabs(p[i]));
         frq[i] = static_cast<double>(static_cast<float>(i) / static_cast<float>(m));
     }
+    // Tpeaks2 works on the RAW spectrum, not the decibel one savstp punches --
+    // its statistics are ratios of neighbouring ordinates scored against an F
+    // distribution, which a log would turn into differences.
+    if (peaks) *peaks = tpeaks2(p.data(), m, mq, nz);
     return true;
 }
 
@@ -419,8 +428,10 @@ bool run_spectrum(X13Context& ctx) {
             out.have_sp0 = spec_est(tmp.data(), l1, posfob, ltdfrq_main,
                                     "spcori", out.sp0);
             // st0: Tukey spectrum of the same series (spcdrv.f:250-255).
+            TukeyPeaks tpk;
             out.have_st0 = tukey_spectrum(tmp.data(), l1, posfob, ltk120,
-                                          out.st0, out.frq_tukey);
+                                          out.st0, out.frq_tukey, &tpk, sp);
+            if (out.have_st0) out.tukey.push_back({"ori", tpk});
         }
     }
     // --- sp1/sp2: only when an adjustment was actually produced -------------
@@ -456,8 +467,10 @@ bool run_spectrum(X13Context& ctx) {
             out.have_sp1 = spec_est(tmp.data(), l1, posfob, ltdfrq_main,
                                     "spcsa", out.sp1);
             // st1: Tukey spectrum of the same series (spcdrv.f:388-392).
+            TukeyPeaks tpk;
             out.have_st1 = tukey_spectrum(tmp.data(), l1, posfob, ltk120,
-                                          out.st1, out.frq_tukey);
+                                          out.st1, out.frq_tukey, &tpk, sp);
+            if (out.have_st1) out.tukey.push_back({"sa", tpk});
         }
         // --- sp2: irregular (spcdrv.f:438-467) -- no differencing ----------
         // Likewise the irregular is E3 (Stime, the modified irregular), not D13.
@@ -470,8 +483,10 @@ bool run_spectrum(X13Context& ctx) {
         out.have_sp2 = spec_est(tmp.data(), ipos, posfob, ltdfrq_main, "spcirr",
                                 out.sp2);
         // st2: Tukey spectrum of the same irregular series (spcdrv.f:506-510).
+        TukeyPeaks tpk;
         out.have_st2 = tukey_spectrum(tmp.data(), ipos, posfob, ltk120, out.st2,
-                                      out.frq_tukey);
+                                      out.frq_tukey, &tpk, sp);
+        if (out.have_st2) out.tukey.push_back({"irr", tpk});
     }
     // --- spr: regARIMA model residuals (spcrsd.f, periodogram path) --------
     // No detrend, no log: the residuals `a` are used directly. Their start date
@@ -490,6 +505,25 @@ bool run_spectrum(X13Context& ctx) {
         // spcrsd.f:74 derives its OWN Ltdfrq from the residual span.
         out.have_spr = spec_est(ra.data(), rpos, na, (na - rpos + 1) > 60,
                                 "spcrsd", out.spr);
+        // spcrsd.f:110-119 -- the residual Tukey peaks, and its own gates: the
+        // span must be at least 80 long (`ntmp.ge.80`, note `>=` where
+        // spcdrv.f:252 uses a strict `>`) and Sp must be 12.
+        //
+        // CB-28, transcribed: the `IF(ipos.gt.1)` block copies a(ipos..na) into
+        // Temp and the call on the very next line passes `a`, not `Temp` -- so
+        // the shift to the diagnostic start date is computed and thrown away,
+        // and the residual Tukey spectrum is always taken from element 1. Only
+        // the LENGTH (ntmp) reflects ipos. spcdrv's three call sites do the
+        // same repack correctly, which is what makes this one a slip rather
+        // than a convention.
+        const int ntmp = na - rpos + 1;
+        if (ntmp >= 80 && sp == 12) {
+            TukeyPeaks tpk;
+            std::vector<double> rst, rfrq;
+            if (tukey_spectrum(ra.data(), 1, ntmp, ltk120, rst, rfrq, &tpk, sp,
+                               /*min_nz=*/80))
+                out.tukey.insert(out.tukey.begin(), {"rsd", tpk});
+        }
     }
 
     // --- savpk.f: the accumulated peak-label lists -------------------------
@@ -531,6 +565,13 @@ bool run_spectrum(X13Context& ctx) {
         out.peaks_seas = cs.empty() ? "none" : cs;
         out.peaks_td = ct.empty() ? "none" : ct;
     }
+
+    // svtukp.f -- the `peaks.tukey.*` lists, over the Itukey entries above.
+    // x11ari.f:76's lsadj is `Lx11.or.Lseats`, i.e. "this run produced an
+    // adjustment"; it is the only thing that makes svtukp's oriIdx (CB-28's
+    // sibling, see spectrum_peaks.cpp) anything but NOTSET.
+    out.tukey_labels =
+        tukey_peak_labels(out.tukey, lx11 || ctx.captured.has_seats);
 
     out.ran = true;
     return true;

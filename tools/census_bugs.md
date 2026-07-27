@@ -806,3 +806,83 @@ span starts at the series start and there are no span statistics at all.
   to NOTSET would leave every `npssadj`/`npssadjevadj` row unchanged (the inner
   guards already suppress them), which is exactly why this is worth writing
   down rather than "fixing".
+
+## CB-27 -- `svtukp.f`'s `oriIdx` compares a TABLE index against a FREQUENCY index
+
+```fortran
+      oriIdx=NOTSET
+...
+       ELSE IF(Itukey(i).eq.LSPTS0.or.Itukey(i).eq.LSPT0C)THEN
+        CALL copy(Ptso,6,1,thisPk)
+...
+        IF(.not.Lsadj)oriIdx=i          ! svtukp.f:43  -- i indexes ITUKEY
+...
+        DO k=1,6
+         IF(k.ne.oriIdx)THEN            ! svtukp.f:85  -- k indexes FREQUENCIES
+          IF(thisPk(k).gt.0.90D0)npk90=npk90+1
+          IF(thisPk(k).gt.0.99D0)npk=npk+1
+         END IF
+        END DO
+```
+
+`i` is the position of the ORIGINAL series' spectrum in the `Itukey` table list
+(1..Ntukey, at most four entries: rsd, ori, sa, irr). `k` is one of the six
+seasonal frequencies. The two index completely different things.
+
+The evident intent is "on a run that produces no seasonal adjustment
+(`Lsadj = Lx11.or.Lseats` false), leave the original series out of the
+`peaks.tukey.*` lists" -- searching an unadjusted original for a seasonal peak
+says nothing. What the code does instead is **drop one seasonal FREQUENCY --
+whichever number happens to equal that table's slot -- from the peak counts of
+EVERY table in the list**, the original included.
+
+On a model-only run the list is `(rsd, ori)`, so `oriIdx` is 2 and the
+k=2 frequency (2/12, the four-month cycle) is excluded from both tables' `npk`
+and `npk90` tallies. A `spcrsd.tukey.s2` of 0.995 therefore does not put `rsd`
+into `peaks.tukey.seas`, while the same value at s1 or s3 would.
+
+`oriIdx` stays NOTSET on any run that DID adjust, so the defect cannot reach an
+X-11 or SEATS spec -- which is why it survives: those are the runs anyone looks
+at.
+
+- **Port:** transcribed verbatim in `tukey_peak_labels`
+  (`core/src/driver/spectrum_peaks.cpp`), including the NOTSET sentinel, so the
+  comparison is against an index that can never match on an adjustment run.
+- **Pinned by:** `tests/parity/test_spectrum_peaks.py`'s `peaks.tukey.*` keys
+  over the model-only corpus specs.
+
+## CB-28 -- `spcrsd.f` builds the shifted residual span and then passes the unshifted one
+
+```fortran
+       ntmp=na-ipos+1
+       IF(ntmp.ge.80)THEN
+        IF(ipos.gt.1)THEN
+         DO i=ipos,Na
+          Temp(i-ipos+1)=a(i)           ! spcrsd.f:115-117 -- repack into Temp
+         END DO
+        END IF
+        CALL getTPeaks(a,ntmp,Sp,Hrsd,mrsd,Pttdr,Ptsr,mvrsd)   ! :119 -- passes `a`
+```
+
+`ipos` is where the diagnostic span (`Bgspec`, eight years back from the series
+end by default) starts inside the residual vector. The block repacks
+`a(ipos..na)` into `Temp` so the Tukey spectrum can be taken over that span --
+and then hands `getTPeaks` **`a`**, not `Temp`. The repack is dead: `Temp` is
+never read again on this path.
+
+So only the LENGTH reflects `ipos`. The residual Tukey spectrum is always taken
+from `a(1 .. na-ipos+1)` -- the FIRST `ntmp` residuals -- rather than from the
+last `ntmp`. Whenever `Bgspec` is later than the residual start (any series
+longer than the eight-year default window, i.e. most of this corpus), the
+`spcrsd.tukey.*` probabilities describe a different, earlier stretch of the
+residuals than the `spcrsd.*` AR-spectrum peaks printed beside them.
+
+The three `getTPeaks` call sites in `spcdrv.f` (`:252-255`, `:389-392`,
+`:507-510`) do the identical repack and pass the repacked array, which is what
+makes this a slip rather than a convention.
+
+- **Port:** reproduced in `run_spectrum.cpp` -- the residual Tukey call passes
+  the residual buffer from element 1 with length `ntmp`, and the comment at the
+  call site names this entry.
+- **Pinned by:** `tests/parity/test_spectrum_peaks.py`'s `spcrsd.tukey.s1`-`s6`
+  and `.td` keys (239 goldens). Fixing the argument moves them.
