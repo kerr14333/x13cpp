@@ -5,6 +5,7 @@
 #include "x13/channels.hpp"
 #include "x13/savestate.hpp"
 #include "diag/checkres.hpp"   // CheckDiagnostics (check{} residual diagnostics)
+#include "diag/estdgn.hpp"     // EstDiagnostics (outlier counts + ARMA roots)
 #include "common/gen/adj_cmn.hpp"
 #include "common/gen/adxser_cmn.hpp"
 #include "common/gen/agr_cmn.hpp"
@@ -204,6 +205,9 @@ struct X13Context {
     // core/src/diag/checkres.hpp.
     checkopt_cmn chkopt{};
     CheckDiagnostics check{};
+    // savotl.f outlier counts + prtrts.f ARMA roots. Same class as `check`:
+    // .udg canaries with no downstream consumer. See core/src/diag/estdgn.hpp.
+    EstDiagnostics estdgn{};
     // The INTERNAL (pre-publication) D13 and D12 as they stand at the end of
     // x11pt3, i.e. before the AO/TC outliers are folded back into the published
     // D13 and the level shift into the published D12. x11pt4 reads those

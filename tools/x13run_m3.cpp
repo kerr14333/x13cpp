@@ -115,6 +115,42 @@ static void dump_check(const x13::X13Context& ctx) {
                         ck.friedman_df, ck.friedman_pv));
 }
 
+// savotl.f / prtrts.f savelog block -- the outlier counts and the ARMA operator
+// roots, in the oracle's own formats:
+//   savotl 1080: (a,i2)                        outlier.ao / .ls / ... / .total
+//   prtrts 1031: (a,a,a,a,i2.2,a,a)            roots.<filter>.<period>.<NN>
+// The four root values come from `dtoc`, which writes E22.15 with a forced
+// sign, TAB-separated.
+static void dump_estdgn(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    const auto& ed = ctx.estdgn;
+    if (!ed.ran) return;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+
+    line(fwrite_fmt("(a,i2)", "outlier.ao: ", ed.ao));
+    line(fwrite_fmt("(a,i2)", "outlier.ls: ", ed.ls));
+    line(fwrite_fmt("(a,i2)", "outlier.tc: ", ed.tc));
+    line(fwrite_fmt("(a,i2)", "outlier.so: ", ed.so));
+    line(fwrite_fmt("(a,i2)", "outlier.rp: ", ed.rp));
+    line(fwrite_fmt("(a,i2)", "outlier.tls: ", ed.tls));
+    if (ed.have_user)
+        line(fwrite_fmt("(a,i2)", "outlier.user: ", ed.user));
+    line(fwrite_fmt("(a,i2)", "outlier.total: ", ed.total));
+    if (ed.have_autoout)
+        line(fwrite_fmt("(a,i2)", "autoout: ", ed.autoout));
+
+    for (const auto& r : ed.roots) {
+        const std::string key =
+            fwrite_fmt("(a,a,a,a,i2.2,a)", "roots." + r.filter, ".", r.period,
+                       ".", r.index, ": ");
+        line(key + fwrite_fmt("(sp,e22.15)", r.real) + "\t" +
+             fwrite_fmt("(sp,e22.15)", r.imag) + "\t" +
+             fwrite_fmt("(sp,e22.15)", r.modulus) + "\t" +
+             fwrite_fmt("(sp,e22.15)", r.frequency));
+    }
+}
+
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr, "usage: x13run_m3 <specfile.spc>\n");
@@ -179,6 +215,7 @@ int main(int argc, char** argv) {
     std::printf("bic: %.14E\n", lk.bic);
     std::printf("hq: %.14E\n", lk.hnquin);
     dump_check(ctx);
+    dump_estdgn(ctx);
 
     // ARMA coefficients in operator/lag order (AR then MA), skipping the fixed
     // differencing slots; label each free coef by type + lag.

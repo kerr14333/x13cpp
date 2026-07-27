@@ -15,6 +15,14 @@ residuals, none of which existed in this port before:
   * ``durbinwatson``                 -- the first-order residual serial test
   * ``friedman``                     -- Kendall's statistic, df, chi-square p
 
+It also covers the rest of the ESTIMATION savelog block, which was equally
+absent (core/src/diag/estdgn.cpp):
+
+  * ``outlier.ao``/``.ls``/``.tc``/``.so``/``.rp``/``.tls``/``.user``/
+    ``.total`` and ``autoout`` -- savotl.f's counts by regressor TYPE
+  * ``roots.<filter>.<period>.<NN>`` -- prtrts.f's roots of every ARMA
+    operator (real, imaginary, modulus, frequency), TAB-separated
+
 WHY IT REACHES SO FAR. None of the corpus specs need a ``check{}`` spec for any
 of this: ``editor.f:909-910`` sets ``Mxcklg = 2*Sp`` on ANY model run with
 ``Lsumm > 0`` -- the ``-s`` flag every golden here was blessed with -- so the
@@ -79,10 +87,16 @@ _TREES = ["generated", "extra", "census-examples", "ces"]
 # matched by prefix.
 _SCALARS = ["qlimit", "nlbq", "lblags", "nbpq", "bplags", "acflimit",
             "nsigacf", "sigacflags", "nsigpacf", "sigpacflags",
-            "skewness", "a", "kurtosis", "durbinwatson", "friedman"]
-_FAMILIES = ["lbq$", "bpq$", "sigacf$", "sigpacf$"]
+            "skewness", "a", "kurtosis", "durbinwatson", "friedman",
+            # savotl.f -- the outlier counts by regressor type
+            "outlier.ao", "outlier.ls", "outlier.tc", "outlier.so",
+            "outlier.rp", "outlier.tls", "outlier.user", "outlier.total",
+            "autoout"]
+# prtrts.f roots are `roots.<filter>.<period>.<NN>`, so they are matched by
+# prefix like the `$NN` families.
+_FAMILIES = ["lbq$", "bpq$", "sigacf$", "sigpacf$", "roots."]
 
-_KEY_RE = re.compile(r"^([a-z]+\$?[0-9]*):(.*)$")
+_KEY_RE = re.compile(r"^([a-z][a-z.]*\$?[0-9]*):(.*)$")
 
 # Numeric fallback bound -- see the tolerance note in the module docstring.
 # The print ULP of the widest field (f7.4/E15.8 -> 5e-4 on the value) or the

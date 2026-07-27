@@ -12,6 +12,7 @@
 #include "transform/trnaic.hpp"     // trnaic (automatic transform selection)
 #include "regarima/priadj.hpp"
 #include "diag/checkres.hpp"   // check_residuals (arima.f:1044-1102)
+#include "diag/estdgn.hpp"     // est_diagnostics (savotl.f counts + prtrts.f roots)
 #include "regarima/regvar.hpp"
 #include "x11/x11reg.hpp"            // pritd, tdset_td (x11regression tdprior)
 #include "x11/xrgdrv.hpp"            // xrgdrv (x11regression OLS prior TD, Ixreg>=2)
@@ -632,6 +633,13 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 else ctx.chkopt.mxcklg = 2 * sp;
             }
             check_residuals(ctx, a.data(), na, nefobs);
+            if (ctx.error.lfatal) return false;
+
+            // savotl.f (the outlier counts) + prtrts.f (the ARMA operator
+            // roots) -- the other half of the estimation savelog block, and
+            // like check{} above it had no C++ at all. `lidotl` gates only
+            // whether the `autoout` line is emitted (savotl.f:152).
+            est_diagnostics(ctx, ctx.captured.has_outlier);
             if (ctx.error.lfatal) return false;
 
             // NOTE (deferred): forecasting on a post-outlier model with other
