@@ -38,7 +38,14 @@ namespace x13 {
 bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& base) {
     if (!parse_spec(ctx, spec_text, base)) return false;
     if (!ctx.captured.has_series) return false;
-    if (!ctx.captured.has_x11) return false;
+    // x12run.f:181 calls x11ari with neither Lx11 nor Lseats -- a spec that asks
+    // for no adjustment still goes through the pre-stage and out the other side
+    // into the DIAGNOSTICS (genqs / spcdrv / gennpsa), which is the whole reason
+    // that path exists. So a missing x11{} is not a refusal here; it selects
+    // x11ari.f:253's `ELSE IF(Lx11)` being false, i.e. no x11pt3 and no x11pt4.
+    // (A seats{} spec belongs to run_seats and never reaches this driver.)
+    const bool has_x11 = ctx.captured.has_x11;
+    if (!has_x11 && ctx.captured.has_seats) return false;
 
     // Model path: estimate the regARIMA model + forecast (arima.f front) via the
     // shared run_m2 body before the X-11 spine. The clean transformed series is
@@ -56,7 +63,7 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // setxpt -> x11int -> x11pt1 -> the model extend/adjreg glue -> x11pt2).
     // Lives in driver/x11_prestage.cpp because run_seats takes the identical
     // path: the oracle has ONE adjustment entry and only branches after x11pt2.
-    if (!x11_prestage(ctx, has_model, trnsrs, /*lseats=*/false)) return false;
+    if (!x11_prestage(ctx, has_model, trnsrs, /*lseats=*/false, has_x11)) return false;
 
     const int* begspn = ctx.mdldat.begspn.data();
     const int nspobs = ctx.mdldat.nspobs;
@@ -66,37 +73,41 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // the D7-return state x11pt2 leaves. (D8/D9 read x11pt2's /mq10/ Stex, which
     // is function-local in this port and does not persist -- the D10..D13/D16
     // finals do not depend on it, so they gate correctly regardless.)
-    x11pt3(ctx, lgraf, /*lttc=*/false);
-    if (ctx.error.lfatal) return false;
+    // x11ari.f:253 -- `ELSE IF(Lx11)`. With no x11{} spec there is no D8-D16 and
+    // no Part E/F; control drops straight through to the diagnostics below.
+    if (has_x11) {
+        x11pt3(ctx, lgraf, /*lttc=*/false);
+        if (ctx.error.lfatal) return false;
 
-    // x11pt4.f's savelog point: freeze the D8/B1 seasonality-test battery here,
-    // before the sliding-spans / history replays below re-run x11pt3 and
-    // overwrite /tests/ with a sub-span's statistics.
-    ctx.x11_f2tests = ctx.tests;
-    ctx.x11_f2tests_set = true;
+        // x11pt4.f's savelog point: freeze the D8/B1 seasonality-test battery here,
+        // before the sliding-spans / history replays below re-run x11pt3 and
+        // overwrite /tests/ with a sub-span's statistics.
+        ctx.x11_f2tests = ctx.tests;
+        ctx.x11_f2tests_set = true;
 
-    // x11pt4.f's PART F: the summary measures (f2.a*/b*/c*/d/e/f/g, MCD) and the
-    // f3cal quality statistics (M1-M11, Q, Q2). Same snapshot discipline -- and
-    // the same placement, before the span replays. x11_sti_int is empty only
-    // when x11pt3 took its Khol==1 early return, where the oracle emits no F
-    // block either.
-    // Part E first (x11pt4.f:162-319): the E5-E8 change tables, E11, E18 and the
-    // total adjustment factors, all read off the LIVE buffers before Part F makes
-    // its working copies. ctx.x11srs.stc is the PUBLISHED (LS/TC-folded) trend,
-    // i.e. the oracle's Stc2, which is what E7 wants when the shift belongs in
-    // the trend; ctx.x11_stc_int is the internal one.
-    if (!ctx.x11_sti_int.empty())
-        x11pt4_etables(ctx, ctx.x11_stc_int.data(), ctx.x11srs.stc.data(),
-                       /*lttc=*/false);
-    if (!ctx.x11_sti_int.empty() &&
-        x11pt4_partf(ctx, ctx.x11_sti_int.data(), ctx.x11_stc_int.data())) {
-        ctx.x11_f2inpt2 = ctx.inpt2;
-        ctx.x11_f2work2 = ctx.work2;
-        ctx.x11_f2mcd = ctx.x11opt.mcd;
-        ctx.x11_f2ratic = ctx.x11opt.ratic;
-        ctx.x11_f2ratis = ctx.x11opt.ratis;
-        ctx.x11_f3_set = true;
-    }
+        // x11pt4.f's PART F: the summary measures (f2.a*/b*/c*/d/e/f/g, MCD) and the
+        // f3cal quality statistics (M1-M11, Q, Q2). Same snapshot discipline -- and
+        // the same placement, before the span replays. x11_sti_int is empty only
+        // when x11pt3 took its Khol==1 early return, where the oracle emits no F
+        // block either.
+        // Part E first (x11pt4.f:162-319): the E5-E8 change tables, E11, E18 and the
+        // total adjustment factors, all read off the LIVE buffers before Part F makes
+        // its working copies. ctx.x11srs.stc is the PUBLISHED (LS/TC-folded) trend,
+        // i.e. the oracle's Stc2, which is what E7 wants when the shift belongs in
+        // the trend; ctx.x11_stc_int is the internal one.
+        if (!ctx.x11_sti_int.empty())
+            x11pt4_etables(ctx, ctx.x11_stc_int.data(), ctx.x11srs.stc.data(),
+                           /*lttc=*/false);
+        if (!ctx.x11_sti_int.empty() &&
+            x11pt4_partf(ctx, ctx.x11_sti_int.data(), ctx.x11_stc_int.data())) {
+            ctx.x11_f2inpt2 = ctx.inpt2;
+            ctx.x11_f2work2 = ctx.work2;
+            ctx.x11_f2mcd = ctx.x11opt.mcd;
+            ctx.x11_f2ratic = ctx.x11opt.ratic;
+            ctx.x11_f2ratis = ctx.x11opt.ratis;
+            ctx.x11_f3_set = true;
+        }
+    }  // has_x11
 
     // slidingspans{} (ssap.f/sspdrv.f/ssrit.f): replay the model+X11 pipeline
     // over each sub-span (driver/run_x11_span.hpp -- the re-entrant driver),

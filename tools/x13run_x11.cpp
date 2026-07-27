@@ -52,8 +52,16 @@ std::string basename_of(const std::string& p) {
 // Begspn. Anchoring on `first` instead labelled every row Nbcst periods late,
 // so a date-keyed diff against the oracle compared row k to row k+Nbcst and
 // reported a 30-70% "drift" on values that were in fact bit-identical.
+// Every table this emits belongs to the X-11 decomposition, and run_x11 now
+// also serves the MODEL-ONLY path (x11ari.f reached with neither Lx11 nor
+// Lseats), where x11pt3/x11pt4 do not run and the D/E buffers hold nothing but
+// their initial values. `b1` is the exception: x11pt1 builds it either way, and
+// the oracle prints it on a model-only run too.
+bool g_dump_x11_tables = true;
+
 void dump(const char* tag, const int* begspn, int sp, int first, int last,
           const double* arr /*1-based*/, int anchor) {
+    if (!g_dump_x11_tables && std::string(tag) != "b1") return;
     for (int i = first; i <= last; ++i) {
         int idate[2];
         x13::addate(begspn, sp, i - anchor, idate);
@@ -342,6 +350,7 @@ int main(int argc, char** argv) {
     const int* begspn = ctx.mdldat.begspn.data();
     const int pos1ob = ctx.x11ptr.pos1ob;
     const int posfob = ctx.x11ptr.posfob;
+    g_dump_x11_tables = ctx.captured.has_x11;
 
     // Gate targets produced by the x11pt1 + x11pt2 + x11pt3 spine:
     //   b1  -- prior-adjusted B1 input. No-model path: Series == B1. Model path:

@@ -108,6 +108,16 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     // Finhol true x11pt2 folds Fachol into Faccal and x11pt3's `.not.Finhol`
     // guard skips the divide that would take it back out, so the holiday effect
     // stays in the combined calendar factor (D16) and is removed from D11/D13.
+    // gtinpt.f:398-406 -- every Adj* indicator DEFAULTS TO 1 ("this effect is
+    // removed"), and getreg.f:299-309 sets one to -1 for a `noapply=` type.
+    // chkadj (x11drv.cpp) then normalises them against what the fitted model
+    // actually carries, and its toggles are idempotent from either starting
+    // value (`==1 && n==0 -> 0`, `==0 && n>0 -> 1`), which is why the port ran
+    // this long on the struct's zero-init. What reads them BEFORE chkadj does
+    // care: gtinpt.f:1252's Ldestm rule below.
+    ctx.x11adj.adjtd = 1;  ctx.x11adj.adjhol = 1; ctx.x11adj.adjao = 1;
+    ctx.x11adj.adjls = 1;  ctx.x11adj.adjtc = 1;  ctx.x11adj.adjso = 1;
+    ctx.x11adj.adjsea = 1; ctx.x11adj.adjcyc = 1; ctx.x11adj.adjusr = 1;
     ctx.x11adj.finhol = true;
     ctx.prior.priadj = 0;    // gtinpt.f: Priadj=0 (no predefined prior adjustment)
     ctx.prior.kfmt = 0;      // gtinpt.f: Kfmt=0
@@ -316,18 +326,25 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                         "Need to specify a series to identify outliers"); inptok = false; }
                 gt_outlier(ctx, inptok);
                 if (ctx.error.lfatal) return;
+                ldestm = true;              // gtinpt.f:704
                 if (!havreq) havreq = true;
                 ctx.captured.spec_order.push_back("outlier");
                 break;
             case 9:  // check
                 gt_check(ctx, inptok);
                 if (ctx.error.lfatal) return;
+                ldestm = true;              // gtinpt.f:712
                 if (!lmodel) lmodel = true;
                 if (!havreq) havreq = true;
                 break;
             case 10:  // forecast
                 gt_forecast(ctx, inptok);
                 if (ctx.error.lfatal) return;
+                // gtinpt.f:721 -- note it reads hvfcst BEFORE this spec sets it,
+                // so a bare forecast{} with neither maxlead nor maxback still
+                // arms Ldestm only through Nfcst/Nbcst being explicit.
+                if (ctx.extend.nfcst > 0 || ctx.extend.nbcst > 0 || hvfcst)
+                    ldestm = true;
                 if (!lmodel) lmodel = true;
                 if (!havreq) havreq = true;
                 hvfcst = true;
@@ -387,6 +404,8 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             case 12:  // history
                 gt_history(ctx, havesp, inptok);
                 if (ctx.error.lfatal) return;
+                if (ctx.rev.lrvfct || ctx.rev.lrvaic)
+                    ldestm = true;          // gtinpt.f:753
                 ctx.captured.spec_order.push_back("history");
                 break;
             case 19:  // metadata
@@ -405,6 +424,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 // pickmdl provides the ARIMA model (via the candidate .mdl file),
                 // so it satisfies the "model provision" check (gtinpt.f:877).
                 if (!havmdl) havmdl = true;
+                if (lautox) ldestm = true;  // gtinpt.f:878-881
                 ctx.captured.spec_order.push_back("pickmdl");
                 break;
             case 20:  // spectrum
@@ -637,6 +657,33 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 ctx.x11adj.finhol = false;
         }
 
+        // gtinpt.f:1242-1257. With no regression{} spec there is nothing to
+        // remove, so every Adj* indicator is cleared (a no-op at parse time in
+        // this port -- chkadj derives them from the fitted model later -- but
+        // transcribed because the ELSE arm is not). That ELSE arm is the last
+        // Ldestm rule: an X-11 run carrying a regression effect that has to be
+        // removed from, or kept in, the final series must ESTIMATE the model
+        // even though no estimate{}/forecast{}/outlier{} spec asked for one.
+        // `generated/airline_user-reg-x11` is exactly that case -- a user
+        // regressor plus `forecast{maxlead=0}`, which suppresses both of the
+        // earlier rules (:721 sees Nfcst==0, :1151 sees Nfcst set).
+        {
+            auto& xa = ctx.x11adj;
+            if (!havreg) {
+                xa.adjtd = 0; xa.adjhol = 0; xa.adjao = 0; xa.adjls = 0;
+                xa.adjtc = 0; xa.adjso = 0; xa.adjsea = 0; xa.adjcyc = 0;
+                xa.adjusr = 0;
+            } else if (!ldestm && lx11) {
+                if (xa.adjtd > 0 || xa.adjhol > 0 || xa.adjao > 0 ||
+                    xa.adjls > 0 || xa.adjtc > 0 || xa.adjso > 0 ||
+                    xa.adjsea > 0 || xa.adjcyc > 0 || xa.adjusr > 0 ||
+                    xa.finusr || xa.finao || xa.finls || xa.fintc ||
+                    (!(ctx.x11log.axrghl || ctx.x11log.axruhl) && xa.finhol) ||
+                    ctx.x11opt.khol == 1)
+                    ldestm = true;
+            }
+        }
+
         // gtinpt.f:1282-1286 / gtspec.f:324-327 -- resolve Bgspec, the start of
         // the spectrum/QS diagnostic span: eight years (95 periods) back from
         // the end of the series span, clamped forward to the series start. The
@@ -697,6 +744,9 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
         if (ctx.extend.nfcst == prm::NOTSET) {
             if (lmodel) {
                 if (lx11 || lseats) {
+                    // gtinpt.f:1151 -- an adjustment run with a model estimates
+                    // one, whether or not any spec asked for it explicitly.
+                    if (!ldestm) ldestm = true;
                     if (lseats) ctx.extend.nfcst = std::max(12, 3 * ctx.model.sp);
                     else ctx.extend.nfcst = ctx.model.sp;
                 } else if (hvfcst) {
@@ -708,6 +758,10 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 ctx.extend.nfcst = 0;
             }
         }
+
+        // The parse-tail rules above (gtinpt.f:1151) can still ARM Ldestm after
+        // the dispatch loop has made its last copy, so re-publish it here.
+        ctx.arima.ldestm = ldestm;
 
         // gtinpt.f 1172-1181: if an X-11 regression is done, set its forecast
         // horizon (Nfcstx) to at least one seasonal year. The transparent xrgdrv

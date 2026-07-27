@@ -82,7 +82,7 @@ static void x11_easter_prepass(X13Context& ctx) {
 }
 
 bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
-                  bool lseats) {
+                  bool lseats, bool lx11) {
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
     const int* begspn = ctx.mdldat.begspn.data();
@@ -381,7 +381,6 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
 
     // (x11int already ran above.) The parts spine follows.
     const bool lmodel = has_model, lgraf = false, lgrfxr = false;
-    const bool lx11 = !lseats;
     x11pt1(ctx, lmodel, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
 

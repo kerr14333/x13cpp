@@ -124,7 +124,8 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     // run_x11_span read -- so slidingspans{}/history{} under seats{} were
     // silently dropped. Runs AFTER seats_restore_mean so the mean add-back still
     // happens on the pristine post-estimation tsrs.
-    if (!x11_prestage(ctx, /*has_model=*/true, trnsrs, /*lseats=*/true)) return false;
+    if (!x11_prestage(ctx, /*has_model=*/true, trnsrs, /*lseats=*/true,
+                      /*lx11=*/false)) return false;
 
     if (!seats_decompose(ctx)) return false;
 

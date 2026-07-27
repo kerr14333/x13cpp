@@ -317,7 +317,16 @@ bool run_spectrum(X13Context& ctx) {
         l1 = ipos + spdfor;
     }
 
-    const bool taklog = (muladd != 1);
+    // spcdrv.f:193-200 -- the detrend takes logs on a DIFFERENT test depending
+    // on whether this is an adjustment run. With Lx11 it is the X-11 mode
+    // (Muladd != 1); without one there is no mode to read, so it keys on the
+    // TRANSFORM instead (Lam == 0, i.e. transform{function=log}). The two agree
+    // for a log X-11 run and disagree for every non-log model-only spec, where
+    // Muladd still carries its multiplicative default: measured `spcori.median`
+    // +24.29 (oracle) against -27.79 (engine, logging a sqrt-transformed
+    // series) on generated/airline_trans-sqrt.
+    const bool taklog = ctx.captured.has_x11 ? (muladd != 1)
+                                             : (ctx.arima.lam == 0.0);
     const bool ltk120 = ctx.rho.ltk120;
 
     auto& out = ctx.spcout;

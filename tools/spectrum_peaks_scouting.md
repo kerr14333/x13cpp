@@ -161,12 +161,13 @@ back to ~230s.
   `run_spectrum`, and spcdrv's SEATS branch reads `Hvstsa`/`Hvstir`/`Stocsa`/
   `Stocir` where the X-11 branch reads Stcime/Stime. A different INPUT, not just
   a different driver.
-* **Model-only specs** (85 of the 278): `x12run.f:181` calls `x11ari` — and
-  hence spcdrv — with neither `Lx11` nor `Lseats`, so the oracle emits `spcori`
-  and `spcrsd` on a spec that asks for no adjustment at all. Note that path
-  takes a DIFFERENT detrend (spcdrv.f:193-200 keys on `dpeq(Lam,ZERO)` rather
-  than `Muladd.ne.1`) and reads `Series` rather than the X-11 buffers when
-  `Spcsrs<2`. This port only reaches `run_spectrum` from `run_x11`.
+* ~~Model-only specs~~ -- **CLOSED** (the gate went 140 -> 222 specs). The
+  predicted detrend difference was real: spcdrv.f:193-200 keys on
+  `dpeq(Lam,ZERO)` without Lx11 rather than on `Muladd.ne.1`, and the engine was
+  logging a sqrt-transformed series (`spcori.median` +24.29 oracle vs -27.79
+  engine on `generated/airline_trans-sqrt` -- a sign flip, not a drift). Full
+  write-up, including the three other defects the same change surfaced, in
+  `tools/genqs_scouting.md`.
 
 Both of the last two skip with those reasons written at the skip rather than
 being filtered out of the gate's discovery, so the coverage they cost is

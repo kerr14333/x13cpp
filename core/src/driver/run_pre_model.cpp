@@ -614,7 +614,13 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // diagnostic (spr, spcrsd.f, run from arima.f:1126 after the final
             // fit). Their start date is Begspn + (Nspobs - na); run_spectrum
             // reads these off ctx.
-            if (na > 0) {
+            // arima.f:1105-1130 -- both the residual QS statistic and spcrsd
+            // live inside `IF(Ldestm)` (arima.f:321), so an identify-only spec
+            // (Lmodel set, Ldestm not) produces neither. This port estimates
+            // whenever a model spec is present, so the enclosing condition has
+            // to be spelled out; without it `extra/airline_identify` emits a
+            // full spcrsd block the oracle does not.
+            if (na > 0 && ctx.arima.ldestm) {
                 ctx.resid_a.assign(a.begin(), a.begin() + na);
                 ctx.resid_na = na;
                 // arima.f:1125 computes `idate` HERE, from the estimation-time
@@ -631,10 +637,22 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 // block (`qsrsd`/`qssrsd`). genqs.f computes the other six
                 // series but not this one: it lives here because it needs the
                 // residuals and the estimation-time span, both of which are
-                // gone by the time x11ari runs. Sp>1 is the oracle's own gate
-                // (a QS statistic on a non-seasonal series is meaningless, and
-                // calcqs returns 0 for mq==1 anyway).
-                if (ctx.model.sp > 1) {
+                // gone by the time x11ari runs. `Var > 0` and `Sp > 1` are the
+                // oracle's own gates on the block.
+                //
+                // `Ldestm` is the ENCLOSING one (arima.f:321 wraps the entire
+                // estimation half of arima in `IF(Ldestm)`), and it has to be
+                // spelled out here because this port estimates whenever a model
+                // spec is present. On an identify-only spec the oracle sets
+                // Lmodel but not Ldestm, does no estimation at all, and leaves
+                // Var at zero -- so it emits no qsrsd row, where the engine
+                // would report 255.92 off residuals that are essentially the
+                // series. NOTE the neighbouring diagnostics below (check{},
+                // the estimation savelog, aape) sit inside the same
+                // `IF(Ldestm)` and do NOT yet carry it; `extra/airline_identify`
+                // is the only corpus spec with a golden that reaches the
+                // difference, and it ships none of those blocks either.
+                if (ctx.model.sp > 1 && ctx.mdldat.var > 0.0) {
                     ctx.qs.qsrsd = calcqs(a.data(), na - nefobs, na, ctx.model.sp);
                     int qpos = 0;
                     const int bg[2] = {ctx.rho.bgspec(1), ctx.rho.bgspec(2)};

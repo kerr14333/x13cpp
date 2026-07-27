@@ -101,6 +101,12 @@ _KEYS = {
 
 _KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9._$]*):(.*)$")
 
+# Two specs whose disagreement is upstream of this gate; each skips with its
+# measurement written at the skip rather than being filtered out of discovery.
+_AICTEST_PRIOR_GAP = {"generated/airline_aictest-td",
+                      "generated/cover_reg-aicdiff"}
+_AUTOMD_IDDIFF_GAP = {"generated/usdeaths_automdl"}
+
 # The ONLY numeric fallback, and it is deliberately narrow -- see the tolerance
 # note in the module docstring.
 _RESID_KEYS = {"qsrsd", "qssrsd"}
@@ -187,13 +193,29 @@ def _run(rel: str) -> dict[str, str]:
     if "pickmdl{" in txt:
         pytest.skip("pickmdl{} model selection is parse-only (M1); the model "
                     "the engine fits is not the oracle's")
-    if "x11{" not in txt and "x11 {" not in txt:
-        pytest.skip("model-only run: x12run.f:181 calls x11ari with neither "
-                    "Lx11 nor Lseats, so the oracle emits qsori/qsorievadj/"
-                    "qsrsd anyway -- but qsorievadj reads Stcsi, which only the "
-                    "X-11 pre-stage fills and this port's model-only harness "
-                    "never runs. Next increment; see the module docstring.")
-
+    if rel in _AICTEST_PRIOR_GAP:
+        pytest.skip(
+            "regression{aictest=(td)} on the EXPLICIT-model path loses the "
+            "leap-year prior from B1/Stcsi. Measured on this spec: b1 1949.Feb "
+            "is 118.0000 (the raw value, unadjusted) against the oracle's "
+            "~119.05, every other month agreeing -- the Februaries-only "
+            "signature of a missing lpyear prior. The negative control is "
+            "generated/airline_reg-td1coef, which fits the SAME model chosen "
+            "explicitly and gives 119.0536, i.e. the model and its coefficients "
+            "are right and only the prior is lost. It surfaces as qsorievadj "
+            "192.06996 vs 189.27156. Not caused by this gate: no corpus spec "
+            "combines an EXPLICIT aictest with x11{} (only automdl+aictest is "
+            "covered), so nothing has ever compared this path's B1. Its own "
+            "increment; see tools/genqs_scouting.md.")
+    if rel in _AUTOMD_IDDIFF_GAP:
+        pytest.skip(
+            "automd selects (1 0 1)(0 1 1) here against the oracle's "
+            "(0 1 1)(0 1 1) -- an iddiff regular-differencing (d=0 vs d=1) "
+            "discrepancy only NSA data reaches, already known at "
+            "test_m4_iddiff's _AUTOMD_EST_CASES omission and in "
+            "tools/automdl_scouting.md. Visible here as the residual span "
+            "starting a period earlier, so `qssrsd` is emitted where the "
+            "oracle emits none.")
     r = subprocess.run([BIN, spec], capture_output=True, text=True,
                        cwd=os.path.dirname(spec))
     assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"

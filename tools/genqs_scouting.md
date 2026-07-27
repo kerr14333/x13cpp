@@ -148,12 +148,9 @@ Mutation-tested twice: a 1% perturbation of `calcqs` fails 113 of 157, of
   spectrum peak increment hit: a different INPUT, not just a different driver.
   `Seatsa`/`Seatir` map onto `ctx.seats_sa`/`ctx.seats_ir`; `Stocsa`/`Stocir`
   (the `/100` outlier-adjusted pair) need scouting first.
-* **Model-only specs.** `x12run.f:181` reaches `x11ari` with neither Lx11 nor
-  Lseats, so the oracle emits `qsori`/`qsorievadj`/`qsrsd` (plus twins) on a
-  spec asking for no adjustment. `qsorievadj` reads `Stcsi`, which only x11pt1
-  fills — and this port's model-only harness runs no part of the X-11
-  pre-stage. Same blocker as the spectrum peak block's model-only skip; closing
-  either one probably closes both.
+* ~~Model-only specs~~ -- **CLOSED**, and it did close both fronts at once
+  (`test_qs_diagnostics` 157 -> 249, `test_spectrum_peaks` 140 -> 222). See the
+  section below.
 * **The `Iagr==4` indirect names** (`qsindsadj`, `qssindirr`, ...), which belong
   with the composite front. Note the indirect call site passes `Tblind = LSLIQS`
   — a *savelog* index used as a `Savtab` subscript — which wants checking before
@@ -197,3 +194,74 @@ statistics at all. Transcribed with the widening cast made explicit.
 Mutation-tested: inverting the npsa verdict fails 153 of 157; moving the
 thresholds to 20.0/9.0 fails only 6 (the specs near the boundary), which is why
 the inversion is the mutation that proves the keys are compared.
+
+
+## The MODEL-ONLY path (CLOSED)
+
+`x12run.f:181` reaches `x11ari` with neither `Lx11` nor `Lseats`. That path runs
+the whole pre-stage -- x11pt1, and x11pt2 too, since `x11ari.f:199` is gated
+`(.not.Lcmpaq).or.Lx11` -- skips `x11ari.f:253`'s `ELSE IF(Lx11)` block
+(x11pt3/x11pt4), and drops through to the diagnostics, which is the entire
+reason it exists. `run_x11` refused a spec without `x11{}` outright, so 95
+goldens' `qs*` and 85 goldens' `spcori`/`spcrsd` had nowhere to come from.
+
+What landed: `x11_prestage` takes `lseats` and `lx11` as INDEPENDENT arguments
+(they had been complementary, `lx11 = !lseats`); `run_x11` accepts `!has_x11`
+and wraps x11pt3/x11pt4 in the oracle's own `ELSE IF(Lx11)`; and the harness
+suppresses the D/E table dumps when there is no `x11{}` (`b1` excepted -- x11pt1
+builds it either way, and the oracle prints it on a model-only run too).
+
+### Four defects it surfaced
+
+1. **The sp0 detrend keys on a different test without Lx11** (spcdrv.f:193-200).
+   With an X-11 spec the log is taken when `Muladd != 1`; without one there is
+   no mode to read and the oracle keys on the TRANSFORM, `dpeq(Lam,ZERO)`. The
+   two agree for a log X-11 run and disagree for every non-log model-only spec,
+   where Muladd still carries its multiplicative default -- the engine was
+   logging a sqrt-transformed series. Measured `spcori.median` +24.29 (oracle)
+   vs -27.79 (engine) on `generated/airline_trans-sqrt`: a sign flip, not a
+   drift.
+2. **`arima.f:321`'s `IF(Ldestm)` gates the ENTIRE estimation half of arima**,
+   and this port estimates whenever a model spec is present. On an identify-only
+   spec the oracle sets `Lmodel` but not `Ldestm`, does no estimation, and
+   leaves `Var` at zero -- so it writes neither `qsrsd` nor the `spcrsd` block,
+   where the engine emitted a full residual spectrum and a QS of 255.92 off
+   residuals that are essentially the series. The residual capture in
+   `run_pre_model` is now gated on `ldestm`.
+3. **Five of the ten `Ldestm` setters were unported.** `gtinpt.cpp` set it for
+   automdl/estimate/seats only; outlier (`:704`), check (`:712`), forecast
+   (`:721`), history (`:753`) and pickmdl (`:880`) were missing, as were both
+   parse-tail rules: `:1151` (an adjustment run WITH a model estimates one
+   whether or not any spec asked for it) and `:1252` (an X-11 run carrying a
+   regression effect to remove or keep must estimate too).
+   `generated/airline_user-reg-x11` needs `:1252` specifically --
+   `forecast{maxlead=0}` suppresses both earlier rules, since `:721` sees
+   `Nfcst==0` and `:1151` sees Nfcst already set.
+4. **`gtinpt.f:398-406`'s `Adj* = 1` defaults were unported**, which is what
+   rule `:1252` reads. Harmless until now only because `chkadj`'s toggles are
+   idempotent from either starting value (`==1 && n==0 -> 0`, `==0 && n>0 -> 1`);
+   anything that reads the indicators BEFORE chkadj sees the difference.
+
+### Left open: the explicit-aictest leap-year prior
+
+`regression{aictest=(td)}` on the EXPLICIT-model path (arima.f:569, not automdl)
+loses the leap-year prior from `Stcsi`. Measured on
+`generated/airline_aictest-td`: b1 1949.Feb is **118.0000** -- the RAW value --
+against the oracle's ~119.05, with every other month agreeing. That is the
+Februaries-only signature of a missing lpyear prior. The negative control is
+`generated/airline_reg-td1coef`, which fits the SAME model chosen explicitly and
+gives **119.0536**, so the model and its coefficients are right and only the
+prior is lost.
+
+It surfaces as `qsorievadj` 192.06996 vs 189.27156 and `spcori.median`
+-27.52489561 vs -27.62459168 on `airline_aictest-td` and `cover_reg-aicdiff`,
+which both skip with that measurement written at the skip.
+
+**Why nothing caught it before:** no corpus spec combines an EXPLICIT aictest
+with `x11{}` -- only `automdl` + aictest is covered -- so this path's B1 had
+never been compared against anything, and model-only specs produced no
+comparable output at all until this increment. Starting point for the follow-up:
+`tdaic` (`core/src/automdl/aictst.cpp:285-330`) does set `pr.priadj = 4` and
+rebuild `trnsrs`/`aj.adj`/`pr.kfmt` for the log branch, so check what the
+post-selection `restor` puts back -- `ssprep`/`restor` save and restore
+`Priadj`, which is the same trap the slidingspans Priadj bug turned on.
