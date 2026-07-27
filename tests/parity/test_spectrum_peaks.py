@@ -51,10 +51,19 @@ being filtered out of discovery):
 
   * The INDIRECT tukey names (``peaks.tukey.seas.ind`` etc., Iagr>3), which
     belong with the composite front -- 3 goldens carry them.
-  * SEATS specs (51 of the 278). ``run_seats`` does not call ``run_spectrum``
-    at all, and spcdrv's SEATS branch reads ``Hvstsa``/``Hvstir`` (the SEATS SA
-    and irregular) where the X-11 branch reads Stcime/Stime -- a different
-    input, not just a different driver. Next increment.
+SEATS specs (51 of the 278) are now IN, run through ``x13run_seats``. spcdrv's
+SEATS arms take the pair ``run_seats`` publishes -- ``Lrbstsa ? Stocsa : Seatsa``
+(spcdrv.f:322-327) and ``Lrbstsa ? Stocir : Seatir`` (:446-451), gated on
+``Hvstsa``/``Hvstir`` -- and get neither the Facls divide nor the ``ispos``
+refusal, both of which sit under ``Lx11``.
+
+The residual block stays ``spcrsd`` on a SEATS run, NOT ``spcextrsd``.
+``spcrsd.f:209-215`` picks its label off its own ``Lseats`` ARGUMENT and there
+are two call sites: ``arima.f:1126`` passes F (the regARIMA residuals, which is
+what this block is) and ``seatpr.f:145`` passes T for the SEATS EXTENDED
+residuals ``Srsdex``. The second is unported and untestable here -- its gate is
+``Prttab``/``Savtab(LSPERS)``, not ``Lsumm``, so ``-s`` alone never produces it
+and no corpus golden carries one ``spcextrsd`` key.
 
 Run:  python -m pytest tests/parity/test_spectrum_peaks.py -q
 """
@@ -122,20 +131,21 @@ def _close(key: str, want: str, got: str) -> bool:
     return abs(w - g) <= _RTOL * abs(w)
 
 
-def _find_binary() -> str:
-    for c in (os.path.join(_REPO, "build", "x13run_x11.exe"),
-              os.path.join(_REPO, "build", "x13run_x11"),
-              os.path.join(_REPO, "build", "Release", "x13run_x11.exe")):
+def _find_binary(stem: str) -> str:
+    for c in (os.path.join(_REPO, "build", stem + ".exe"),
+              os.path.join(_REPO, "build", stem),
+              os.path.join(_REPO, "build", "Release", stem + ".exe")):
         if os.path.exists(c):
             return c
-    env = os.environ.get("X13RUN_X11")
+    env = os.environ.get(stem.upper())
     if env and os.path.exists(env):
         return env
     raise FileNotFoundError(
-        "x13run_x11 binary not found; build it first (cmake --build build).")
+        f"{stem} binary not found; build it first (cmake --build build).")
 
 
-BIN = _find_binary()
+BIN = _find_binary("x13run_x11")
+BIN_SEATS = _find_binary("x13run_seats")
 
 
 def _read_block(lines) -> dict[str, str]:
@@ -184,11 +194,6 @@ CASES = _discover()
 def _run(rel: str) -> dict[str, str]:
     spec = os.path.join(_CORPUS, rel + ".spc")
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
-    if "seats{" in txt:
-        pytest.skip("run_seats does not call run_spectrum, and spcdrv's SEATS "
-                    "branch reads Hvstsa/Hvstir rather than Stcime/Stime -- "
-                    "a different input, not just a different driver. "
-                    "Next increment; see the module docstring.")
     if "pickmdl{" in txt:
         pytest.skip("pickmdl{} model selection is parse-only (M1); the model "
                     "the engine fits is not the oracle's")
@@ -199,7 +204,8 @@ def _run(rel: str) -> dict[str, str]:
             "reaches, already known at test_m4_iddiff's _AUTOMD_EST_CASES "
             "omission and in tools/automdl_scouting.md. Different residuals, "
             "hence spcrsd.median 47.27871166 vs 47.03301580 (5.2e-3).")
-    r = subprocess.run([BIN, spec], capture_output=True, text=True,
+    binary = BIN_SEATS if "seats{" in txt else BIN
+    r = subprocess.run([binary, spec], capture_output=True, text=True,
                        cwd=os.path.dirname(spec))
     assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"
     first = r.stdout.splitlines()[0].strip() if r.stdout else ""

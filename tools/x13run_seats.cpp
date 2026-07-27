@@ -127,6 +127,7 @@ int main(int argc, char** argv) {
     // same two blocks, same formats, shared with x13run_x11 through
     // tools/dump_diag.hpp. run_seats fills ctx.qs / ctx.np.
     dump_qs(ctx);
+    dump_spec_peaks(ctx);   // spcdrv.f, x11ari.f:282-287 -- between the two
     dump_np(ctx);
 
     // Model-decode + canonical-denominator + SPECTRU + DecompSpectrum +

@@ -245,6 +245,44 @@ porting anything.
 
 *(End of the original report. Verdicts are at the head of this section.)*
 
+## spcdrv's SEATS branch -- CLOSED (byte-exact)
+
+The last thing blocking the spectrum family. `run_seats` never called
+`run_spectrum` at all, so 51 corpus specs skipped and the R/Python bindings had
+the same hole (`x13_capi.cpp` dispatches `wantSeats ? run_seats : run_x11`).
+`test_spectrum_peaks` 225 -> 276, **zero new goldens**; the suite went
+5273/529 to 5324/478, i.e. exactly the 51 skips turned into passes.
+
+**It was much smaller than the scouting note implied -- finding 3 again.**
+`publish_seats_commons` (landed with the QS increment) already fills all four
+buffers, so spcdrv's SEATS arms are two ternaries: `Lrbstsa ? Stocsa : Seatsa`
+(spcdrv.f:322-327) and `Lrbstsa ? Stocir : Seatir` (:446-451), each behind its
+own gate (`Hvstsa` at :299, `Hvstir` at :437). Neither gets the Facls divide
+(:312 lives in the Iagr==4 arm and :318 in the Lx11 arm) nor the `ispos`
+refusal (:290-298, guarded on Lx11). sp0 needs nothing: with `Lx11` false the
+`IF(Lx11.and.Spcsrs.eq.2)` fold is skipped and the series is Stcsi plain, which
+`x11_prestage` has built on the SEATS path since that refactor.
+
+**The one real bug it exposed: the residual block was labelled `extrsd`.**
+`spcrsd.f:209-215` picks `extrsd` off its own `Lseats` ARGUMENT, and there are
+two call sites -- `arima.f:1126` passes **F** (the regARIMA residuals, which is
+what this block is) and `seatpr.f:145` passes **T** for the SEATS EXTENDED
+residuals `Srsdex`, a different input entirely. The port had read that as "on a
+SEATS run, use extrsd" and the code was unreachable until now, so nothing caught
+it. `spcextrsd` is correctly absent from the corpus: `seatpr.f:142` gates it on
+`Prttab`/`Savtab(LSPERS)`, **not** on `Lsumm`, so the `-s` flag alone never
+produces it and not one golden carries a single `spcextrsd` key.
+
+`dump_spec_peaks` moved into `tools/dump_diag.hpp` alongside `dump_qs`/`dump_np`
+-- spcdrv sits between genqs and gennpsa in `x11ari.f` and is common to both
+drivers for the same reason they are.
+
+Mutation-tested on both arms, and the shape-vs-scale lesson holds here too: a
+periodic 5% spike fails **51 of 51** through the SA arm and **51 of 51** through
+the irregular. A pure scaling would fail none -- gendff logs before it
+differences, so a scale factor is an additive constant that the differencing
+removes.
+
 ## getTPeaks — CLOSED
 
 `.tukey.*` (283 goldens for `spcori`, 239 `spcrsd`, 198 each for `spcsa`/

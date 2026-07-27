@@ -455,8 +455,15 @@ bool run_spectrum(X13Context& ctx) {
         // The SA series is E2 (Stcime, the SA modified for extreme values), NOT
         // the D11 save: x11pt4 runs before spcdrv, and spcdrv's Stci holds
         // Part-E's E2. `spectrumrobustsa=no` (Lrbstsa false) takes Stci instead.
-        const double* sa = lrbstsa ? ctx.adxser.stcime.data()
-                                   : ctx.x11srs.stci.data();
+        // spcdrv.f:322-327 -- the SEATS arm takes the pair run_seats publishes
+        // (Stocsa / Seatsa) instead, and note it gets NEITHER the Facls divide
+        // below (that sits in the Iagr==4 and Lx11 arms only) NOR the ispos
+        // refusal (guarded on Lx11). Its own gate is Hvstsa, spcdrv.f:299.
+        const double* sa = ctx.captured.has_seats
+                               ? (lrbstsa ? ctx.seatcm.stocsa.data()
+                                          : ctx.seatcm.seatsa.data())
+                               : (lrbstsa ? ctx.adxser.stcime.data()
+                                          : ctx.x11srs.stci.data());
         for (int i = 1; i <= posfob; ++i) srs[i - 1] = sa[i - 1];
         // spcdrv.f:318 -- the LEVEL SHIFT is taken back out of the SA series
         // before its spectrum, on the Lrbstsa (default) path only. Note this
@@ -470,7 +477,7 @@ bool run_spectrum(X13Context& ctx) {
                    posfob, muladd);
         // spcdrv.f:290-298 -- the same positivity refusal as the original, but
         // only on the Lx11 + Lrbstsa path.
-        bool gosa = true;
+        bool gosa = lx11 || !ctx.captured.has_seats || ctx.seatlg.hvstsa;
         if (lx11 && lrbstsa && muladd == 0)
             gosa = ispos(srs.data(), ipos, posfob);
         if (gosa) {
@@ -489,18 +496,30 @@ bool run_spectrum(X13Context& ctx) {
         // spcdrv.f:444's Sti is the internal D13. Measured on an airline spec
         // with ao/tc/ls regressors and `spectrum{robustsa=no}`: spcirr.median
         // -44.497 off the published D13 against the oracle's -37.352.
-        const double* ir = lrbstsa ? ctx.mq5a_stime.data() : ctx.sti_live();
-        for (int i = ipos; i <= posfob; ++i) {
-            tmp[i - 1] = ir[i - 1];
-            if (muladd != 1) tmp[i - 1] -= 1.0;
+        // spcdrv.f:446-451 -- the SEATS pair again, and again with its own gate
+        // (`goirr = Hvstir`, spcdrv.f:437). The `-1` re-centring below is shared:
+        // Stocir is the percent-scale irregular and Seatir the /100 ratio, so
+        // the two arms are the same series at different scales, exactly as in
+        // genqs (see the header of core/src/diag/genqs.cpp).
+        const double* ir = ctx.captured.has_seats
+                               ? (lrbstsa ? ctx.seatcm.stocir.data()
+                                          : ctx.seatcm.seatir.data())
+                               : (lrbstsa ? ctx.mq5a_stime.data()
+                                          : ctx.sti_live());
+        const bool goirr = lx11 || !ctx.captured.has_seats || ctx.seatlg.hvstir;
+        if (goirr) {
+            for (int i = ipos; i <= posfob; ++i) {
+                tmp[i - 1] = ir[i - 1];
+                if (muladd != 1) tmp[i - 1] -= 1.0;
+            }
+            out.have_sp2 = spec_est(tmp.data(), ipos, posfob, ltdfrq_main,
+                                    "spcirr", out.sp2);
+            // st2: Tukey spectrum of the same irregular (spcdrv.f:506-510).
+            TukeyPeaks tpk;
+            out.have_st2 = tukey_spectrum(tmp.data(), ipos, posfob, ltk120,
+                                          out.st2, out.frq_tukey, &tpk, sp);
+            if (out.have_st2) out.tukey.push_back({"irr", tpk});
         }
-        out.have_sp2 = spec_est(tmp.data(), ipos, posfob, ltdfrq_main, "spcirr",
-                                out.sp2);
-        // st2: Tukey spectrum of the same irregular series (spcdrv.f:506-510).
-        TukeyPeaks tpk;
-        out.have_st2 = tukey_spectrum(tmp.data(), ipos, posfob, ltk120, out.st2,
-                                      out.frq_tukey, &tpk, sp);
-        if (out.have_st2) out.tukey.push_back({"irr", tpk});
     }
     // --- spr: regARIMA model residuals (spcrsd.f, periodogram path) --------
     // No detrend, no log: the residuals `a` are used directly. Their start date
@@ -559,10 +578,17 @@ bool run_spectrum(X13Context& ctx) {
             return nullptr;
         };
         if (const SpecPeaks* p = find("spcrsd")) {
-            // mkspky.f: the SEATS residual spectrum is labelled `extrsd`.
-            const char* lab = ctx.captured.has_seats ? "extrsd" : "rsd";
-            if (p->ltdpk > 0) add(ct, lab);
-            if (p->lsapk > 0) add(cs, lab);
+            // Always `rsd`, on a SEATS run too. spcrsd.f:209-215 picks
+            // `extrsd` off its own `Lseats` ARGUMENT, not off the run's, and
+            // there are two call sites: arima.f:1126 passes F (these are the
+            // regARIMA residuals, which is what this block IS) and seatpr.f:145
+            // passes T for the SEATS EXTENDED residuals `Srsdex`, a different
+            // input entirely. That second one is unported and correctly
+            // untested -- seatpr.f:142 gates it on Prttab/Savtab(LSPERS), NOT
+            // on Lsumm, so the `-s` flag alone never produces it and no corpus
+            // golden carries a single `spcextrsd` key.
+            if (p->ltdpk > 0) add(ct, "rsd");
+            if (p->lsapk > 0) add(cs, "rsd");
         }
         if (const SpecPeaks* p = find("spcori")) {
             if (p->ltdpk > 0) add(ct, "ori");

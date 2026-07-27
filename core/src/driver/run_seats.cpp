@@ -19,6 +19,7 @@
 #include "driver/run_seats.hpp"  // seats_restore_mean, seats_decompose
 #include "driver/run_history.hpp"     // run_history (revdrv.f, Lseats)
 #include "driver/x11_prestage.hpp"  // x11_prestage (x11ari.f:60-199, shared with run_x11)
+#include "driver/run_spectrum.hpp"   // run_spectrum (spcdrv.f, x11ari.f:282-287)
 #include "diag/genqs.hpp"      // genqs / gennpsa (QS + NP seasonality, x11ari.f:277/322)
 #include "gen/model.hpp"       // prm::PRGTCN (mean-regressor type), prm::DIFF
 #include "regarima/regvar.hpp" // ratpos (rebuild the undifferenced Constant column)
@@ -255,14 +256,14 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     // branch and is common to both, so a SEATS run reaches genqs and gennpsa
     // exactly as an X-11 run does. Neither is gated on any spec (see genqs.cpp),
     // and the publish has to come first because the SEATS arms read /seatcm/.
-    //
-    // spcdrv sits BETWEEN them in the oracle and is deliberately not called
-    // here: its SEATS branch reads Hvstsa/Hvstir over a different construction
-    // again (spcdrv.f:299/436) and is the separate open front tracked in
-    // tools/spectrum_peaks_scouting.md. gennpsa reads none of spcdrv's state, so
-    // the order between the two that ARE ported is preserved.
+    // spcdrv sits BETWEEN them (x11ari.f:282-287) and reads the same published
+    // pair -- its SEATS arms are `Lrbstsa ? Stocsa : Seatsa` (spcdrv.f:322-327)
+    // and `Lrbstsa ? Stocir : Seatir` (:446-451), gated on Hvstsa/Hvstir. The
+    // oracle's call is under a plain IF(Ny.eq.12), so it is monthly-only where
+    // genqs and gennpsa are not -- run_spectrum applies that gate itself.
     publish_seats_commons(ctx);
     if (!genqs(ctx, /*lseats=*/true)) return false;
+    if (!run_spectrum(ctx)) return false;
     if (!gennpsa(ctx, /*lseats=*/true)) return false;
     return true;
 }
