@@ -151,6 +151,31 @@ static void dump_estdgn(const x13::X13Context& ctx) {
 }
 
 
+// prtmdl.f savelog block -- the model shape counters and the ARMA coefficient
+// table:
+//   prtmdl 1000: (a,i3)                              nonseasonaldiff / ... / nmodel
+//   prtmdl 1261: (a,a,a,a,i2.2,a,i2.2,a,sp,3(e21.14,a),a)
+// The coefficient key keeps the operator title's own CASE (MA$Nonseasonal$01$01),
+// unlike the roots key beside it, which lowercases both halves.
+static void dump_estmdl(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    const auto& ed = ctx.estdgn;
+    if (!ed.ran) return;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+
+    line(fwrite_fmt("(a,i3)", "nonseasonaldiff: ", ed.nonseasonaldiff));
+    line(fwrite_fmt("(a,i3)", "seasonaldiff: ", ed.seasonaldiff));
+    line(fwrite_fmt("(a,i3)", "nmodel: ", ed.nmodel));
+
+    for (const auto& c : ed.coefs) {
+        const std::string cfix = c.fixed ? "(fixed)" : "       ";
+        line(fwrite_fmt("(a,a,a,a,i2.2,a,i2.2,a,sp,3(e21.14,a),a)",
+                        c.filter, "$", c.period, "$", c.factor, "$", c.lag,
+                        ": ", c.value, " ", c.se, " ", c.t, " ", cfix));
+    }
+}
+
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr, "usage: x13run_m3 <specfile.spc>\n");
@@ -216,6 +241,7 @@ int main(int argc, char** argv) {
     std::printf("hq: %.14E\n", lk.hnquin);
     dump_check(ctx);
     dump_estdgn(ctx);
+    dump_estmdl(ctx);
 
     // ARMA coefficients in operator/lag order (AR then MA), skipping the fixed
     // differencing slots; label each free coef by type + lag.

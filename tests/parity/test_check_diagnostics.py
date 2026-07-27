@@ -22,6 +22,12 @@ absent (core/src/diag/estdgn.cpp):
     ``.total`` and ``autoout`` -- savotl.f's counts by regressor TYPE
   * ``roots.<filter>.<period>.<NN>`` -- prtrts.f's roots of every ARMA
     operator (real, imaginary, modulus, frequency), TAB-separated
+  * ``nonseasonaldiff`` / ``seasonaldiff`` / ``nmodel`` -- prtmdl.f's model
+    shape counters
+  * ``<AR|MA>$<period>$<factor>$<lag>`` -- prtmdl.f's ARMA coefficient table:
+    the estimate, its standard error and its t-value, plus the ``(fixed)``
+    marker. Note this key keeps the operator title's own CASE while the
+    ``roots.`` key beside it lowercases both halves.
 
 WHY IT REACHES SO FAR. None of the corpus specs need a ``check{}`` spec for any
 of this: ``editor.f:909-910`` sets ``Mxcklg = 2*Sp`` on ANY model run with
@@ -91,12 +97,18 @@ _SCALARS = ["qlimit", "nlbq", "lblags", "nbpq", "bplags", "acflimit",
             # savotl.f -- the outlier counts by regressor type
             "outlier.ao", "outlier.ls", "outlier.tc", "outlier.so",
             "outlier.rp", "outlier.tls", "outlier.user", "outlier.total",
-            "autoout"]
+            "autoout",
+            # prtmdl.f -- the model's differencing shape
+            "nonseasonaldiff", "seasonaldiff", "nmodel"]
 # prtrts.f roots are `roots.<filter>.<period>.<NN>`, so they are matched by
 # prefix like the `$NN` families.
-_FAMILIES = ["lbq$", "bpq$", "sigacf$", "sigpacf$", "roots."]
+# prtmdl.f's ARMA coefficient rows are `<AR|MA>$<period>$<factor>$<lag>` --
+# matched by prefix like the rest. The `seats$` variants belong to SEATS'
+# own getdiag block, which is a separate (unported) front, so they are NOT
+# claimed here.
+_FAMILIES = ["lbq$", "bpq$", "sigacf$", "sigpacf$", "roots.", "AR$", "MA$"]
 
-_KEY_RE = re.compile(r"^([a-z][a-z.]*\$?[0-9]*):(.*)$")
+_KEY_RE = re.compile(r"^([A-Za-z][A-Za-z.]*(?:\$[A-Za-z0-9]+)*):(.*)$")
 
 # Numeric fallback bound -- see the tolerance note in the module docstring.
 # The print ULP of the widest field (f7.4/E15.8 -> 5e-4 on the value) or the

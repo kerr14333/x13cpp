@@ -23,8 +23,28 @@ struct ArmaRoot {
     double real = 0.0, imag = 0.0, modulus = 0.0, frequency = 0.0;
 };
 
+// One ARMA coefficient row: `<filter>$<period>$<factor>$<lag>` and the
+// estimate / standard error / t-value the oracle prints beside it.
+struct ArmaCoef {
+    std::string filter;    // "AR" / "MA" -- the operator title's TAIL, as-is
+    std::string period;    // "Nonseasonal" / "Seasonal" -- its HEAD, as-is
+    int factor = 0;        // Oprfac(iopr)
+    int lag = 0;           // Arimal(ilag)
+    double value = 0.0, se = 0.0, t = 0.0;
+    bool fixed = false;    // isfixd at LAG level -> the "(fixed)" marker
+};
+
 struct EstDiagnostics {
     bool ran = false;
+
+    // prtmdl.f:752-754 -- the model's differencing shape.
+    int nonseasonaldiff = 0, seasonaldiff = 0, nmodel = 0;
+
+    // prtmdl.f:880-934. `have_se` is the oracle's `lprtse`, which collapses to
+    // false unless the model converged with a usable variance -- and then the
+    // se/t columns are written as literal ZEROs rather than omitted.
+    bool have_se = false;
+    std::vector<ArmaCoef> coefs;
 
     // savotl.f:130-152 -- counts by regressor TYPE. `total` is the oracle's
     // `iall`, which is NOT the sum of the others in general: savotl increments

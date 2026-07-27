@@ -1381,5 +1381,41 @@ diagnostics front (force / slidingspans / history) is now closed.
   known at `test_m4_iddiff.py`'s `_AUTOMD_EST_CASES` omission and in
   `tools/automdl_scouting.md`; skipped here with the measurement written at
   the skip rather than absorbed into a tolerance.
+- **The rest of the ESTIMATION savelog block -- outlier counts, ARMA roots, the
+  ARMA coefficient table -- CLOSED (byte-exact).** Same class as `check{}`
+  above and closed the same way: `.udg` canaries the oracle writes on any model
+  run, with no C++ at all and no gate that could see their absence. In
+  `core/src/diag/estdgn.{hpp,cpp}`, emitted from `x13run_m3` through
+  `fwrite_fmt` with the oracle's own formats, and folded into the same
+  `test_check_diagnostics.py` gate -- still **zero new goldens** (287 of 331
+  carry the outlier counts, 268 the MA rows, 260 the roots, 41 the AR rows).
+  - `savotl.f:79-152` -- `outlier.ao/.ls/.tc/.so/.rp/.tls/.user/.total` and
+    `autoout`. Two asymmetries transcribed rather than tidied: `iall` is
+    incremented INSIDE each type test rather than summed from the others, and
+    the automatic tally counts a DIFFERENT set (its `PRGTAS` seasonal-outlier
+    arm is commented out in the Fortran, so a seasonal outlier is never counted
+    as automatically identified).
+  - `prtrts.f` -- `roots.<filter>.<period>.<NN>`, four TAB-separated E22.15
+    values per root. **The key is built from the operator title split on its
+    LAST blank, and the two halves come out REVERSED**: "Nonseasonal MA"
+    becomes `roots.ma.nonseasonal`. The trailing number is the ROOT INDEX, not
+    `Oprfac`. `roots()` had been ported for years; only this call site was
+    missing.
+  - `prtmdl.f:752-754` + `:830-934` -- `nonseasonaldiff`/`seasonaldiff`/
+    `nmodel`, and the `<AR|MA>$<period>$<factor>$<lag>` coefficient rows
+    carrying the estimate, its standard error (`sqrt(Var*Armacm(i,i))`, indexed
+    by a counter that advances only on FREE lags) and its t-value. **This key
+    keeps the title's own CASE while the `roots.` key beside it lowercases both
+    halves** -- same title, two different conventions, three lines apart.
+    `isfixd.f`'s SAVEd `cpntfx`/`oprfix` are reproduced: a lag is marked
+    `(fixed)` only when neither its whole component nor its operator was
+    already marked at a coarser level, and an all-fixed model additionally
+    clears `lprtse`, which turns the se/t columns into literal zeros rather
+    than dropping them.
+  **Mutation-tested twice** (a 1% perturbation of an emitted root modulus, and
+  a 2% one of an ARMA standard error): each fails 274-275 of the 275 specs and
+  reverting restores them. That matters because these are additive keys on an
+  existing gate -- without the mutation there is no evidence the new columns
+  are compared at all rather than silently skipped by the key regex.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
