@@ -422,6 +422,9 @@ struct X13Context {
     // runs at x11ari.f:277 -- BEFORE sspdrv/revdrv, so unlike the D8B/D9A block
     // this needs no span-replay save/restore.
     QsStats qs;
+    // gennpsa.f's NP residual-seasonality verdict -- same placement, same
+    // no-restore reasoning.
+    NpStats np;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

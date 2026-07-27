@@ -54,6 +54,23 @@ struct QsStats {
 // genqs.f, the direct (Iagr<4) path. Returns false on an unported branch.
 bool genqs(X13Context& ctx, bool lseats);
 
+// gennpsa.f -- the NP residual-seasonality VERDICT, a yes/no rather than a
+// statistic: npsa.f differences the SA series, mean-deletes it, and compares
+// Kendall's statistic against a fixed critical value (24.73 monthly / 11.35
+// quarterly). Only the SA series and its extreme-value twin are tested, so the
+// whole block is absent from a run that produces no adjustment.
+struct NpStats {
+    bool ran = false;
+    bool lplog = false;             // `nplog`
+    int npsadj = prm::NOTSET, npsadj2 = prm::NOTSET;
+    int npsadjs = prm::NOTSET, npsadjs2 = prm::NOTSET;
+
+    bool lnp() const;
+    bool lnps() const;
+};
+
+bool gennpsa(X13Context& ctx, bool lseats);
+
 }  // namespace x13
 
 #endif  // X13_DIAG_GENQS_HPP

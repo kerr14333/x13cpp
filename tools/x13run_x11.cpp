@@ -186,6 +186,31 @@ static void dump_qs(const x13::X13Context& ctx) {
 }
 
 
+// gennpsa.f:133-178 -- the NP residual-seasonality savelog block. One format
+// (`1040 FORMAT(a,': ',a)`) and four yes/no verdicts plus `nplog`, all through
+// getstr(YSNDIC) on `NPsadj+1`. Absent entirely from a run that produces no
+// seasonal adjustment, since only the SA series is tested.
+static void dump_np(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    const auto& np = ctx.np;
+    if (!np.ran) return;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    auto verdict = [&](const char* key, int v) {
+        if (v == x13::prm::NOTSET) return;
+        line(fwrite_fmt("(a,': ',a)", key, v ? "yes" : "no"));
+    };
+    if (np.lnp()) {
+        line(fwrite_fmt("(a,': ',a)", "nplog", np.lplog ? "yes" : "no"));
+        verdict("npsadj", np.npsadj);
+        verdict("npsadjevadj", np.npsadj2);
+    }
+    if (np.lnps()) {
+        verdict("npssadj", np.npsadjs);
+        verdict("npssadjevadj", np.npsadjs2);
+    }
+}
+
+
 // svfreq.f / svpeak.f / smpeak.f / mxpeak.f / savpk.f -- the spectrum peak
 // canaries:
 //   svfreq 1000: (a,': ',i5)                  nspecfreq / ntdfreq / nsfreq
@@ -573,6 +598,7 @@ int main(int argc, char** argv) {
     dump_d11f(ctx);
     dump_sfmsr(ctx);
     dump_qs(ctx);
+    dump_np(ctx);
     dump_spec_peaks(ctx);
 
 

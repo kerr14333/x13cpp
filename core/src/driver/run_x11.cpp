@@ -26,7 +26,7 @@
 #include "x11/x11easter.hpp"      // holday (classic X-11 Easter estimation)
 #include "driver/run_history.hpp"  // run_history
 #include "driver/run_spectrum.hpp"  // run_spectrum
-#include "diag/genqs.hpp"           // genqs (the QS seasonality statistics)
+#include "diag/genqs.hpp"           // genqs / gennpsa (QS + NP seasonality)
 #include "composite/agr2.hpp"       // agr2_component / agr2_compare (composite)
 #include "composite/agr3.hpp"       // agr3, agrxpt (indirect adjustment)
 
@@ -127,6 +127,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // slidingspans{}/history{} are separate re-runs. No-op when spectrum{} was
     // absent (ctx.spcout.requested false).
     if (!run_spectrum(ctx)) return false;
+
+    // gennpsa.f (x11ari.f:322-326): the NP residual-seasonality verdict, which
+    // the oracle runs AFTER spcdrv -- and, like genqs, with no Ny==12 gate.
+    if (!gennpsa(ctx, /*lseats=*/false)) return false;
 
     // composite{} (x11ari.f:372-373): if this run is a COMPONENT of a composite
     // adjustment (series{comptype=...} set Iag>=0 and the metafile driver carried

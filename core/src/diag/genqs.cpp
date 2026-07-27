@@ -17,10 +17,12 @@
 // model-only harness does not run at all), and the Iagr==4 indirect names.
 #include "diag/genqs.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
 #include "common/x13context.hpp"
+#include "diag/checkres.hpp"         // kendalls (shared with npsa.f)
 #include "numeric/numeric.hpp"       // smeadl
 #include "specparse/specparse.hpp"   // addate, dfdate
 #include "x11/x11filt.hpp"           // addmul, divsub
@@ -325,6 +327,128 @@ bool genqs(X13Context& ctx, bool lseats) {
         }
         q.qsirr2 = calcqs(srs.data(), pos1ob - 1, posfob, ny);
         if (have_span) q.qsirrs2 = calcqs(srs.data(), ipos, posfob, ny);
+    }
+
+    return true;
+}
+
+// genqs.f:258-265's counterpart at gennpsa.f:111-112.
+bool NpStats::lnp() const {
+    return !(npsadj == prm::NOTSET && npsadj2 == prm::NOTSET);
+}
+
+// CB-26, transcribed: the second test compares two INTEGERs (initialised to
+// NOTSET, -32767) against DNOTST, the DOUBLE -999.0 sentinel. Neither can ever
+// equal it, so `lnps` is unconditionally TRUE -- which is harmless only because
+// every row inside the block re-tests NOTSET individually, so the savelog emits
+// nothing extra. The print branch is not so lucky: it writes the "(Series start
+// in ...)" header on a run with no span statistics at all.
+bool NpStats::lnps() const {
+    return !(static_cast<double>(npsadjs) == prm::DNOTST &&
+             static_cast<double>(npsadjs2) == prm::DNOTST);
+}
+
+namespace {
+
+// npsa.f: optionally log, difference `ndif` times, mean-delete, then threshold
+// Kendall's statistic. Returns 1 ("yes, residual seasonality") or 0. NOTE the
+// Fortran's `.and.` binds tighter than `.or.`, so the test really is
+// (S>24.73 && mq==12) || (S>11.35 && mq==4) -- any other period is always 0.
+int npsa(const double* sa, int n1, int nz, bool lmodel, int d, int bd, int mq,
+         bool llog) {
+    const int ndif = lmodel ? std::max(std::min(2, d + bd), 1) : 1;
+    std::vector<double> aux(static_cast<std::size_t>(nz - n1 + 1) + 2, 0.0);
+    for (int i = n1; i <= nz; ++i)
+        aux[(i - n1 + 1) - 1] = llog ? std::log(sa[i - 1]) : sa[i - 1];
+    int k = nz - n1 + 1;
+    // Unlike qsdiff this differences ndif times outright -- there is no
+    // "difference once, then once more if PosCorr" retry.
+    for (int j = 1; j <= ndif; ++j) {
+        --k;
+        for (int i = 1; i <= k; ++i) aux[i - 1] = aux[(i + 1) - 1] - aux[i - 1];
+    }
+    double media = 0.0;
+    for (int i = 1; i <= k; ++i) media += aux[i - 1];
+    media /= k;
+    for (int i = 1; i <= k; ++i) aux[i - 1] -= media;
+    const double snp = kendalls(aux.data(), k, mq);
+    if ((snp > 24.73 && mq == 12) || (snp > 11.35 && mq == 4)) return 1;
+    return 0;
+}
+
+}  // namespace
+
+// gennpsa.f:1-107.
+bool gennpsa(X13Context& ctx, bool lseats) {
+    // Same SEATS blocker as genqs (Seatsa / Stocsa).
+    if (lseats) return false;
+
+    const int ny = ctx.model.sp;
+    const bool lx11 = ctx.captured.has_x11;
+    const int muladd = ctx.x11opt.muladd;
+    const int kfulsm = ctx.x11opt.kfulsm;
+    const bool lmodel = ctx.captured.has_model;
+    const bool llogqs = ctx.rho.llogqs;
+    const int pos1bk = ctx.x11ptr.pos1bk;
+    const int pos1ob = ctx.x11ptr.pos1ob;
+    const int posfob = ctx.x11ptr.posfob;
+    const int nnsedf = ctx.model.nnsedf;
+    const int nseadf = ctx.model.nseadf;
+
+    auto& np = ctx.np;
+    np.ran = true;
+
+    // gennpsa.f:52-58 -- lplog is DERIVED here rather than latched as a side
+    // effect of a log actually being taken, which is what genqs does. So the
+    // two `*log` keys can disagree in principle; on this corpus Llogqs is
+    // always off and both read `no`.
+    if (llogqs) {
+        if (lx11) { if (muladd != 1) np.lplog = true; }
+        else if (ctx.arima.lam == 0.0) np.lplog = true;
+    }
+
+    int begbk2[2];
+    addate(ctx.mdldat.begspn.data(), ny, pos1bk - pos1ob, begbk2);
+    const int bgspec[2] = {ctx.rho.bgspec(1), ctx.rho.bgspec(2)};
+    int ipos = 0;
+    dfdate(bgspec, begbk2, ny, ipos);
+    const bool have_span = (ipos + 1) > pos1ob;
+
+    bool gosa = false;
+    if ((lx11 && kfulsm == 0) || lseats) {
+        gosa = true;
+        if (lseats) gosa = ctx.seatlg.hvstsa;
+    }
+    if (!gosa) return true;
+
+    std::vector<double> srs(PLEN, 0.0);
+
+    // The SA series. Ported asymmetry: this call passes the DERIVED `lplog`
+    // and the one below passes the RAW `Llogqs` (gennpsa.f:77 vs :104), so on
+    // a non-log X-11 run with logqs=yes the two series are tested on different
+    // scales. Left as written.
+    {
+        const double* stci = ctx.x11srs.stci.data();
+        for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stci[i - 1];
+        np.npsadj = npsa(srs.data(), pos1ob, posfob, lmodel, nnsedf, nseadf, ny,
+                         np.lplog);
+        if (have_span)
+            np.npsadjs = npsa(srs.data(), ipos + 1, posfob, lmodel, nnsedf,
+                              nseadf, ny, np.lplog);
+    }
+
+    // ... and its extreme-value twin, with the level shift divided back out.
+    {
+        const double* stcime = ctx.adxser.stcime.data();
+        for (int i = 1; i <= PLEN; ++i) srs[i - 1] = stcime[i - 1];
+        if (ctx.x11adj.adjls == 1)
+            divsub(srs.data(), srs.data(), ctx.x11fac.facls.data(), pos1ob,
+                   posfob, muladd);
+        np.npsadj2 = npsa(srs.data(), pos1ob, posfob, lmodel, nnsedf, nseadf,
+                          ny, llogqs);
+        if (have_span)
+            np.npsadjs2 = npsa(srs.data(), ipos + 1, posfob, lmodel, nnsedf,
+                               nseadf, ny, llogqs);
     }
 
     return true;

@@ -1642,8 +1642,25 @@ diagnostics front (force / slidingspans / history) is now closed.
   (`Seatsa`/`Seatir`/`Stocsa`/`Stocir` behind Hvstsa/Hvstir -- the same
   different-INPUT blocker as the spectrum peak block), the MODEL-ONLY path
   (`qsorievadj` needs `Stcsi`, which only x11pt1 fills and the model-only
-  harness never runs -- closing either probably closes both), the `Iagr==4`
-  indirect names, and `gennpsa.f`'s `np*` family (230 goldens, a separate
-  routine). Map: **`tools/genqs_scouting.md`**.
+  harness never runs -- closing either probably closes both), and the `Iagr==4`
+  indirect names. Map: **`tools/genqs_scouting.md`**.
+  **`gennpsa.f`'s NP residual-seasonality verdict landed alongside it** (the
+  `nplog`/`npsadj`/`npsadjevadj`/`npssadj`/`npssadjevadj` keys, 230 goldens) --
+  same call chain (`x11ari.f:322-326`, straight after spcdrv, again with no
+  `Ny==12` gate), same module, same gate. `npsa.f` differences the SA series,
+  mean-deletes it and thresholds `kendalls` at a FIXED critical value (24.73
+  monthly / 11.35 quarterly), so the output is a yes/no rather than a
+  statistic; `kendalls` was already ported for check{}'s Friedman test and is
+  now shared out of `checkres.cpp`'s anonymous namespace. Only the SA series
+  and its EV twin are tested, which is why 101 goldens carry no `np*` key at
+  all against 4 with no `qs*` key. Two ported asymmetries: `gennpsa` DERIVES
+  its `lplog` from Muladd/Lam up front where genqs LATCHES it as a side effect
+  of a log actually being taken, and the two `npsa` calls pass different flags
+  (`:77` the derived `lplog`, `:104` the raw `Llogqs`). **CB-26**:
+  `gennpsa.f:112` tests two INTEGERs initialised to NOTSET (-32767) against
+  **DNOTST** (the DOUBLE -999.0), so `lnps` is unconditionally true -- harmless
+  in the savelog, where every row re-tests NOTSET individually, but the print
+  branch emits a "(Series start in ...)" header on a run with no span
+  statistics. Mutation-tested: inverting the npsa verdict fails 153 of 157.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

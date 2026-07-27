@@ -1,9 +1,9 @@
 # `genqs.f` — the QS seasonality statistics — scouting
 
-**Status: the DIRECT X-11 path is CLOSED (byte-exact, gated by
-`tests/parity/test_qs_diagnostics.py`, 157 specs, zero new goldens). SEATS, the
-model-only path and the `Iagr==4` indirect names are still open — see "What is
-still open".** Originally written 2026-07-27.
+**Status: the DIRECT X-11 path is CLOSED for BOTH `genqs.f` and its sibling
+`gennpsa.f` (byte-exact, gated by `tests/parity/test_qs_diagnostics.py`, 157
+specs, zero new goldens). SEATS, the model-only path and the `Iagr==4` indirect
+names are still open -- see "What is still open".** Originally written 2026-07-27.
 
 327 of the 331 `.udg` goldens carry a `qs*` key and the port emitted none of
 them.
@@ -46,7 +46,8 @@ Both questions the original scouting flagged are now answered:
 
 `chisq.f` and `smeadl.f` were already ported (`core/src/numeric/numeric.hpp`);
 `chisq(QS, 2)` is the p-value column. All of the above now live in
-`core/src/diag/genqs.{hpp,cpp}`; the emit is `dump_qs` in `tools/x13run_x11.cpp`.
+`core/src/diag/genqs.{hpp,cpp}`; the emits are `dump_qs`/`dump_np` in
+`tools/x13run_x11.cpp`.
 
 Note the two `calc` routines differ in more than calcqs2's extra output: it
 works on the whole array from element 1, divides by `nz` rather than by a
@@ -157,5 +158,42 @@ Mutation-tested twice: a 1% perturbation of `calcqs` fails 113 of 157, of
   with the composite front. Note the indirect call site passes `Tblind = LSLIQS`
   — a *savelog* index used as a `Savtab` subscript — which wants checking before
   it is ported.
-* `gennpsa.f` (the `nplog`/`npsadj`/`npsadjevadj`/`npssadj`/`npssadjevadj` keys,
-  230 goldens) is a separate routine in the same family, not part of genqs.
+(`gennpsa.f` is CLOSED -- see the section below.)
+
+## `gennpsa.f` -- the NP residual-seasonality verdict (CLOSED)
+
+Same family, same call chain (`x11ari.f:322-326`, straight after spcdrv, again
+with no `Ny==12` gate), gated by `Savtab(LSPNPA)` where LSPNPA is **117** and
+`sumtab.var` entry 117 is `T`. 230 goldens carry `nplog`.
+
+`npsa.f` is the whole of the arithmetic: optionally log, difference `ndif` times
+(`max(min(2,d+bd),1)` with a model, 1 without -- and note there is NO
+"difference once, then once more if PosCorr" retry, unlike qsdiff), mean-delete,
+then threshold `kendalls` at a FIXED critical value: 24.73 monthly, 11.35
+quarterly, and any other period is always 0. So the output is a yes/no verdict
+rather than a statistic. `kendalls` was already ported for `check{}`'s Friedman
+test and is now shared out of `checkres.cpp`'s anonymous namespace.
+
+Only the SA series (`Stci`) and its extreme-value twin (`Stcime`, with the same
+unconditional `Adjls` Facls divide) are tested -- hence **101 goldens carry no
+`np*` key at all**, against 4 with no `qs*` key: the block is absent from every
+model-only run and every `x11{type=}` run where `Kfulsm != 0`.
+
+Two ported asymmetries against genqs, both left as written:
+
+* `gennpsa.f:52-58` DERIVES `lplog` from Muladd/Lam up front, where `genqs`
+  LATCHES it as a side effect of a log actually being taken. The two `*log`
+  keys can therefore disagree in principle.
+* `:77` passes the derived `lplog` and `:104` passes the RAW `Llogqs`, so on a
+  non-log X-11 run with `logqs=yes` the two series are tested on different
+  scales.
+
+**CB-26**: `gennpsa.f:112`'s `lnps` tests two INTEGERs initialised to `NOTSET`
+(-32767) against **`DNOTST`** (the DOUBLE -999.0), so it is unconditionally
+true. Harmless in the savelog -- every row re-tests NOTSET individually -- but
+the print branch emits a `(Series start in ...)` header on a run with no span
+statistics at all. Transcribed with the widening cast made explicit.
+
+Mutation-tested: inverting the npsa verdict fails 153 of 157; moving the
+thresholds to 20.0/9.0 fails only 6 (the specs near the boundary), which is why
+the inversion is the mutation that proves the keys are compared.

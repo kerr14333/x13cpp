@@ -92,6 +92,11 @@ _KEYS = {
     "qsirr", "qsirrevadj",
     "qssori", "qssorievadj", "qssrsd", "qsssadj", "qsssadjevadj",
     "qssirr", "qssirrevadj",
+    # gennpsa.f's NP residual-seasonality verdicts (yes/no, not statistics).
+    # Only the SA series and its EV twin are tested, so this block is absent
+    # from any run that produces no adjustment -- 101 goldens carry no `np*`
+    # key against 4 with no `qs*` key.
+    "nplog", "npsadj", "npsadjevadj", "npssadj", "npssadjevadj",
 }
 
 _KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9._$]*):(.*)$")
@@ -220,7 +225,8 @@ def test_indirect_keys_are_not_claimed() -> None:
     to come here and do it deliberately.
     """
     for k in ("qsindsadj", "qsindsadjevadj", "qsindirr", "qsindirrevadj",
-              "qssindsadj", "qssindirr"):
+              "qssindsadj", "qssindirr",
+              "npindsadj", "npindsadjevadj", "npsindsadj", "npsindsadjevadj"):
         assert k not in _KEYS, f"{k} is claimed but the indirect path is unported"
 
 

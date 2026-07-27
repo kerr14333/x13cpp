@@ -73,6 +73,8 @@ double intrpp(const double* ppvec, const int* ppnum, int nobs, int ppi,
     return v;
 }
 
+}  // namespace
+
 // ansub11.f:1303 -- Kendall's statistic behind the Friedman seasonality test.
 // Ranks each year's `mq` observations (average ranks on ties), sums the ranks
 // by period, and forms 12*SS/((mq+1)*mq*ny). The leading `res` partial year is
@@ -124,6 +126,8 @@ double kendalls(const double* x, int nz, int mq) {
     }
     return 12.0 * tmp / ((mq + 1.0) * mq * ny);
 }
+
+namespace {
 
 // nrmtst.f -- skewness / Geary's a / kurtosis, each against its one-percent
 // point. The Fortran RETURNS EARLY out of the middle of the routine when a

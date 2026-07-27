@@ -82,6 +82,12 @@ bool check_acf(const double* z, int nz, int nefobs, double* r, double* se,
 // OVERWRITES it with the pacf, exactly as the Fortran does (`copy(fkk,Nr,1,R)`).
 void check_pacf(int nefobs, double* r, double* se, int nr);
 
+// ansub11.f:1303 -- Kendall's statistic behind the Friedman seasonality test:
+// rank each whole year's `mq` observations (average ranks on ties, the leading
+// partial year DROPPED), sum the ranks by period, and form
+// 12*SS/((mq+1)*mq*ny). Shared with npsa.f (the NP residual-seasonality test).
+double kendalls(const double* x, int nz, int mq);
+
 // arima.f:1044-1102 -- run the whole block on the residuals `a(1..na)` and
 // record it on ctx.check. No-op unless the model converged with a variance.
 void check_residuals(X13Context& ctx, const double* a, int na, int nefobs);

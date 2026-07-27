@@ -768,3 +768,41 @@ model-free total carries no `qsrsd` row -- it inherited DNOTST from a component.
   in BOTH directions -- dropping the zero default makes every no-model spec fail
   with "keys missing from the engine: ['qsrsd', 'qssrsd']", and dropping the
   reset makes `extra/airline_identify` fail the other way.
+
+## CB-26 -- `gennpsa.f`'s span-block test compares INTEGERs against the DOUBLE sentinel
+
+`gennpsa.f:111-112` decides whether either NP block has anything to report:
+
+```fortran
+      lnp=.not.((Npsadj.eq.NOTSET).and.(Npsadj2.eq.NOTSET))
+      lnps=.not.((NpsadjS.eq.DNOTST).and.(NpsadjS2.eq.DNOTST))
+```
+
+`NPsadj`, `NPsadj2`, `NPsadjS` and `NPsadjS2` are all declared INTEGER at
+`:28-29` and all four are initialised to `NOTSET` (-32767). The first line tests
+that correctly. The second tests against **`DNOTST`**, the DOUBLE PRECISION
+-999.0 sentinel from `notset.prm` -- so the comparison promotes each integer to
+double and asks whether -32767.0 equals -999.0. It never can, for any value
+these variables take (NOTSET, 0 or 1), so **`lnps` is unconditionally TRUE**.
+
+The savelog block gets away with it: `IF(Savtab(Tblind).and.lnps)` opens, but
+each row inside re-tests `NOTSET` individually (`:162`, `:170`), so nothing
+extra is written and the `.udg` is correct. The PRINT block at `:124-128` does
+not -- it emits the
+
+```
+  (Series start in <date>)
+```
+
+header and calls `OutNP` with two NOTSET values on a run where the diagnostic
+span starts at the series start and there are no span statistics at all.
+
+- **Port:** the predicate is transcribed with the widening cast made explicit
+  (`NpStats::lnps` in `core/src/diag/genqs.cpp`), so it returns true exactly as
+  the Fortran does. The consequence is not reproduced because this port emits
+  no print surface -- the savelog block, which is what the goldens carry, is
+  identical either way.
+- **Pinned by:** `tests/parity/test_qs_diagnostics.py`. Correcting the sentinel
+  to NOTSET would leave every `npssadj`/`npssadjevadj` row unchanged (the inner
+  guards already suppress them), which is exactly why this is worth writing
+  down rather than "fixing".
