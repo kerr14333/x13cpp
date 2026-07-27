@@ -605,6 +605,15 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             if (na > 0) {
                 ctx.resid_a.assign(a.begin(), a.begin() + na);
                 ctx.resid_na = na;
+                // arima.f:1125 computes `idate` HERE, from the estimation-time
+                // Begspn/Nspobs -- which a series{modelspan=} has narrowed and
+                // setspn.f widens back at arima.f:1145/:1181, i.e. AFTER this
+                // point. Deriving it later from the restored span slides the
+                // residual spectrum's start (measured: spcrsd.median -32.32 vs
+                // -32.59 on generated/airline_modelspan-both-x11). Same class
+                // as ctx.est_nefobs just above.
+                addate(ctx.mdldat.begspn.data(), ctx.model.sp,
+                       ctx.mdldat.nspobs - na, ctx.resid_begdate.data());
             }
 
             // Likelihood statistics (arima.f:742 prlkhd): the transform-Jacobian-

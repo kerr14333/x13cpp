@@ -48,6 +48,11 @@ struct SpecPeaks {
     std::vector<SpecPeakRow> td, seas;
     std::string tdom = "no", sdom = "no", dom = "no";
     bool have_td = false;   // the TD family is skipped when Ltdfrq is off
+    // idpeak.f -- how many frequencies in each family cleared ispeak's tests.
+    // These are what spcdrv.f:750-794 turns into the `peaks.seas`/`peaks.td`
+    // label lists, and they are NOT derivable from the rows above: ispeak's
+    // test is a different (stricter) one than smpeak's star height.
+    int ltdpk = 0, lsapk = 0;
 };
 
 // mkpeak.f + mkfreq.f -- the constant index/frequency tables and the enhanced
@@ -63,7 +68,8 @@ SpecPeakGrid spectrum_peak_grid(int sp, int peakwd, bool lfqalt, bool lprsfq);
 SpecPeaks spectrum_peaks(const std::vector<double>& sxx,
                          const std::vector<double>& sxx2,
                          const SpecPeakGrid& grid, double spclim, bool ldecbl,
-                         bool ltdfrq, const std::string& prefix);
+                         bool ltdfrq, double plocal, int sp,
+                         const std::string& prefix);
 
 }  // namespace x13
 

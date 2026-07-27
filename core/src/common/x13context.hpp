@@ -331,6 +331,11 @@ struct X13Context {
     // start date is Begspn + (Nspobs - resid_na) (arima.f:1124).
     std::vector<double> resid_a;
     int resid_na = 0;
+    // arima.f:1125's `idate`, recorded at ESTIMATION time: with a
+    // series{modelspan=} the span is narrowed for the fit and restored before
+    // X-11, so Begspn/Nspobs no longer describe the residuals by the time
+    // run_spectrum reads them.
+    std::array<int, 2> resid_begdate{{0, 0}};
 
     // Effective observation count the regARIMA fit actually used (Nspobs-Nintvl
     // at estimation time). Normally derivable from Nspobs, but series{modelspan=}

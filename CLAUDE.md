@@ -1525,5 +1525,62 @@ diagnostics front (force / slidingspans / history) is now closed.
   about 420 Fortran lines, plus the separable `getTPeaks` (Tukey) and `genqs`
   (QS) steps. Full map, including the fixed monthly peak indices measured off
   the goldens and the suggested order, in **`tools/spectrum_peaks_scouting.md`**.
+- **The SPECTRUM PEAK diagnostics -- CLOSED (byte-exact), and the whole block
+  was silently absent on every monthly run.** `x11ari.f:282-287` calls `spcdrv`
+  under a plain `IF(Ny.eq.12)` -- no dependence on the `spectrum{}` spec at all
+  -- so the oracle computes this on EVERY monthly run; this port gated
+  `run_spectrum` on `ctx.spcout.requested` and had none of the peak arithmetic.
+  278 goldens carry `spcori.median` and the engine emitted nothing for any of
+  them. Ported into `core/src/driver/spectrum_peaks.{hpp,cpp}` (shlsrt, mkmdsx,
+  mkpeak's monthly/default/Peakwd==1 tables, mkfreq's 67-point enhanced grid,
+  ispeak, idpeak, smpeak, svpeak, mxpeak) plus svfreq/mkspky/savpk in the
+  harness. Gated by `tests/parity/test_spectrum_peaks.py` (140 specs), **zero
+  new goldens**; mutation-tested twice (a 1% perturbation of the median fails
+  138/140, of the star heights 118/140).
+  **The gate change was not the whole of the first half.** `gtinpt.f:354-371`'s
+  entire `/rho/` default block lived at the head of `gt_spectrum`, so a spec
+  without `spectrum{}` read the struct's ZERO-INIT (`Ldecbl` false, `Spcsrs` 0,
+  `Bgspec` 0 rather than NOTSET) and `Peakwd` was never resolved at all --
+  `gtinpt.f:1285-1288` when there is no spectrum spec, `gtspec.f:355` when
+  there is, and the port had neither. Moving the defaults into `gtinpt` is what
+  made removing the gate produce anything.
+  **FOUR real sp0/sp1/sp2 defects fell out**, all invisible until now because
+  `test_spectrum_tables` only ran on specs that ASK for `spectrum{}` and none of
+  those reach the branches: (1) **`spcdrv.f:318`'s `Facls` divide was missing**
+  -- the level shift is taken back out of the SA series before its spectrum,
+  unconditionally on `Adjls==1` (unlike x11pt4's E2 block, which is gated on
+  `.not.Finls`), so every spec carrying an LS regressor had a different SA
+  spectrum (`spcsa.range` 12.418 vs 12.608 on `generated/airline_regb-initial`;
+  13 of the 21 value failures); (2) the `(Lx11.and.Kfulsm.eq.0).or.Lseats` gate
+  (spcdrv.f:284/:406) was missing, so `x11{type=summary|trend}` emitted spcsa/
+  spcirr blocks the oracle suppresses; (3) the pseudo-additive sp0 REBUILD
+  (spcdrv.f:166-174, `Stc*(Sts+(Sti-1))` or `Stc*Sti` at `Kfulsm==2`) was
+  unported, as was the `Lx11` guard on the ordinary Stex fold; (4) `ispos`
+  (spcdrv.f:187/:290-298) was missing -- the oracle refuses to log a
+  non-positive series and produces no table.
+  Plus one placement bug of the `ctx.est_nefobs` class: **`spcrsd`'s start date
+  must be recorded at ESTIMATION time** (`ctx.resid_begdate`). `arima.f:1125`
+  computes it while a `series{modelspan=}` still has `Begspn`/`Nspobs`
+  narrowed; setspn.f widens them back at `arima.f:1145/:1181`, i.e. AFTER.
+  Deriving it in run_spectrum slid the residual spectrum (`spcrsd.median`
+  -32.32 vs -32.59 on `generated/airline_modelspan-both-x11`).
+  **Performance decided a design choice, and it is worth knowing.** Running the
+  spectrum on every monthly spec adds four AR fits per spec, and the peak block
+  needs a FIFTH evaluation on the enhanced grid -- re-fitting for it took the
+  parity suite from ~200s past 600s. `spgrh` is therefore split into
+  `spgrh_fit` + `spgrh_eval` and the fit is reused across both grids, which is
+  legitimate only because `ifpl` (30 for monthly) never exceeds either grid's
+  `lagh1` truncation, so `sicp2` reads the same autocovariance prefix either
+  way. Suite runtime is unchanged at ~228s.
+  Still open here, and skipped with the reason written AT the skip rather than
+  filtered out of discovery: `getTPeaks` (the `.tukey.*` families, ~850 lines);
+  `genqs.f` (the QS block, 324 goldens); the 51 SEATS specs (`run_seats` never
+  calls `run_spectrum`, and spcdrv's SEATS branch reads `Hvstsa`/`Hvstir`/
+  `Stocsa`/`Stocir` -- a different INPUT, not just a different driver); and the
+  85 MODEL-ONLY specs (`x12run.f:181` calls x11ari with neither Lx11 nor
+  Lseats, so the oracle emits `spcori`+`spcrsd` on a spec asking for no
+  adjustment, and that path takes a different detrend -- spcdrv.f:193-200 keys
+  on `dpeq(Lam,ZERO)` rather than `Muladd.ne.1`). Map:
+  **`tools/spectrum_peaks_scouting.md`**.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

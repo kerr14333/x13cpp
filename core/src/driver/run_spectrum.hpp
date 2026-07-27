@@ -6,13 +6,16 @@
 // (core/src/seats/spectru.cpp) -- it is the periodogram of the already-computed
 // X-11 series (Stcsi/Stci/Sti), detrended per spcdrv.f, at 61 frequencies.
 //
-// Increment 1 of tools/spectrum_scope.md: periodogram type only (Spctyp=1),
-// the 61-frequency save tables sp0/sp1/sp2. spr (residual spectrum), the Tukey
-// tables (st0/st1/st2), and the arspec type are follow-on increments.
+// Both estimator types (arspec and periodogram), all four tables
+// (sp0/sp1/sp2/spr), their Tukey twins, and the peak savelog block are here.
+// See run_spectrum.cpp's header for what is still follow-on.
 #ifndef X13_DRIVER_RUN_SPECTRUM_HPP
 #define X13_DRIVER_RUN_SPECTRUM_HPP
 
+#include <string>
 #include <vector>
+
+#include "driver/spectrum_peaks.hpp"
 
 namespace x13 {
 
@@ -41,11 +44,20 @@ struct SpectrumOutput {
     std::vector<double> st0;        // Tukey(Spectrum_AdjOri)
     std::vector<double> st1;        // Tukey(Spectrum_SA)
     std::vector<double> st2;        // Tukey(Spectrum_Irr)
+    // svpeak.f / svfreq.f / savpk.f -- the peak canaries. One `peaks` entry per
+    // spectrum table, in the order the oracle emits them.
+    SpecPeakGrid grid;
+    std::vector<SpecPeaks> peaks;
+    // savpk.f -- the accumulated `peaks.seas` / `peaks.td` label lists
+    // (spcdrv.f:750-794), "none" when the family found no visually significant
+    // peak in any table.
+    std::string peaks_seas, peaks_td;
 };
 
-// Compute the spectrum{} periodogram tables after the X-11 decomposition. No-op
-// (ctx.spcout.ran stays false) when spectrum{} was not requested. Reads the
-// bit-exact Stcsi/Stci/Sti and the /rho/ options captured by gt_spectrum.
+// Compute the spectrum diagnostics after the X-11 decomposition. NOT gated on
+// spectrum{} being present: x11ari.f:282-287 calls spcdrv under a plain
+// IF(Ny.eq.12), so the oracle produces this block on every monthly run. Reads
+// the bit-exact Stcsi/Stci/Sti and the /rho/ options gtinpt defaults.
 bool run_spectrum(X13Context& ctx);
 
 }  // namespace x13

@@ -67,6 +67,32 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.x11msc.noxfct = false;                           // gtinpt.f:380
     ctx.x11msc.tru7hn = false;                           // gtinpt.f:381
     ctx.x11msc.lcentr = false;                           // gtinpt.f:382
+    // gtinpt.f:354-371 -- the /rho/ spectrum defaults. These are set for EVERY
+    // run, not only when a spectrum{} spec is present: x11ari.f:282-287 calls
+    // spcdrv under a plain IF(Ny.eq.12), so the whole spectrum diagnostic block
+    // is computed on every monthly run. They used to live at the head of
+    // gt_spectrum, which meant a spec without spectrum{} read the struct's
+    // zero-init instead (Ldecbl false, Spcsrs 0, Bgspec 0, ...).
+    ctx.rho.spcdff = true;
+    ctx.rho.spdfor = prm::NOTSET;
+    ctx.rho.lstdff = false;
+    ctx.rho.lfqalt = false;
+    ctx.rho.llogqs = false;
+    ctx.rho.lrbstsa = true;
+    ctx.rho.lqchk = false;
+    ctx.rho.lprsfq = false;
+    ctx.rho.svallf = false;
+    ctx.rho.ldecbl = true;
+    ctx.rho.spctyp = 0;
+    ctx.rho.spcsrs = 2;
+    ctx.rho.mxarsp = prm::NOTSET;
+    ctx.rho.ltk120 = true;
+    ctx.rho.spclim = 6.0;
+    ctx.rho.peakwd = prm::NOTSET;
+    ctx.rho.plocal = 0.002;
+    ctx.rho.bgspec(1) = prm::NOTSET;
+    ctx.rho.bgspec(2) = prm::NOTSET;
+    ctx.rho.axsame = false;
     ctx.model.isrflw = prm::NOTSET;
     ctx.missng.mvcode = -99999.0;
     ctx.missng.mvval = 1000000000.0;
@@ -609,6 +635,16 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             if (!(havhol || ctx.x11log.axrghl || ctx.x11log.axruhl ||
                   ctx.x11opt.khol == 1) && ctx.x11adj.finhol)
                 ctx.x11adj.finhol = false;
+        }
+
+        // gtinpt.f:1285-1288 / gtspec.f:355 -- resolve Peakwd. The oracle writes
+        // it in two different places depending on whether a spectrum{} spec was
+        // present (gtspec's own tail when it was, gtinpt's `hvspec` ELSE when it
+        // was not), and both resolve to the same value, so one site covers it.
+        // Everything keyed on Peakwd silently declines while it is NOTSET.
+        if (ctx.rho.peakwd == prm::NOTSET) {
+            ctx.rho.peakwd = 1;
+            if (ctx.model.sp == 4) ctx.rho.peakwd = 3;
         }
 
         // gtinpt.f:220: finalize the ARMA model dimensions for estimation

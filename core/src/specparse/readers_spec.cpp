@@ -2838,24 +2838,10 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
     static const int argptr[PARG + 1] = {1, 6, 16, 20, 26, 34, 43, 48, 55, 59, 64,
         68, 75, 86, 93, 102, 111, 127, 135, 140, 146, 154};
 
-    // gtinpt.f:354-379 defaults (set for every run; captured here onto /rho/ so
-    // run_spectrum can read them). NOTE the default type is arspec (Spctyp=0);
-    // periodogram is an explicit override.
+    // The gtinpt.f:354-371 /rho/ defaults are set in gtinpt for EVERY run (the
+    // oracle computes the spectrum block on any monthly series, spectrum{} spec
+    // or not -- x11ari.f:282), so this reader only overrides what it parses.
     auto& r = ctx.rho;
-    r.spcdff = true;
-    r.spdfor = prm::NOTSET;
-    r.lstdff = false;
-    r.svallf = false;
-    r.ldecbl = true;
-    r.spctyp = 0;
-    r.spcsrs = 2;
-    r.mxarsp = prm::NOTSET;
-    r.spclim = 6.0;
-    r.peakwd = prm::NOTSET;
-    r.plocal = 0.002;
-    r.bgspec(1) = prm::NOTSET;
-    r.bgspec(2) = prm::NOTSET;
-    r.axsame = false;
     ctx.spcout.requested = true;
 
     int arglog[2 * PARG];

@@ -1,4 +1,15 @@
 // spectrum_peaks.cpp -- see hpp.
+//
+// NOTE on the two frequency grids. spcdrv.f calls the estimator TWICE per
+// table, once on the 61-point plot grid and once on the enhanced peak grid,
+// passing the grid length through to spgrh's `lagh1 = min(n-1, nspfrq-1)+1`
+// autocovariance truncation. run_spectrum.cpp hoists the AR FIT out and
+// evaluates it on both grids, which is only legitimate because `ifpl` (the
+// Levinson-Durbin order, min(30*Sp/12, n-1) = 30 for monthly) never exceeds
+// either truncation: with n-1 <= 60 both grids give lagh1-1 = n-1, and with
+// n-1 > 60 both give at least 60 >= 30, so sicp2 reads the same cyy prefix
+// either way and the extra autocovariances are simply unused. Verified against
+// the corpus, not just argued.
 #include "driver/spectrum_peaks.hpp"
 
 #include "numeric/numeric.hpp"   // dpeq
@@ -47,6 +58,59 @@ double mkmdsx(const std::vector<double>& sxx, int nfreq, bool ldecbl) {
 const char* const LABVEC[10] = {"t1", "t2", "t3", "t4", "t5",
                                 "s1", "s2", "s3", "s4", "s5"};
 
+// ispeak.f -- COUNT the frequencies in one family that qualify as visually
+// significant peaks. This is a different (and stricter) test than smpeak's star
+// height: the peak must clear the median, must not be dominated by a neighbour
+// outside +/-Plocal but inside its own limits, and must stand `plimit` above
+// BOTH limit frequencies. It is what drives the `peaks.seas`/`peaks.td` label
+// lists and the "visually significant peak" warnings.
+int ispeak(const std::vector<double>& sxx, bool lsa,
+           const std::vector<int>& peaks, const std::vector<int>& lowlim,
+           const std::vector<int>& uplim, int npeaks, double plimit,
+           double mlimit, int ny, const std::vector<double>& freq,
+           double plocal, bool ldecbl) {
+    int out = 0;
+    // ispeak.f:25 -- on monthly SEASONAL frequencies the LAST one is not tested.
+    int i2 = npeaks;
+    if (lsa && ny == 12) i2 = i2 - 1;
+    for (int i = 1; i <= i2; ++i) {
+        const int ifreq = peaks[i - 1];
+        if (!(sxx[ifreq - 1] > mlimit)) continue;
+        int k = 0;
+        const int k1 = lowlim[i - 1] + 1;
+        // ispeak.f:47-51 -- a monthly seasonal peak only looks BELOW itself.
+        const int k2 = (lsa && ny == 12) ? ifreq - 1 : uplim[i - 1] - 1;
+        if (k2 > k1) {
+            const double f1 = freq[ifreq - 1] - plocal;
+            const double f2 = freq[ifreq - 1] + plocal;
+            for (int k0 = k1; k0 <= k2; ++k0) {
+                if (k0 == ifreq) continue;
+                const double f0 = freq[k0 - 1];
+                if ((f0 < f1 || f0 > f2) && sxx[k0 - 1] > sxx[ifreq - 1]) ++k;
+            }
+        }
+        if (k != 0) continue;
+        if (ldecbl) {
+            const double slimit = sxx[ifreq - 1] - plimit;
+            if (!(sxx[lowlim[i - 1] - 1] < slimit)) continue;
+            // ispeak.f:77-82: the "no upper frequency" arm is dead for monthly
+            // data (i never reaches Npeaks there) -- transcribed anyway.
+            if (lsa && i == npeaks) ++out;
+            else if (sxx[uplim[i - 1] - 1] < slimit) ++out;
+        } else {
+            double slimit = sxx[ifreq - 1] / sxx[lowlim[i - 1] - 1];
+            if (!(slimit >= plimit)) continue;
+            if (lsa && i == npeaks) {
+                ++out;
+            } else {
+                slimit = sxx[ifreq - 1] / sxx[uplim[i - 1] - 1];
+                if (slimit >= plimit) ++out;
+            }
+        }
+    }
+    return out;
+}
+
 // smpeak.f -- per-frequency peak height, and the family's dominant frequency.
 // Returns the dominant frequency's GRID INDEX, or prm::NOTSET when no peak in
 // the family cleared both tests. Appends one row per frequency to `rows`.
@@ -81,9 +145,8 @@ int smpeak(const std::vector<double>& sxx2, bool lsa,
         rows.push_back(r);
     }
     // smpeak.f:56 writes the `.dom` row keyed on the FIRST character of the
-    // LAST label the loop produced -- so it is "s.dom" / "t.dom" only because
-    // every label in a family shares its first character.
-    if (!frqlab.empty()) domfrq = domfrq;
+    // LAST label the loop produced -- so the key is "s.dom" / "t.dom" only
+    // because every label in a family shares its first character.
     return out;
 }
 
@@ -170,7 +233,8 @@ SpecPeakGrid spectrum_peak_grid(int sp, int peakwd, bool lfqalt, bool lprsfq) {
 SpecPeaks spectrum_peaks(const std::vector<double>& sxx,
                          const std::vector<double>& sxx2,
                          const SpecPeakGrid& grid, double spclim, bool ldecbl,
-                         bool ltdfrq, const std::string& prefix) {
+                         bool ltdfrq, double plocal, int sp,
+                         const std::string& prefix) {
     constexpr double FIVETO = 52.0;
     SpecPeaks out;
     out.prefix = prefix;
@@ -201,6 +265,21 @@ SpecPeaks spectrum_peaks(const std::vector<double>& sxx,
     out.dom = mxpeak(sxx2, grid.tpeak, domfqt,
                      static_cast<int>(grid.tpeak.size()), grid.speak, domfqs,
                      static_cast<int>(grid.speak.size()), tmpsxx[60]);
+
+    // idpeak.f -- the peak COUNTS, off the same sorted spectrum. Note idpeak
+    // recomputes the median and the range from scratch (it is called separately
+    // from svpeak in spcdrv.f, once per table), and its `pklim` is the RANGE
+    // scaled by Spclim/52 -- the same 52 that scales svpeak's star unit.
+    const double pklim = ldecbl ? (tmpsxx[60] - tmpsxx[0]) * (spclim / FIVETO)
+                                : std::pow(tmpsxx[60] / tmpsxx[0],
+                                           spclim / FIVETO);
+    if (ltdfrq)
+        out.ltdpk = ispeak(sxx2, /*lsa=*/false, grid.tpeak, grid.tlow, grid.tup,
+                           static_cast<int>(grid.tpeak.size()), pklim, medsxx,
+                           sp, grid.frqpk, plocal, ldecbl);
+    out.lsapk = ispeak(sxx2, /*lsa=*/true, grid.speak, grid.slow, grid.sup,
+                       static_cast<int>(grid.speak.size()), pklim, medsxx, sp,
+                       grid.frqpk, plocal, ldecbl);
     return out;
 }
 

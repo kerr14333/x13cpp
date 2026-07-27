@@ -1,9 +1,15 @@
-// run_spectrum.cpp -- spectrum{} periodogram tables (spcdrv.f, increment 1).
+// run_spectrum.cpp -- the spectrum diagnostics (spcdrv.f / spcrsd.f).
 //
-// Faithful port of the spcdrv.f periodogram path for the three data-based
-// save tables sp0/sp1/sp2. The frequency grid is mkfreq.f; the detrending is
-// gendff.f (log + regular differencing); the periodogram is spgrh2.f. Peaks,
-// warnings, plots, the residual/Tukey/arspec paths are follow-on increments.
+// The four data-based spectra sp0/sp1/sp2/spr, their Tukey twins st0/st1/st2,
+// and the PEAK savelog block (spectrum_peaks.cpp). The frequency grid is
+// mkfreq.f; the detrending is gendff.f (log + regular differencing); the
+// estimator is spgrh.f (arspec, the default) or spgrh2.f (periodogram).
+//
+// This is NOT gated on a `spectrum{}` spec: x11ari.f:282-287 calls spcdrv under
+// a plain IF(Ny.eq.12), so the oracle computes the whole block on every monthly
+// run. Still follow-on: getTPeaks' Tukey peak probabilities, genqs, the plots
+// and warnings, the SEATS branch (Hvstsa/Hvstir), and the model-only path
+// (x12run.f calls x11ari with neither Lx11 nor Lseats).
 #include "driver/run_spectrum.hpp"
 
 #include <cmath>
@@ -140,33 +146,52 @@ void sicp2(const std::vector<double>& cyy, int l1, int n,
 // spgrh.f: the AR-spectrum estimator (the arspec type). Mean-delete + auto-
 // covariance (sautco), full-order AR fit (sicp2), then the AR transfer-function
 // spectrum sgme2 / |1 + sum coef[k] exp(-i 2 pi k f)|^2 at the given frequencies.
-// Returns false (leave sxx untouched) when sautco is degenerate.
-bool spgrh(const double* yy, const std::vector<double>& frq, int n1, int n2,
-           int nspfrq, int sp, int mxarsp, bool ldecbl, std::vector<double>& sxx) {
-    const double PI = 3.14159265358979;
+//
+// Split into the FIT and the EVALUATION because the peak diagnostics need the
+// same estimator on a second, enhanced frequency grid: the fit is the expensive
+// half (O(n*lagh1) autocovariance + O(ifpl^2) Levinson-Durbin) and depends only
+// on the series, so evaluating twice off one fit is free where re-fitting would
+// have roughly doubled the suite's runtime. Bit-identical either way.
+struct ArFit {
+    bool ok = false;
+    std::vector<double> coef;
+    int l = 0;
+    double sgme2 = 0.0;
+};
+
+// `nspfrq` sets sautco's lag truncation (spgrh.f passes the frequency count),
+// so it belongs to the FIT even though it names a grid length.
+ArFit spgrh_fit(const double* yy, int n1, int n2, int nspfrq, int sp,
+                int mxarsp) {
+    ArFit f;
     const int n = n2 - n1 + 1;
     std::vector<double> x(PLEN, 0.0);
     for (int i = n1; i <= n2; ++i) x[i - 1] = yy[i - 1];
     const int h = nspfrq - 1;
     const int lagh1 = std::min(n - 1, h) + 1;
     std::vector<double> cxx;
-    if (!sautco(x.data(), n1, n2, n, lagh1, cxx)) return false;
+    if (!sautco(x.data(), n1, n2, n, lagh1, cxx)) return f;
     int ifpl = (mxarsp == prm::NOTSET) ? 30 * sp / 12 : mxarsp;
     ifpl = std::min(ifpl, n - 1);
-    std::vector<double> coef;
-    int l = 0;
-    double sgme2 = 0.0;
-    sicp2(cxx, ifpl + 1, n, coef, l, sgme2);
+    sicp2(cxx, ifpl + 1, n, f.coef, f.l, f.sgme2);
+    f.ok = true;
+    return f;
+}
+
+void spgrh_eval(const ArFit& f, const std::vector<double>& frq, int nspfrq,
+                bool ldecbl, std::vector<double>& sxx) {
+    const double PI = 3.14159265358979;
     sxx.assign(static_cast<std::size_t>(nspfrq), 0.0);
     for (int i = 0; i < nspfrq; ++i) {
         double c2 = 1.0, s2 = 0.0;
-        for (int k = 1; k <= l; ++k) c2 += coef[k] * std::cos(2.0 * k * PI * frq[i]);
-        for (int k = 1; k <= l; ++k) s2 += coef[k] * std::sin(2.0 * k * PI * frq[i]);
-        double pxx = sgme2 / (c2 * c2 + s2 * s2);
+        for (int k = 1; k <= f.l; ++k)
+            c2 += f.coef[k] * std::cos(2.0 * k * PI * frq[i]);
+        for (int k = 1; k <= f.l; ++k)
+            s2 += f.coef[k] * std::sin(2.0 * k * PI * frq[i]);
+        double pxx = f.sgme2 / (c2 * c2 + s2 * s2);
         if (ldecbl) { if (pxx < 0.0) pxx = -pxx; pxx = 10.0 * std::log10(pxx); }
         sxx[i] = pxx;
     }
-    return true;
 }
 
 // getTPeaks window size (specpeak.f:560-577), sp==12 branch: the Tukey window m
@@ -226,8 +251,11 @@ bool tukey_spectrum(const double* x, int n1, int n2, bool ltk120,
 }  // namespace
 
 bool run_spectrum(X13Context& ctx) {
-    if (!ctx.spcout.requested) return true;
-
+    // NO gate on ctx.spcout.requested: x11ari.f:282-287 calls spcdrv under a
+    // plain IF(Ny.eq.12), with no dependence on the spectrum{} spec at all, so
+    // the oracle computes this block on every monthly run -- 289 of the 331
+    // `.udg` goldens carry `spcori.*`. The save TABLES stay keyed on the request
+    // (the harness only emits them when asked); the savelog canaries do not.
     const int spctyp = ctx.rho.spctyp;   // 0 = arspec (spgrh), 1 = periodogram
     const int mxarsp = ctx.rho.mxarsp;
 
@@ -305,60 +333,145 @@ bool run_spectrum(X13Context& ctx) {
     const bool ltk120 = ctx.rho.ltk120;
 
     auto& out = ctx.spcout;
-    out.frq = mkfreq(sp, /*peakwd=*/1);
+    out.frq = mkfreq(sp, ctx.rho.peakwd);
     std::vector<double> srs(PLEN, 0.0), tmp(PLEN, 0.0);
 
+    // mkpeak.f + mkfreq.f -- the constant peak-index tables and the ENHANCED
+    // frequency grid the peak tests index. Built once; ok=false for any
+    // configuration this increment declines (see spectrum_peaks.cpp).
+    const SpecPeakGrid pkgrid = spectrum_peak_grid(sp, ctx.rho.peakwd,
+                                                   ctx.rho.lfqalt,
+                                                   ctx.rho.lprsfq);
+    out.peaks.clear();
+    out.grid = pkgrid;
+
     // Estimator selector (spcdrv.f: IF Spctyp==0 spgrh ELSE spgrh2): the AR
-    // spectrum for type=arspec, the periodogram for type=periodogram. Returns
-    // whether a table was produced.
-    auto spec_est = [&](const double* series, int n1, int n2,
-                        std::vector<double>& sxx) -> bool {
-        if (spctyp == 0)
-            return spgrh(series, out.frq, n1, n2, 61, sp, mxarsp, ldecbl, sxx);
-        spgrh2(series, out.frq, n1, n2, ldecbl, sxx);
+    // spectrum for type=arspec, the periodogram for type=periodogram. Fills the
+    // 61-point plot grid AND the enhanced peak grid from one fit, then runs the
+    // peak diagnostics on the pair (svpeak.f reads both). Returns whether a
+    // table was produced.
+    auto spec_est = [&](const double* series, int n1, int n2, bool ltdfrq,
+                        const char* prefix, std::vector<double>& sxx) -> bool {
+        std::vector<double> sxx2;
+        if (spctyp == 0) {
+            const ArFit f = spgrh_fit(series, n1, n2, 61, sp, mxarsp);
+            if (!f.ok) return false;
+            spgrh_eval(f, out.frq, 61, ldecbl, sxx);
+            if (pkgrid.ok)
+                spgrh_eval(f, pkgrid.frqpk, pkgrid.nfreq, ldecbl, sxx2);
+        } else {
+            spgrh2(series, out.frq, n1, n2, ldecbl, sxx);
+            if (pkgrid.ok) spgrh2(series, pkgrid.frqpk, n1, n2, ldecbl, sxx2);
+        }
+        if (pkgrid.ok)
+            out.peaks.push_back(spectrum_peaks(sxx, sxx2, pkgrid, ctx.rho.spclim,
+                                               ldecbl, ltdfrq, ctx.rho.plocal,
+                                               sp, prefix));
+        return true;
+    };
+    // spcdrv.f:152-153 -- the trading-day frequencies are only searched when the
+    // spectrum span is longer than NTDLIM=60 observations.
+    const bool ltdfrq_main = (posfob - l1 + 1) > 60;
+
+    const bool lx11 = ctx.captured.has_x11;
+    const int kfulsm = ctx.x11opt.kfulsm;
+    const bool lrbstsa = ctx.rho.lrbstsa;
+    // ispos.f -- every observation over [n1,n2] strictly positive. The oracle
+    // refuses to take the LOG of a series that is not (Muladd==0 is the
+    // multiplicative mode, where gendff logs), and simply produces no table.
+    auto ispos = [](const double* v, int n1, int n2) {
+        for (int i = n1; i <= n2; ++i)
+            if (!(v[i - 1] > 0.0)) return false;
         return true;
     };
 
     // --- sp0: detrended original / AdjOri (spcdrv.f:161-218) ---------------
-    // Increment 1 implements only the Spcsrs>=2 default (adjoriginal/b1):
-    // srs = Stcsi, then the extreme-value fold (addmul Stex) for the Lx11
-    // Spcsrs==2 non-pseudo-additive case. The Spcsrs<2 branch (series=original/
-    // a1 -> Series with Adj{ls,ao,tc,so} divided out, spcdrv.f:178-185) and the
-    // Psuadd branch (spcdrv.f:166-174) are follow-on; no corpus spec exercises
-    // them (the default spectrumseries is adjoriginal, Spcsrs==2).
+    // Increment 1 implements the Spcsrs>=2 default (adjoriginal/b1): srs =
+    // Stcsi, then either the pseudo-additive rebuild or the extreme-value fold
+    // (addmul Stex) on the Lx11 Spcsrs==2 path. The Spcsrs<2 branch
+    // (series=original/a1 -> Series with Adj{ls,ao,tc,so} divided out,
+    // spcdrv.f:178-185) is follow-on; no corpus spec exercises it (the default
+    // spectrumseries is adjoriginal, Spcsrs==2).
     {
         const double* stcsi = ctx.orisrs.stcsi.data();
         for (int i = 1; i <= posfob; ++i) srs[i - 1] = stcsi[i - 1];
-        if (spcsrs == 2 && !psuadd)  // Lx11 path, Spcsrs==2
-            addmul(srs.data(), srs.data(), ctx.mq10_stex.data(), pos1bk, posffc,
-                   muladd);
-        gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
-        out.have_sp0 = spec_est(tmp.data(), l1, posfob, out.sp0);
-        // st0: Tukey spectrum of the same detrended series (spcdrv.f:250-255).
-        out.have_st0 = tukey_spectrum(tmp.data(), l1, posfob, ltk120, out.st0,
-                                      out.frq_tukey);
+        if (lx11 && spcsrs == 2) {
+            if (psuadd) {
+                // spcdrv.f:166-174 -- under pseudo-additive the "original" is
+                // REBUILT from the components rather than folded, because the
+                // pseudo-additive irregular is centred on one and Stcsi is not
+                // the product it is elsewhere.
+                const double* stc = ctx.x11srs.stc.data();
+                const double* sts = ctx.x11srs.sts.data();
+                const double* sti = ctx.x11srs.sti.data();
+                for (int i = pos1ob; i <= posfob; ++i) {
+                    if (kfulsm == 2)
+                        srs[i - 1] = stc[i - 1] * sti[i - 1];
+                    else
+                        srs[i - 1] = stc[i - 1] * (sts[i - 1] + (sti[i - 1] - 1.0));
+                }
+            } else {
+                addmul(srs.data(), srs.data(), ctx.mq10_stex.data(), pos1bk,
+                       posffc, muladd);
+            }
+        }
+        bool goori = true;
+        if (muladd == 0) goori = ispos(srs.data(), ipos, posfob);
+        if (goori) {
+            gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
+            out.have_sp0 = spec_est(tmp.data(), l1, posfob, ltdfrq_main,
+                                    "spcori", out.sp0);
+            // st0: Tukey spectrum of the same series (spcdrv.f:250-255).
+            out.have_st0 = tukey_spectrum(tmp.data(), l1, posfob, ltk120,
+                                          out.st0, out.frq_tukey);
+        }
     }
-    // --- sp1: detrended seasonally adjusted (spcdrv.f:301-349) -------------
-    // The SA series is E2 (Stcime, the SA modified for extreme values), NOT the
-    // D11 save: x11pt4 runs before spcdrv, and spcdrv's Stci holds Part-E's E2.
-    {
-        const double* stcime = ctx.adxser.stcime.data();
-        for (int i = 1; i <= posfob; ++i) srs[i - 1] = stcime[i - 1];
-        gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
-        out.have_sp1 = spec_est(tmp.data(), l1, posfob, out.sp1);
-        // st1: Tukey spectrum of the same detrended SA series (spcdrv.f:388-392).
-        out.have_st1 = tukey_spectrum(tmp.data(), l1, posfob, ltk120, out.st1,
-                                      out.frq_tukey);
-    }
-    // --- sp2: irregular (spcdrv.f:438-467) -- no differencing -------------
-    // Likewise the irregular is E3 (Stime, the modified irregular), not D13.
-    {
-        const double* stime = ctx.mq5a_stime.data();
+    // --- sp1/sp2: only when an adjustment was actually produced -------------
+    // spcdrv.f:284 and :406 -- `(Lx11.and.Kfulsm.eq.0).or.Lseats`. Kfulsm is
+    // x11{type=}: `summary` (1) and `trend` (2) produce no seasonally adjusted
+    // series to take a spectrum OF, and the oracle emits neither table nor
+    // peak block for them.
+    if ((lx11 && kfulsm == 0) || ctx.captured.has_seats) {
+        // --- sp1: detrended seasonally adjusted (spcdrv.f:301-349) ---------
+        // The SA series is E2 (Stcime, the SA modified for extreme values), NOT
+        // the D11 save: x11pt4 runs before spcdrv, and spcdrv's Stci holds
+        // Part-E's E2. `spectrumrobustsa=no` (Lrbstsa false) takes Stci instead.
+        const double* sa = lrbstsa ? ctx.adxser.stcime.data()
+                                   : ctx.x11srs.stci.data();
+        for (int i = 1; i <= posfob; ++i) srs[i - 1] = sa[i - 1];
+        // spcdrv.f:318 -- the LEVEL SHIFT is taken back out of the SA series
+        // before its spectrum, on the Lrbstsa (default) path only. Note this
+        // divide is unconditional on `Finls`, unlike x11pt4's E2 block, and it
+        // runs over [ipos,Posfob] rather than the full padded range. Without it
+        // every spec carrying an LS regressor -- explicit or automatically
+        // identified -- gets a different SA spectrum (measured: spcsa.range
+        // 12.418 vs 12.608 on generated/airline_regb-initial).
+        if (lrbstsa && ctx.x11adj.adjls == 1)
+            divsub(srs.data(), srs.data(), ctx.x11fac.facls.data(), ipos,
+                   posfob, muladd);
+        // spcdrv.f:290-298 -- the same positivity refusal as the original, but
+        // only on the Lx11 + Lrbstsa path.
+        bool gosa = true;
+        if (lx11 && lrbstsa && muladd == 0)
+            gosa = ispos(srs.data(), ipos, posfob);
+        if (gosa) {
+            gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
+            out.have_sp1 = spec_est(tmp.data(), l1, posfob, ltdfrq_main,
+                                    "spcsa", out.sp1);
+            // st1: Tukey spectrum of the same series (spcdrv.f:388-392).
+            out.have_st1 = tukey_spectrum(tmp.data(), l1, posfob, ltk120,
+                                          out.st1, out.frq_tukey);
+        }
+        // --- sp2: irregular (spcdrv.f:438-467) -- no differencing ----------
+        // Likewise the irregular is E3 (Stime, the modified irregular), not D13.
+        const double* ir = lrbstsa ? ctx.mq5a_stime.data()
+                                   : ctx.x11srs.sti.data();
         for (int i = ipos; i <= posfob; ++i) {
-            tmp[i - 1] = stime[i - 1];
+            tmp[i - 1] = ir[i - 1];
             if (muladd != 1) tmp[i - 1] -= 1.0;
         }
-        out.have_sp2 = spec_est(tmp.data(), ipos, posfob, out.sp2);
+        out.have_sp2 = spec_est(tmp.data(), ipos, posfob, ltdfrq_main, "spcirr",
+                                out.sp2);
         // st2: Tukey spectrum of the same irregular series (spcdrv.f:506-510).
         out.have_st2 = tukey_spectrum(tmp.data(), ipos, posfob, ltk120, out.st2,
                                       out.frq_tukey);
@@ -369,15 +482,57 @@ bool run_spectrum(X13Context& ctx) {
     // dfdate(Bgspec, Begrsd)+1 (clamped to 1 if Bgspec precedes the residuals).
     if (ctx.resid_na > 0) {
         const int na = ctx.resid_na;
-        int begrsd[2];
-        addate(begspn, sp, ctx.mdldat.nspobs - na, begrsd);
+        // arima.f:1125's idate, recorded at estimation time (see ctx.resid_begdate).
+        const int begrsd[2] = {ctx.resid_begdate[0], ctx.resid_begdate[1]};
         int rpos = 0;
         dfdate(bgspec_rsd, begrsd, sp, rpos);
         if (rpos < 0) rpos = 1;
         else rpos += 1;
         std::vector<double> ra(PLEN, 0.0);
         for (int i = 1; i <= na; ++i) ra[i - 1] = ctx.resid_a[i - 1];
-        out.have_spr = spec_est(ra.data(), rpos, na, out.spr);
+        // spcrsd.f:74 derives its OWN Ltdfrq from the residual span.
+        out.have_spr = spec_est(ra.data(), rpos, na, (na - rpos + 1) > 60,
+                                "spcrsd", out.spr);
+    }
+
+    // --- savpk.f: the accumulated peak-label lists -------------------------
+    // spcdrv.f:750-794 appends one label per table that found a peak, in the
+    // order rsd (spcrsd.f:213-224, run in the regARIMA phase) then ori, sa,
+    // irr. The SEASONAL list only takes `ori` when NO seasonal adjustment was
+    // done (spcdrv.f:755 `nosa`) -- searching the original for a seasonal peak
+    // is only meaningful then. savpk.f turns an empty list into "none".
+    {
+        const bool nosa = !((lx11 && kfulsm == 0) || ctx.captured.has_seats);
+        std::string cs, ct;
+        auto add = [](std::string& s, const char* lab) {
+            if (!s.empty()) s += ' ';
+            s += lab;
+        };
+        auto find = [&](const char* prefix) -> const SpecPeaks* {
+            for (const auto& p : out.peaks)
+                if (p.prefix == prefix) return &p;
+            return nullptr;
+        };
+        if (const SpecPeaks* p = find("spcrsd")) {
+            // mkspky.f: the SEATS residual spectrum is labelled `extrsd`.
+            const char* lab = ctx.captured.has_seats ? "extrsd" : "rsd";
+            if (p->ltdpk > 0) add(ct, lab);
+            if (p->lsapk > 0) add(cs, lab);
+        }
+        if (const SpecPeaks* p = find("spcori")) {
+            if (p->ltdpk > 0) add(ct, "ori");
+            if (nosa && p->lsapk > 0) add(cs, "ori");
+        }
+        if (const SpecPeaks* p = find("spcsa")) {
+            if (p->ltdpk > 0) add(ct, "sa");
+            if (p->lsapk > 0) add(cs, "sa");
+        }
+        if (const SpecPeaks* p = find("spcirr")) {
+            if (p->ltdpk > 0) add(ct, "irr");
+            if (p->lsapk > 0) add(cs, "irr");
+        }
+        out.peaks_seas = cs.empty() ? "none" : cs;
+        out.peaks_td = ct.empty() ? "none" : ct;
     }
 
     out.ran = true;
