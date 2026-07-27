@@ -1511,5 +1511,19 @@ diagnostics front (force / slidingspans / history) is now closed.
     neither decision band, so the row count is data-dependent. The trace is
     cleared at the head of each selection rather than appended to, so a span
     replay's passes cannot accumulate onto the main run's.
+- **The SPECTRUM diagnostic block is silently absent on every monthly run --
+  scouted, NOT ported.** `x11ari.f:282-287` calls `spcdrv` under a plain
+  `IF(Ny.eq.12)`, with no dependence on the `spectrum{}` spec at all, so the
+  oracle computes the whole block on every monthly run; this port gates
+  `run_spectrum` on `ctx.spcout.requested`, which only a `spectrum{}` block
+  sets. Measured on `generated/airline_x11-default` (no `spectrum{}`): the
+  golden carries the full `spcori.*`/`peaks.*`/`s1..s5`/`t1..t2` block and the
+  engine emits ZERO `sp0/sp1/sp2` rows and none of the canaries. 289 goldens
+  carry `spcori.*`, 324 the QS family. The 61-point spectra themselves ARE
+  ported and bit-exact, so what is missing is peak arithmetic on top of a
+  verified base: `shlsrt`/`mkmdsx`/`ispeak`/`idpeak`/`smpeak`/`svpeak`/`mxpeak`,
+  about 420 Fortran lines, plus the separable `getTPeaks` (Tukey) and `genqs`
+  (QS) steps. Full map, including the fixed monthly peak indices measured off
+  the goldens and the suggested order, in **`tools/spectrum_peaks_scouting.md`**.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
