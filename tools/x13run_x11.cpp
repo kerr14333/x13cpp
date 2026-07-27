@@ -29,6 +29,7 @@
 #include <unistd.h>
 #endif
 
+#include "x13/fformat.hpp"
 #include "specparse/specparse.hpp"
 #include "common/x13context.hpp"
 #include "numeric/numeric.hpp"    // dpeq
@@ -84,6 +85,28 @@ void dump_span_table(const char* tag, int iyr, int im, int nsea, int sslen,
     }
 }
 }  // namespace
+
+// prtd8b.f:2000 / prtd9a.f:1000 -- the D8B and D9A savelog rows:
+//   prtd8b 2000: ('d8b.',i2.2,a,1x,a)          -- the `a` after the index is
+//                the colon, which becomes 'c:' on a CONTINUATION row
+//   prtd9a 1000: ('d9a.',i2.2,':',3(1x,E17.10))
+static void dump_d8bd9a(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    const auto& d = ctx.d8bd9a;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    if (d.ran_d8b) {
+        for (std::size_t k = 0; k < d.d8b_text.size(); ++k)
+            line(fwrite_fmt("('d8b.',i2.2,a,1x,a)", d.d8b_period[k], ":",
+                            d.d8b_text[k]));
+    }
+    if (d.ran_d9a) {
+        for (std::size_t k = 0; k < d.d9a_ibar.size(); ++k)
+            line(fwrite_fmt("('d9a.',i2.2,':',3(1x,e17.10))",
+                            static_cast<int>(k) + 1, d.d9a_ibar[k],
+                            d.d9a_sbar[k], d.d9a_msr[k]));
+    }
+}
+
 
 int main(int argc, char** argv) {
     std::setvbuf(stderr, nullptr, _IONBF, 0);  // DBG: unbuffer stderr for crash-time flush
@@ -383,6 +406,8 @@ int main(int argc, char** argv) {
             std::printf("aicc_xe_window %d\n", ctx.x11reg_xe_window);
         }
     }
+    dump_d8bd9a(ctx);
+
 
     // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one
     // line per revision-table row (see tests/parity/test_history_tables.py).

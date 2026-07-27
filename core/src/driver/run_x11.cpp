@@ -209,6 +209,12 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // them back for anything that reads the main adjustment afterwards.
     const int ixreg_main = ctx.hiddn.ixreg;
     const std::vector<double> faccal_main = ctx.x11_faccal_prior;
+    // prtd8b/prtd9a write straight onto ctx from inside x11pt3, so a span
+    // replay overwrites them with that span's own extremes and moving-
+    // seasonality ratios -- measured: airline_slidingspans reported the LAST
+    // span's d9a on every row. Same class as /x11srs/ and ctx.x11_f2tests
+    // above; the oracle punches its .udg before sspdrv/revdrv run.
+    const auto d8bd9a_main = ctx.d8bd9a;
 
     if (!run_slidingspans(ctx, trnsrs)) return false;
 
@@ -227,6 +233,7 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.x11_frcfac = frcfac_main;
     ctx.hiddn.ixreg = ixreg_main;
     ctx.x11_faccal_prior = faccal_main;
+    ctx.d8bd9a = d8bd9a_main;
 
     return !ctx.error.lfatal;
 }

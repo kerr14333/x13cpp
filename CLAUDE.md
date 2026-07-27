@@ -1450,5 +1450,38 @@ diagnostics front (force / slidingspans / history) is now closed.
   regex is widened and there is now a `test_every_owned_key_is_readable` guard
   asserting `_KEY_RE` actually matches every key the gate claims. Mutation-
   tested afterwards: a 1% perturbation of `aape.1` fails 271 of 276.
+- **D8B and D9A -- CLOSED (line-exact), and the span-replay clobber came with
+  them.** Two X-11 diagnostics the port computed everything for and then never
+  reported: both call sites in x11pt3 were commented `deferred` alongside their
+  PRINT tables, but each also writes a `.udg` savelog block that is **not print
+  surface** -- prtd8b's gate is `Prttab .or. Savtab .or. (Lsumm>0 .and.
+  gudrun)`. 172 goldens carry `d8b.NN`, 169 carry `d9a.NN`, and neither was
+  emitted. `core/src/x11/d8bd9a.{hpp,cpp}`, gated by a new `test_d8b_d9a` in
+  `test_x11_diagnostics.py` over the same 154 specs -- **zero new goldens**.
+  - **D9A was free**: `vsfa` already computed all three columns (Ibar, Sbar,
+    and their ratio) into `/x11opt/ Rati`; only the report was missing. It is
+    emitted under the oracle's own two gates (`Khol!=1 .and. Kfulsm<2`), so a
+    classic X-11 Easter run and the trend-only mode correctly emit nothing.
+  - **D8B** needed `numaff.f` (how many SI ratios a level shift of a given
+    magnitude disturbs -- a lookup on the percent level change by trend-filter
+    length) plus prtd8b's own label logic: `extind` counts REASONS (+1 for an
+    X-11 extreme, +2 per regARIMA outlier) and collapses to one character,
+    `*`/`#`/`@`/`&`, with an LS additionally stamping `-` on its neighbourhood
+    directly rather than through `extind`. The savelog pass then rewrites `*`
+    as **`z` when the weight went all the way to zero** -- the observation was
+    REPLACED, not merely damped. Note the row is labelled with the DATE's
+    period as it stands after the last `addate` of the inner loop, not with the
+    loop index.
+  - **The find: 31 of the 305 new cases failed, every one of them a
+    `history{}` or `slidingspans{}` spec.** prtd8b/prtd9a write straight onto
+    ctx from inside x11pt3, and a span replay is a full x11pt3 pass, so every
+    row came back as the LAST SPAN's (measured: `airline_slidingspans` d9a.01
+    `0.3357/0.2909/1.1538` against the golden's `1.1603/0.2127/5.4561`).
+    `ctx.d8bd9a` joins the save/restore set in `run_x11` and `run_seats` --
+    the same discipline `/x11srs/`, `/lkhd/`, `/adxser/` and `ctx.x11_f2tests`
+    already needed, and the fourth time this exact seam has bitten. **Any new
+    ctx field written from inside x11pt1/x11pt2/x11pt3 needs adding to that
+    set**; the pattern is now frequent enough to check by default rather than
+    to discover per feature.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

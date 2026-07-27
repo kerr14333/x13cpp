@@ -7,6 +7,7 @@
 #include "diag/checkres.hpp"   // CheckDiagnostics (check{} residual diagnostics)
 #include "diag/estdgn.hpp"     // EstDiagnostics (outlier counts + ARMA roots)
 #include "diag/amdfct.hpp"     // AapeDiagnostics (average absolute forecast error)
+#include "x11/d8bd9a.hpp"      // D8bD9aOutput (the D8B/D9A savelog blocks)
 #include "common/gen/adj_cmn.hpp"
 #include "common/gen/adxser_cmn.hpp"
 #include "common/gen/agr_cmn.hpp"
@@ -211,6 +212,10 @@ struct X13Context {
     EstDiagnostics estdgn{};
     // amdfct.f -- the average absolute percentage forecast error (aape.0-3).
     AapeDiagnostics aape{};
+    // prtd8b.f / prtd9a.f savelog rows. Snapshot at the x11pt3 call sites --
+    // the span replays re-run x11pt3 and would overwrite them, the same
+    // discipline ctx.x11_f2tests needs.
+    D8bD9aOutput d8bd9a{};
     // The INTERNAL (pre-publication) D13 and D12 as they stand at the end of
     // x11pt3, i.e. before the AO/TC outliers are folded back into the published
     // D13 and the level shift into the published D12. x11pt4 reads those

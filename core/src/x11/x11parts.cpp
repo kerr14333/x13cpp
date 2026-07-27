@@ -10,6 +10,7 @@
 
 #include "common/x13context.hpp"
 #include "x11/x11filt.hpp"          // divsub, addmul, setmv, logar, averag
+#include "x11/d8bd9a.hpp"       // prtd8b_savelog, prtd9a_savelog
 #include "x11/x11seas.hpp"          // vsfa, vsfb, vsfc
 #include "x11/x11reg.hpp"           // x11mdl_td (x11regression irregular regression)
 #include "x11/loadxr.hpp"           // loadxr (regARIMA <-> x11reg model swap)
@@ -810,7 +811,11 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         replac(stsi, temp, stwt, pos1bk, posfob, ny);
         if (opt.kfulsm < 2) sfmsr(ctx, sts, stsi, pos1bk, posfob, posffc);
     }
-    // (deferred: D8B prtd8b.)
+    // x11pt3.f:149-151 -- D8B's savelog block. Print surface is still
+    // deferred; this is the `.udg` half, which is NOT print surface (its gate
+    // includes `Lsumm>0.and.gudrun`).
+    if (!hid.lhiddn) prtd8b_savelog(ctx, stwt, pos1ob, posfob);
+    if (ctx.error.lfatal) return;
 
     // D9: identify which SI ratios are modified (extreme); mark stc2 = ebar.
     for (int i = pos1bk; i <= posffc; ++i) {
@@ -818,7 +823,10 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         else temp[i - 1] = prm::DNOTST;
         stc2[i - 1] = ebar;
     }
-    // (deferred: D9 table/punch/prtd9a.)
+    // x11pt3.f:176-185 -- D9A's savelog block, under the same two gates the
+    // oracle applies (a classic X-11 Easter run and the trend-only mode both
+    // skip it). Print surface stays deferred.
+    if (opt.khol != 1 && opt.kfulsm < 2) prtd9a_savelog(ctx);
 
     // Year-ahead seasonal factors.
     int klda = posffc + ny;

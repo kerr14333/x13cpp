@@ -322,3 +322,70 @@ def test_f3_quality_statistics(rel: str) -> None:
     if "f3.fail" in want:
         assert int(got["f3.fail"][0]) == int(want["f3.fail"][0]), (
             f"{rel}: f3.fail {got['f3.fail'][0]} != {want['f3.fail'][0]}")
+
+
+# --- D8B / D9A (prtd8b.f / prtd9a.f) ---------------------------------------
+#
+# Both call sites in x11pt3 were marked "deferred" alongside their PRINT
+# tables, but each also writes a `.udg` savelog block that is not print
+# surface -- 172 goldens carry `d8b.NN` and 169 carry `d9a.NN`. The engine
+# emits both with the oracle's own formats, so these compare EXACTLY:
+# `d8b` is a text row (years plus label characters) and `d9a` is E17.10,
+# ten significant digits, which the arithmetic reaches on every gated spec.
+
+
+def _read_udg_prefixed(path: str, prefix: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    pat = re.compile(r"^(" + prefix + r"\.[0-9]+):(.*)$")
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for ln in fh:
+            m = pat.match(ln.rstrip("\n").lstrip())
+            if m:
+                out[m.group(1)] = m.group(2).rstrip()
+    return out
+
+
+@functools.lru_cache(maxsize=None)
+def _run_raw(rel: str) -> str:
+    spec = os.path.join(_CORPUS, rel + ".spc")
+    txt = open(spec, encoding="utf-8", errors="replace").read().lower()
+    if "pickmdl{" in txt:
+        pytest.skip("pickmdl{} model selection is parse-only (M1)")
+    r = subprocess.run([BIN, spec], capture_output=True, text=True,
+                       cwd=os.path.dirname(spec))
+    assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"
+    assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]
+    return r.stdout
+
+
+def _produced_prefixed(text: str, prefix: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    pat = re.compile(r"^(" + prefix + r"\.[0-9]+):(.*)$")
+    for ln in text.splitlines():
+        m = pat.match(ln)
+        if m:
+            out[m.group(1)] = m.group(2).rstrip()
+    return out
+
+
+@pytest.mark.skipif(not CASES, reason="no corpus golden ships the F2 test battery")
+@pytest.mark.parametrize("rel", CASES)
+@pytest.mark.parametrize("prefix", ["d8b", "d9a"])
+def test_d8b_d9a(rel: str, prefix: str) -> None:
+    """prtd8b.f / prtd9a.f savelog rows, compared line-exact."""
+    udg = os.path.join(_GOLDEN, rel, os.path.basename(rel) + ".udg")
+    want = _read_udg_prefixed(udg, prefix)
+    if not want:
+        pytest.skip(f"golden carries no {prefix} block")
+    got = _produced_prefixed(_run_raw(rel), prefix)
+
+    # Both directions: a missing row is an unreported period, an extra row is
+    # the engine reporting one the oracle suppressed.
+    missing = sorted(set(want) - set(got))
+    extra = sorted(set(got) - set(want))
+    assert not missing, f"{rel}: {prefix} rows missing from the engine: {missing}"
+    assert not extra, f"{rel}: {prefix} rows the oracle does not emit: {extra}"
+
+    bad = [(k, want[k], got[k]) for k in sorted(want) if want[k] != got[k]]
+    assert not bad, "\n".join(
+        f"{rel}.{k}: golden {w!r} != engine {g!r}" for k, w, g in bad)

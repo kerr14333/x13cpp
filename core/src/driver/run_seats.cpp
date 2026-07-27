@@ -164,6 +164,7 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         const auto seasadd_main = ctx.seats_seasonal_add;
         const auto cmbadd_main = ctx.seats_combined_add;
         const auto cmbfac_main = ctx.seats_combined_factor;
+        const auto d8bd9a_main = ctx.d8bd9a;
 
         // x12run.f:225/257 order: sspdrv then revdrv, both after x11ari.
         const int begspn_full[2] = {ctx.mdldat.begspn(1), ctx.mdldat.begspn(2)};
@@ -189,6 +190,7 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         ctx.seats_seasonal_add = seasadd_main;
         ctx.seats_combined_add = cmbadd_main;
         ctx.seats_combined_factor = cmbfac_main;
+        ctx.d8bd9a = d8bd9a_main;
 
         if (!ok || ctx.error.lfatal) return false;
     }
