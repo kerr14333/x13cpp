@@ -389,3 +389,61 @@ def test_d8b_d9a(rel: str, prefix: str) -> None:
     bad = [(k, want[k], got[k]) for k in sorted(want) if want[k] != got[k]]
     assert not bad, "\n".join(
         f"{rel}.{k}: golden {w!r} != engine {g!r}" for k, w, g in bad)
+
+
+# --- the remaining single-line X-11 savelog canaries ------------------------
+#
+# ftest.f's residual-seasonality F-test on D11 (`d11.f`, and `d11.3y.f` over
+# just the last three years -- the SAME routine, gone round its DO WHILE a
+# second time), sfmsr.f's global-MSR filter-selection trace (one
+# `autosf.msrNN` per pass, then the `sfmsr` filter it settled on), and the two
+# Henderson trend lengths the run chose (`d7trendma` at D7, `finaltrendma` at
+# the final trend). All four routines were already ported; only the savelog
+# rows were missing, and the D11 ftest call site was deferred outright.
+#
+# Compared LINE-EXACT: the engine writes each with the Fortran format that
+# produced it, so there is nothing to round.
+
+_X11_MISC = ["d11.f", "d11.3y.f", "sfmsr", "d7trendma", "finaltrendma"]
+_X11_MISC_PREFIX = "autosf.msr"
+
+
+def _read_udg_keys(path: str, keys, prefix: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    pat = re.compile(r"^([A-Za-z][A-Za-z0-9._]*):(.*)$")
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for ln in fh:
+            m = pat.match(ln.rstrip("\n").lstrip())
+            if m and (m.group(1) in keys or m.group(1).startswith(prefix)):
+                out[m.group(1)] = m.group(2).rstrip()
+    return out
+
+
+def _produced_keys(text: str, keys, prefix: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    pat = re.compile(r"^([A-Za-z][A-Za-z0-9._]*):(.*)$")
+    for ln in text.splitlines():
+        m = pat.match(ln)
+        if m and (m.group(1) in keys or m.group(1).startswith(prefix)):
+            out[m.group(1)] = m.group(2).rstrip()
+    return out
+
+
+@pytest.mark.skipif(not CASES, reason="no corpus golden ships the F2 test battery")
+@pytest.mark.parametrize("rel", CASES)
+def test_x11_misc_canaries(rel: str) -> None:
+    """d11.f / d11.3y.f / sfmsr / autosf.msrNN / d7trendma / finaltrendma."""
+    udg = os.path.join(_GOLDEN, rel, os.path.basename(rel) + ".udg")
+    want = _read_udg_keys(udg, _X11_MISC, _X11_MISC_PREFIX)
+    if not want:
+        pytest.skip("golden carries none of these canaries")
+    got = _produced_keys(_run_raw(rel), _X11_MISC, _X11_MISC_PREFIX)
+
+    missing = sorted(set(want) - set(got))
+    extra = sorted(set(got) - set(want))
+    assert not missing, f"{rel}: keys missing from the engine: {missing}"
+    assert not extra, f"{rel}: keys the oracle does not emit: {extra}"
+
+    bad = [(k, want[k], got[k]) for k in sorted(want) if want[k] != got[k]]
+    assert not bad, "\n".join(
+        f"{rel}.{k}: golden {w!r} != engine {g!r}" for k, w, g in bad)

@@ -27,6 +27,7 @@ void ftest(X13Context& ctx, const double* x, int ib, int ie, int nyr, int ind) {
 
     std::vector<double> temp(static_cast<std::size_t>(ie) + 1, 0.0);
     int kb;
+    int l = 0;
     if (ind == 0 || ind == 2) {
         for (int i = ib; i <= ie; ++i) temp[i] = x[i - 1];
         kb = ib;
@@ -34,59 +35,101 @@ void ftest(X13Context& ctx, const double* x, int ib, int ie, int nyr, int ind) {
         // "Cannot perform F-test on first differenced data" -- print-only in
         // the oracle, but it RETURNS, so nothing downstream is written.
         if (ctx.x11msc.same) return;
-        const int l = nyr / 4;
+        l = nyr / 4;
         kb = ib + l;
         for (int i = kb; i <= ie; ++i) temp[i] = x[i - 1] - x[i - l - 1];
     }
 
-    int nt = 0;
-    double sumt = 0.0, ssqt = 0.0, ssm = 0.0;
-    for (int i = 1; i <= nyr; ++i) {
-        int nm = 0;
-        double summ = 0.0;
-        const int ji = i + kb - 1;
-        for (int j = ji; j <= ie; j += nyr) {
-            nm += 1;
-            summ += temp[j];
-            ssqt += temp[j] * temp[j];
+    // ftest.f:65 -- a DO WHILE the Ind==1 (D11) path goes round TWICE: once
+    // over the whole span, then again over just the last three years, which is
+    // what separates `d11.f` from `d11.3y.f`. Every other Ind takes one pass.
+    int itype = 0;
+    while (true) {
+        int nt = 0;
+        double sumt = 0.0, ssqt = 0.0, ssm = 0.0;
+        for (int i = 1; i <= nyr; ++i) {
+            int nm = 0;
+            double summ = 0.0;
+            const int ji = i + kb - 1;
+            for (int j = ji; j <= ie; j += nyr) {
+                nm += 1;
+                summ += temp[j];
+                ssqt += temp[j] * temp[j];
+            }
+            if (nm == 0) continue;
+            nt += nm;
+            sumt += summ;
+            ssm += summ * summ / nm;
         }
-        nt += nm;
-        sumt += summ;
-        ssm += summ * summ / nm;
-    }
-    const double st = nt;
-    ssqt = (ssqt - sumt * sumt / st) * c;
-    ssm = (ssm - sumt * sumt / st) * c;
-    const double ssr = ssqt - ssm;
-    const int kdfr = nt - nyr;
-    const int kdfb = nyr - 1;
-    const double fmsm = ssm / static_cast<double>(kdfb);
-    const double fmsr = ssr / static_cast<double>(kdfr);
-    // Residual MSE of exactly zero: the oracle warns and RETURNS, leaving
-    // /tests/ untouched.
-    if (dpeq(fmsr, 0.0)) return;
+        const double st = nt;
+        ssqt = (ssqt - sumt * sumt / st) * c;
+        ssm = (ssm - sumt * sumt / st) * c;
+        const double ssr = ssqt - ssm;
+        const int kdfr = nt - nyr;
+        const int kdfb = nyr - 1;
+        const double fmsm = ssm / static_cast<double>(kdfb);
+        const double fmsr = ssr / static_cast<double>(kdfr);
+        // Residual MSE of exactly zero: the oracle warns and RETURNS, leaving
+        // /tests/ untouched.
+        if (dpeq(fmsr, 0.0)) return;
 
-    double f = fmsm / fmsr;
-    // NOTE fvalue takes f BY REFERENCE and may zero it (CB-17) -- and the
-    // oracle stores f AFTER this call, so the clobbered value is the one that
-    // reaches Fstabl/Fpres. Faithful.
-    const double prob = fvalue(f, kdfb, kdfr) * 100.0;
-    if (ind == 0) {
-        ctx.tests.fstabl = f;
-        ctx.tests.p1 = prob;
-    } else if (ind != 1) {
-        ctx.tests.fpres = f;
-        ctx.tests.p3 = prob;
-    }
-    // ftest.f:113 -- this RETURN sits between the /tests/ store above and the
-    // sliding-spans store below, so it must be kept even though every other
-    // thing it guards is print.
-    if ((ctx.hiddn.lhiddn && ctx.hiddn.issap < 2) ||
-        ((ctx.hiddn.ixreg == 2 || ctx.x11opt.khol == 1) && !ctx.title.prt1ps))
+        double f = fmsm / fmsr;
+        // NOTE fvalue takes f BY REFERENCE and may zero it (CB-17) -- and the
+        // oracle stores f AFTER this call, so the clobbered value is the one
+        // that reaches Fstabl/Fpres. Faithful.
+        const double prob = fvalue(f, kdfb, kdfr) * 100.0;
+        if (ind == 0) {
+            ctx.tests.fstabl = f;
+            ctx.tests.p1 = prob;
+        } else if (ind != 1) {
+            ctx.tests.fpres = f;
+            ctx.tests.p3 = prob;
+        }
+        // ftest.f:113 -- this RETURN sits between the /tests/ store above and
+        // the sliding-spans store below, so it must be kept even though every
+        // other thing it guards is print.
+        if ((ctx.hiddn.lhiddn && ctx.hiddn.issap < 2) ||
+            ((ctx.hiddn.ixreg == 2 || ctx.x11opt.khol == 1) &&
+             !ctx.title.prt1ps))
+            return;
+        // Sliding-spans per-column stable-F record (ftest.f:120).
+        if (ind == 0 && ctx.hiddn.issap == 2) ctx.ssft.ssfts(ctx.ssft.icol) = f;
+
+        // ftest.f:163-195 -- the D11 savelog rows. `d11.f` on the first pass,
+        // `d11.3y.f` on the second; the `i` prefix is the INDIRECT composite
+        // adjustment's (Iagr>=4), which agr3 reaches with the same routine.
+        if (ind != 0 && ind != 2) {
+            const bool indirect = ctx.agr.iagr >= 4;
+            if (itype == 0) {
+                if (indirect) {
+                    ctx.x11_id11f = f;
+                    ctx.x11_id11f_prob = prob;
+                    ctx.x11_id11f_set = true;
+                } else {
+                    ctx.x11_d11f = f;
+                    ctx.x11_d11f_prob = prob;
+                    ctx.x11_d11f_set = true;
+                }
+                // ftest.f:192-196 -- go round again over the last three years,
+                // but only if that window still starts inside the series.
+                const int kb2 = ie - 3 * nyr + 1;
+                if (kb2 < (ib + l)) return;
+                kb = kb2;
+                itype = 1;
+                continue;
+            }
+            if (indirect) {
+                ctx.x11_id11f3y = f;
+                ctx.x11_id11f3y_prob = prob;
+                ctx.x11_id11f3y_set = true;
+            } else {
+                ctx.x11_d11f3y = f;
+                ctx.x11_d11f3y_prob = prob;
+                ctx.x11_d11f3y_set = true;
+            }
+        }
         return;
-    // Sliding-spans per-column stable-F record (ftest.f:120).
-    if (ind == 0 && ctx.hiddn.issap == 2) ctx.ssft.ssfts(ctx.ssft.icol) = f;
-    // (everything past here in the oracle is WRITE / d11.f savelog.)
+    }
 }
 
 // kwtest.f -- Kruskal-Wallis. The rank sort is the oracle's own selection sort

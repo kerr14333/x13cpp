@@ -215,6 +215,13 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // span's d9a on every row. Same class as /x11srs/ and ctx.x11_f2tests
     // above; the oracle punches its .udg before sspdrv/revdrv run.
     const auto d8bd9a_main = ctx.d8bd9a;
+    const double d11f_main[4] = {ctx.x11_d11f, ctx.x11_d11f_prob,
+                                 ctx.x11_d11f3y, ctx.x11_d11f3y_prob};
+    const bool d11f_set_main[2] = {ctx.x11_d11f_set, ctx.x11_d11f3y_set};
+    const auto autosf_main = ctx.x11_autosf_msr;
+    const int sfmsr_main = ctx.x11_sfmsr_filter;
+    const int d7trend_main = ctx.x11_d7trendma;
+    const int fintrend_main = ctx.x11_finaltrendma;
 
     if (!run_slidingspans(ctx, trnsrs)) return false;
 
@@ -234,6 +241,16 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.hiddn.ixreg = ixreg_main;
     ctx.x11_faccal_prior = faccal_main;
     ctx.d8bd9a = d8bd9a_main;
+    ctx.x11_d11f = d11f_main[0];
+    ctx.x11_d11f_prob = d11f_main[1];
+    ctx.x11_d11f3y = d11f_main[2];
+    ctx.x11_d11f3y_prob = d11f_main[3];
+    ctx.x11_d11f_set = d11f_set_main[0];
+    ctx.x11_d11f3y_set = d11f_set_main[1];
+    ctx.x11_autosf_msr = autosf_main;
+    ctx.x11_sfmsr_filter = sfmsr_main;
+    ctx.x11_d7trendma = d7trend_main;
+    ctx.x11_finaltrendma = fintrend_main;
 
     return !ctx.error.lfatal;
 }

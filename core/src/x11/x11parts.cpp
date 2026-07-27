@@ -590,6 +590,11 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         if (muladd == 0) {
             bool chkfct = false;
             chktrn(ctx, stc, chkfct);  // oktrn only gated a deferred D7 print.
+    }
+    // x11pt2.f:610-614 -- the D7 Henderson length, reported only on the D pass
+    // (Kpart==4) of a run that let the program choose it (Ktcopt==0).
+    if (opt.ktcopt == 0 && kpart == 4) ctx.x11_d7trendma = opt.nterm;
+    {
         }
         // (deferred: d7trendma savelog; B7/C7/D7 trend table.)
 
@@ -935,8 +940,14 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // (Stcsi), not to the modified SA.
     if (opt.kfulsm == 1)
         copy(stcsi + (pos1bk - 1), ext.nbfpob, 1, stci + (pos1bk - 1));
-    vtc(ctx, stc, stci);
-    // (deferred: finaltrendma savelog.)
+vtc(ctx, stc, stci);
+    // x11pt3.f:400/407-410 -- the FINAL trend filter length. Gated on Ktcopt==0
+    // (the program chose the length) AND on the FULL-ADJUSTMENT / trend-only
+    // modes: x11pt3.f wraps the whole vtc block in `Kfulsm.eq.0.or.Kfulsm.eq.2`,
+    // so a summary-measures run (Kfulsm==1) emits nothing even though this port
+    // still runs vtc there over a different input.
+    if (opt.ktcopt == 0 && (opt.kfulsm == 0 || opt.kfulsm == 2))
+        ctx.x11_finaltrendma = opt.nterm;
     if (muladd == 2) {
         // Log-additive: antilog the trend, then bias-correct it (x11pt3.f:411-424).
         // biasfc is trbias's output, used only for a deferred print. tru7hn from
@@ -1107,7 +1118,13 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     } else {
         ctx.x11_stcipc.clear();
     }
-    // (deferred: D11 table/punch; residual-seasonality ftest(Stci) -- read-only.)
+    // x11pt3.f:620/661 -- the RESIDUAL-SEASONALITY F-test on D11. Print/punch
+    // of the D11 table itself is still deferred, but this call also writes the
+    // `d11.f` / `d11.3y.f` savelog rows, which are not print surface. Runs on
+    // BOTH branches of the transform{constant=} split above, exactly as the
+    // oracle does (:620 with a constant removed, :661 without).
+    ftest(ctx, stci, pos1ob, posfob, ny, 1);
+    if (ctx.error.lfatal) return;
 
     // Store SA for sliding-spans / revisions (off base). Oracle RETURNs
     // immediately after the ssrit call here (x11pt3.f:678-680).
@@ -1209,8 +1226,15 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
                     if (!(stci2[i - 1] > 0.0)) negfin = true;
             }
         }
-        // (deferred: D11A/rnd/e6*/p6*/cr/rr table + punch; the negmsg/negfin NOTE
-        // messages; the residual-seasonality ftest on Stci2 -- all read-only.)
+        // (deferred: D11A/rnd/e6*/p6*/cr/rr table + punch; the negmsg/negfin
+        // NOTE messages.)
+
+        // x11pt3.f:812-814 -- the residual-seasonality F-test AGAIN, now on the
+        // FORCED series. Its print flags differ but its Lsav is the same, so it
+        // OVERWRITES the `d11.f`/`d11.3y.f` savelog rows the :620 call wrote --
+        // on a force{} run those canaries describe the forced SA, not D11.
+        ftest(ctx, stci2, pos1ob, posfob, ny, 1);
+        if (ctx.error.lfatal) return;
 
         // x11pt3.f:815-831 -- with force{} on, the sliding-spans / revisions SA
         // store takes the FORCED series and the oracle RETURNs right after the
@@ -1257,7 +1281,11 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
         bool rndok = false;
         rndsa(stci2, ctx.adxser.stcirn.data(), pos1ob, posfob, ny,
               ctx.x11opt.kdec, rndok);
-        // (deferred: rnd table/punch; residual ftest on Stcirn; ssrit/getrev
+        // x11pt3.f:897-899 -- and once more on the ROUNDED series, which
+        // overwrites the forced run's rows in turn (same Lsav).
+        ftest(ctx, ctx.adxser.stcirn.data(), pos1ob, posfob, ny, 1);
+        if (ctx.error.lfatal) return;
+        // (deferred: rnd table/punch; ssrit/getrev
         // stores. Rndok==false only on integer overflow -- unreachable for the
         // ported spans -- so no Lrndsa fallback is needed here.)
         (void)rndok;

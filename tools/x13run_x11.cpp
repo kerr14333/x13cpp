@@ -108,6 +108,48 @@ static void dump_d8bd9a(const x13::X13Context& ctx) {
 }
 
 
+// ftest.f:188/221 -- the D11 stable-seasonality F-test rows:
+//   ftest 1140: (a,f10.4,f10.2)     d11.f / d11.3y.f (and their `i` twins)
+static void dump_d11f(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    if (ctx.x11_d11f_set)
+        line(fwrite_fmt("(a,2(2x,f12.5))", "d11.f: ", ctx.x11_d11f,
+                        ctx.x11_d11f_prob));
+    if (ctx.x11_d11f3y_set)
+        line(fwrite_fmt("(a,2(2x,f12.5))", "d11.3y.f: ", ctx.x11_d11f3y,
+                        ctx.x11_d11f3y_prob));
+    if (ctx.x11_id11f_set)
+        line(fwrite_fmt("(a,2(2x,f12.5))", "id11.f: ", ctx.x11_id11f,
+                        ctx.x11_id11f_prob));
+    if (ctx.x11_id11f3y_set)
+        line(fwrite_fmt("(a,2(2x,f12.5))", "id11.3y.f: ", ctx.x11_id11f3y,
+                        ctx.x11_id11f3y_prob));
+}
+
+
+// sfmsr.f:1050/1060, x11pt2.f:1750, x11pt3.f:1010 -- the seasonal-filter
+// selection trace and the two Henderson trend lengths:
+//   sfmsr 1060: ('autosf.msr',i2.2,': ',f6.2)
+//   sfmsr 1050: ('sfmsr: ',a3)
+//   x11pt2 1750: ('d7trendma: ',i3)
+//   x11pt3 1010: ('finaltrendma: ',i3)
+static void dump_sfmsr(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    static const char* FILTER[3] = {"3x3", "3x5", "3x9"};
+    for (std::size_t k = 0; k < ctx.x11_autosf_msr.size(); ++k)
+        line(fwrite_fmt("('autosf.msr',i2.2,': ',f6.2)",
+                        static_cast<int>(k) + 1, ctx.x11_autosf_msr[k]));
+    if (ctx.x11_sfmsr_filter >= 1 && ctx.x11_sfmsr_filter <= 3)
+        line(fwrite_fmt("('sfmsr: ',a3)", FILTER[ctx.x11_sfmsr_filter - 1]));
+    if (ctx.x11_d7trendma > 0)
+        line(fwrite_fmt("('d7trendma: ',i3)", ctx.x11_d7trendma));
+    if (ctx.x11_finaltrendma > 0)
+        line(fwrite_fmt("('finaltrendma: ',i3)", ctx.x11_finaltrendma));
+}
+
+
 int main(int argc, char** argv) {
     std::setvbuf(stderr, nullptr, _IONBF, 0);  // DBG: unbuffer stderr for crash-time flush
     if (argc < 2) {
@@ -407,6 +449,8 @@ int main(int argc, char** argv) {
         }
     }
     dump_d8bd9a(ctx);
+    dump_d11f(ctx);
+    dump_sfmsr(ctx);
 
 
     // history{} sar/sae (SA revision / conc+final) and trr/tre (trend) -- one

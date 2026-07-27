@@ -216,6 +216,23 @@ struct X13Context {
     // the span replays re-run x11pt3 and would overwrite them, the same
     // discipline ctx.x11_f2tests needs.
     D8bD9aOutput d8bd9a{};
+    // ftest.f:188/221 -- the D11 stable-seasonality F-test, over the whole
+    // span (`d11.f`) and over just the last three years (`d11.3y.f`), plus
+    // the indirect-composite twins. Same snapshot discipline as d8bd9a.
+    double x11_d11f = 0.0, x11_d11f_prob = 0.0;
+    double x11_d11f3y = 0.0, x11_d11f3y_prob = 0.0;
+    double x11_id11f = 0.0, x11_id11f_prob = 0.0;
+    double x11_id11f3y = 0.0, x11_id11f3y_prob = 0.0;
+    bool x11_d11f_set = false, x11_d11f3y_set = false;
+    // sfmsr.f:45/74 -- the global-MSR seasonal-filter selection trace: one
+    // `autosf.msrNN` per PASS (the loop drops a year and retries when the MSR
+    // falls in neither decision band) and the filter it settled on.
+    std::vector<double> x11_autosf_msr;
+    int x11_sfmsr_filter = 0;      // 1..3 -> 3x3 / 3x5 / 3x9; 0 = not selected
+    // x11pt2.f:613 / x11pt3.f:409 -- the Henderson trend-filter lengths the
+    // run chose, at D7 and at the final trend.
+    int x11_d7trendma = 0, x11_finaltrendma = 0;
+    bool x11_id11f_set = false, x11_id11f3y_set = false;
     // The INTERNAL (pre-publication) D13 and D12 as they stand at the end of
     // x11pt3, i.e. before the AO/TC outliers are folded back into the published
     // D13 and the level shift into the published D12. x11pt4 reads those

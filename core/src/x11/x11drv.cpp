@@ -286,7 +286,12 @@ void sfmsr(X13Context& ctx, double* sts, double* stsi, int lfda, int llda,
         if (opt.lmsr == 6) {
             // Set llda1 to the end of the last whole year.
             int llda1 = llda - (llda % ny);
-            // (The Fortran pass counter `i` fed only the deferred WRITE output.)
+            // sfmsr.f:45 -- the pass counter also labels an `autosf.msrNN`
+            // savelog row per pass, which is NOT print surface. Cleared here
+            // rather than appended to, so a span replay's own passes do not
+            // accumulate onto the main run's trace.
+            ctx.x11_autosf_msr.clear();
+            int pass = 1;
             while (opt.lterm == 6) {
                 // If the span to be tested is less than 5 years long, use a 3x5
                 // seasonal filter.
@@ -295,6 +300,8 @@ void sfmsr(X13Context& ctx, double* sts, double* stsi, int lfda, int llda,
                 } else {
                     vsfa(stsi, lfda, llda1, ny, muladd, psuadd, opt.rati.data(),
                          opt.ratis);
+                    ctx.x11_autosf_msr.push_back(opt.ratis);
+                    ++pass;
                     if (opt.ratis <= 2.5) {
                         opt.lterm = 1;
                     } else if (opt.ratis >= 6.5) {
@@ -314,6 +321,11 @@ void sfmsr(X13Context& ctx, double* sts, double* stsi, int lfda, int llda,
                 if (ctx.work2.l3x5 && (opt.lter(i) != 0 && opt.lter(i) != 2))
                     ctx.work2.l3x5 = false;
             }
+            // sfmsr.f:74 -- the filter finally selected. Only reported on the
+            // branch that actually SELECTED one (Lmsr==6); a sliding-spans
+            // replay reuses the main run's choice and writes nothing.
+            (void)pass;
+            ctx.x11_sfmsr_filter = opt.lterm;
         } else {
             // Sliding-spans run: reset the seasonal filter length to the
             // selection made for the entire series.

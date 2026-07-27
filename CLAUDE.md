@@ -1483,5 +1483,33 @@ diagnostics front (force / slidingspans / history) is now closed.
     ctx field written from inside x11pt1/x11pt2/x11pt3 needs adding to that
     set**; the pattern is now frequent enough to check by default rather than
     to discover per feature.
+- **The remaining single-line X-11 savelog canaries -- `d11.f`, `d11.3y.f`,
+  `sfmsr`, `autosf.msrNN`, `d7trendma`, `finaltrendma` -- CLOSED (line-exact).**
+  Every routine behind them was already ported; only the reports were missing,
+  and the D11 F-test call site was deferred outright. Gated by a new
+  `test_x11_misc_canaries` over the same 154 specs, **zero new goldens**.
+  - **`d11.f` / `d11.3y.f` are the SAME ftest call gone round twice.**
+    `ftest.f:65` is a `DO WHILE` the Ind==1 path re-enters with
+    `kb = Ie - 3*Nyr + 1`, so the second pass measures residual seasonality
+    over just the last three years. The port's ftest had computed the Ind==1
+    f/prob all along and then stored neither, and had no second pass at all.
+  - **On a `force{}` run those two canaries do NOT describe D11.** x11pt3
+    calls ftest three times with the SAME `Lsav` -- on `Stci` (:620/:661), on
+    the FORCED `Stci2` (:812), and on the ROUNDED `Stcirn` (:897) -- and each
+    write overwrites the last, so the surviving `d11.f` is whichever series the
+    run finished with. Measured: `airline_force-td` golden 0.65551 against the
+    unforced 0.64562. All three call sites are now present; the port had only
+    deferred comments where the second and third belong.
+  - **`finaltrendma` needed a gate the port's structure had erased.**
+    x11pt3.f:400 wraps the whole final-trend block in
+    `Kfulsm.eq.0.or.Kfulsm.eq.2`, but this port runs `vtc` unconditionally
+    (feeding it D1 instead of the modified SA when `Kfulsm==1`), so the naive
+    placement emitted a key on `type=summary` runs where the oracle emits
+    none -- caught only because the gate asserts key sets in BOTH directions.
+  - `sfmsr`/`autosf.msrNN` are the global-MSR filter-selection trace: one row
+    per PASS, and the loop drops a year and retries whenever the MSR falls in
+    neither decision band, so the row count is data-dependent. The trace is
+    cleared at the head of each selection rather than appended to, so a span
+    replay's passes cannot accumulate onto the main run's.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
