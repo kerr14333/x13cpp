@@ -1703,16 +1703,29 @@ diagnostics front (force / slidingspans / history) is now closed.
   rule `:1252` reads. Harmless until now only because `chkadj`'s toggles are
   idempotent from either starting value (`==1 && n==0 -> 0`, `==0 && n>0 -> 1`);
   anything reading the indicators BEFORE chkadj sees the difference.
-  **Left open with the measurement written AT the skip** (two specs each in both
-  gates): `regression{aictest=(td)}` on the EXPLICIT-model path loses the
-  leap-year prior from `Stcsi`. Measured on `generated/airline_aictest-td`: b1
-  1949.Feb is 118.0000 -- the RAW value -- against the oracle's ~119.05, every
-  other month agreeing, which is the Februaries-only signature of a missing
-  lpyear prior. The negative control is `generated/airline_reg-td1coef`, which
-  fits the SAME model chosen explicitly and gives 119.0536, so the model and its
-  coefficients are right and only the prior is lost. **No corpus spec combines
-  an EXPLICIT aictest with `x11{}`** (only automdl+aictest is covered), which is
-  why nothing had ever compared this path's B1; model-only specs produced no
-  comparable output until this increment. Its own increment.
+  **The EXPLICIT-aictest leap-year prior loss it exposed -- CLOSED, in three
+  lines, and my root-cause hypothesis was WRONG.** `regression{aictest=(td)}` on
+  the explicit-model path (arima.f:569, not automdl) was dropping the leap-year
+  prior from `Stcsi`: `generated/airline_aictest-td` gave b1 1949.Feb = 118.0000
+  -- the RAW value -- against the oracle's ~119.05, every other month agreeing,
+  the Februaries-only signature. The negative control was
+  `generated/airline_reg-td1coef`, which fits the SAME model chosen explicitly
+  and gives 119.0536, proving the model and its coefficients were right and only
+  the prior was lost. I guessed `ssprep`/`restor` was reverting `Priadj` (it
+  saves `Pri2`, and that mechanism has bitten this port before, in the
+  slidingspans Priadj bug). **It was not.** The Fortran keeps Priadj across
+  ssprep/restor exactly as intended; the port's defect was one branch further
+  out. `tdaic` modifies `trnsrs` IN PLACE (dividing out `lomeff`), and
+  `run_pre_model`'s automd branch re-captures that buffer into `out_trnsrs`
+  while its `explicit_aictest` branch never did -- so `x11_prestage` consumed the
+  stale, un-prior-adjusted transformed series. The fix is the same
+  `if (out_trnsrs) *out_trnsrs = trnsrs;` handoff the automd branch already had.
+  **The generalizable bit: an in-place buffer mutation plus a per-branch handoff
+  is a hazard, and the two branches have to be diffed against each other rather
+  than each read on its own** -- the missing line is invisible reading only the
+  branch that has the bug. Both gates' skips are deleted and the four cases pass.
+  **No corpus spec combines an EXPLICIT aictest with `x11{}`** (only
+  automdl+aictest is covered), which is why nothing had ever compared this
+  path's B1 until the model-only path started producing output.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

@@ -242,7 +242,7 @@ builds it either way, and the oracle prints it on a model-only run too).
    idempotent from either starting value (`==1 && n==0 -> 0`, `==0 && n>0 -> 1`);
    anything that reads the indicators BEFORE chkadj sees the difference.
 
-### Left open: the explicit-aictest leap-year prior
+### CLOSED: the explicit-aictest leap-year prior
 
 `regression{aictest=(td)}` on the EXPLICIT-model path (arima.f:569, not automdl)
 loses the leap-year prior from `Stcsi`. Measured on
@@ -253,15 +253,30 @@ Februaries-only signature of a missing lpyear prior. The negative control is
 gives **119.0536**, so the model and its coefficients are right and only the
 prior is lost.
 
-It surfaces as `qsorievadj` 192.06996 vs 189.27156 and `spcori.median`
--27.52489561 vs -27.62459168 on `airline_aictest-td` and `cover_reg-aicdiff`,
-which both skip with that measurement written at the skip.
+It surfaced as `qsorievadj` 192.06996 vs 189.27156 and `spcori.median`
+-27.52489561 vs -27.62459168 on `airline_aictest-td` and `cover_reg-aicdiff`.
 
 **Why nothing caught it before:** no corpus spec combines an EXPLICIT aictest
 with `x11{}` -- only `automdl` + aictest is covered -- so this path's B1 had
 never been compared against anything, and model-only specs produced no
-comparable output at all until this increment. Starting point for the follow-up:
-`tdaic` (`core/src/automdl/aictst.cpp:285-330`) does set `pr.priadj = 4` and
-rebuild `trnsrs`/`aj.adj`/`pr.kfmt` for the log branch, so check what the
-post-selection `restor` puts back -- `ssprep`/`restor` save and restore
-`Priadj`, which is the same trap the slidingspans Priadj bug turned on.
+comparable output at all until the model-only increment.
+
+**Root cause, and the hypothesis that was wrong.** The suspicion recorded here
+was that `ssprep`/`restor` reverts `Priadj` after the winning candidate is
+reinstated -- plausible, because that pair does save `Pri2` and has caused
+exactly this class of bug before (the slidingspans Priadj restore). It is not
+what happened: the Fortran keeps Priadj across ssprep/restor as intended
+(`tdaic.f:237/252/600`, `arima.f:599`, `ssprep.f:58`, `restor.f:55`).
+
+The defect was one branch further out, in `run_pre_model.cpp`. `tdaic` modifies
+`trnsrs` IN PLACE -- it divides `Y` by `lomeff`, copies `lomeff` into `Adj` and
+sets `Kfmt=1` -- and the driver's `automd` branch re-captures that buffer with
+`if (out_trnsrs) *out_trnsrs = trnsrs;` while the `explicit_aictest` branch
+beside it never did. `x11_prestage` therefore consumed the stale, un-prior-
+adjusted transformed series. The fix is those three lines, added to the second
+branch.
+
+**Worth generalizing:** an in-place buffer mutation combined with a per-branch
+handoff is a hazard, and the branches have to be DIFFED AGAINST EACH OTHER
+rather than each read on its own -- a missing line is invisible when you only
+read the branch that has the bug.

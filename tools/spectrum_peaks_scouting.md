@@ -172,3 +172,36 @@ back to ~230s.
 Both of the last two skip with those reasons written at the skip rather than
 being filtered out of the gate's discovery, so the coverage they cost is
 visible in the run.
+
+## OPEN: two published-vs-internal buffer reads in `run_spectrum.cpp`
+
+Found by a read-only audit of every consumer of `/x11srs/ Sti` and `Stc` after
+x11pt3, prompted by the genqs increment (see `tools/genqs_scouting.md` for the
+deviation: this port copies the PUBLISHED D13/D12 back over `x11srs.sti`/`.stc`
+at the tail of x11pt3, where the oracle leaves them internal and prints from its
+own `sti2`/`stc2` locals). **Reported, NOT yet verified against the Fortran by
+hand, and NOT yet fixed** -- both need a measured oracle on-vs-off before
+anything changes, the standing rule on this front.
+
+1. **`run_spectrum.cpp:465`** -- reads the published `ctx.x11srs.sti` on the
+   `Lrbstsa == false` arm, where `spcdrv.f:439-445` reads the internal Sti.
+   Reachable only with `spectrum{robustsa=no}` AND (`Adjao==1` or
+   `Adjtc==1 && !Lttc`); with no AO/TC fold the two buffers are identical, which
+   is why nothing has seen it. No corpus spec sets `robustsa=no`.
+2. **`run_spectrum.cpp:401/403`** -- the PSEUDO-ADDITIVE sp0 rebuild reads the
+   published `stc`/`sti` where `spcdrv.f:163-173` reads the internal pair.
+   Reachable with `x11{mode=pseudoadd}` + `Spcsrs==2` (the default) when Sti
+   carries an AO/TC fold or Stc carries the `!Finls && Adjls==1` LS fold.
+
+Reported clean by the same audit, with Fortran line references: x11pt4's
+etables/partf (they take `x11_stc_int`/`x11_sti_int`), genqs (via
+`x11_sti_live`/`x11_stc_live`), the C/R ABI and both harnesses (which SHOULD
+expose the published tables -- that is the point of the deviation), the
+composite agr2/agr3 path (its own Stc/Sti semantics from agr3.f), and
+run_history's span path (x11pt3 clean-fatals on `Irev==4` before the
+publish-back is reached).
+
+**Gating either one needs a new corpus spec**, since the corpus currently has
+neither `robustsa=no` nor a pseudo-additive spectrum case -- so the first step is
+to measure the ORACLE on-vs-off and confirm the branch moves at all before
+porting anything.

@@ -100,11 +100,8 @@ def _is_peak_key(key: str) -> bool:
 # compared byte-exact and stays so.
 _RTOL = 5e-5
 
-# Two spec families whose disagreement is upstream of this gate; each skips
-# with its measurement written at the skip rather than being filtered out of
-# discovery.
-_AICTEST_PRIOR_GAP = {"generated/airline_aictest-td",
-                      "generated/cover_reg-aicdiff"}
+# Spec families whose disagreement is upstream of this gate skip with the
+# measurement written at the skip rather than being filtered out of discovery.
 _AUTOMD_IDDIFF_GAP = {"generated/usdeaths_automdl"}
 
 
@@ -188,18 +185,6 @@ def _run(rel: str) -> dict[str, str]:
     if "pickmdl{" in txt:
         pytest.skip("pickmdl{} model selection is parse-only (M1); the model "
                     "the engine fits is not the oracle's")
-    if rel in _AICTEST_PRIOR_GAP:
-        pytest.skip(
-            "regression{aictest=(td)} on the EXPLICIT-model path loses the "
-            "leap-year prior from Stcsi, which is spcori's input. Measured: "
-            "b1 1949.Feb is 118.0000 (raw, unadjusted) against the oracle's "
-            "~119.05, every other month agreeing -- the Februaries-only "
-            "signature of a missing lpyear prior; the negative control is "
-            "generated/airline_reg-td1coef, which fits the SAME model chosen "
-            "explicitly and gives 119.0536. Surfaces here as spcori.median "
-            "-27.52489561 vs -27.62459168. No corpus spec combines an "
-            "EXPLICIT aictest with x11{}, so nothing had ever compared this "
-            "path's B1. Its own increment; see tools/genqs_scouting.md.")
     if rel in _AUTOMD_IDDIFF_GAP:
         pytest.skip(
             "automd selects (1 0 1)(0 1 1) here against the oracle's "

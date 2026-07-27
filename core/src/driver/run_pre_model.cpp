@@ -533,6 +533,9 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 explicit_aictest(ctx, trnsrs.data(), a.data(), nefobs, na, frstry);
                 if (ctx.error.lfatal) return false;
                 (void)na;
+                // Same handoff as automd above: tdaic may apply a leap-year prior
+                // in place, and the later X-11/diagnostic stage consumes this buffer.
+                if (out_trnsrs) *out_trnsrs = trnsrs;
             } else {
                 rgarma(ctx, ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
                        /*lprtit=*/false, a.data(), na, nefobs, lauto);
