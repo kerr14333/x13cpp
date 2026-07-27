@@ -13,6 +13,7 @@
 #include "regarima/priadj.hpp"
 #include "diag/checkres.hpp"   // check_residuals (arima.f:1044-1102)
 #include "diag/estdgn.hpp"     // est_diagnostics (savotl.f counts + prtrts.f roots)
+#include "diag/amdfct.hpp"     // aape_diagnostics (amdfct.f forecast error)
 #include "regarima/regvar.hpp"
 #include "x11/x11reg.hpp"            // pritd, tdset_td (x11regression tdprior)
 #include "x11/xrgdrv.hpp"            // xrgdrv (x11regression OLS prior TD, Ixreg>=2)
@@ -641,6 +642,17 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // whether the `autoout` line is emitted (savotl.f:152).
             est_diagnostics(ctx, ctx.captured.has_outlier);
             if (ctx.error.lfatal) return false;
+
+            // arima.f:870-905 (amdfct.f) -- the average absolute percentage
+            // forecast error over the last three years. Sits here, between the
+            // estimation savelog block and the forecasts, exactly as in the
+            // Fortran: it forecasts from origins INSIDE the span using the
+            // design regvar has already built, so it must run before anything
+            // rebuilds Xy for the real forecast. Gated on Var>0 (arima.f:872).
+            if (ctx.mdldat.var > 0.0) {
+                aape_diagnostics(ctx, trnsrs.data());
+                if (ctx.error.lfatal) return false;
+            }
 
             // NOTE (deferred): forecasting on a post-outlier model with other
             // regressors (TD) is not yet exact. idotlr's coladd/addotl fill only

@@ -24,6 +24,9 @@ absent (core/src/diag/estdgn.cpp):
     operator (real, imaginary, modulus, frequency), TAB-separated
   * ``nonseasonaldiff`` / ``seasonaldiff`` / ``nmodel`` -- prtmdl.f's model
     shape counters
+  * ``aape.mode`` and ``aape.0``-``aape.3`` -- amdfct.f's average absolute
+    percentage forecast error over each of the last three years, and their
+    average (which the oracle emits FIRST, as ``aape.0``)
   * ``<AR|MA>$<period>$<factor>$<lag>`` -- prtmdl.f's ARMA coefficient table:
     the estimate, its standard error and its t-value, plus the ``(fixed)``
     marker. Note this key keeps the operator title's own CASE while the
@@ -99,7 +102,9 @@ _SCALARS = ["qlimit", "nlbq", "lblags", "nbpq", "bplags", "acflimit",
             "outlier.rp", "outlier.tls", "outlier.user", "outlier.total",
             "autoout",
             # prtmdl.f -- the model's differencing shape
-            "nonseasonaldiff", "seasonaldiff", "nmodel"]
+            "nonseasonaldiff", "seasonaldiff", "nmodel",
+            # amdfct.f -- the average absolute percentage forecast error
+            "aape.mode", "aape.0", "aape.1", "aape.2", "aape.3"]
 # prtrts.f roots are `roots.<filter>.<period>.<NN>`, so they are matched by
 # prefix like the `$NN` families.
 # prtmdl.f's ARMA coefficient rows are `<AR|MA>$<period>$<factor>$<lag>` --
@@ -108,7 +113,7 @@ _SCALARS = ["qlimit", "nlbq", "lblags", "nbpq", "bplags", "acflimit",
 # claimed here.
 _FAMILIES = ["lbq$", "bpq$", "sigacf$", "sigpacf$", "roots.", "AR$", "MA$"]
 
-_KEY_RE = re.compile(r"^([A-Za-z][A-Za-z.]*(?:\$[A-Za-z0-9]+)*):(.*)$")
+_KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9._$]*):(.*)$")
 
 # Numeric fallback bound -- see the tolerance note in the module docstring.
 # The print ULP of the widest field (f7.4/E15.8 -> 5e-4 on the value) or the
@@ -239,6 +244,27 @@ def _run(rel: str) -> dict[str, str]:
     if first != "OUTCOME: OK":
         pytest.skip(f"engine declined this spec ({first or 'no output'})")
     return _read_block(r.stdout.splitlines())
+
+
+def test_every_owned_key_is_readable() -> None:
+    """_KEY_RE must actually MATCH every key this gate claims to own.
+
+    A too-narrow key regex drops a key silently -- the golden side and the
+    engine side both lose it, the comparison still passes, and the gate looks
+    green while covering nothing. That happened once already: the pattern
+    allowed no digits after a dot, so ``aape.0``..``aape.3`` were invisible
+    while ``aape.mode`` beside them was compared.
+    """
+    samples = [f"{k}: 1.0" for k in _SCALARS]
+    samples += ["lbq$03: 1", "bpq$04: 1", "sigacf$20: 1", "sigpacf$07: 1",
+                "roots.ma.nonseasonal.01: 1", "MA$Nonseasonal$01$01: 1",
+                "AR$Seasonal$12$12: 1"]
+    unreadable = []
+    for line in samples:
+        m = _KEY_RE.match(line)
+        if not m or not _is_check_key(m.group(1)):
+            unreadable.append(line.split(":")[0])
+    assert not unreadable, f"keys this gate owns but cannot parse: {unreadable}"
 
 
 @pytest.mark.skipif(not CASES, reason="no corpus golden ships the check block")

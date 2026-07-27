@@ -176,6 +176,26 @@ static void dump_estmdl(const x13::X13Context& ctx) {
 }
 
 
+// arima.f:888-898 -- the average absolute percentage forecast error:
+//   arima 1200: (a,f12.4)     aape.0 / .1 / .2 / .3
+// with a plain `aape.mode:` line naming the variant. Emit order is the
+// oracle's: the THREE-YEAR AVERAGE (mape(4)) is written first, as `aape.0`.
+static void dump_aape(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    const auto& a = ctx.aape;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    if (!a.ok) {
+        line("aape.mode: none");
+        return;
+    }
+    line(a.outofsample ? "aape.mode: outofsample" : "aape.mode: withinsample");
+    line(fwrite_fmt("(a,f12.4)", "aape.0: ", a.mape[3]));
+    line(fwrite_fmt("(a,f12.4)", "aape.1: ", a.mape[0]));
+    line(fwrite_fmt("(a,f12.4)", "aape.2: ", a.mape[1]));
+    line(fwrite_fmt("(a,f12.4)", "aape.3: ", a.mape[2]));
+}
+
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr, "usage: x13run_m3 <specfile.spc>\n");
@@ -242,6 +262,7 @@ int main(int argc, char** argv) {
     dump_check(ctx);
     dump_estdgn(ctx);
     dump_estmdl(ctx);
+    dump_aape(ctx);
 
     // ARMA coefficients in operator/lag order (AR then MA), skipping the fixed
     // differencing slots; label each free coef by type + lag.

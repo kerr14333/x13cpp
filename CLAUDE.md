@@ -1417,5 +1417,38 @@ diagnostics front (force / slidingspans / history) is now closed.
   reverting restores them. That matters because these are additive keys on an
   existing gate -- without the mutation there is no evidence the new columns
   are compared at all rather than silently skipped by the key regex.
+- **`aape` -- the average absolute percentage FORECAST ERROR (amdfct.f) --
+  CLOSED (byte-exact, within-sample).** The X-11-ARIMA forecast-quality
+  diagnostic: for each of the last three years the model forecasts one year
+  ahead from an origin that many years back, and the mean absolute percentage
+  error of those forecasts is reported. 283 of the 331 goldens carry it and the
+  port had none of it. `core/src/diag/amdfct.{hpp,cpp}`, called from
+  `run_pre_model` between the estimation savelog block and the real forecast --
+  the placement matters, because it forecasts from origins INSIDE the span
+  using the design `regvar` has already built, so anything that rebuilds `Xy`
+  first would invalidate it. Three things worth knowing:
+  (1) **Only the WITHIN-SAMPLE variant is ported, and that is not a compromise
+  here** -- measured, all 283 goldens that carry the block are
+  `aape.mode: withinsample` and the other 4 are `none`. Out-of-sample re-fits
+  the model three times over successively shorter spans and saves/restores the
+  entire estimation state (`Chlxpx`/`Chlgpg`/`Chlvwp`/`Matd`/`Armacm`/`Lndtcv`/
+  `Lnlkhd`/`Var` plus the model span) around it; it is walled, not
+  approximated. Backcast error likewise.
+  (2) **`ave` is seeded to ONE and then accumulated into**, so on the branch
+  that uses it the divisor is `(1 + sum|x|)/n` rather than the mean -- a Census
+  defect, reachable only on a series that dips to or below zero in the window
+  (where a percentage error is meaningless and the oracle switches to an
+  absolute error scaled by the window's magnitude). Transcribed verbatim.
+  (3) The actuals come from `subset.f` reading the DEPENDENT-VARIABLE column of
+  `Xy`, not from the input series: a FIXED regressor's contribution was
+  subtracted out during estimation, so amdfct adds `Fixfac` back into both the
+  actual and the forecast before differencing them.
+  **The gate had a silent hole this found.** `test_check_diagnostics.py`'s key
+  regex allowed no digits after a dot, so `aape.0`..`aape.3` were invisible on
+  BOTH sides -- the comparison passed while covering nothing, and only a
+  coverage count (`0 specs compare aape.0`) revealed it, not the green run. The
+  regex is widened and there is now a `test_every_owned_key_is_readable` guard
+  asserting `_KEY_RE` actually matches every key the gate claims. Mutation-
+  tested afterwards: a 1% perturbation of `aape.1` fails 271 of 276.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
