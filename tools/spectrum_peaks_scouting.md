@@ -174,7 +174,43 @@ Both of the last two skip with those reasons written at the skip rather than
 being filtered out of the gate's discovery, so the coverage they cost is
 visible in the run.
 
-## OPEN: two published-vs-internal buffer reads in `run_spectrum.cpp`
+## CLOSED: two published-vs-internal buffer reads in `run_spectrum.cpp`
+
+**Both resolved, and the audit's two findings landed asymmetrically: one was a
+real wrong-numbers bug, the other is PROVABLY INERT.** The section below is the
+audit's original report, kept because the reasoning is what made the fix
+findable; the verdicts follow it.
+
+**Finding 1 (`Lrbstsa == false`) is real, and it took TWO fixes, not one.**
+`spectrum{robustsa=no}` was itself **parsed and silently dropped** — the token
+is in `gt_spectrum`'s ARGDIC (argidx 21) with no case in the switch, so
+`ctx.rho.lrbstsa` never left its `gtinpt.f:359` default and the arm the audit
+flagged was unreachable *from the spec*. Fixing only the buffer read changes
+nothing; fixing only the parse leaves 28 of the 86 spectrum savelog lines wrong.
+Measured on airline + `(ao1955.jan tc1957.mar ls1960.jul)` + `robustsa=no`:
+`spcirr.median` **-44.497** with neither fix, **-37.436** with the parse fix
+alone, **-37.352** (the oracle, byte-exact across all 86 keys) with both. Gated
+by `extra/airline_spectrum-robustsa`, and mutation-tested — reverting the buffer
+read alone fails it.
+
+*The generalizable bit:* an audit that finds an unreachable-looking branch
+should ask **why** it is unreachable before filing it as low priority. Here the
+answer was a second, larger defect sitting on top of the first.
+
+**Finding 2 (the pseudo-additive sp0 rebuild) cannot fire.** `editor.f:2508-2523`
+refuses a `mode=pseudoadd` run outright when any of `Adjao`/`Adjtc`/`Adjls`/
+`Finao`/`Finls`/`Fintc` is set, or when `Nustad > 0` — and those are exactly the
+disjuncts of `have_sti2`/`have_stc2` in x11pt3. Under Psuadd the published
+mirror IS the internal value. Confirmed on the oracle twice (it rejects
+pseudo-additive with outlier regressors, and again with a temporary trend
+prior), so there is no spec to gate and none was written. The reads were still
+switched to the live accessors, with the proof recorded at the line.
+
+Both now go through `ctx.sti_live()` / `ctx.stc_live()`, promoted out of
+`genqs.cpp`'s anonymous namespace onto `X13Context` — this was the second
+consumer of that rule and will not be the last.
+
+---
 
 Found by a read-only audit of every consumer of `/x11srs/ Sti` and `Stc` after
 x11pt3, prompted by the genqs increment (see `tools/genqs_scouting.md` for the
@@ -206,6 +242,8 @@ publish-back is reached).
 neither `robustsa=no` nor a pseudo-additive spectrum case -- so the first step is
 to measure the ORACLE on-vs-off and confirm the branch moves at all before
 porting anything.
+
+*(End of the original report. Verdicts are at the head of this section.)*
 
 ## getTPeaks — CLOSED
 

@@ -2859,7 +2859,7 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
         std::vector<std::string> cap;
         const bool want = (argidx == 2 || argidx == 3 || argidx == 4 ||
                            argidx == 7 || argidx == 14 || argidx == 16 ||
-                           argidx == 19);
+                           argidx == 19 || argidx == 21);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
         if (cap.empty()) continue;
@@ -2897,6 +2897,14 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
             break;
         case 19:  // logqs: yes | no (gtspec.f:288) -- log the series genqs
             r.llogqs = (v == "yes");   // tests, and report it as `qslog`.
+            break;
+        case 21:  // robustsa: yes | no (gtspec.f:311-315) -- which SA and
+            // irregular the spectrum is taken OF. yes (the default) uses the
+            // extreme-value-modified Part-E pair E2/E3; no uses D11/D13
+            // straight. spcdrv.f:304/316/441/447. The rest of its blast radius
+            // is the table LABELS (prtukp.f:56-96, spcdrv.f:660-698), which are
+            // print surface here.
+            r.lrbstsa = (v != "no");
             break;
         default:
             break;

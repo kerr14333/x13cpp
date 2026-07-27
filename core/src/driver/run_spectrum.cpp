@@ -407,9 +407,20 @@ bool run_spectrum(X13Context& ctx) {
                 // REBUILT from the components rather than folded, because the
                 // pseudo-additive irregular is centred on one and Stcsi is not
                 // the product it is elsewhere.
-                const double* stc = ctx.x11srs.stc.data();
+                // Sti/Stc via the live accessors on principle -- spcdrv runs
+                // after x11pt3, where the oracle still sees the INTERNAL
+                // values. Here it is provably INERT, and the proof is worth
+                // keeping: editor.f:2508-2523 refuses a pseudo-additive run
+                // outright when any of Adjao/Adjtc/Adjls/Finao/Finls/Fintc is
+                // set or when Nustad>0, and those are exactly the disjuncts of
+                // have_sti2/have_stc2 in x11pt3 -- so under Psuadd the mirror
+                // IS the internal value and nothing here can diverge. (Measured
+                // twice: the oracle rejects `mode=pseudoadd` both with outlier
+                // regressors and with a temporary trend prior.) Sts is never
+                // published over and is read directly.
+                const double* stc = ctx.stc_live();
                 const double* sts = ctx.x11srs.sts.data();
-                const double* sti = ctx.x11srs.sti.data();
+                const double* sti = ctx.sti_live();
                 for (int i = pos1ob; i <= posfob; ++i) {
                     if (kfulsm == 2)
                         srs[i - 1] = stc[i - 1] * sti[i - 1];
@@ -474,8 +485,11 @@ bool run_spectrum(X13Context& ctx) {
         }
         // --- sp2: irregular (spcdrv.f:438-467) -- no differencing ----------
         // Likewise the irregular is E3 (Stime, the modified irregular), not D13.
-        const double* ir = lrbstsa ? ctx.mq5a_stime.data()
-                                   : ctx.x11srs.sti.data();
+        // Same live-accessor requirement as the pseudo-additive rebuild above:
+        // spcdrv.f:444's Sti is the internal D13. Measured on an airline spec
+        // with ao/tc/ls regressors and `spectrum{robustsa=no}`: spcirr.median
+        // -44.497 off the published D13 against the oracle's -37.352.
+        const double* ir = lrbstsa ? ctx.mq5a_stime.data() : ctx.sti_live();
         for (int i = ipos; i <= posfob; ++i) {
             tmp[i - 1] = ir[i - 1];
             if (muladd != 1) tmp[i - 1] -= 1.0;

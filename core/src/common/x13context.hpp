@@ -242,6 +242,18 @@ struct X13Context {
     // harness can dump the published tables straight off /x11srs/).
     std::vector<double> x11_sti_int;
     std::vector<double> x11_stc_int;
+    // ANYTHING that reads /x11srs/ Sti or Stc after x11pt3 has returned must go
+    // through these, not through the mirror: the oracle's own buffers still
+    // hold the internal values at that point, and the published ones differ
+    // whenever an AO/TC was folded back into D13 or a level shift into D12.
+    // x11pt4 (Part F), genqs/gennpsa and spcdrv are all downstream of x11pt3.
+    // Empty means x11pt3 published nothing, so the mirror IS the internal value.
+    const double* sti_live() const {
+        return x11_sti_int.empty() ? x11srs.sti.data() : x11_sti_int.data();
+    }
+    const double* stc_live() const {
+        return x11_stc_int.empty() ? x11srs.stc.data() : x11_stc_int.data();
+    }
     // The Part-F summary measures + quality statistics (x11pt4's /inpt2/,
     // /work2/ and Mcd output), snapshotted where the oracle's svf2f3 writes the
     // .udg `f2.*`/`f3.*` block. Snapshot for the same reason as x11_f2tests: a

@@ -57,14 +57,10 @@ constexpr int PLEN = 1020;
 // generated/expgs_fixed-airline-x11 the published D13 gives qsirr 0.03946
 // against the oracle's 0.00000, because folding the AOs back in flips the
 // lag-4 autocorrelation positive and calcqs is a step function in its sign.
-const double* x11_sti_live(const X13Context& ctx) {
-    return ctx.x11_sti_int.empty() ? ctx.x11srs.sti.data()
-                                   : ctx.x11_sti_int.data();
-}
-const double* x11_stc_live(const X13Context& ctx) {
-    return ctx.x11_stc_int.empty() ? ctx.x11srs.stc.data()
-                                   : ctx.x11_stc_int.data();
-}
+// (The accessors themselves are ctx.sti_live()/ctx.stc_live(), shared with
+// spcdrv -- which has the identical requirement and did not always meet it.)
+const double* x11_sti_live(const X13Context& ctx) { return ctx.sti_live(); }
+const double* x11_stc_live(const X13Context& ctx) { return ctx.stc_live(); }
 
 // calcqs2.f: the QS statistic of z(1..nz), PLUS the `PosCorr` verdict qsdiff
 // uses to decide whether to difference once more. Note the two differ in more
