@@ -35,10 +35,38 @@ Run by the build, or directly via CTest in the build dir. Current suite:
 ## Parity tests (pytest)
 
 ```bash
-python -m pytest tests/parity/test_m3_estimate.py -q
+python -m pytest tests/parity -q -n 8          # full suite, ~75-80s
+python -m pytest tests/parity -q -k "<name>"   # one gate, ~3s
 ```
 Python is `python` (3.14) — `python3` is shadowed by a Windows App alias and
 fails "Permission denied". See the `parity-gate` skill for blessing goldens.
+
+### Run it in parallel — `-n 8` (pytest-xdist)
+Measured 2026-07-28: serial **262s**, `-n 8` **79s**, `-n 16` **74s**, with
+identical pass/skip counts at every level. Plateaus around 8 workers — the suite
+is subprocess-spawn bound, not core bound (16 cores here), so `-n 8` is the
+default and `-n 16` buys ~5s. Needs `python -m pip install pytest-xdist` (3.8.0
+installed; not in any requirements file).
+
+**Why parallel is safe here, which is the part worth re-checking if the harness
+ever changes:** every gate shells out as `subprocess.run([BIN, spec])` and
+compares **stdout**. The corpus specs are read-only and the harnesses write no
+side files — verified by running a spec and confirming `git status
+tests/corpus` is clean before and after. There is no shared state for workers
+to race on. **If a harness ever starts round-tripping through save files, `-n`
+becomes unsafe immediately** — several gates run the *same* spec
+(`test_x11_tables`, `test_qs_diagnostics`, `test_check_diagnostics`,
+`test_spectrum_peaks` all do), so they would race on a fixed output filename
+and produce fast *wrong* answers.
+
+When something fails, re-run that gate **serially** to read it — xdist reorders
+and suppresses per-test output, and a single `-k` filter is ~3s anyway.
+
+### Don't run the full suite on every edit
+The build is ~25s (6.4s compile+archive, 18.8s to relink 12 downstream targets;
+`-j 16` is no faster than `-j 6` — the links are I/O bound). The suite was the
+expensive half. Filtered gate while iterating, full suite before commit, and
+**skip it entirely for comment/doc-only edits.**
 
 ## Code coverage
 

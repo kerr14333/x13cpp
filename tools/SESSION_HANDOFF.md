@@ -13,9 +13,15 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q` | **5509 passed / 0 failed / 478 skipped** (~4m15s) |
+| `python -m pytest tests/parity -q -n 8` | **5516 passed / 0 failed / 478 skipped** (~79s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
+
+**Run the suite with `-n 8`** (pytest-xdist, installed). 262s serial → 79s, same
+counts. Safe because every gate compares stdout from a read-only subprocess and
+no harness writes side files — re-verify that if a harness ever changes, since
+several gates run the same spec and would race on a fixed filename. Build is
+~25s; use `-k "<name>"` (~3s) while iterating.
 
 Standing constraints, unchanged: **never merge this branch to `main`, never
 push**; **never run `tests/corpus/generated/genspecs.py` or

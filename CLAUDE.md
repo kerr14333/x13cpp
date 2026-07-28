@@ -56,10 +56,16 @@ improvise:
   scrub `TEMP` and break gfortran).
 - **Python is `python`** (3.14). `python3` is a Windows App alias → "Permission
   denied".
-- **Parity tests:** `python -m pytest tests/parity -q`. Green = `NNN passed`, with
-  expected `s` skips (parse-gap / no-golden specs). **The current counts live in
-  `tools/SESSION_HANDOFF.md`, not here** -- this line has gone stale three times
-  now. Green = `NNN passed`, 0 failed, 0 xfailed.
+- **Parity tests:** `python -m pytest tests/parity -q -n 8` (**~79s; serial is
+  262s**). Green = `NNN passed`, with expected `s` skips (parse-gap / no-golden
+  specs). **The current counts live in `tools/SESSION_HANDOFF.md`, not here** --
+  this line has gone stale three times now. Green = `NNN passed`, 0 failed,
+  0 xfailed. Parallel is safe *because* the gates compare stdout from a
+  read-only subprocess and no harness writes side files; re-check that before
+  trusting `-n` if a harness changes. Failures: re-run that gate serially
+  (`-k "<name>"`, ~3s) — xdist suppresses per-test output. The build is only
+  ~25s, so **don't run the full suite on comment/doc-only edits.** See the
+  `build-run` skill.
 - After adding a `core/src/*.cpp`, the first build prints `GLOB mismatch!` and
   stops — just rerun once.
 
