@@ -1282,36 +1282,201 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
         "urfinalfirstarcheckmumixedrejectfcstfcstlimseasonaloverdiff";
     static const int argptr[PARG + 1] = {1, 8, 11, 14, 20, 28, 32, 37, 44, 52, 61,
         70, 79, 89, 97, 110, 123, 136, 143, 150, 157, 162, 172, 179, 195};
-    // gt_generic-equivalent token consumption, but capture acceptdefault (arg 16
-    // in ARGDIC -- ljungboxlimit is 15; gtauto.f:391-397 -> Laccdf) so automd's
-    // accept-default-model path becomes reachable. Every other arg stays token-
-    // consumed/deferred exactly as before.
+    static const char YSNDIC[] = "yesno";
+    static const int ysnptr[3] = {1, 4, 6};
+    static const char NOTDIC[] = "sametramo";   // gtauto.f:48
+    static const int notptr[3] = {1, 5, 10};
+
+    auto& ar = ctx.arima;
+
+    // gtauto.f:75-77 -- the LOCAL order/difference buffers and the "diff or
+    // maxdiff was supplied" latch. They are locals in the Fortran and have to be
+    // locals here, because the tail below keys its defaults on whether the
+    // ARGUMENT was given, not on what the context field currently holds.
+    int omax[2] = {prm::NOTSET, prm::NOTSET};
+    int adif[2] = {prm::NOTSET, prm::NOTSET};
+    bool hvdiff = false;
+
     int arglog0[2 * PARG];
     for (auto& v : arglog0) v = -32767;  // NOTSET
     int a_idx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, a_idx, arglog0, inptok)) {
         if (ctx.error.lfatal) return;
-        std::vector<std::string> cap;
-        const bool want = (a_idx == 16);  // acceptdefault
-        consume_value(ctx, want ? &cap : nullptr);
+        const int* ep = ctx.lex.errpos.data() + 1;
+        int ivec[2]; double dvec[1]; int nelt = 0; bool argok = true;
+        switch (a_idx) {
+        case 1:   // maxdiff (gtauto.f label 10) -- the MAXIMUM order to search
+            getivc(ctx, LPAREN, true, 2, adif, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            // gtauto.f:80-86: maxdiff wins over diff whichever order they come
+            // in -- here by overwriting, and at label 70 by skipping outright.
+            if (nelt == 1) {
+                inpter(ctx, PERROR, ep, "Two values are needed.");
+                inptok = false;
+            } else if (nelt > 0) {
+                if (adif[0] > 2) {
+                    inpter(ctx, PERROR, ep, "Maximum order of regular differencing"
+                           " must be less than or equal to 2.");
+                    inptok = false;
+                }
+                if (adif[1] > 1) {
+                    inpter(ctx, PERROR, ep, "Maximum order of seasonal differencing"
+                           " must be less than or equal to 1.");
+                    inptok = false;
+                }
+                if (adif[0] < 0 || adif[1] < 0) {
+                    inpter(ctx, PERROR, ep, "Maximum order of differencing specified"
+                           " must be greater than zero.");
+                    inptok = false;
+                }
+                if (inptok) {
+                    ar.diffam(1) = adif[0];
+                    ar.diffam(2) = adif[1];
+                    hvdiff = true;
+                    ar.lautod = true;   // maxdiff KEEPS automatic differencing on
+                }
+            }
+            continue;
+        case 5:   // maxorder (gtauto.f label 60)
+            getivc(ctx, LPAREN, false, 2, omax, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt == 1) {
+                inpter(ctx, PERROR, ep,
+                       "Two values are needed (or use a comma as place holder).");
+                inptok = false;
+            } else if (nelt > 0) {
+                if (omax[0] == prm::NOTSET) omax[0] = 2;
+                if (omax[1] == prm::NOTSET) omax[1] = 1;
+                if (omax[0] < 0 || omax[1] < 0) {
+                    inpter(ctx, PERROR, ep, "AR and MA orders must be greater than"
+                           " or equal to zero.");
+                    inptok = false;
+                } else {
+                    if (omax[0] > 4) {
+                        inpter(ctx, PERROR, ep,
+                               "Regular orders must be less than or equal to 4.");
+                        inptok = false;
+                    }
+                    if (omax[1] > 2) {
+                        inpter(ctx, PERROR, ep,
+                               "Seasonal orders must be less than or equal to 2.");
+                        inptok = false;
+                    }
+                    if (inptok) {
+                        ar.maxord(1) = omax[0];
+                        ar.maxord(2) = omax[1];
+                    }
+                }
+            }
+            continue;
+        case 6:   // diff (gtauto.f label 70) -- FIXED orders, not a search bound
+            getivc(ctx, LPAREN, true, 2, adif, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            // gtauto.f:118-122: already have maxdiff -> this argument is dropped
+            // entirely (the NOTE is print surface).
+            if (hvdiff) continue;
+            if (nelt == 1) {
+                inpter(ctx, PERROR, ep, "Two values are needed.");
+                inptok = false;
+            } else if (nelt > 0) {
+                if (adif[0] > 2) {
+                    inpter(ctx, PERROR, ep, "Order of regular differencing must be"
+                           " less than or equal to 2.");
+                    inptok = false;
+                }
+                if (adif[1] > 1) {
+                    inpter(ctx, PERROR, ep, "Order of seasonal differencing must be"
+                           " less than or equal to 1.");
+                    inptok = false;
+                }
+                if (adif[0] < 0 || adif[1] < 0) {
+                    inpter(ctx, PERROR, ep, "Order of differencing specified must be"
+                           " greater than zero.");
+                    inptok = false;
+                }
+                if (inptok) {
+                    ar.diffam(1) = adif[0];
+                    ar.diffam(2) = adif[1];
+                    hvdiff = true;
+                    // NB no Lautod here -- that omission IS the difference between
+                    // diff= and maxdiff=. The tail's `.not.hvdiff` guard then
+                    // leaves Lautod false, i.e. the orders are FIXED rather than
+                    // searched. It is the whole effect of the argument.
+                }
+            }
+            continue;
+        case 9:   // balanced (gtauto.f label 100)
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for balanced are yes or no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ar.lbalmd = (ivec[0] == 1);
+            continue;
+        case 16:  // acceptdefault (gtauto.f:391-397)
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for acceptdefault are yes or no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ar.laccdf = (ivec[0] == 1);
+            continue;
+        case 17:  // noautooutlier (gtauto.f label 180) -- same/tramo, NOT yes/no
+            gtdcvc(ctx, LPAREN, true, 1, NOTDIC, notptr, 2,
+                   "Available options for noautooutlier are same or tramo.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ar.lotmod = (ivec[0] == 1);
+            continue;
+        case 18:  // urfinal (gtauto.f label 190) -> Ubfin
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] <= 1.0) {
+                    inpter(ctx, PERROR, ep, "Unit root limit for final model must"
+                           " be greater than one.");
+                    inptok = false;
+                } else {
+                    ar.ubfin = dvec[0];
+                }
+            }
+            continue;
+        case 20:  // checkmu (gtauto.f label 200)
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for checkmu are yes or no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ar.lchkmu = (ivec[0] == 1);
+            continue;
+        case 21:  // mixed (gtauto.f label 210)
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for mixed are yes or no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ar.lmixmd = (ivec[0] == 1);
+            continue;
+        default:
+            break;
+        }
+        // Still token-consumed, all measured INERT on every probe series so far
+        // (tools/dropped_options_scouting.md, round 2): ub1/ub2/cancel/print/
+        // savelog/exactdiff/hrinitial/armalimit/percentrse/reducecv/
+        // ljungboxlimit/firstar/rejectfcst/fcstlim/seasonaloverdiff. INERT is
+        // not a clean bill -- round 1 measured all twenty INERT and seven of
+        // them turned out to be dropped once the probe was fixed.
+        consume_value(ctx, nullptr);
         if (ctx.error.lfatal) return;
-        if (a_idx == 16 && !cap.empty())
-            ctx.arima.laccdf = (cap[0] == "yes");  // gtauto.f:397 Laccdf=ivec(1).eq.1
     }
 
-    // gtauto.f tail defaults (gtauto.f 491-510). The maxorder/maxdiff/ub/... arg
-    // VALUES are still token-consumed by gt_generic without application; here we
-    // apply the no-argument defaults the automatic-model driver needs. Maxord and
-    // Diffam are left at their gtinpt sentinels (0,0)/(NOTSET) until an arg sets
-    // them, so "still sentinel" == "unspecified".
-    auto& ar = ctx.arima;
-    ar.lautom = true;                       // automatic model selection on
-    ar.lautod = true;                       // and automatic differencing (no diff arg)
-    if (ar.maxord(1) == 0 && ar.maxord(2) == 0) {
+    // gtauto.f:491-500 tail. Note both guards test the LOCAL buffers, i.e. "was
+    // the argument supplied", not the context field -- a spec giving
+    // `maxorder=(0,0)` has supplied it and must NOT be reset to the (2,1)
+    // default.
+    ar.lautom = true;                              // gtauto.f:491
+    if (!ar.lautod && !hvdiff) ar.lautod = true;   // gtauto.f:492
+    if (omax[0] == prm::NOTSET) {
         ar.maxord(1) = 2;
         ar.maxord(2) = 1;
     }
-    if (ar.diffam(1) == prm::NOTSET) {
+    if (adif[0] == prm::NOTSET) {
         ar.diffam(1) = 2;
         ar.diffam(2) = 1;
     }

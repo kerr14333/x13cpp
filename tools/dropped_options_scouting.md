@@ -156,6 +156,65 @@ Still INERT on all five series: `maxdiff`, `ub1`, `ub2`, `cancel`, `exactdiff`,
 should be read as a clean bill either** — read each default out of `gtauto.f`
 before choosing the next probe value.
 
+## What the DOCUMENTATION added, having read only the Fortran first
+
+The reference manual (`docx13as.pdf`, 306pp, Census — not vendored; fetched from
+`www2.census.gov/software/x-13arima-seats/x13as/unix-linux/documentation/`)
+was consulted only after the sweep, and it changed two conclusions:
+
+* **`urfinal` is blocked, not dropped.** "Threshold value for the **final** unit
+  root test. If the magnitude of an AR root for the **final model** is less than
+  this number, a unit root is assumed…" — that is `chkrt1` at `automd.f:717`,
+  inside the model-adequacy stage (`automd.f:577-850`) that `automd.cpp` has
+  always documented as deliberately unported. No amount of parsing reaches it.
+* **`noautooutlier` appears NOWHERE in the manual.** It exists only in
+  `gtauto.f`'s `NOTDIC`. It selects `tstmd1` (`automd.f:577`) over the `amidot`
+  path — also inside that same stage.
+
+**A doc/code divergence worth knowing:** the manual says `maxorder`'s regular
+order "must be greater than zero", but `gtauto.f:70` validates `omax(1).lt.0`
+(zero is allowed) with the documented `.le.0` form sitting **commented out**
+directly above it. The code was relaxed and the manual was not updated. The port
+transcribes the CODE, which is what parity requires.
+
+Defaults were audited against the quick reference at the same time and all match
+(`ubfin` 1.05, `pcr` 0.95, `predcv` 0.14286, `tsig` 1.0, `cancel` 0.1,
+`maxord`/`diffam` (2,1), and the five yes/no flags). No drift.
+
+**Read the docs before sizing the work, not after.** Two of the seven findings
+were never parse bugs at all, and the manual says so in one sentence each.
+
+## Where the seven actually stand
+
+| argument | after the port | why |
+|---|---|---|
+| `diff` | **applied** (ukgas, nottem) | needed a real engine fix — see below |
+| `balanced` | **applied** (ukgas) | parse only |
+| `mixed` | DIFFERS | reads it; final model still differs |
+| `checkmu` | DIFFERS | " |
+| `maxorder` | DIFFERS | " |
+| `urfinal` | **FATAL** | blocked on the adequacy stage |
+| `noautooutlier` | **FATAL** | " |
+
+**`diff=` was a genuine engine defect, not just an unparsed argument.**
+`automd.f:392` guards its `iddiff` call with `IF(Lautod)`; the port has TWO
+`iddiff` call sites and the guard existed only on the **unreachable** one, so
+the live site searched for the differencing orders unconditionally and `diff=`
+could not have worked even once parsed. `maxdiff=` vs `diff=` differ *only* in
+that `maxdiff` sets `Lautod` back on — the whole meaning of `diff=` is carried
+by that one omitted assignment.
+
+The three `DIFFERS` rows are most likely the same adequacy-stage gap (the oracle
+re-estimates after `tstmd1`), but that is **a hypothesis, not a measurement** —
+it has not been isolated.
+
+**A probe-validity check that should have come first:** the engine's BASELINE
+model must match the oracle's before any option verdict on that series means
+anything. It does on `ces_leis` / `ces_accfood` / `ukgas` / `nottem` — and does
+**not** on `ces_amuse`, where the engine picks a 4-term model against the
+oracle's 5. Every `ces_amuse` row in the tables above is therefore baseline
+noise, not an option finding, and was discarded.
+
 ## A tooling fix that came with it
 
 `option_sweep.py` staged only `airline.dat` and `payems.dat` into its scratch

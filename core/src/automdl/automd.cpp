@@ -339,6 +339,45 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     auto& ar = ctx.arima;
 
     bool inptok = true;
+
+    // ---- Two automdl{} arguments are parsed (gtauto.f labels 180/190) but are
+    // consumed ONLY by the model-adequacy stage this driver does not port (see
+    // the closing note at the end of this file, automd.f:577-850). Measured
+    // engine-vs-oracle on ukgas and the CES probe series, they moved the oracle
+    // by 17-66 .udg keys and the engine by zero, i.e. the run came back
+    // `OUTCOME: OK` carrying the DEFAULT model. Fatal instead: an unported
+    // computation behind a silently-accepted argument is the one shape this
+    // port has repeatedly been bitten by.
+    //
+    //   urfinal       -- the FINAL unit root test threshold. The manual: "if
+    //                    the magnitude of an AR root for the final model is
+    //                    less than this number, a unit root is assumed". That
+    //                    test is chkrt1 at automd.f:717 -- inside the stage.
+    //   noautooutlier -- selects tstmd1 (automd.f:577) over the amidot path.
+    //                    Undocumented: it appears nowhere in the 306-page
+    //                    reference manual, only in gtauto.f's NOTDIC.
+    //
+    // Both are keyed to the NON-DEFAULT value, so every existing spec and the
+    // whole corpus are unaffected (urfinal 1.05 / noautooutlier=same).
+    if (ar.ubfin != 1.05) {
+        errhdr(ctx);
+        writln(ctx,
+               "ERROR: automdl{urfinal=} not yet ported (automd.f:717 chkrt1, "
+               "in the unported model-adequacy stage).",
+               stdio::STDERR, ctx.units.mt2, true);
+        abend(ctx);
+        return;
+    }
+    if (!ar.lotmod) {
+        errhdr(ctx);
+        writln(ctx,
+               "ERROR: automdl{noautooutlier=tramo} not yet ported "
+               "(automd.f:577 tstmd1, in the unported model-adequacy stage).",
+               stdio::STDERR, ctx.units.mt2, true);
+        abend(ctx);
+        return;
+    }
+
     bool lmu = false;
     // imu: index of a USER-specified Constant (computed before chkmu adds one).
     int imu = 0;
@@ -645,9 +684,21 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     }
 
     // ---- identify differencing (iddiff) starting from the maxdiff limits ----
+    // automd.f:392-400. The `Lautod` else-branch is what makes `automdl{diff=}`
+    // mean anything: `diff=` fixes the orders and (unlike `maxdiff=`) leaves
+    // Lautod false, so the search is skipped and mdlset installs them directly.
+    // This site used to call iddiff unconditionally -- the guard existed only at
+    // the OTHER, unreachable call site, so `diff=` silently got the searched
+    // orders instead of the given ones.
     int ldr = ar.diffam(1), lds = ar.diffam(2);
-    iddiff(ctx, ldr, lds, trnsrs, nefobs, frstry, a, na, imu, lmu, false, 0);
-    if (ctx.error.lfatal) return;
+    if (ar.lautod) {
+        iddiff(ctx, ldr, lds, trnsrs, nefobs, frstry, a, na, imu, lmu, false, 0);
+        if (ctx.error.lfatal) return;
+    } else {
+        mdlint(ctx);
+        mdlset(ctx, 0, ldr, 0, 0, lds, 0, inptok);
+        if (ctx.error.lfatal) return;
+    }
 
     // ---- identify ARMA orders (amdid re-fits the winner in place) ----
     int lpr = 0, lqr = 0, lps = 0, lqs = 0;
