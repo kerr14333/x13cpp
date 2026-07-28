@@ -8,7 +8,7 @@ full order l=min(Mxarsp,n-1); spgrh = the AR transfer-function spectrum
 sgme2/|1+sum coef_k e^{-i2pi k f}|^2. Wired via a spec_est selector (spgrh for
 spctyp==0, spgrh2 for ==1) across sp0/sp1/sp2/spr; st0/st1/st2 stay Tukey.
 gt_spectrum captures maxar. **spectrum{} fully closed** (596 parity pass at the
-time of writing; 5261 as of 2026-07-27).
+time of writing; see `tools/SESSION_HANDOFF.md` for the current count).
 
 > **Scope note added 2026-07-27.** "Closed" here means the `spectrum{}` SPEC
 > SURFACE — the seven tables and their options. It predates three later fronts

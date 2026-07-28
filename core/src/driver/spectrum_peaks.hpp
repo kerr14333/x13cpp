@@ -56,9 +56,11 @@ struct SpecPeaks {
 };
 
 // mkpeak.f + mkfreq.f -- the constant index/frequency tables and the enhanced
-// grid. Returns ok=false for any configuration this increment does not cover
-// (non-monthly, an explicit peakwd other than 1, altfreq, showseasonalfreq),
-// so the caller can decline rather than guess.
+// grid. Covers monthly data at every `peakwd` 1..4, with or without
+// `showseasonalfreq` (which mkpeak does not take -- it changes mkfreq's PLOTTED
+// grid only). Returns ok=false for non-monthly data and for `altfreq`, where
+// mkpeak.f leaves Tpeak(3)/Tup(3) unassigned at peakwd > 1 (CB-30), so the
+// caller declines rather than guesses.
 SpecPeakGrid spectrum_peak_grid(int sp, int peakwd, bool lfqalt, bool lprsfq);
 
 // svpeak.f -- the median/range rows and, through smpeak.f and mxpeak.f, one row

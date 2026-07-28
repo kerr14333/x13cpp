@@ -57,8 +57,9 @@ improvise:
 - **Python is `python`** (3.14). `python3` is a Windows App alias → "Permission
   denied".
 - **Parity tests:** `python -m pytest tests/parity -q`. Green = `NNN passed`, with
-  expected `s` skips (parse-gap / no-golden specs). Currently 5261 pass / 0 fail /
-  0 xfail / 529 skip (~4m).
+  expected `s` skips (parse-gap / no-golden specs). **The current counts live in
+  `tools/SESSION_HANDOFF.md`, not here** -- this line has gone stale three times
+  now. Green = `NNN passed`, 0 failed, 0 xfailed.
 - After adding a `core/src/*.cpp`, the first build prints `GLOB mismatch!` and
   stops — just rerun once.
 
@@ -712,7 +713,14 @@ diagnostics front (force / slidingspans / history) is now closed.
   and one of them is guarded "deferred, the other guard will catch it", check
   that the other guard tests the same value at the same point — here one read
   Muladd before the collapse and the other after.
-- **`x11pt2 tdlom Adjtd==0` — MEASURED UNREACHABLE, left fatal.** It needs Adjtd
+- **`x11pt2 tdlom Adjtd==0` — the unreachability proof was WRONG, and the reason
+  is worth keeping.** It is reachable by `regression{noapply=(td)}`, which sets
+  `Adjtd = -1`; the branch (tdlom.f:44-59) is now ported and gated by
+  `generated/airline_noapply-*`. The four routes below really are closed, and
+  the analysis was invalid anyway: **`noapply=` was parsed and discarded**, so no
+  spec could set `Adjtd < 0` and the reasoning silently ran over a smaller graph
+  than the oracle's. *A reachability argument is only valid over the options the
+  parser honours.* The superseded analysis: it needs Adjtd
   cleared while `Nflwtd>0` and `Priadj>1` still hold, and the oracle rejects or
   bails out of every route: chkadj.f:209 (non-log/non-identity transform) is
   closed because the automatic lom/leap prior only exists under `td`+log and an
@@ -1433,7 +1441,12 @@ diagnostics front (force / slidingspans / history) is now closed.
   the model three times over successively shorter spans and saves/restores the
   entire estimation state (`Chlxpx`/`Chlgpg`/`Chlvwp`/`Matd`/`Armacm`/`Lndtcv`/
   `Lnlkhd`/`Var` plus the model span) around it; it is walled, not
-  approximated. Backcast error likewise.
+  approximated. Backcast error likewise. **UPDATE 2026-07-28: the wall was real
+  and unreachable.** `estimate{outofsample=}` was parsed and discarded, so the
+  engine reported the within-sample numbers AND labelled them
+  `aape.mode: withinsample` against the oracle's `outofsample`. The argument is
+  now parsed (`ctx.arima.outest`) and `run_pre_model` FATALS on it. "The
+  computation is walled" and "the option is safe" are different claims.
   (2) **`ave` is seeded to ONE and then accumulated into**, so on the branch
   that uses it the divisor is `(1 + sum|x|)/n` rather than the mean -- a Census
   defect, reachable only on a series that dips to or below zero in the window
@@ -1572,15 +1585,10 @@ diagnostics front (force / slidingspans / history) is now closed.
   legitimate only because `ifpl` (30 for monthly) never exceeds either grid's
   `lagh1` truncation, so `sicp2` reads the same autocovariance prefix either
   way. Suite runtime is unchanged at ~228s.
-  Still open here, and skipped with the reason written AT the skip rather than
-  filtered out of discovery: `getTPeaks` (the `.tukey.*` families, ~850 lines);
-  `genqs.f` (the QS block, 324 goldens); the 51 SEATS specs (`run_seats` never
-  calls `run_spectrum`, and spcdrv's SEATS branch reads `Hvstsa`/`Hvstir`/
-  `Stocsa`/`Stocir` -- a different INPUT, not just a different driver); and the
-  85 MODEL-ONLY specs (`x12run.f:181` calls x11ari with neither Lx11 nor
-  Lseats, so the oracle emits `spcori`+`spcrsd` on a spec asking for no
-  adjustment, and that path takes a different detrend -- spcdrv.f:193-200 keys
-  on `dpeq(Lam,ZERO)` rather than `Muladd.ne.1`). Map:
+  **All four follow-ons listed here are now CLOSED** -- `getTPeaks` (and it was
+  ~130 lines, not the ~850 estimated), `genqs.f`, the 51 SEATS specs and the 85
+  MODEL-ONLY specs, each in its own entry below. Only the `Iagr==4` indirect
+  names remain. Map:
   **`tools/spectrum_peaks_scouting.md`**.
 - **The QS SEASONALITY statistics (`genqs.f`) -- the DIRECT X-11 path CLOSED
   (byte-exact), and the whole block was silently absent.** 327 of the 331

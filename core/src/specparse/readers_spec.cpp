@@ -1320,9 +1320,11 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
 // ---- estimate{} (gtestm.f) -------------------------------------------------
 // gtestm.f: applies the estimation-numeric knobs (maxiter/maxnliter/tol/nltol/
 // parms/exact/step) to the model+arima commons; the output/AIC/model-file args
-// (outofsample/print/save/savelog/file/fix/k/removeconstant) are token-consumed
-// with their state application deferred to their own milestones. The tolerance-
-// reconciliation tail (gtestm.f 285-292) is reproduced.
+// (print/save/savelog/file/fix/k/removeconstant) are token-consumed with their
+// state application deferred to their own milestones; `outofsample` IS parsed
+// (into Arima.outest) and run_pre_model fatals on it, because the out-of-sample
+// aape arithmetic is walled and silently defaulting mislabels `aape.mode`. The
+// tolerance-reconciliation tail (gtestm.f 285-292) is reproduced.
 void gt_estimate(X13Context& ctx, bool& inptok) {
     constexpr int PARG = 15;
     static const char ARGDIC[] =
@@ -2969,12 +2971,11 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
         // Capture the value tokens for the options run_spectrum needs; the rest
-        // are consumed token-faithfully without application. Deferred to later
-        // increments (parsed + consumed here, not yet applied): start (arg 1 ->
-        // Bgspec override; run_spectrum currently always uses the gtspec.f:324
-        // eight-years-back default), peakwidth/altfreq/showseasonalfreq (arg
-        // 6/8/17 -> the mkfreq peak-frequency grid), and the peaks/plots/qcheck/
-        // Tukey/arspec compute.
+        // are consumed token-faithfully without application. Still parsed and
+        // NOT applied: `siglevel` (arg 5), `axis` (9), `localpeak` (15),
+        // `tukey120` (18) and `qcheck` (20) -- the last of these does move the
+        // oracle (8 `qs*.qseas` keys) and is the only one of the five measured
+        // to, so treat it as the next candidate here rather than as settled.
         std::vector<std::string> cap;
         const bool want = (argidx == 2 || argidx == 3 || argidx == 4 ||
                            argidx == 7 || argidx == 14 || argidx == 16 ||
