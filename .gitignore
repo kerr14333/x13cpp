@@ -57,3 +57,4 @@ coverage/
 
 # Private research notes (CB-4 lagind OOB analysis, etc.) -- not for the repo
 /research/
+tools/_sweep/
