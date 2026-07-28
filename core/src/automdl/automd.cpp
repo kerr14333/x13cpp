@@ -1,21 +1,23 @@
 // automd.cpp -- automd.f driver. See automd.hpp for scope/deferred features.
 //
-// automd.f has ONE path: label 10 -> iddiff -> amdid -> label 40 -> label 30
-// finalization -> label 70. The AIC tests are conditional BLOCKS inside that
-// flow, not a branch around it. This driver splits them for readability, and
-// the split has bitten once already: the label-30 finalization tail
-// (pass0/chkrt1/redomd/testodf/tstmd2/autoer) used to be called only from the
-// aictest branch, so a plain `automdl{}` spec silently skipped the unit-root
-// redomd, the over-differencing check, the residual-mean Constant add and the
-// insignificant-lag drop. Both branches now converge on
-// automd_finalize_tail(); keep it that way. Primitives are in
-// automd_finalize.cpp.
+// automd.f has ONE path: default airline model -> chkmu -> residual
+// diagnostics -> label 10 (snapshot + strip regressors) -> iddiff -> amdid ->
+// put regressors back -> label 40 (amidot | tstmd1) -> label 30 finalization ->
+// label 70. The AIC tests are conditional BLOCKS inside that flow, not a branch
+// around it.
 //
-// Plain path: default airline model -> chkmu (mean test) -> iddiff
-// (differencing) -> amdid (ARMA orders) -> re-add the mean when significant ->
-// final estimate -> finalization tail. The aictest path (automd.f l.322-982,
-// Lidotl=F) additionally runs block-1/2/3 tdaic/easaic, the a0/ismd0 revert via
-// rmfix/addfix/ssprep/restor, and tstmd1.
+// This driver used to mirror them as a branch, and the split bit twice. First
+// the label-30 finalization tail (pass0/chkrt1/redomd/testodf/tstmd2/autoer)
+// was reached only from the aictest side, so a plain `automdl{}` spec silently
+// skipped the unit-root redomd, the over-differencing check, the residual-mean
+// Constant add and the insignificant-lag drop. Then label 40 itself, plus the
+// three things its tstmd1 arm reads -- `tair` (automd.f:343), `adj0`/`trns0`
+// (:369-371) and bkdfmd's backup (:379, which tstmd1.f:221 restores from) --
+// were all likewise aictest-only, so `noautooutlier=tramo` had nowhere to land.
+//
+// There is now ONE path here too; `aic` gates only the three tdaic/easaic
+// blocks, exactly as Itdtst/Leastr gate them in the Fortran. Keep it that way.
+// Primitives are in automd_finalize.cpp.
 #include "automdl/automd.hpp"
 
 #include "automdl/adqtst.hpp"        // mdlchk, tstmd1, tstmd2, testodf, bkdfmd
@@ -349,33 +351,6 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
 
     bool inptok = true;
 
-    // ---- `noautooutlier` is parsed (gtauto.f label 190) but consumed only at
-    // automd.f:577, where it selects tstmd1 over the amidot path -- and this
-    // driver reaches tstmd1 only from its aictest branch. Measured
-    // engine-vs-oracle on ukgas and the CES probe series it moved the oracle by
-    // 28-79 .udg keys and the engine by zero, i.e. the run came back
-    // `OUTCOME: OK` carrying the DEFAULT model. Fatal instead: an unported
-    // computation behind a silently-accepted argument is the one shape this
-    // port has repeatedly been bitten by. Undocumented, incidentally -- it
-    // appears nowhere in the 306-page reference manual, only in gtauto.f's
-    // NOTDIC.
-    //
-    // Keyed to the NON-DEFAULT value, so every existing spec is unaffected
-    // (noautooutlier=same).
-    //
-    // `urfinal` used to be fatal alongside it, for the same stated reason. It
-    // is not any more: its consumer is chkrt1 (automd.f:717), which lives in
-    // the label-30 finalization tail, and that tail now runs on this path too.
-    // Gated by generated/{ukgas,ces_accfood}_automdl-urfinal.
-    if (!ar.lotmod) {
-        errhdr(ctx);
-        writln(ctx,
-               "ERROR: automdl{noautooutlier=tramo} not yet ported "
-               "(automd.f:577 tstmd1, in the unported model-adequacy stage).",
-               stdio::STDERR, ctx.units.mt2, true);
-        abend(ctx);
-        return;
-    }
     // ljungboxlimit -> Pcr has TWO consumers and only one is ported. The
     // acceptdefault test (automd.f:348) is here at :483/:678; the other is
     // pass2.f:164-169, which INCREMENTS Pcr (+0.025 on the first nloop pass,
@@ -472,247 +447,79 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     }
     if (ctx.error.lfatal) return;
 
-    // ---- aictest finalization: a faithful port of automd.f l.322-982.
-    // Replaces the old ctx-snapshot-only ismd0 revert: this drives the oracle's
-    // own rmfix/addfix/ssprep/restor/pass0/chkrt1 sequence and the label-40
-    // dispatch. With Lotmod on (default), label 40 takes the amidot branch (a
-    // BIGCV AO scan that finds nothing) rather than tstmd1, so the identified
-    // model's order is kept; only an explicit outlier{} would change that. ----
-    if (aic) {
-        // ---- default-model residual diagnostics (automd.f:322-344). Lidotl's
-        // outlier-ID block (l.280-321) is skipped -- unreachable, see above. ----
-        rgarma(ctx, ar.lestim, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
-        if (!ctx.error.lfatal) {
-            prterr(ctx, nefobs, true);
-            if (!ctx.mdldat.convrg)
-                abend(ctx);
-            else if (!argok)
-                abend(ctx);
-        }
+    // ---- default-model residual diagnostics (automd.f:322-344). Unconditional
+    // in the Fortran, and the values are what label 40's tstmd1 arm reads:
+    // blpct0/rvr0/rtval0 are the default model's Ljung-Box and residual
+    // statistics (also the acceptdefault test's input at l.348) and tair is its
+    // ARMA t-statistic pair. (The Lidotl outlier block at l.280-321 is skipped:
+    // the BIGCV AO scan finds nothing, and its pass0 has no AIC-selected
+    // regressor to re-test on this corpus.) ----
+    rgarma(ctx, ar.lestim, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+    if (!ctx.error.lfatal) {
+        prterr(ctx, nefobs, true);
+        if (!ctx.mdldat.convrg)
+            abend(ctx);
+        else if (!argok)
+            abend(ctx);
+    }
+    if (ctx.error.lfatal) return;
+    double blpct0, blq0, rvr0, rtval0;
+    int bldf0;
+    mdlchk(ctx, a, na, nefobs, blpct0, blq0, bldf0, rvr0, rtval0);
+    if (ctx.error.lfatal) return;
+    // automd.f:343 is GUARDED (`IF(.not.Lidotl)`), not unconditional: with the
+    // default Lotmod the BIGCV AO scan forces Lidotl true, the oracle skips
+    // armats and tair stays zero. tair is read only by tstmd1, i.e. only on the
+    // !Lidotl arm, so honouring the guard is what makes the two agree.
+    double tair[2] = {0.0, 0.0};
+    if (!lidotl) {
+        armats(ctx, tair);
         if (ctx.error.lfatal) return;
-        double blpct0, blq0, rvr0, rtval0;
-        int bldf0;
-        mdlchk(ctx, a, na, nefobs, blpct0, blq0, bldf0, rvr0, rtval0);
+    }
+
+    // ---- accept the default model outright when its Ljung-Box residual
+    // diagnostic passes (automd.f:348-357 -> GO TO 70), before any order
+    // search. ctx.model already holds the estimated default. ----
+    if (ar.laccdf && blpct0 < ar.pcr) {
+        mkmdsn(ctx, 0, 1, 1, 0, lds0, lqs0);  // Bstdsn <- default designation
         if (ctx.error.lfatal) return;
-        double tair[2] = {0.0, 0.0};
-        armats(ctx, tair);  // !Lidotl branch (l.343) -- always taken here.
-        if (ctx.error.lfatal) return;
-
-        // Laccdf: accept the default model outright when its Ljung-Box residual
-        // diagnostic passes (automd.f:348-357 -- IF(Laccdf.and.Blpct0.lt.Pcr) ...
-        // GO TO 70). ctx.model already holds the estimated default (0 1 1)(0 lds0
-        // lqs0); build its designation and jump straight to the label-70 finalize,
-        // skipping the whole order-search body. lpr0..lqs0 == 0,1,1,0,lds0,lqs0.
-        if (ar.laccdf && blpct0 < ar.pcr) {
-            mkmdsn(ctx, 0, 1, 1, 0, lds0, lqs0);  // Bstdsn <- default designation
-            if (ctx.error.lfatal) return;
-            autoer(ctx, ctx.mdldat.armaer);       // GO TO 70
-            return;
-        }
-
-        // ---- save a0, enter the nloop (automd.f:360-373; nloop stays 1 for
-        // this corpus -- the only re-loop triggers are Lidotl-gated pass2/
-        // outlier-critical-value retries, both unreachable here). ----
-        const bool lmu0 = lmu;
-        const int kstep = 1;
-        std::vector<double> a0(static_cast<std::size_t>(na));
-        copy(a, na, 1, a0.data());
-        std::vector<double> adj0(PLEN), trns0(PLEN);
-        copy(ctx.adj.adj.data(), PLEN, 1, adj0.data());
-        copy(trnsrs, PLEN, 1, trns0.data());
-
-        // ---- label 10 (automd.f:378-388): snapshot + strip regressors. ----
-        ssprep_save(ctx);
-        bkdfmd(ctx, true);
-        const int nbcst = ctx.extend.nbcst < 0 ? 0 : ctx.extend.nbcst;
-        int nbb = 0;
-        if (m.nb > 0) {
-            nbb = m.nb;
-            rmfix(ctx, trnsrs, nbcst, ar.nrxy, 2);
-            if (ctx.error.lfatal) return;
-            regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst,
-                   0, ar.userx.data(), ar.bgusrx.data(), ar.nrusrx,
-                   ctx.prior.priadj, ar.reglom, ar.nrxy, ar.begxy.data(),
-                   frstry, true, ar.elong);
-            if (ctx.error.lfatal) return;
-        }
-
-        // ---- identify differencing + ARMA orders on the clean series
-        // (automd.f:390-441; Lautod is true for the whole corpus -- no diff=
-        // override). ----
-        int ldr = ar.diffam(1), lds = ar.diffam(2);
-        if (ar.lautod) {
-            iddiff(ctx, ldr, lds, trnsrs, nefobs, frstry, a, na, imu, lmu,
-                   false, 0);
-            if (ctx.error.lfatal) return;
-        } else {
-            mdlint(ctx);
-            mdlset(ctx, 0, ldr, 0, 0, lds, 0, inptok);
-            if (ctx.error.lfatal) return;
-        }
-        int lpr = 0, lqr = 0, lps = 0, lqs = 0;
-        bool locok = true;
-        amdid(ctx, lpr, ldr, lqr, lps, lds, lqs, trnsrs, frstry, nefobs, a, na,
-              lmu, 0, locok);
-        if (ctx.error.lfatal) return;
-
-        // ismd0 (automd.f:434-439): identified model == default airline and
-        // the mean is unchanged.
-        const bool ismd0 =
-            ((m.sp > 1 && lpr == 0 && ldr == 1 && lqr == 1 && lps == 0 &&
-              lds == lds0 && lqs == lqs0) ||
-             (m.sp == 1 && lpr == 0 && ldr == 1 && lqr == 1)) &&
-            (lmu == lmu0);
-
-        // ---- put regressors back (automd.f:443-506) ----
-        bool lester = false;
-        bool went_to_30 = false;
-        if (nbb > 0) {
-            addfix(ctx, trnsrs, nbcst, 0, 2);
-            if (ctx.error.lfatal) return;
-            if (!lmu) {
-                int igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
-                                  m.ngrptl, "Constant");
-                if (igrp > 0) {
-                    int icol = m.grp(igrp - 1);
-                    dlrgef(ctx, icol, ar.nrxy, 1);
-                    if (ctx.error.lfatal) return;
-                }
-            }
-            if (m.nb > 0) lester = true;
-            // nloop==1 always for this corpus:
-            if (ismd0) {
-                restor_model(ctx);
-                copy(a0.data(), na, 1, a);
-                regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp,
-                       ctx.extend.nfcst, 0, ar.userx.data(), ar.bgusrx.data(),
-                       ar.nrusrx, ctx.prior.priadj, ar.reglom, ar.nrxy,
-                       ar.begxy.data(), frstry, true, ar.elong);
-                if (ctx.error.lfatal) return;
-                went_to_30 = true;
-            }
-            if (!went_to_30) {
-                if (m.natotl > 0) {
-                    clrotl(ctx, ar.nrxy);
-                    if (ctx.error.lfatal) return;
-                }
-                regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp,
-                       ctx.extend.nfcst, 0, ar.userx.data(), ar.bgusrx.data(),
-                       ar.nrusrx, ctx.prior.priadj, ar.reglom, ar.nrxy,
-                       ar.begxy.data(), frstry, true, ar.elong);
-                if (ctx.error.lfatal) return;
-            }
-        }
-        if (!went_to_30 && imu == 0 && lmu) {
-            int icol = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
-                              m.ngrptl, "Constant");
-            if (icol == 0) {
-                adrgef(ctx, DNOTST, "Constant", "Constant", PRGTCN, false,
-                       false);
-                if (ctx.error.lfatal) return;
-                regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp,
-                       ctx.extend.nfcst, 0, ar.userx.data(), ar.bgusrx.data(),
-                       ar.nrusrx, ctx.prior.priadj, ar.reglom, ar.nrxy,
-                       ar.begxy.data(), frstry, true, ar.elong);
-                if (ctx.error.lfatal) return;
-                lester = true;
-            }
-        }
-        if (!went_to_30 && lester) {
-            automd_reestim(ctx, a, na, nefobs);
-            if (ctx.error.lfatal) return;
-        }
-        if (!went_to_30 && ismd0) {
-            copy(a0.data(), na, 1, a);
-            went_to_30 = true;
-        }
-
-        if (!went_to_30) {
-            // ---- block-2 AIC tests on the identified model (automd.f:508-548) ----
-            ssprep_save(ctx);
-            if (!automd_aic_round(ctx, trnsrs, a, nefobs, na, frstry)) return;
-
-            // ---- label 40 (automd.f:549-649). Lidotl -> amidot (automatic
-            // outlier ID); else (non-default identified model) tstmd1 + the
-            // redo-aictest block. With Lotmod forcing Lidotl on (BIGCV AO), the
-            // amidot branch is taken: idotlr finds nothing and, crucially,
-            // tstmd1's insignificant-lag order reduction is skipped. ----
-            if (lidotl) {
-                amidot(ctx, trnsrs, frstry, nefobs, a);
-                if (ctx.error.lfatal) return;
-            } else {
-                tstmd1(ctx, trnsrs, frstry, a, na, nefobs, blpct0, rvr0, rtval0,
-                       lpr, lps, lqr, lqs, ldr, lds, lmu, adj0.data(),
-                       trns0.data(), tair);
-                if (ctx.error.lfatal) return;
-
-                if (ar.itdtst > 0 || ar.leastr ||
-                    (ar.luser && ctx.usrreg.ncusrx > 0) || imu == 0) {
-                    if (!automd_aic_round(ctx, trnsrs, a, nefobs, na, frstry))
-                        return;
-                    if (ar.lchkmu) {
-                        chkmu(ctx, trnsrs, a, nefobs, na, frstry, kstep, false);
-                        if (ctx.error.lfatal) return;
-                        int kmu = strinx(false, m.grpttl.raw(),
-                                         m.grpptr.data(), 1, m.ngrptl,
-                                         "Constant");
-                        lmu = kmu > 0;
-                    }
-                    automd_reestim(ctx, a, na, nefobs);
-                    if (ctx.error.lfatal) return;
-                }
-            }
-        }
-
-        // ---- label 30 onward: the shared finalization tail. ----
-        automd_finalize_tail(ctx, trnsrs, frstry, nefobs, a, na, lpr, ldr, lqr,
-                             lps, lds, lqs, lmu, kstep);
+        autoer(ctx, ctx.mdldat.armaer);       // GO TO 70
         return;
     }
 
-    // ---- Laccdf: accept the estimated default model outright when its Ljung-Box
-    // residual diagnostic passes (automd.f:348-357), BEFORE any order search. The
-    // default (0 1 1)(0 lds0 lqs0) is already estimated in ctx (rgarma above); the
-    // accept test is not aictest-gated, so it lives here in the non-aic path too
-    // (the aic path has the mirror branch). ----
-    if (ar.laccdf) {
-        // automd.f:325 -- the residual-diagnostics rgarma refines the default
-        // model estimate. The l.266 rgarma above only converges partway from
-        // the chkmu-context start; the oracle runs this second rgarma (Lestim)
-        // unconditionally before the accept test. The aic path runs it as its
-        // own line-422 call; the non-aic acceptdefault path needs it here too,
-        // or the accepted airline's tail forecast drifts ~8.5e-6. (The
-        // intervening Lidotl amidot/pass0 block is a no-op here -- BIGCV finds
-        // no outlier and payems carries no regressor -- exactly as on the aic
-        // path, which also skips it and stays bit-exact.)
-        rgarma(ctx, ar.lestim, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
-        if (!ctx.error.lfatal) {
-            prterr(ctx, nefobs, true);
-            if (!ctx.mdldat.convrg)
-                abend(ctx);
-            else if (!argok)
-                abend(ctx);
-        }
+    // ---- save the default-model state (automd.f:360-373). nloop stays 1 for
+    // this corpus -- the only re-loop triggers are the Lidotl-gated pass2 and
+    // outlier-critical-value retries, both unreachable here. ----
+    const bool lmu0 = lmu;
+    const int kstep = 1;
+    std::vector<double> a0(static_cast<std::size_t>(na));
+    copy(a, na, 1, a0.data());
+    std::vector<double> adj0(PLEN), trns0(PLEN);
+    copy(ctx.adj.adj.data(), PLEN, 1, adj0.data());
+    copy(trnsrs, PLEN, 1, trns0.data());
+
+    // ---- label 10 (automd.f:378-388): snapshot + strip regressors. bkdfmd's
+    // backup is not optional bookkeeping -- tstmd1.f:221 restores from it when
+    // it reverts to the airline default, so label 40's tstmd1 arm is only
+    // correct if this ran. ----
+    ssprep_save(ctx);
+    bkdfmd(ctx, true);
+    const int nbcst = ctx.extend.nbcst < 0 ? 0 : ctx.extend.nbcst;
+    int nbb = 0;
+    if (m.nb > 0) {
+        nbb = m.nb;
+        rmfix(ctx, trnsrs, nbcst, ar.nrxy, 2);
         if (ctx.error.lfatal) return;
-        double blpct0, blq0, rvr0, rtval0;
-        int bldf0;
-        mdlchk(ctx, a, na, nefobs, blpct0, blq0, bldf0, rvr0, rtval0);
+        regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst, 0,
+               ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
+               ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
         if (ctx.error.lfatal) return;
-        if (blpct0 < ar.pcr) {
-            mkmdsn(ctx, 0, 1, 1, 0, lds0, lqs0);  // Bstdsn <- default designation
-            if (ctx.error.lfatal) return;
-            autoer(ctx, ctx.mdldat.armaer);       // GO TO 70
-            return;
-        }
     }
 
-    // ---- identify differencing (iddiff) starting from the maxdiff limits ----
-    // automd.f:392-400. The `Lautod` else-branch is what makes `automdl{diff=}`
-    // mean anything: `diff=` fixes the orders and (unlike `maxdiff=`) leaves
-    // Lautod false, so the search is skipped and mdlset installs them directly.
-    // This site used to call iddiff unconditionally -- the guard existed only at
-    // the OTHER, unreachable call site, so `diff=` silently got the searched
-    // orders instead of the given ones.
+    // ---- identify differencing on the clean series (automd.f:390-400). The
+    // `Lautod` else-branch is what makes `automdl{diff=}` mean anything: `diff=`
+    // fixes the orders and (unlike `maxdiff=`) leaves Lautod false, so the
+    // search is skipped and mdlset installs them directly. ----
     int ldr = ar.diffam(1), lds = ar.diffam(2);
     if (ar.lautod) {
         iddiff(ctx, ldr, lds, trnsrs, nefobs, frstry, a, na, imu, lmu, false, 0);
@@ -723,80 +530,147 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         if (ctx.error.lfatal) return;
     }
 
-    // ---- identify ARMA orders (amdid re-fits the winner in place) ----
+    // ---- identify ARMA orders (automd.f:420; amdid re-fits the winner) ----
     int lpr = 0, lqr = 0, lps = 0, lqs = 0;
     bool locok = true;
     amdid(ctx, lpr, ldr, lqr, lps, lds, lqs, trnsrs, frstry, nefobs, a, na, lmu,
           0, locok);
     if (ctx.error.lfatal) return;
 
-    // ---- re-add the mean when iddiff/amdid selected one but it is not present
-    // (automd.f:479) and re-estimate the final model. ----
-    if (imu == 0 && lmu) {
+    // ismd0 (automd.f:434-439): identified model == default airline and the
+    // mean is unchanged. It is BOTH the a0-revert trigger and label 40's
+    // tstmd1 guard (`ELSE IF(.not.ismd0)`).
+    const bool ismd0 =
+        ((m.sp > 1 && lpr == 0 && ldr == 1 && lqr == 1 && lps == 0 &&
+          lds == lds0 && lqs == lqs0) ||
+         (m.sp == 1 && lpr == 0 && ldr == 1 && lqr == 1)) &&
+        (lmu == lmu0);
+
+    // ---- put regressors back (automd.f:443-506) ----
+    bool lester = false;
+    bool went_to_30 = false;
+    if (nbb > 0) {
+        addfix(ctx, trnsrs, nbcst, 0, 2);
+        if (ctx.error.lfatal) return;
+        if (!lmu) {
+            int igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
+                              m.ngrptl, "Constant");
+            if (igrp > 0) {
+                int icol = m.grp(igrp - 1);
+                dlrgef(ctx, icol, ar.nrxy, 1);
+                if (ctx.error.lfatal) return;
+            }
+        }
+        if (m.nb > 0) lester = true;
+        // nloop==1 always for this corpus:
+        if (ismd0) {
+            restor_model(ctx);
+            copy(a0.data(), na, 1, a);
+            regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst,
+                   0, ar.userx.data(), ar.bgusrx.data(), ar.nrusrx,
+                   ctx.prior.priadj, ar.reglom, ar.nrxy, ar.begxy.data(),
+                   frstry, true, ar.elong);
+            if (ctx.error.lfatal) return;
+            went_to_30 = true;
+        }
+        if (!went_to_30) {
+            if (m.natotl > 0) {
+                clrotl(ctx, ar.nrxy);
+                if (ctx.error.lfatal) return;
+            }
+            regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst,
+                   0, ar.userx.data(), ar.bgusrx.data(), ar.nrusrx,
+                   ctx.prior.priadj, ar.reglom, ar.nrxy, ar.begxy.data(),
+                   frstry, true, ar.elong);
+            if (ctx.error.lfatal) return;
+        }
+    }
+    if (!went_to_30 && imu == 0 && lmu) {
         int icol = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
                           "Constant");
         if (icol == 0) {
             adrgef(ctx, DNOTST, "Constant", "Constant", PRGTCN, false, false);
             if (ctx.error.lfatal) return;
-            regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst, 0,
-                   ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
-                   ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+            regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst,
+                   0, ar.userx.data(), ar.bgusrx.data(), ar.nrusrx,
+                   ctx.prior.priadj, ar.reglom, ar.nrxy, ar.begxy.data(),
+                   frstry, true, ar.elong);
             if (ctx.error.lfatal) return;
-            rgarma(ctx, ar.lestim, ar.mxiter, ar.mxnlit, false, a, na, nefobs,
-                   argok);
-            if (!ctx.error.lfatal) {
-                prterr(ctx, nefobs, true);
-                if (!ctx.mdldat.convrg)
-                    abend(ctx);
-                else if (!argok)
-                    abend(ctx);
+            lester = true;
+        }
+    }
+    if (!went_to_30 && lester) {
+        automd_reestim(ctx, a, na, nefobs);
+        if (ctx.error.lfatal) return;
+    }
+    if (!went_to_30 && ismd0) {
+        copy(a0.data(), na, 1, a);
+        went_to_30 = true;
+    }
+
+    if (!went_to_30) {
+        // ---- block-2 AIC tests on the identified model (automd.f:508-548).
+        // Gated on `aic`, not on Itdtst/Leastr as the Fortran gates it: there
+        // the candidate vectors (Tdayvc/Easvec/Neasvc) come from the parser and
+        // editor, which this port has not ported -- automd_aictest_block1
+        // stands in for them. Running a round without that setup indexes an
+        // uninitialised Easvec. ----
+        ssprep_save(ctx);
+        if (aic && !automd_aic_round(ctx, trnsrs, a, nefobs, na, frstry))
+            return;
+
+        // ---- label 40 (automd.f:549-649): `IF(Lidotl) amidot ELSE IF(.not.
+        // ismd0) tstmd1`. Lidotl is true by default because Lotmod forces a
+        // BIGCV AO scan (which finds nothing), so the default run takes amidot
+        // and tstmd1's insignificant-lag order reduction is skipped;
+        // `automdl{noautooutlier=tramo}` clears Lotmod and selects tstmd1. ----
+        if (lidotl) {
+            amidot(ctx, trnsrs, frstry, nefobs, a);
+            if (ctx.error.lfatal) return;
+        } else if (!ismd0) {
+            tstmd1(ctx, trnsrs, frstry, a, na, nefobs, blpct0, rvr0, rtval0,
+                   lpr, lps, lqr, lqs, ldr, lds, lmu, adj0.data(),
+                   trns0.data(), tair);
+            if (ctx.error.lfatal) return;
+
+            // ---- redo the regressor AIC tests on the model tstmd1 left
+            // (automd.f:583-648) ----
+            if (ar.itdtst > 0 || ar.leastr ||
+                (ar.luser && ctx.usrreg.ncusrx > 0) || imu == 0) {
+                if (aic && !automd_aic_round(ctx, trnsrs, a, nefobs, na, frstry))
+                    return;
+                if (ar.lchkmu) {
+                    chkmu(ctx, trnsrs, a, nefobs, na, frstry, kstep, false);
+                    if (ctx.error.lfatal) return;
+                    int kmu = strinx(false, m.grpttl.raw(), m.grpptr.data(), 1,
+                                     m.ngrptl, "Constant");
+                    lmu = kmu > 0;
+                }
+                automd_reestim(ctx, a, na, nefobs);
+                if (ctx.error.lfatal) return;
             }
-            if (ctx.error.lfatal) return;
         }
     }
 
-    // ---- label 30 onward: the shared finalization tail (automd.f:654-983).
-    // automd.f has ONE path -- label 10 -> iddiff/amdid -> label 40 -> label 30
-    // -- and the AIC tests are conditional BLOCKS inside it, not a separate
-    // branch. This driver split them into an aic / non-aic branch and reached
-    // the tail only from the aic one, so a plain `automdl{}` spec ran neither
-    // chkrt1's unit-root redomd, nor testodf, nor the residual-mean Constant
-    // add, nor tstmd2's insignificant-lag drop. kstep is 1 here: automd.f:366
-    // sets it unconditionally, before label 10.
+    // ---- label 30 onward: the shared finalization tail (automd.f:654-983). ----
     automd_finalize_tail(ctx, trnsrs, frstry, nefobs, a, na, lpr, ldr, lqr, lps,
-                         lds, lqs, lmu, /*kstep=*/1);
+                         lds, lqs, lmu, kstep);
     if (ctx.error.lfatal) return;
 
-    // DEFERRED (non-ismd0 aictest + non-aictest adequacy):
+    // DEFERRED:
     //
-    // 1. Non-default-model aictest series (automd.f:378-648). The block-1 AIC tests
-    //    + ismd0 a0-revert above reach parity for series whose identified model is
-    //    the default airline (e.g. airline). Series that identify to a NON-default
-    //    model (expgs/payems/unrate) would need the full nloop: addfix (put
-    //    regressors back), the round-2 AIC tests on the identified model, and the
-    //    tstmd1 finalization. Those aictest-x11 specs now gate bit-exact anyway --
-    //    reached via the ismd0 ctx-snapshot revert + the amidot/Lotmod control-flow
-    //    fix (e2191ad), NOT the full nloop, which stays unported. rmfix/addfix +
-    //    the fxreg dictionary + ssprep/restor are only needed for that faithful
-    //    nloop (this driver uses a ctx snapshot for the ismd0 revert instead).
+    // 1. pass2 / the nloop re-entry (automd.f:664-672, GO TO 10/40/50). It is
+    //    gated `Lidotl .and. nloop.le.2` and reverts to the outlier model when
+    //    the identified one is worse. Unreachable on this corpus: the only
+    //    outlier scan that runs is the Lotmod-forced BIGCV AO pass, which finds
+    //    nothing, so there is no outlier model to revert to. This is what
+    //    `automdl{ljungboxlimit=}` needs (pass2.f:164-169 increments Pcr), and
+    //    why that argument is fatal above rather than silent.
     //
-    // 2. tstmd1 on THIS path (automd.f:576-582, label 40's `ELSE IF(.not.ismd0)`
-    //    arm). The label-30 finalization tail that used to be listed here as
-    //    unported is now wired -- see the call above; wiring it closed
-    //    `urfinal`, `checkmu` and `cancel` and moved `mixed`/`maxdiff` on part
-    //    of the probe set. What is still missing is the branch AHEAD of it:
-    //    label 40 dispatches `IF(Lidotl) amidot ELSE tstmd1`, and this path runs
-    //    neither. Lidotl is true by default (Lotmod forces a BIGCV AO scan that
-    //    finds nothing), so the default is observationally fine; the tstmd1 arm
-    //    is what `automdl{noautooutlier=tramo}` selects, and that argument is
-    //    fatal above rather than silent.
-    //
-    //    The earlier note here said wiring tstmd1 alone broke parity because the
-    //    oracle re-estimates AFTER it -- that re-estimate is exactly what the
-    //    tail now provides, so the two have to land together. tstmd1 also needs
-    //    blpct0/rvr0/rtval0/adj0/trns0/tair, which automd.f:322-344 computes
-    //    UNCONDITIONALLY and this driver computes only inside `if (aic)`; that
-    //    block has to be hoisted first.
+    // 2. The Lidotl outlier-ID block on the DEFAULT model (automd.f:280-321):
+    //    amidot + pass0 + the nauto0/cvl0 bookkeeping pass2 would read. Skipped
+    //    for the same reason -- BIGCV finds nothing and pass0 has no
+    //    AIC-selected regressor to re-test on this corpus.
     //
     // The identified model is left estimated in ctx.
 }
