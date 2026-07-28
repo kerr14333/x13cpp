@@ -91,13 +91,21 @@ list; it is the one that gets updated per feature.)*
 - **pickmdl** (X-11-ARIMA model selection) — still parse-only (M1). **1 corpus
   spec** (`extra/airline_pickmdl`), not the 5 previously claimed, but it is the
   largest single source of real feature skips (9).
-- **`automdl{}`'s label-40 `tstmd1` arm and the `pass2`/nloop call at `:665`.**
-  Narrowed 2026-07-28b: the label-30 finalization tail previously listed here
-  was ported all along and merely unreachable on the plain (non-aictest) path —
-  wiring the existing call closed `urfinal`, `checkmu` and `cancel`. What
-  remains blocks `noautooutlier` (fatal) and `ljungboxlimit` (fatal), and leaves
-  `mixed`/`maxdiff`/`maxorder` partly wrong. See `tools/automdl_scouting.md`
-  §3c and `tools/dropped_options_scouting.md` round 3.
+- **`automdl{}`'s `pass2` / nloop re-entry (`automd.f:664-672`, `pass2.f`).**
+  Narrowed twice. 2026-07-28b: the label-30 finalization tail once listed here
+  was ported all along and merely unreachable, and wiring the existing call
+  closed `urfinal`. 2026-07-28c: the aictest/non-aictest BRANCH is gone —
+  `automd.cpp` now runs `automd.f`'s single path — which closed
+  `noautooutlier` (fatal removed), `checkmu`, `cancel` and `maxdiff`, all
+  gated. **`pass2` is what is left, and it is NOT gated on a real outlier
+  scan** (`IF(Lidotl.and.nloop.le.2)`, and the default Lotmod forces `Lidotl`
+  true — so the oracle calls it on every automdl run; it is simply a no-op on
+  every corpus spec's default configuration). It blocks `ljungboxlimit`
+  (fatal, `pass2.f:160-169` increments `Pcr`) and is the measured cause of the
+  last two wrong answers: `mixed=no` on 3 series and `maxorder` on ukgas,
+  where the oracle's final model differs from its own `automdl.first`, i.e. it
+  re-identified. One port closes all three. See `tools/automdl_scouting.md`
+  §3c and `tools/dropped_options_scouting.md` round 5.
 - **`composite{}` SEATS branch** (`agr3s.f`), pseudo-additive, and the
   forced/rounded indirect series. The X-11 composite front (direct + indirect
   + comparison statistics + indirect diagnostics) is CLOSED and gated.

@@ -247,6 +247,46 @@ strength of a single failed experiment (wiring `tstmd1` alone, whose *missing*
 re-estimate is precisely what the tail supplies). Read the call graph before
 sizing.
 
+### Round 5 — the branch is gone, and eight of eleven are closed
+
+The rest of `automd.cpp`'s aictest branch was hoisted onto the shared path:
+the acceptdefault test, the `a0`/`adj0`/`trns0` saves, **label 10**
+(`ssprep`/`bkdfmd`/`rmfix`) and the whole put-the-regressors-back block. There
+is one path now, and `aic` gates only the three `tdaic`/`easaic` blocks.
+`bkdfmd` is why label 10 had to come too — `tstmd1.f:221` restores from its
+backup, so label 40's `tstmd1` arm cannot be correct without it.
+
+Re-measured on the same probe set (baselines re-verified first: ukgas, nottem,
+ces_accfood, ces_leis, co2 clean; ces_amuse and usdeaths disagree at baseline,
+so nothing is read off those):
+
+| argument | round 4 | round 5 |
+|---|---|---|
+| `noautooutlier` | FATAL | **applied** — fatal removed, gated on 3 series |
+| `checkmu` | applied on ukgas | **applied on all 4** — gated |
+| `maxdiff` | applied on ces_leis | **applied on all 4** at `(1 1)` — gated |
+| `cancel` | applied on nottem | **applied** on nottem — gated |
+| `mixed` | applied on ukgas, DIFFERS on 3 | unchanged |
+| `maxorder` | DIFFERS everywhere | applied on 3, **DIFFERS on ukgas** |
+| `ljungboxlimit` | FATAL | FATAL — `pass2` |
+
+`mixed` and `maxorder` fail on **disjoint** series, so the remaining two were
+never one shared cause in the sense round 3 meant.
+
+**The residual is `pass2`, and the claim that `pass2` is unreachable was
+wrong.** Its guard is `IF(Lidotl.and.nloop.le.2)` and nothing else; the default
+Lotmod forces `Lidotl` true, so the oracle calls it on **every** automdl run,
+and its `ichk` revert is guarded `Naut0.le.Naut` = `0.le.0`, which the BIGCV
+scan finding nothing does not close. The evidence that it is the residual: on
+`mixed=no` and `maxorder=(1 1)` the oracle's final model differs from its own
+`automdl.first`, i.e. it re-identified, which only `pass2`'s `Igo` can cause.
+It is also what `ljungboxlimit=` needs (`pass2.f:160-169` increments `Pcr`), so
+**one port closes all three remaining arguments.**
+
+Round 4's lesson, inverted: **"unreachable" is a claim about a guard and has to
+be read off the guard.** A green suite is consistent with "the routine is a
+no-op on this corpus", which is a different statement.
+
 ## Where the seven actually stand
 
 | argument | after the port | why |

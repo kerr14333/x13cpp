@@ -257,19 +257,85 @@ gates). `urfinal`'s fatal is removed and gated by
 `generated/{ukgas,ces_accfood}_automdl-urfinal`; mutation-tested (hardcoding
 `chkrt1`'s limit to the 1.05 default fails 4 of 7).
 
-**Still open here:** label 40 itself — `IF(Lidotl) amidot ELSE tstmd1` — is not
-wired on the plain path. `Lidotl` is true by default (Lotmod's BIGCV AO scan),
-so the default is observationally fine; the `tstmd1` arm is what
-`noautooutlier=tramo` selects, and that stays fatal. It needs
-`automd.f:322-344`'s default-model `rgarma`/`mdlchk`/`armats` hoisted out of
-`if (aic)` first, for `blpct0`/`rvr0`/`rtval0`/`adj0`/`trns0`/`tair`.
-
 **The generalizable bit: "the routine is unported" and "the routine is
 unreachable" produce the same symptom — an option that moves the oracle and not
 the engine — and the fix costs are three orders of magnitude apart.** The
 closing note in `automd.cpp` had asserted the former for two sessions on the
 strength of one failed experiment (wiring `tstmd1` alone). Check the call graph
 before sizing the port.
+
+### UPDATE 2026-07-28c — one path, and the residual is `pass2`
+
+The branch is **gone**. `automd.cpp` now runs `automd.f`'s single path and `aic`
+gates only the three `tdaic`/`easaic` blocks. What had to move out of
+`if (aic)` was more than the `:322-344` diagnostics the previous update named:
+the `:348-357` acceptdefault test, the `:360-373` saves (`a0`/`adj0`/`trns0`/
+`lmu0`/`kstep`), **label 10** (`:378-388` — `ssprep`, `bkdfmd`, `rmfix`) and the
+whole put-the-regressors-back block (`:443-506`, `addfix`/`clrotl`/`restor` and
+the `a0` revert). `bkdfmd` is the non-obvious one: it is not bookkeeping,
+`tstmd1.f:221` restores from its backup, so label 40's `tstmd1` arm is only
+correct if label 10 ran.
+
+Two corrections to the record came out of it:
+
+* **`automd.f:343`'s `armats` is GUARDED on `.not.Lidotl`.** The old aic-branch
+  call had a comment claiming the guard was always TRUE there; it is always
+  FALSE on the default path, since Lotmod forces `Lidotl` on. Harmless before
+  (only `tstmd1` reads `tair`, and `tstmd1` only runs when `.not.Lidotl`), but
+  the comment was backwards.
+* **Blocks 2/3 of the AIC round are gated on `aic`, not on `Itdtst`/`Leastr`
+  as the Fortran gates them.** The parser/editor setup that fills
+  `Tdayvc`/`Easvec`/`Neasvc` is unported and `automd_aictest_block1` stands in
+  for it, so a round without block-1 indexes an uninitialised `Easvec`. This
+  crashed the four `test_m4_aictest` gates on the first attempt — the m4
+  harness passes `do_aictest=false` and runs the AIC tests itself.
+
+`noautooutlier=` is no longer fatal. Gated bit-exact by
+`generated/{ukgas,ces_accfood,ces_amuse}_automdl-noautooutlier`; mutation-tested
+(disabling the `tstmd1` arm fails 5 of 11). `ces_amuse` is the categorical gate
+— it is the only corpus series where the argument changes the SELECTED MODEL
+(oracle 5 ARMA terms → 4) rather than only its coefficients.
+
+**Re-measured all five remaining arguments SEPARATELY** (the standing
+instruction, and it earned its keep — the group split three ways, and not the
+predicted way). Probe set ukgas / nottem / ces_accfood / ces_leis, baselines
+re-verified clean first:
+
+| argument | before | after |
+|---|---|---|
+| `checkmu` | applied on ukgas only | **APPLIED on all 4** — gated |
+| `maxdiff` | applied on ces_leis only | **APPLIED on all 4** at `(1 1)`; at the stronger `(1 0)` probe applied on ces_leis, DIFFERS on 3 — gated |
+| `cancel` | applied on nottem | **APPLIED** on nottem; INERT elsewhere at every value tried — gated |
+| `mixed` | applied on ukgas, DIFFERS on 3 | unchanged |
+| `maxorder` | DIFFERS everywhere | APPLIED on 3, **DIFFERS on ukgas** |
+
+`mixed` and `maxorder` now fail on **disjoint** series, which is why "one
+further port explains both" was never the likely shape.
+
+**The residual is `pass2`, and `pass2` is NOT unreachable.** `automd.cpp`'s
+deferred note (written in the same commit that unified the path, and corrected
+in the next) had said it needed a real outlier scan. It does not: the guard is
+`IF(Lidotl.and.nloop.le.2)` **and nothing else**, and the default Lotmod forces
+`Lidotl` true, so the oracle calls `pass2` on every automdl run. Its `ichk`
+revert is guarded `Naut0.le.Naut`, which is `0.le.0` here — the BIGCV scan
+finding nothing does not close it either. It is a no-op on every corpus spec's
+DEFAULT configuration, which is why the suite is green without it. What proves
+it is the residual: on `mixed=no` (nottem, ces_leis, ces_accfood) and
+`maxorder=(1 1)` (ukgas) the oracle's FINAL model differs from its own
+`automdl.first` — it re-identified, which only `pass2`'s `Igo` GO TO 10/40/50
+can cause. `pass2` is also what `ljungboxlimit=` needs (`pass2.f:160-169`
+increments `Pcr`), so one port closes three arguments.
+
+Same lesson as the previous update, in the opposite direction: **"unreachable"
+is a claim about a guard, and it has to be read off the guard, not inferred
+from a green suite.**
+
+**Two probe facts worth keeping**, both now recorded in the gate specs:
+`cancel` bites BELOW its default (0.3/0.5/0.9 all measure 0 on nottem; 0.05
+moves 32 keys — a probe that only pushed the value up would have called the
+argument INERT), and nottem needs `transform{function=log}` for either
+`checkmu` or `cancel` to be observable at all (under `function=none` they move
+2 and 1 keys).
 
 ## 4. First corpus gate target
 
