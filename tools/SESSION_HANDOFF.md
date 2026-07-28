@@ -6,8 +6,10 @@ session worked, and it is now closed as far as parsing can take it.
 
 ## Where things stand
 
-**Tree clean at `d1b65033` on `checkpoint/m5-seats-slidingspans`.** Nothing
-uncommitted, no background work outstanding.
+**Tree clean on `checkpoint/m5-seats-slidingspans`.** Nothing uncommitted, no
+background work outstanding. `git log --oneline -8` for the current head — this
+file is written *before* the commit that contains it, so any SHA named here is
+necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
@@ -21,7 +23,7 @@ push**; **never run `tests/corpus/generated/genspecs.py` or
 regenerate). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
-## What landed (5 commits, 5491 → 5509 passing)
+## What landed (7 commits, 5491 → 5509 passing)
 
 | commit | what |
 |---|---|
@@ -30,6 +32,8 @@ regenerate). Build with
 | `386d2a5f` | gate `diff=`/`balanced=`, pin the CES probe series |
 | `310a9f10` | parse `ljungboxlimit=` and fatal — its "applied" verdict was wrong |
 | `d1b65033` | parse `cancel=`, and stop — the rest is one blocker |
+| `fda181a6` | this handoff |
+| `3e40d20e` | staleness sweep — six stale claims, incl. `TEST_COVERAGE.md` listing 4 closed subsystems as "not started" |
 
 ## The one thing to know
 
