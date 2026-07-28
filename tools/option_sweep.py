@@ -102,12 +102,24 @@ def diff(a, b, keys=None):
     return sorted(k for k in ks if not same(a.get(k), b.get(k)))
 
 
+def stage_data(d):
+    """Copy every corpus data file into the scratch dir.
+
+    Case files name their own series, so staging only airline/payems silently
+    made any other series unrunnable (the oracle reports a missing file, the
+    run reads as REJECTED, and the argument looks tested when it was not).
+    """
+    src = REPO + "/tests/corpus/data"
+    for f in os.listdir(src):
+        if f.endswith(".dat"):
+            shutil.copy(os.path.join(src, f), d)
+
+
 def run_oracle(spec_text, tag):
     d = os.path.join(WORK, tag)
     shutil.rmtree(d, ignore_errors=True)
     os.makedirs(d)
-    shutil.copy(REPO + "/tests/corpus/data/airline.dat", d)
-    shutil.copy(REPO + "/tests/corpus/data/payems.dat", d)
+    stage_data(d)
     with open(os.path.join(d, "s.spc"), "w") as fh:
         fh.write(spec_text)
     r = subprocess.run([ORACLE, "s", "-s"], cwd=d, capture_output=True, text=True)
@@ -124,8 +136,7 @@ def run_engine(spec_text, tag, binary):
     d = os.path.join(WORK, tag + "_eng")
     shutil.rmtree(d, ignore_errors=True)
     os.makedirs(d)
-    shutil.copy(REPO + "/tests/corpus/data/airline.dat", d)
-    shutil.copy(REPO + "/tests/corpus/data/payems.dat", d)
+    stage_data(d)
     with open(os.path.join(d, "s.spc"), "w") as fh:
         fh.write(spec_text)
     r = subprocess.run([REPO + "/build/" + binary + ".exe", "s.spc"], cwd=d,

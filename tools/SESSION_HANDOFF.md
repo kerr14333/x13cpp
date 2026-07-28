@@ -5,7 +5,7 @@ findings are still accurate and are not repeated here.
 
 ## Where things stand
 
-**Tree clean at `22a605c5` on `checkpoint/m5-seats-slidingspans`.** Nothing
+**Tree clean at `66ba2a99` on `checkpoint/m5-seats-slidingspans`.** Nothing
 uncommitted, no background work outstanding.
 
 | check | result |
@@ -30,6 +30,7 @@ regenerate). Build with
 | `1fc26bdf` | `regression{noapply=}` — and the tdlom wall it proved reachable |
 | `333bc1e0` | the other eight dropped options |
 | `22a605c5` | sweep marked closed |
+| `66ba2a99` | staleness sweep — nine claims this session invalidated |
 
 ## The new tool, which is the durable output
 

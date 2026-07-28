@@ -83,6 +83,86 @@ unit-root and cancellation thresholds, so testing them needs a series with
 near-tied candidates or borderline roots. **Before porting any automdl option,
 re-probe on such a series; the airline nulls prove nothing.**
 
+# Round 2 — `automdl{}` re-probed properly (2026-07-28)
+
+**Round 1's twenty INERT verdicts became SEVEN dropped options.** Nothing about
+the engine changed; the probe did. Reproduce with
+`python tools/option_sweep.py option_sweep_cases_automdl2`.
+
+## The three things round 1 got wrong
+
+1. **The series was saturated.** Fixed by picking on two measured criteria at
+   once — strong seasonality *and* a near-tied top two.
+2. **Three probe VALUES were rejected outright**, so those arguments were never
+   tested at all. `ub1` must exceed 1, `seasonaloverdiff` takes yes/no
+   (`gtauto.f:479`), `noautooutlier` takes `same`/`tramo` (`NOTDIC`,
+   `gtauto.f:48`, label 180). **A REJECTED probe is an untested argument, not a
+   null** — and fixing just this one found `noautooutlier`, which is DROPPED on
+   four of five series.
+3. **Four of the twenty-four arguments were missing from the probe list**
+   (`percentrse`, `acceptdefault`, `firstar`; `savelog` is print surface).
+   **An argument absent from the list reads exactly like one that measured
+   INERT.** `acceptdefault` turns out to be applied — worth knowing, and
+   unknowable while it was simply not asked about.
+
+## The probe series, and why each earns its place
+
+Oracle, `automdl{} + x11{}`. `qsori` is the QS seasonality statistic on the
+original, `f3.m07` is M7 (>1 fails the identifiable-seasonality test), and the
+gap is `bic2 − bic1` over automdl's own best-five list.
+
+| series | qsori | M7 | gap | top two |
+|---|---:|---:|---:|---|
+| `ces_amuse` | 620.8 | 0.075 | 0.001 | `(1 1 1)(1 1 1)` / `(0 1 0)(1 1 1)` |
+| `ces_leis` | 626.6 | 0.093 | 0.002 | `(1 1 1)(1 1 1)` / `(0 1 0)(1 1 1)` |
+| `ces_accfood` | 612.0 | 0.106 | 0.005 | `(1 1 1)(1 1 1)` / `(1 1 1)(0 1 1)` |
+| `ukgas` | 176.5 | 0.210 | 0.001 | `(1 0 2)(0 1 0)` / `(1 0 2)(0 1 1)` |
+| `nottem` | 237.8 | 0.127 | 0.018 | `(1 0 0)(1 1 1)` / `(2 0 0)(1 1 1)` |
+| *airline (round 1)* | 167.6 | 0.202 | **0.014** | |
+
+The three `ces_*` series are new — BLS CES, not seasonally adjusted, see
+`tests/corpus/data/ces_PROVENANCE.md`. `ces_accfood` was added specifically
+because its tie is in the **seasonal AR**, which no other series offers.
+
+**`unrate` has a 0.001 gap and is still a bad probe**: `qsori ≈ 0`, `M7 = 2.58`,
+i.e. no identifiable seasonality, so its near-tie is between two *nonseasonal*
+candidates and cannot exercise a seasonal threshold. Same for `payems` and
+`expgs`. **Narrow gap and strong seasonality are two independent criteria and a
+probe needs both.**
+
+## Findings
+
+| argument | verdict | where it fired |
+|---|---|---|
+| `mixed` | **DROPPED** | ukgas 29, nottem 28, ces_leis 30, ces_accfood 43 keys (DIFFERS on ces_amuse) |
+| `noautooutlier` | **DROPPED** | ukgas 17, nottem 18, ces_leis 19, ces_accfood 50 keys (DIFFERS on ces_amuse) |
+| `urfinal` | **DROPPED** | ukgas 33, **ces_accfood 66 keys** — moved `AR$Seasonal$12$12` |
+| `diff` | **DROPPED** | ukgas 33, nottem 32 keys |
+| `maxorder` | **DROPPED** | ukgas 34 keys |
+| `balanced` | **DROPPED** | ukgas 37 keys |
+| `checkmu` | **DROPPED** | ukgas 33 keys |
+| `ljungboxlimit` | applied | ces_amuse, 80 keys |
+| `acceptdefault` | applied | ukgas, 34 keys |
+
+The two `applied` rows are **unpinned claims**: no corpus spec gates either, so
+they are correct today with nothing stopping a refactor from breaking them. Same
+class as `history{endtable=}`, which was already right and only needed a gate.
+
+Still INERT on all five series: `maxdiff`, `ub1`, `ub2`, `cancel`, `exactdiff`,
+`hrinitial`, `armalimit`, `percentrse`, `reducecv`, `firstar`, `fcstlim`,
+`seasonaloverdiff`, `print`. `rejectfcst` is HARNESS-BLIND (it moves
+`fcstrejected`/`mape3yr`/`rejectfcst`, none of which the harness prints).
+**Given that round 1's INERT verdicts were worth seven findings, none of these
+should be read as a clean bill either** — read each default out of `gtauto.f`
+before choosing the next probe value.
+
+## A tooling fix that came with it
+
+`option_sweep.py` staged only `airline.dat` and `payems.dat` into its scratch
+directory, so a case naming any other series failed on a missing file and read
+as **REJECTED** — indistinguishable, in the report, from a value the oracle
+refuses. It now stages every `tests/corpus/data/*.dat`.
+
 ## Two ways this script lied before it worked
 
 Recorded because both are easy to rebuild:
