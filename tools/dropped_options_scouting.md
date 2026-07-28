@@ -184,6 +184,38 @@ Defaults were audited against the quick reference at the same time and all match
 **Read the docs before sizing the work, not after.** Two of the seven findings
 were never parse bugs at all, and the manual says so in one sentence each.
 
+## Round 3 — probe VALUES, and the one blocker underneath
+
+Round 2's values were merely *different* from the defaults; round 3 made them
+**far** from the defaults, and two more arguments moved:
+
+* **`cancel`** — DROPPED on nottem at `cancel=0.5` (default 0.1). Round 2
+  probed `0.05` and read INERT. Now parsed; `iddiff.cpp` already consumed it.
+* **`maxdiff`** — moves at `(1,0)` where round 2's `(1,1)` did nothing.
+* **`ljungboxlimit`** — see above; `0.99` against a 0.95 default measured
+  INERT, `0.5` moves three of four series.
+
+**A probe value adjacent to the default tests nothing, and the sweep reports it
+with the same word — INERT — as an argument that genuinely does nothing.** The
+values are now annotated with the default they are moving away from.
+
+### The consolidated picture: one blocker, not eleven bugs
+
+| state | arguments |
+|---|---|
+| **applied + gated** | `diff` `balanced` `acceptdefault` |
+| **DIFFERS** (read, wrong answer) | `mixed` `checkmu` `maxorder` `maxdiff` `cancel` |
+| **FATAL** (blocked, was silent) | `urfinal` `noautooutlier` `ljungboxlimit` |
+| INERT even at extreme values | `ub1` `ub2` `exactdiff` `hrinitial` `armalimit` `percentrse` `reducecv` `firstar` `fcstlim` `seasonaloverdiff` |
+| HARNESS-BLIND | `rejectfcst` |
+
+Five arguments now read correctly and all five land somewhere other than the
+oracle. That is one shared cause, not five bugs: `automd.f`'s **model-adequacy
+and nloop stages** (`:577-850` and the `pass2` call at `:665`), which
+`automd.cpp` has always documented as unported. The three FATALs are consumed
+*only* there. **Stop adding parse cases expecting matches — the remaining
+automdl option surface is gated on that one port.**
+
 ## Where the seven actually stand
 
 | argument | after the port | why |

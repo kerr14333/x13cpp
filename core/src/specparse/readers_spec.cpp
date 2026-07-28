@@ -1337,6 +1337,20 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
                 }
             }
             continue;
+        case 4:   // cancel (gtauto.f label 40) -> Cancel, the AR/MA cancellation
+                  // limit. Fully consumed by iddiff.cpp already.
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] <= 0.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Cancelation limit must be greater than zero.");
+                    inptok = false;
+                } else {
+                    ar.cancel = dvec[0];
+                }
+            }
+            continue;
         case 5:   // maxorder (gtauto.f label 60)
             getivc(ctx, LPAREN, false, 2, omax, nelt, argok, inptok);
             if (ctx.error.lfatal) return;

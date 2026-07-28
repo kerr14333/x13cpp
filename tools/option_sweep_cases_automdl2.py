@@ -28,9 +28,14 @@ def _hdr(f, start, per, fn):
             'transform{ function=%s }\n' % (f, start, per, fn))
 
 
+# NB `ces_amuse` is deliberately NOT here despite having the narrowest BIC gap
+# (0.001) of any corpus series. Its BASELINE model already disagrees with the
+# oracle (engine 4 ARMA terms, oracle 5), so every verdict taken from it reads
+# DIFFERS regardless of the option and is noise. That mistake cost one wrong
+# finding: `ljungboxlimit` was reported APPLIED on ces_amuse alone and is in
+# fact blocked. **Verify baseline agreement before adding a probe series.**
 SERIES = {
     # BLS CES, not seasonally adjusted -- tests/corpus/data/ces_PROVENANCE.md
-    "ces_amuse":   _hdr("ces_amuse", "1990.01", 12, "log"),
     "ces_leis":    _hdr("ces_leis", "1990.01", 12, "log"),
     "ces_accfood": _hdr("ces_accfood", "1990.01", 12, "log"),
     "ukgas":       _hdr("ukgas", "1960.1", 4, "log"),
@@ -51,29 +56,34 @@ TAIL = "x11{ }\n"
 # `seasonaloverdiff` takes yes/no (gtauto.f:479) and `noautooutlier` takes
 # same/tramo (NOTDIC at gtauto.f:48, reached via label 180).  A REJECTED probe
 # is not a null result -- it is an untested argument.
+# Values are chosen FAR from the default, not merely different from it. Round 2
+# read `ljungboxlimit` as INERT probing 0.99 against a 0.95 default; at 0.5 it
+# moves three of the four series. A probe value adjacent to the default tests
+# nothing, and reports the same word ("INERT") as an argument that genuinely
+# does nothing. Defaults are in gtinpt.f:221-241 / gtinpt.cpp:215-241.
 ARGS = [
-    ("maxorder",         "maxorder=(1,1)"),
-    ("maxdiff",          "maxdiff=(1,1)"),
-    ("diff",             "diff=(1,1)"),
-    ("ub1",              "ub1=1.02"),
-    ("ub2",              "ub2=0.80"),
-    ("cancel",           "cancel=0.05"),
-    ("balanced",         "balanced=yes"),
-    ("exactdiff",        "exactdiff=no"),
-    ("hrinitial",        "hrinitial=yes"),
-    ("armalimit",        "armalimit=0.5"),
-    ("percentrse",       "percentrse=2.0"),
-    ("reducecv",         "reducecv=0.25"),
-    ("ljungboxlimit",    "ljungboxlimit=0.99"),
-    ("acceptdefault",    "acceptdefault=yes"),
-    ("noautooutlier",    "noautooutlier=tramo"),
-    ("urfinal",          "urfinal=1.10"),
-    ("firstar",          "firstar=2"),
-    ("checkmu",          "checkmu=no"),
-    ("mixed",            "mixed=no"),
-    ("rejectfcst",       "rejectfcst=yes"),
-    ("fcstlim",          "fcstlim=10"),
-    ("seasonaloverdiff", "seasonaloverdiff=no"),
+    ("maxorder",         "maxorder=(1,1)"),       # default (2,1)
+    ("maxdiff",          "maxdiff=(1,0)"),        # default (2,1)
+    ("diff",             "diff=(1,1)"),           # no default; fixes the orders
+    ("ub1",              "ub1=1.50"),             # default 1/0.96 = 1.0417
+    ("ub2",              "ub2=0.50"),             # default 0.88
+    ("cancel",           "cancel=0.50"),          # default 0.1
+    ("balanced",         "balanced=yes"),         # default no
+    ("exactdiff",        "exactdiff=no"),         # default first
+    ("hrinitial",        "hrinitial=yes"),        # default no
+    ("armalimit",        "armalimit=3.0"),        # default 1.0
+    ("percentrse",       "percentrse=10.0"),
+    ("reducecv",         "reducecv=0.50"),        # default 0.14286
+    ("ljungboxlimit",    "ljungboxlimit=0.5"),    # default 0.95
+    ("acceptdefault",    "acceptdefault=yes"),    # default no
+    ("noautooutlier",    "noautooutlier=tramo"),  # default same
+    ("urfinal",          "urfinal=1.50"),         # default 1.05
+    ("firstar",          "firstar=4"),            # default 2
+    ("checkmu",          "checkmu=no"),           # default yes
+    ("mixed",            "mixed=no"),             # default yes
+    ("rejectfcst",       "rejectfcst=yes"),       # default no
+    ("fcstlim",          "fcstlim=50"),           # default 15.0
+    ("seasonaloverdiff", "seasonaloverdiff=yes"), # default no
     ("print",            "print=none"),
 ]
 
