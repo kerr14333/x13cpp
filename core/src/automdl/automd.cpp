@@ -657,20 +657,33 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
                          lds, lqs, lmu, kstep);
     if (ctx.error.lfatal) return;
 
-    // DEFERRED:
+    // DEFERRED -- and note what it is NOT gated on:
     //
-    // 1. pass2 / the nloop re-entry (automd.f:664-672, GO TO 10/40/50). It is
-    //    gated `Lidotl .and. nloop.le.2` and reverts to the outlier model when
-    //    the identified one is worse. Unreachable on this corpus: the only
-    //    outlier scan that runs is the Lotmod-forced BIGCV AO pass, which finds
-    //    nothing, so there is no outlier model to revert to. This is what
-    //    `automdl{ljungboxlimit=}` needs (pass2.f:164-169 increments Pcr), and
-    //    why that argument is fatal above rather than silent.
+    // 1. pass2 / the nloop re-entry (automd.f:664-672, GO TO 10/40/50). Its
+    //    guard is `Lidotl .and. nloop.le.2` and NOTHING ELSE, so with the
+    //    default Lotmod (which forces Lidotl true) the oracle calls it on every
+    //    automdl run. It does two things: pass2.f:46-150 reverts the identified
+    //    model to the default when the default's Ljung-Box/residual-variance
+    //    pair is better (`ichk`, guarded `Naut0.le.Naut` -- 0<=0 here, so the
+    //    BIGCV scan does not close it), and :160-169 increments Pcr (+0.025 on
+    //    the first pass, +0.015 after) and sets Igo to re-identify when
+    //    `Plbox.GT.Pcr`.
+    //
+    //    It is a no-op on every corpus spec's DEFAULT configuration, which is
+    //    why the suite is green without it -- but measured, it is what still
+    //    separates the engine from the oracle on `automdl{mixed=no}` (nottem,
+    //    ces_leis, ces_accfood: the oracle's final model gains AR lags its own
+    //    `automdl.first` does not have, i.e. it re-identified) and on
+    //    `automdl{maxorder=(1 1)}` (ukgas: nefobs 103 vs 104, a differencing
+    //    order the first pass did not choose). It is also what
+    //    `automdl{ljungboxlimit=}` needs, which is why that argument is fatal
+    //    above rather than silent.
     //
     // 2. The Lidotl outlier-ID block on the DEFAULT model (automd.f:280-321):
-    //    amidot + pass0 + the nauto0/cvl0 bookkeeping pass2 would read. Skipped
-    //    for the same reason -- BIGCV finds nothing and pass0 has no
-    //    AIC-selected regressor to re-test on this corpus.
+    //    amidot + pass0 + the nauto0/cvl0 bookkeeping pass2 reads. Skipped
+    //    because BIGCV finds nothing and pass0 has no AIC-selected regressor to
+    //    re-test on this corpus -- unlike pass2, this one really is closed by
+    //    the scan finding nothing.
     //
     // The identified model is left estimated in ctx.
 }
