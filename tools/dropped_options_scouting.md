@@ -1,8 +1,14 @@
 # Dropped-option sweep — 2026-07-27
 
-**Nine spec arguments are accepted and silently ignored.** Each returns
-`OUTCOME: OK` and the DEFAULT numbers. None is gated, none fatals, and none was
+**Nine spec arguments were accepted and silently ignored** — each returning
+`OUTCOME: OK` with the DEFAULT numbers, none gated, none fatal, and none
 previously recorded as open except `spectrum{start=}`.
+
+**STATUS: all nine closed** (commits `1fc26bdf`, `M5/specparse`). Eight are
+applied and gated over 16 new corpus specs; `estimate{outofsample=}` is now an
+honest fatal. `spectrum{altfreq=}` is applied as far as it can be — see CB-30.
+The findings table and the method below are kept because the method is reusable
+and the two ways the script lied are easy to rebuild.
 
 Reproduce: `python tools/option_sweep.py option_sweep_cases`.
 
@@ -31,18 +37,19 @@ guess:
 | argument | keys moved | what it does |
 |---|---:|---|
 | ~~`regression{noapply=}`~~ | ~~70~~ | **CLOSED** — see below |
-| **`regression{tcrate=}`** | 64 | the TC outlier decay rate |
-| **`forecast{lognormal=}`** | 33 | log-normal forecast bias correction |
-| **`spectrum{start=}`** | 30 | `Bgspec` override — the diagnostic span start |
-| **`regression{eastermeans=}`** | 26 | Easter regressor centring |
-| **`spectrum{peakwidth=}`** | 21 | the mkfreq peak-frequency grid width |
-| **`spectrum{altfreq=}`** | 15 | alternate TD frequency set |
-| **`estimate{outofsample=}`** | 6 | out-of-sample `aape` forecast error |
-| **`spectrum{showseasonalfreq=}` / `{saveallfreq=}`** | 4 each | the emitted frequency inventory |
+| ~~`regression{tcrate=}`~~ | 64 | **CLOSED** — `generated/airline_reg-tcrate` (+ `airline_outlier-tcrate`, the same latch) |
+| ~~`forecast{lognormal=}`~~ | 33 | **CLOSED** — `generated/airline_fcst-lognormal`; only the Fcstx half was missing |
+| ~~`spectrum{start=}`~~ | 30 | **CLOSED** — `extra/airline_spectrum-start` |
+| ~~`regression{eastermeans=}`~~ | 26 | **CLOSED** — `generated/airline_reg-eastermeans` |
+| ~~`spectrum{peakwidth=}`~~ | 21 | **CLOSED** — `extra/airline_spectrum-peakwidth{2,3,4}` |
+| ~~`spectrum{altfreq=}`~~ | 15 | declines by design — **CB-30**, an uninitialised read in mkpeak.f |
+| ~~`estimate{outofsample=}`~~ | 6 | **FATAL** now, instead of a mislabelled within-sample answer |
+| ~~`spectrum{showseasonalfreq=}` / `{saveallfreq=}`~~ | 4 each | **CLOSED** — two more `extra/airline_spectrum-*` specs |
 
-Also **`outlier{tcrate=}` DIFFERS** (25 keys, matching neither side) — read but
-wrong, which is a different and possibly worse failure than dropped. Not yet
-diagnosed.
+**`outlier{tcrate=}` measured DIFFERS**, not DROPPED — neither honouring the
+argument nor reproducing the oracle's default, because automd's own
+`0.7^(12/Sp)` fallback filled `Tcalfa` at a different point than
+`gtinpt.f:1217` does. Same missing parse underneath; closed with the other.
 
 ### `estimate{outofsample=}` — the doc was half right, and the wrong half
 
@@ -115,12 +122,15 @@ dropped-option list above before it is trusted.
 `generated/airline_noapply-{td,ao,ls,holiday}`; **CB-29** records the dictionary
 defect that makes `noapply=(seasonal)` unusable.
 
-## Suggested order
+## What is left
 
-1. `forecast{lognormal=}` and `regression{tcrate=}`/`{eastermeans=}` — same
-   class, self-contained.
-2. `estimate{outofsample=}` — cheapest correct action is to make the existing
-   wall REACHABLE (parse it, then fatal) so it stops reporting a mislabelled
-   within-sample answer. Porting the arithmetic is separate.
-3. The four `spectrum{}` grid arguments together — they share `mkfreq`.
-4. `outlier{tcrate=}`'s DIFFERS, which needs diagnosis before it can be scoped.
+Nothing from this sweep. Two follow-ons it created:
+
+* **`spectrum{altfreq=yes}`** — needs CB-30 resolved (what the `/spcidx/` COMMON
+  actually holds in `Tpeak(3)`/`Tup(3)`) before a golden means anything.
+* **`automdl{}`'s 23 arguments** — re-probe on a series with near-tied
+  candidates first, per the section above. The airline nulls are a saturated
+  precondition, not coverage.
+
+The sweep itself should be re-run after any new spec argument is parsed:
+`python tools/option_sweep.py option_sweep_cases`.
