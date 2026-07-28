@@ -12,6 +12,7 @@ struct model_cmn {
     double nltol;  // Nltol
     double tol;  // Tol
     double tcalfa;  // Tcalfa
+    bool havtca;    // Havtca -- tcrate was set by regression{} or outlier{}
     double acflim;  // Acflim
     double qcheck;  // Qcheck
     double stepln;  // Stepln

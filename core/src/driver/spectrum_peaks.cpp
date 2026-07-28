@@ -16,6 +16,7 @@
 #include "gen/notset.hpp"        // prm::DNOTST, prm::NOTSET
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -189,19 +190,54 @@ std::string mxpeak(const std::vector<double>& sxx2, const std::vector<int>& tpea
 
 SpecPeakGrid spectrum_peak_grid(int sp, int peakwd, bool lfqalt, bool lprsfq) {
     SpecPeakGrid g;
-    // mkpeak.f branches on Ny, on `Lfqalt` (the alternate TD frequency set) and
-    // on Peakwd. Only the monthly / default-frequency / Peakwd==1 corner is
-    // ported here -- it is the one every corpus golden uses (peakwd: 1,
-    // altfreq: no, ntdfreq: 2) -- and the rest declines rather than guesses.
-    if (sp != 12 || peakwd != 1 || lfqalt || lprsfq) return g;
+    // mkpeak.f:18-392 -- the reserved slot indices for each trading-day and
+    // seasonal peak on the ENHANCED grid, as literal tables, branching on
+    // Lfqalt and on Peakwd (1..4). Transcribed from the Fortran, not derived:
+    // the numbers are not a formula (see the Peakwd=4 row's Tup below).
+    //
+    // NOTE mkpeak takes (Peakwd, Lfqalt) and NOT Lprsfq -- `showseasonalfreq`
+    // changes mkfreq's PLOTTED grid only, so it must not gate this one.
+    struct Row { int peakwd, nfreq;
+                 std::array<int, 5> slow, sup, speak;
+                 std::vector<int> tlow, tup, tpeak; };
+    static const Row ROWS[] = {
+        {1, 67, {10, 20, 30, 40, 53}, {12, 22, 32, 43, 56}, {11, 21, 31, 41, 54},
+         {42, 55}, {46, 59}, {44, 57}},
+        {2, 67, {9, 19, 29, 39, 52}, {13, 23, 33, 45, 58}, {11, 21, 31, 42, 55},
+         {41, 54}, {47, 60}, {44, 57}},
+        {3, 67, {8, 18, 28, 38, 51}, {14, 24, 34, 46, 59}, {11, 21, 31, 42, 55},
+         {40, 53}, {48, 61}, {44, 57}},
+        // Peakwd=4 assigns Tup(3)=62 (mkpeak.f:374) while Tlow and Tpeak stop
+        // at 2 and nTfreq is 2 -- a stray write past the used range. Harmless
+        // (nothing reads Tup(3) here) and kept so the table matches the source.
+        {4, 67, {7, 17, 27, 37, 50}, {15, 25, 35, 47, 60}, {11, 21, 31, 42, 55},
+         {39, 52}, {49, 61, 62}, {44, 57}},
+    };
 
-    g.slow = {10, 20, 30, 40, 53};
-    g.sup = {12, 22, 32, 43, 56};
-    g.speak = {11, 21, 31, 41, 54};
-    g.tlow = {42, 55};
-    g.tup = {46, 59};
-    g.tpeak = {44, 57};
-    g.nfreq = 67;
+    if (sp != 12) return g;   // the quarterly half of mkpeak.f is commented out
+    // `altfreq` adds a THIRD trading-day frequency (nTfreq=3), and at
+    // Peakwd >= 2 mkpeak.f then sets only Tup(1..2) and Tpeak(1..2) while
+    // Tlow(3) exists -- so Tup(3)/Tpeak(3) keep whatever the /spcidx/ COMMON
+    // held. Reproducing an uninitialised read is not something to guess at, so
+    // this declines rather than emitting a peak block that might be right.
+    // CB-30. Peakwd==1 with altfreq is complete in the Fortran and is the only
+    // altfreq case that could be ported without that question; it is left with
+    // the others so the whole argument has one behaviour.
+    if (lfqalt) return g;
+    (void)lprsfq;
+
+    const Row* row = nullptr;
+    for (const auto& r : ROWS)
+        if (r.peakwd == peakwd) { row = &r; break; }
+    if (!row) return g;   // gtspec.f validates 1..4; anything else declines
+
+    g.slow.assign(row->slow.begin(), row->slow.end());
+    g.sup.assign(row->sup.begin(), row->sup.end());
+    g.speak.assign(row->speak.begin(), row->speak.end());
+    g.tlow = row->tlow;
+    g.tup = row->tup;
+    g.tpeak = row->tpeak;
+    g.nfreq = row->nfreq;
     g.sfreq = {0.083333333, 0.166666667, 0.250000000, 0.333333333, 0.416666667};
     g.tfreq = {0.348200000, 0.432000000};
 

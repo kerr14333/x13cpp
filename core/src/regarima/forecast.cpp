@@ -4,6 +4,7 @@
 // dppsl, yprmy, copy, setdp) is already oracle-verified.
 #include "regarima/forecast.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -177,9 +178,26 @@ void fcstout(X13Context& ctx, int nfcst, int fctdrp, double ciprob, bool lognrm)
     }
     if (ctx.error.lfatal) return;
 
+    // prtfct.f:92-103 -- Fcstx, the forecast APPENDED TO THE SERIES before the
+    // seasonal adjustment, gets its own lognormal correction, on the
+    // TRANSFORMED scale (`Ltrans=F`, so lgnrmc adds se^2/2 rather than
+    // exponentiating). It is a separate buffer from `fcst`, which stays
+    // uncorrected because the confidence band below is built from it.
+    //
+    // This is the half of `forecast{lognormal=}` that was missing: the option
+    // was parsed and the :411 correction to `untfct` was applied, so the fct
+    // TABLE was right while the forecast X-11 actually extends the series with
+    // was not -- d10-d13 off behind an OUTCOME: OK.
+    std::vector<double> fcstx(prm::PFCST);
+    if (lognrm && lam0)
+        lgnrmc(nfcst, fcst.data(), fcstse.data(), fcstx.data(),
+               /*ltrans=*/false);
+    else
+        std::copy(fcst.begin(), fcst.begin() + nfcst, fcstx.begin());
+
     // Stash the transformed-scale forecast + SE before scrmlt scales fcstse.
     auto& out = ctx.forecasts;
-    out.trnfct.assign(fcst.begin(), fcst.begin() + nfcst);
+    out.trnfct.assign(fcstx.begin(), fcstx.begin() + nfcst);
     out.trnse.assign(fcstse.begin(), fcstse.begin() + nfcst);
 
     // Confidence band: cv = dinvnr((Ciprob+1)/2) (two-tailed), then

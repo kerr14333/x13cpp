@@ -30,13 +30,26 @@ constexpr int PLEN = 1020;
 // (Frq(1..61)). Peakwd defaults to 1, Lfqalt/Lprsfq default false. The trading-
 // day peak substitutions (sp==12) shift six near-.3482/.432 entries. Returns a
 // 0-based vector where frq[i] == Fortran Frq(i+1).
-std::vector<double> mkfreq(int sp, int peakwd) {
+std::vector<double> mkfreq(int sp, int peakwd, bool lfqalt, bool lprsfq) {
     std::vector<double> frq(61);
     for (int i = 0; i < 61; ++i) frq[i] = static_cast<double>(i) / 120.0;
     const double f2 = frq[1];  // Frq(2) == 1/120
     if (!(sp == 12)) return frq;  // quarterly TD grid handled in a later increment
+    // mkfreq.f:54-70 -- the whole substitution block is skipped when
+    // `showseasonalfreq` (Lprsfq) is on: the caller then wants the plain
+    // seasonal grid and none of the trading-day frequencies spliced into it.
+    if (lprsfq) return frq;
+    // `altfreq` (Lfqalt) adds a THIRD trading-day frequency at .3036, and note
+    // its upper limit is guarded on `Peakwd < 4` where the other two are not
+    // (mkfreq.f:57-59) -- transcribed, not tidied.
+    if (lfqalt) {
+        frq[(37 - peakwd) - 1] = 0.3036 - f2 * peakwd;
+        frq[37 - 1] = 0.3036;
+        if (peakwd < 4) frq[(37 + peakwd) - 1] = 0.3036 + f2 * peakwd;
+    }
     // Frq(43-Peakwd) .. Frq(43+Peakwd) around .3482, Frq(53..) around .432.
-    // 1-based Fortran indices -> subtract 1 for the 0-based vector.
+    // 1-based Fortran indices -> subtract 1 for the 0-based vector. The
+    // `Peakwd != 2` guard on the LOWER limit only is likewise verbatim.
     if (peakwd != 2) frq[(43 - peakwd) - 1] = 0.3482 - f2 * peakwd;
     frq[43 - 1] = 0.3482;
     frq[(43 + peakwd) - 1] = 0.3482 + f2 * peakwd;
@@ -339,7 +352,7 @@ bool run_spectrum(X13Context& ctx) {
     const bool ltk120 = ctx.rho.ltk120;
 
     auto& out = ctx.spcout;
-    out.frq = mkfreq(sp, ctx.rho.peakwd);
+    out.frq = mkfreq(sp, ctx.rho.peakwd, ctx.rho.lfqalt, ctx.rho.lprsfq);
     std::vector<double> srs(PLEN, 0.0), tmp(PLEN, 0.0);
 
     // mkpeak.f + mkfreq.f -- the constant peak-index tables and the ENHANCED

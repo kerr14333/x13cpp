@@ -81,6 +81,45 @@ void gt_generic(X13Context& ctx, std::string_view argdic, const int* argptr,
     }
 }
 
+// getreg.f:386-404 / gtotlr.f:229-246 -- the `tcrate` argument, which BOTH the
+// regression and outlier specs accept and which they refuse to accept twice.
+// `Havtca` is the "somebody already set it" latch; Tcalfa itself starts at
+// DNOTST and gtinpt.f:1217 fills in 0.7^(12/Sp) only if nothing did -- which is
+// why the two readers cannot simply overwrite it and why the duplicate is an
+// error rather than a last-one-wins.
+//
+// Split in two because the two callers consume their value tokens differently:
+// gt_regression's argument chain consumes per-branch, gt_outlier consumes once
+// up front. Only the application is shared.
+inline void apply_tcrate(X13Context& ctx, const std::vector<std::string>& cap,
+                         bool& inptok) {
+    if (ctx.model.havtca) {
+        inpter(ctx, PERROR, ctx.lex.lstpos.data() + 1,
+               "Cannot specify tcrate in both the regression and outlier specs");
+        inptok = false;
+        return;
+    }
+    if (cap.empty()) return;
+    double v = 0.0;
+    try { v = std::stod(cap[0]); } catch (...) { return; }
+    if (v <= 0.0 || v >= 1.0) {
+        inpter(ctx, PERROR, ctx.lex.lstpos.data() + 1,
+               "Value of tcrate must be between 0 and 1.");
+        inptok = false;
+        return;
+    }
+    ctx.model.tcalfa = v;
+    ctx.model.havtca = true;
+}
+
+inline void gt_tcrate(X13Context& ctx, bool& inptok) {
+    if (ctx.lex.nxtktp == lexprm::EQUALS) lex(ctx);
+    std::vector<std::string> cap;
+    consume_value(ctx, &cap);
+    if (ctx.error.lfatal) return;
+    apply_tcrate(ctx, cap, inptok);
+}
+
 // ---- transform{} (getadj.f) : capture function ----------------------------
 void gt_transform(X13Context& ctx, bool& inptok) {
     constexpr int PARG = 20;
@@ -831,6 +870,24 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                    ctx.arima.bgusrx.data(), nelt, argok, inptok);
             if (ctx.error.lfatal) return;
             hvstrt = argok && nelt > 0;
+        } else if (argidx == 11) {   // eastermeans (getreg.f:280-286)
+            // Elong: how the Easter regressor's long-run MEAN is computed --
+            // `yes` (the default) uses the exact 1600-year distribution of the
+            // Easter date, `no` the calendar-month means. regvar.f:225 hands it
+            // to estrmu; the flag itself was already on ctx and only the parse
+            // was missing.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            static const char EMYSN[] = "yesno";
+            static const int emysn[3] = {1, 4, 6};
+            bool argok = true; int ivec[1]; int nelt = 0;
+            gtdcvc(ctx, LPAREN, false, 1, EMYSN, emysn, 2,
+                   "Choices for eastermeans are yes and no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.arima.elong = (ivec[0] == 1);
+        } else if (argidx == 14) {   // tcrate (getreg.f:386-404)
+            gt_tcrate(ctx, inptok);
+            if (ctx.error.lfatal) return;
         } else if (argidx == 12) {   // noapply (getreg.f:289-317)
             // "Estimate this regressor but do NOT remove its effect from the
             // series": each named group's Adj* indicator is set to -1, and
@@ -1369,7 +1426,23 @@ void gt_estimate(X13Context& ctx, bool& inptok) {
                 }
             }
             break;
-        default:  // 7 outofsample, 8 print, 9 save, 10 savelog, 11 file, 12 fix,
+        case 7: {  // outofsample (gtestm.f:196-202 -> outest)
+            // gtinpt.f:1202-1216 resolves outest (estimate{}) and outamd
+            // (automdl{}) into Outfct, which selects the OUT-OF-SAMPLE aape
+            // forecast-error diagnostic instead of the within-sample one.
+            // Recorded here; run_pre_model raises the wall, because the
+            // arithmetic re-fits the model over three successively shorter
+            // spans and needs the whole estimation state saved around it.
+            static const char OSYSN[] = "yesno";
+            static const int osysn[3] = {1, 4, 6};
+            gtdcvc(ctx, LPAREN, true, 1, OSYSN, osysn, 2,
+                   "Available options for outofsample are yes or no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.arima.outest = ivec[0];
+            break;
+        }
+        default:  // 8 print, 9 save, 10 savelog, 11 file, 12 fix,
                   // 14 k (EIC penalty), 15 removeconstant -- state application
                   // (output tables / model file / AIC) deferred to their
                   // milestones; consume the value grammar to stay token-faithful.
@@ -1412,7 +1485,8 @@ void gt_outlier(X13Context& ctx, bool& inptok) {
         if (ctx.error.lfatal) return;
         // Capture value tokens for the args we act on: 1 types, 2 method,
         // 3 critical, 9 criticalalpha.
-        bool want = (argidx == 1 || argidx == 2 || argidx == 3 || argidx == 9);
+        bool want = (argidx == 1 || argidx == 2 || argidx == 3 || argidx == 8 ||
+                     argidx == 9);
         std::vector<std::string> cap;
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
@@ -1431,6 +1505,8 @@ void gt_outlier(X13Context& ctx, bool& inptok) {
                 }
                 // "none" leaves all false.
             }
+        } else if (argidx == 8) {                   // tcrate (gtotlr.f:229-246)
+            apply_tcrate(ctx, cap, inptok);
         } else if (argidx == 2 && !cap.empty()) {    // method: addone|addall
             ctx.arima.ladd1 = (cap[0] == "addone");
         } else if (argidx == 3 && !cap.empty()) {    // critical value(s)
@@ -2902,7 +2978,9 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
         std::vector<std::string> cap;
         const bool want = (argidx == 2 || argidx == 3 || argidx == 4 ||
                            argidx == 7 || argidx == 14 || argidx == 16 ||
-                           argidx == 19 || argidx == 21);
+                           argidx == 19 || argidx == 21 || argidx == 1 ||
+                           argidx == 6 || argidx == 8 || argidx == 13 ||
+                           argidx == 17);
         consume_value(ctx, want ? &cap : nullptr);
         if (ctx.error.lfatal) return;
         if (cap.empty()) continue;
@@ -2940,6 +3018,33 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
             break;
         case 19:  // logqs: yes | no (gtspec.f:288) -- log the series genqs
             r.llogqs = (v == "yes");   // tests, and report it as `qslog`.
+            break;
+        case 1: {  // start: the diagnostic span start (gtspec.f:105 -> Bgspec)
+            // Resolved to eight-years-back at the parse tail when absent
+            // (gtinpt.f:1282-1286 / gtspec.f:324-327); an explicit value simply
+            // pre-empts that. Read as YYYY.MM like every other date argument.
+            try {
+                const double d = std::stod(v);
+                const int yy = static_cast<int>(d);
+                ctx.rho.bgspec(1) = yy;
+                ctx.rho.bgspec(2) = static_cast<int>((d - yy) * 100.0 + 0.5);
+            } catch (...) { /* the Fortran date reader reports its own error */ }
+            break;
+        }
+        case 6:  // peakwidth: the half-width, in grid steps, of each
+            // trading-day peak's low/high limits (gtspec.f:193 -> Peakwd).
+            // Feeds BOTH mkfreq's plotted grid and the enhanced peak grid.
+            try { ctx.rho.peakwd = std::stoi(v); } catch (...) {}
+            break;
+        case 8:  // altfreq: add the third TD frequency at .3036
+            r.lfqalt = (v == "yes");   // gtspec.f:213
+            break;
+        case 13:  // saveallfreq: emit the whole grid rather than the fixed
+            r.svallf = (v == "yes");   // literal peak indices (gtspec.f:246)
+            break;
+        case 17:  // showseasonalfreq: plot the seasonal grid UNSUBSTITUTED,
+            // i.e. skip mkfreq's whole trading-day splice (gtspec.f:204)
+            r.lprsfq = (v == "yes");
             break;
         case 21:  // robustsa: yes | no (gtspec.f:311-315) -- which SA and
             // irregular the spectrum is taken OF. yes (the default) uses the

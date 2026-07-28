@@ -934,3 +934,38 @@ defect is invisible from the diagnostics as well as from the manual.
 - **Pinned by:** `tests/corpus/generated/airline_noapply-{td,ao,ls,holiday}` —
   the four reachable groups. The `userseasonal` spelling is not gated: it needs
   a `regression{variables=(seasonal)}` spec, which is its own front.
+
+## CB-30 — `mkpeak.f:253-392` — with `altfreq` and `peakwidth>1`, two trading-day peak indices are never assigned
+
+`spectrum{altfreq=yes}` adds a THIRD trading-day frequency, so `nTfreq` is 3 and
+`Tlow`/`Tup`/`Tpeak` all need three entries. The `Lfqalt` branch assigns all
+three only at `Peakwd == 1`:
+
+| `Peakwd` | `Tlow` | `Tup` | `Tpeak` |
+|---|---|---|---|
+| 1 | 37, 45, 58 | 41, 49, 62 | 39, 47, 60 |
+| 2 | 36, 44, 57 | 42, 50, 63 | **47, 60** |
+| 3 | 35, 42, 56 | **51, 64** | **47, 60** |
+| 4 | 34, 41, 55 | **52, 65** | **47, 60** |
+
+At `Peakwd >= 2` the third `Tpeak` is never set, and at `Peakwd >= 3` the third
+`Tup` is not either. `/spcidx/` is a COMMON and `mkpeak` runs once per run, so
+those slots hold the COMMON's initial storage — `mkfreq.f:34-38` then reads
+`Tpeak(3)`/`Tup(3)` to place a frequency, and `ispeak` reads them again to score
+the peak.
+
+The non-`Lfqalt` branch has the mirror-image slip in the other direction:
+`Peakwd = 4` assigns `Tup(3) = 62` (`mkpeak.f:374`) where `nTfreq` is 2 and
+`Tlow`/`Tpeak` stop at two entries — a stray write past the used range. That one
+is harmless, because nothing reads `Tup(3)` when `nTfreq` is 2.
+
+- **Port:** the stray `Tup(3) = 62` IS transcribed (the table matches the source
+  row for row). The `Lfqalt` branches are **not** ported: `spectrum_peak_grid`
+  declines for `altfreq=yes` at every `Peakwd`, so the engine emits no peak
+  block rather than an unverifiable one. Reproducing an uninitialised read is
+  not something to guess at, and `Peakwd == 1` — the one complete `Lfqalt`
+  row — is held back with the rest so the argument has a single behaviour.
+- **Pinned by:** nothing yet; `altfreq` needs the COMMON's initial contents
+  established before a golden means anything. `tests/corpus/extra/
+  airline_spectrum-peakwidth{2,3,4}` gate the four non-`Lfqalt` rows, which is
+  what makes the table above trustworthy as a transcription.
