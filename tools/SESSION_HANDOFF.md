@@ -29,7 +29,7 @@ push**; **never run `tests/corpus/generated/genspecs.py` or
 regenerate). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
-## What landed (7 commits, 5491 → 5509 passing)
+## What landed (9 commits, 5491 → 5516 passing)
 
 | commit | what |
 |---|---|
@@ -38,30 +38,44 @@ regenerate). Build with
 | `386d2a5f` | gate `diff=`/`balanced=`, pin the CES probe series |
 | `310a9f10` | parse `ljungboxlimit=` and fatal — its "applied" verdict was wrong |
 | `d1b65033` | parse `cancel=`, and stop — the rest is one blocker |
-| `fda181a6` | this handoff |
+| `fda181a6` | a handoff |
 | `3e40d20e` | staleness sweep — six stale claims, incl. `TEST_COVERAGE.md` listing 4 closed subsystems as "not started" |
+| `16590880` | **run the label-30 finalization tail on the plain automdl path** — the "one blocker" was an unreachable call, not an unported stage |
+| `8871cfd1` | run the parity suite in parallel (`-n 8`), 262s → 79s |
 
 ## The one thing to know
 
-**The whole remaining `automdl{}` option surface is gated on a single unported
-port: `automd.f`'s model-adequacy stage (`:577-850`) plus the `pass2`/nloop call
-at `:665`.** Five arguments now parse correctly and all five still land
-somewhere other than the oracle; three more are consumed *only* there and are
-now fatal. Further parse cases will close none of them.
+**The previous handoff's headline claim was wrong, and how it was wrong is the
+lesson.** It said the remaining `automdl{}` surface was gated on "a single
+unported port, `automd.f`'s model-adequacy stage (`:577-850`) plus `pass2`/nloop
+at `:665`". There was **no unported stage**. `automd_finalize_tail` — `mdlchk` /
+`pass0` / `chkrt1`+redomd / `testodf` / `tstmd2`, i.e. `automd.f:654-983` — was
+already ported and already bit-exact. It was **unreachable**: `automd.f` has ONE
+path with the AIC tests as conditional *blocks* inside it, and this driver split
+them into an `if (aic)` / non-aic branch and called the tail from the aic branch
+only. Every plain `automdl{}` spec silently skipped the unit-root redomd, the
+over-differencing check, the residual-mean Constant add and the lag drop.
+
+One added call. Re-measured on the round-2/3 probe set:
 
 | state | arguments |
 |---|---|
-| applied + gated | `diff` `balanced` `acceptdefault` |
-| **DIFFERS** (read, wrong answer) | `mixed` `checkmu` `maxorder` `maxdiff` `cancel` |
-| **FATAL** (blocked, previously silent) | `urfinal` `noautooutlier` `ljungboxlimit` |
+| applied + gated | `diff` `balanced` `acceptdefault` **`urfinal`** |
+| applied, ungated | **`checkmu`** (ukgas) **`cancel`** (nottem) |
+| **DIFFERS** (partly right) | `mixed` `maxdiff` — each now applied on one series, DIFFERS on three |
+| **DIFFERS** (unchanged) | `maxorder` |
+| **FATAL** (blocked, previously silent) | `noautooutlier` `ljungboxlimit` |
 | INERT even at extreme values | `ub1` `ub2` `exactdiff` `hrinitial` `armalimit` `percentrse` `reducecv` `firstar` `fcstlim` `seasonaloverdiff` |
 | harness-blind | `rejectfcst` |
 
-`tstmd1`/`bkdfmd`/`testodf` are already ported in `automdl/adqtst.cpp`. The
-reason they are not wired is recorded at `automd.cpp`'s closing note: wiring
-`tstmd1` alone broke parity on the non-revert cases, because the oracle
-**re-estimates after** `tstmd1`, so its intermediate fit must not be the
-reported one. The finalization has to land as a unit.
+**"Unported" and "unreachable" present identically** — an option that moves the
+oracle and moves the engine by zero, behind `OUTCOME: OK` — **and cost three
+orders of magnitude apart.** The wrong belief came from one failed experiment
+over-generalized: someone wired `tstmd1` alone, saw parity break, and concluded
+the stage was unported. The actual cause was that the oracle re-estimates
+*after* `tstmd1` — and that re-estimate is precisely what the unreachable tail
+supplied. **Grep the call sites before sizing a port**; a sole call site inside
+a conditional branch is the tell.
 
 ## Findings worth not re-deriving
 
@@ -100,10 +114,21 @@ reported one. The finalization has to land as a unit.
 
 ## Open, in the order I would take them
 
-1. **Wire `automd.f`'s model-adequacy + nloop stage** (task #8). Unblocks the
-   five DIFFERS and the three FATALs at once. That the stage explains all five
-   is a **hypothesis, not a measurement** — isolate it, and re-measure each
-   argument separately afterwards rather than declaring the group closed.
+1. **Wire label 40's `tstmd1` arm onto the plain automdl path** (task #10).
+   `automd.f:576-582`, the `ELSE IF(.not.ismd0)` arm of
+   `IF(Lidotl) amidot ELSE tstmd1`. **Do `automd.f:322-344` first** — the
+   default-model `rgarma`/`mdlchk`/`armats` is unconditional in the Fortran and
+   sits inside `if (aic)` here, and `tstmd1` needs the
+   `blpct0`/`rvr0`/`rtval0`/`adj0`/`trns0`/`tair` it produces. Unblocks
+   `noautooutlier` (fatal). `Lidotl` is true by default via Lotmod's BIGCV AO
+   scan, so the default path is observationally fine — this is only the
+   non-default arm.
+   *Then* `pass2`/nloop at `:665`, which really is unported and is what
+   `ljungboxlimit` needs (`pass2.f:164-169` increments `Pcr`).
+   **Re-measure `mixed`/`maxdiff`/`maxorder` separately afterwards.** Each is
+   now applied on one probe series and DIFFERS on three; that a single further
+   port explains all three is a hypothesis, and the last one of those cost a
+   two-session detour.
 2. **`gtdpvc` parses decimal literals 1 ulp off the nearest double** (task #9):
    `"0.95"` → `0.95000000000000007` vs the correctly-rounded
    `0.94999999999999996`. Latent everywhere a spec supplies a decimal. **Check
@@ -143,4 +168,12 @@ Every increment this session ended with a **mutation test**, and it earned its
 keep twice: these parity gates auto-discover specs, so a green run after adding
 a spec is not evidence the spec is compared at all. Reverting the `Lautod` guard
 fails 5 tests including both `automdl-diff` gates; hardcoding `balanced=false`
-fails its gate; hardcoding `acceptdefault=false` fails 32.
+fails its gate; hardcoding `acceptdefault=false` fails 32; hardcoding `chkrt1`'s
+limit to the 1.05 default fails 4 of the 7 new `urfinal` tests.
+
+**Measure the loop before optimizing it.** "The build is slow" was wrong by a
+factor of ten. A one-file change is ~25s (6.4s compile+archive, 18.8s relinking
+12 downstream targets — `-j 16` is no faster than `-j 6`, the links are I/O
+bound). The 262s **suite** was the expensive half, now 79s at `-n 8`. One full
+suite run this session was spent on a comment-only edit; that is ~4 minutes for
+a change that cannot alter behavior.
