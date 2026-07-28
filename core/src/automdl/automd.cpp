@@ -377,6 +377,30 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         abend(ctx);
         return;
     }
+    // ljungboxlimit -> Pcr has TWO consumers and only one is ported. The
+    // acceptdefault test (automd.f:348) is here at :483/:678; the other is
+    // pass2.f:164-169, which INCREMENTS Pcr (+0.025 on the first nloop pass,
+    // +0.015 after) and drives the "redo automatic modeling" loop -- the nloop
+    // machinery this driver also does not port. Measured on ukgas / nottem /
+    // ces_accfood: ljungboxlimit=0.5 disagrees with the oracle on all three,
+    // and `acceptdefault=yes` does NOT rescue it (nottem still disagrees even
+    // at 0.99), so the ported arm alone is not enough to make a non-default
+    // value correct.
+    // NB compared with a tolerance, not ==. gtdpvc parses the literal "0.95"
+    // to 0.95000000000000007 while the gtinpt default is the correctly-rounded
+    // 0.94999999999999996, so an exact test fatals on a spec that explicitly
+    // restates the DEFAULT. That 1-ulp reader difference is its own (latent)
+    // issue and is tracked separately; here the only question is whether the
+    // user meaningfully changed the limit.
+    if (std::abs(ar.pcr - 0.95) > 1e-12) {
+        errhdr(ctx);
+        writln(ctx,
+               "ERROR: automdl{ljungboxlimit=} not yet ported "
+               "(pass2.f:164-169 Pcr, in the unported nloop stage).",
+               stdio::STDERR, ctx.units.mt2, true);
+        abend(ctx);
+        return;
+    }
 
     bool lmu = false;
     // imu: index of a USER-specified Constant (computed before chkmu adds one).

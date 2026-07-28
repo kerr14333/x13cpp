@@ -1412,6 +1412,23 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
             if (ctx.error.lfatal) return;
             if (argok && nelt > 0) ar.lbalmd = (ivec[0] == 1);
             continue;
+        case 15:  // ljungboxlimit (gtauto.f label 160) -> Pcr, a PROBABILITY
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] <= 0.0) {
+                    inpter(ctx, PERROR, ep, "Ljung-Box Q probability limit"
+                           " cannot be less than zero.");
+                    inptok = false;
+                } else if (dvec[0] >= 1.0) {
+                    inpter(ctx, PERROR, ep, "Ljung-Box Q probability limit must"
+                           " be less than one.");
+                    inptok = false;
+                } else {
+                    ar.pcr = dvec[0];
+                }
+            }
+            continue;
         case 16:  // acceptdefault (gtauto.f:391-397)
             gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
                    "Available options for acceptdefault are yes or no.",
