@@ -4,7 +4,8 @@ Scouted 2026-07-19 against `oracle/fortran` (v1.1 b61). Scope: the `automdl{}`
 TRAMO-style automatic model identification driven by `automd.f`. Sibling
 `pickmdl{}` (X-11-ARIMA method, `automx.f`) is a separate, later milestone.
 
-Corpus payoff: **24 / 76 specs use `automdl`** (5 use `pickmdl`). Everything
+Corpus payoff: **33 of 366 specs use `automdl`** (1 uses `pickmdl`; counts
+refreshed 2026-07-28 — the 2026-07-19 figures were 24/76 and 5). Everything
 funnels through `rgarma` + `regvar`, both already ported and oracle-verified
 (see `m3_scouting.md` §7). automdl is orchestration + a handful of new numeric
 leaves on top of that engine.
@@ -194,20 +195,34 @@ ipr=ips=0; ids=iqs=0 for Sp=1). usdeaths hits **`ichk=5`/`ichk=4`**: the model i
 So it is a near-unit AR root being recognized as the airline model. region_north
 is the same routine (a different ichk / insignificant-lag reduction).
 
-**Fix = port `tstmd1` and wire it into automd after amdid**, with the default-
-model statistics plumbed in: before iddiff, automd must estimate the default
-airline model and capture `Pdfm`/`Rsddfm` (mdlchk residual p-value + mse) and
-`Tair(1..2)` (armats t-stats of the default MA coeffs), then pass them to
-tstmd1. Leaves status: `mdlchk` DONE, `tstmd2` DONE, `testodf` DONE (banked).
-Still needed for tstmd1: `bkdfmd` (model backup/restore) — FEASIBLE and purely
-mechanical: the `ss2rv` backup struct + all source commons (model/mdldat/arima/
-picktd/x11adj/prior) already exist in ctx, so it is ~48 field copies (defer the
-holiday/outlier-adjustment fields — Adjtd/Adjhol/Fin*/Ltst* — which don't change
-during reduced model-ID, so their backup is a no-op for no-holiday/no-outlier
-specs). Also maybe `ssprep` (rgarma may self-prep — verify), plus the automd
-default-stats capture + the tstmd1 call wiring. **Do this as ONE unit (don't bank
-bkdfmd ungated).** Both usdeaths and region gated on identification only until it
-lands.
+### UPDATE 2026-07-28 — every leaf is ported; the blocker is the WIRING
+
+**This section's original "Fix =" plan is done and was not sufficient.** All of
+`mdlchk`, `tstmd2`, `testodf`, **`bkdfmd`** (`adqtst.cpp:269`) and **`tstmd1`**
+(`:344`, which already calls bkdfmd at `:476`) are ported. What is missing is
+the *finalization wiring*, and the reason it is still missing is recorded at
+`automd.cpp`'s closing note: **wiring `tstmd1` alone broke parity on the
+non-revert cases, because the oracle RE-ESTIMATES after `tstmd1`** — so
+tstmd1's intermediate fit must not be the reported one. The stage has to land
+as a unit: tstmd1 revert + redomd/testodf finalization + the final re-estimate.
+
+**The blast radius is much larger than this section knew.** It is not only
+usdeaths/region's final model. The same stage (`automd.f:577-850`) plus the
+`pass2`/nloop call at `:665` is what blocks the entire remaining `automdl{}`
+option surface — see `tools/dropped_options_scouting.md` round 3:
+
+* three arguments are consumed **only** there and are now FATAL rather than
+  silently returning the default model: `urfinal` (`chkrt1` at `:717`),
+  `noautooutlier` (`tstmd1` at `:577`), `ljungboxlimit` (`Pcr` at
+  `pass2.f:164-169`, which *increments* it);
+* five more parse correctly and still land somewhere other than the oracle:
+  `mixed`, `checkmu`, `maxorder`, `maxdiff`, `cancel`.
+
+That those five share this cause is a **hypothesis, not a measurement** —
+isolate it, and re-measure each argument separately after the stage lands
+rather than declaring the group closed.
+
+Both usdeaths and region remain gated on identification only until it lands.
 
 ## 4. First corpus gate target
 

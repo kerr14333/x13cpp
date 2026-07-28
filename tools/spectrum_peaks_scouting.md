@@ -1,7 +1,8 @@
 # Spectrum peak diagnostics — scouting
 
 **Status: steps 1–4 CLOSED (byte-exact, gated by
-`tests/parity/test_spectrum_peaks.py`, 222 specs, zero new goldens); step 5
+`tests/parity/test_spectrum_peaks.py`, every spec that ships the block, zero
+new goldens); step 5
 (genqs) closed separately in `tools/genqs_scouting.md`. Only the SEATS branch
 and the Iagr>3 indirect names are still open — see "What is still open" at the
 bottom.** Originally written 2026-07-27.

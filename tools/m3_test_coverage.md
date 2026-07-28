@@ -54,7 +54,12 @@ intgpg+exctma; chkrts degree-1/2/non-inv/all-fixed; olsreg/resid/upespm.
 
 ## B. Corpus specs — estimation coverage (need olsreg/rgarma/lmdif landed first)
 
-The corpus (76 specs) is broad on *pipeline* but narrow on *estimation*: one
+*(Written when the corpus held 76 specs; it now holds 366 and most of the Tier A
+gaps below have since been filled — fixed params, outlier regressors, AR models
+and near-zero data all have specs now. Kept for the tiering rationale, not as a
+current gap list.)*
+
+The corpus (76 specs at the time) is broad on *pipeline* but narrow on *estimation*: one
 fixed model shape (0 1 1)(0 1 1), four benign regressors, no AR, no fixed params,
 no outlier regressors, no negative/near-zero data. Tier A = new specs on existing
 series (no new data):

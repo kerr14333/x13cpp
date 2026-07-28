@@ -83,14 +83,33 @@ Priorities for the next sweep, each an oracle-vs-x13run_m3 diff like sweep_reg.p
   `test_force`).
 
 ## Still blocked on unported subsystems
-- **pickmdl** (X-11-ARIMA model selection) — not started (5 specs).
-- **`check{}`** (Ljung-Box / normality), F2/F3 & M/Q stats — not started.
-- **Composite / indirect adjustment** (`composite{}`) — the census-examples/
-  composite series are parsed but the aggregate SA is unported.
-- **Interdependent x11 factor chains** — user PRIOR factors (Nuspad/Nustad),
-  Adjsea/Adjso regARIMA-seasonal combine, OLS-estimated x11regression prior-TD
-  (Ixreg>=2; the user-weight `tdprior` Kswv=1 path is DONE bit-exact -- a4+d10-d13),
-  force non-original target (Iftrgt>0), revisions getrev.
+
+*(Section rewritten 2026-07-28 — four of its five bullets had been closed and
+were still listed as "not started". Check `CLAUDE.md` before trusting this
+list; it is the one that gets updated per feature.)*
+
+- **pickmdl** (X-11-ARIMA model selection) — still parse-only (M1). **1 corpus
+  spec** (`extra/airline_pickmdl`), not the 5 previously claimed, but it is the
+  largest single source of real feature skips (9).
+- **`automdl{}`'s model-adequacy + nloop stage** (`automd.f:577-850` and the
+  `pass2` call at `:665`). Every leaf is ported; the wiring is not, because the
+  oracle re-estimates after `tstmd1`. Blocks the remaining `automdl{}` option
+  surface — see `tools/automdl_scouting.md` §3c and
+  `tools/dropped_options_scouting.md` round 3.
+- **`composite{}` SEATS branch** (`agr3s.f`), pseudo-additive, and the
+  forced/rounded indirect series. The X-11 composite front (direct + indirect
+  + comparison statistics + indirect diagnostics) is CLOSED and gated.
+- **`history{}` leftovers** — `outlier=auto` / `outlierwin=` (now a clean fatal,
+  not silent), `x11outlier=no`, `additivesa=`.
+- **Misc open** — `spectrum{altfreq=yes}` (pending CB-30), the slidingspans
+  `chs` per-span prior phase, and `generated/usdeaths_automdl`'s iddiff
+  d=0/d=1 discrepancy.
+
+**Closed since this list was written:** `check{}` (Ljung-Box / normality,
+line-exact over 275 specs), the F2/F3 and M/Q statistics (x11pt4 increments
+1–3), composite/indirect X-11 adjustment, user PRIOR factors (Nuspad/Nustad),
+the Adjsea/Adjso regARIMA-seasonal combine, OLS-estimated x11regression
+prior-TD (Ixreg>=2), and force non-original targets (Iftrgt>0).
 
 ## Interaction matrix worth building (once the pieces land)
 automdl × outlier × aictest (the 03-automdl class) · transform=auto × regression ·

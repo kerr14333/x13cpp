@@ -2,7 +2,8 @@
 
 **Status: CLOSED for BOTH `genqs.f` and its sibling `gennpsa.f` on the DIRECT
 X-11 path, the MODEL-ONLY path and the SEATS path (byte-exact, gated by
-`tests/parity/test_qs_diagnostics.py`, 313 specs, zero new goldens). Only the
+`tests/parity/test_qs_diagnostics.py`, every spec that ships a `qs*` key,
+zero new goldens). Only the
 `Iagr==4` indirect names are still open -- see "What is still open".**
 Originally written 2026-07-27.
 
@@ -126,7 +127,8 @@ gets 3. Inert today (only the monthly peak grid reads it) but now transcribed.
 
 ## Gate
 
-`tests/parity/test_qs_diagnostics.py`, 157 specs, **zero new goldens**,
+`tests/parity/test_qs_diagnostics.py`, 157 specs at the time, **zero new
+goldens**,
 byte-exact against the golden text through `fwrite_fmt` with genqs.f's own
 formats (`1030 FORMAT(a,':',f16.5,1x,f10.5)` — note **no space after the
 colon** — and `1040 FORMAT(a,': ',a)`), key sets asserted in BOTH directions.
@@ -143,7 +145,7 @@ Mutation-tested twice: a 1% perturbation of `calcqs` fails 113 of 157, of
 
 ## What is still open
 
-* ~~SEATS specs~~ -- **CLOSED** (313 specs). See the section below.
+* ~~SEATS specs~~ -- **CLOSED**. See the section below.
 * ~~Model-only specs~~ -- **CLOSED**, and it did close both fronts at once
   (`test_qs_diagnostics` 157 -> 249, `test_spectrum_peaks` 140 -> 222). See the
   section below.

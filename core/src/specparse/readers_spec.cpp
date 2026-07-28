@@ -1487,12 +1487,18 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
         default:
             break;
         }
-        // Still token-consumed, all measured INERT on every probe series so far
-        // (tools/dropped_options_scouting.md, round 2): ub1/ub2/cancel/print/
-        // savelog/exactdiff/hrinitial/armalimit/percentrse/reducecv/
-        // ljungboxlimit/firstar/rejectfcst/fcstlim/seasonaloverdiff. INERT is
-        // not a clean bill -- round 1 measured all twenty INERT and seven of
-        // them turned out to be dropped once the probe was fixed.
+        // Still token-consumed. Every one measured INERT on all four
+        // baseline-verified probe series even at values FAR from its default
+        // (tools/dropped_options_scouting.md, round 3): ub1/ub2/print/savelog/
+        // exactdiff/hrinitial/armalimit/percentrse/reducecv/firstar/
+        // rejectfcst/fcstlim/seasonaloverdiff.
+        //
+        // INERT is not a clean bill. Round 1 measured all twenty probed
+        // arguments INERT and seven proved dropped once the SERIES was fixed;
+        // round 2 then measured ljungboxlimit and cancel INERT and both proved
+        // real once the VALUE was moved away from the default. rejectfcst in
+        // particular is not INERT at all -- it is harness-blind (it moves only
+        // fcstrejected/mape3yr/rejectfcst, which the harness does not print).
         consume_value(ctx, nullptr);
         if (ctx.error.lfatal) return;
     }
