@@ -337,6 +337,56 @@ argument INERT), and nottem needs `transform{function=log}` for either
 `checkmu` or `cancel` to be observable at all (under `function=none` they move
 2 and 1 keys).
 
+### UPDATE 2026-07-28d — `pass2` ported; the automdl option front is CLOSED
+
+The residual named in the previous update was right, and the port confirmed it
+in the most direct way available: **every argument it predicted would close,
+closed, and nothing else moved** (5542 -> 5560 passing, zero goldens disturbed).
+
+`core/src/automdl/pass2.{hpp,cpp}` plus the label loop in `automd()`. The
+driver had a straight-line approximation of `automd.f` with `nloop` pinned at
+1; it now runs the real GO-TO graph over labels 10 / 50 / 40 / 30, with `pass2`
+returning `igo` 1/2/3 to re-enter at 10/40/50.
+
+**Three things in `automd.cpp` were wrong only because `nloop` could never
+exceed 1**, and all three are the kind that stay invisible until the loop runs:
+
+* **`lidold`** (`automd.f:167`) captures `Lidotl` BEFORE the `Lotmod` override,
+  so on the default path it is FALSE while `lidotl` is TRUE. Label 50's
+  `IF(nloop.eq.1.or.lidold)` reads it — a re-entry must NOT re-run `amdid`.
+* the `nbb=0` and `a0`-revert branches (`:458-467`, `:503`) are both guarded
+  `nloop.eq.1`; the port had dropped the guard as "always true".
+* `:472`'s `clrotl` guard reads **`nauto0`**, the DEFAULT model's automatic
+  outlier count — not `Natotl`. Two different quantities that happen to be 0
+  alongside each other on this corpus.
+
+Measured engine-vs-oracle on ukgas / nottem / ces_accfood / ces_leis / co2
+(baselines re-verified clean first):
+
+| argument | before | after |
+|---|---|---|
+| `mixed` | wrong on 3 of 5 | **bit-exact on all 5** |
+| `maxorder` | wrong on ukgas | **bit-exact on all 5** |
+| `maxdiff` at `(1 0)` | wrong on 3 of 5 | **bit-exact on all 5** |
+| `cancel` at `0.9` | wrong on 2 of 5 | **bit-exact on all 5** |
+| `ljungboxlimit` | FATAL | **applied** wherever the oracle moves |
+
+**All 11 automdl arguments that move the oracle now apply, and nothing in
+`automdl{}` is fatal or silently dropped.** Gated by
+`{ukgas,nottem}_automdl-mixed`, `ukgas_automdl-maxorder` and
+`{nottem,ces_accfood}_automdl-ljungboxlimit`.
+
+**Mutation-tested per HALF of pass2, and the two halves came out covered by
+DIFFERENT specs** — disabling the `ichk` revert fails only
+`ukgas_automdl-maxorder`; disabling the `Pcr`/`igo` half fails the `mixed` and
+`ljungboxlimit` specs. That also showed `ukgas_automdl-mixed` survives both,
+i.e. it pins `amdid`'s candidate filter rather than the re-entry — recorded in
+the spec rather than left to look like pass2 coverage. **Mutating a ported
+routine as one unit would have reported "covered" and hidden that.**
+
+Still deferred in `automd.f`: only the `Lidotl` outlier-ID block on the DEFAULT
+model (`:280-321`), which the BIGCV scan genuinely closes.
+
 ## 4. First corpus gate target
 
 `tests/corpus/census-examples/03-automdl.spc` — the canonical automdl example.

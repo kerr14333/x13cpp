@@ -17,10 +17,18 @@
 // reverts to the airline default when the identified model's coefficients are
 // not significantly better.
 //
-// Deferred, both gated on a real (non-BIGCV) outlier scan that finds something,
-// which no corpus spec triggers: pass2 / the nloop re-entry (automd.f:664-672,
-// what `ljungboxlimit=` needs) and the Lidotl outlier-ID block on the DEFAULT
-// model (:280-321). See automd_finalize.hpp for the tail's primitives and
+// This is a LOOP, not a straight line: `pass2` (:664, see pass2.hpp) can send
+// control back to label 10, 40 or 50, and `nloop` counts the passes. Three
+// things only matter once it does, and all three were wrong while nloop was
+// pinned at 1 -- `lidold` (:167, captured BEFORE the Lotmod override, so label
+// 50 does not re-run amdid on a re-entry), the `nloop.eq.1` guards on the
+// nbb/a0 revert (:458-467, :503), and the clrotl guard at :472 reading
+// `nauto0` rather than `Natotl`.
+//
+// Deferred: the Lidotl outlier-ID block on the DEFAULT model (:280-321) --
+// amidot + pass0 + the nauto0/cvl0 bookkeeping pass2 reads. Closed by the
+// BIGCV scan finding nothing, which is why nauto0 stays 0 and cvl0 DNOTST.
+// See automd_finalize.hpp for the tail's primitives and
 // tools/automdl_scouting.md for the option-by-option state.
 #ifndef X13_AUTOMDL_AUTOMD_HPP
 #define X13_AUTOMDL_AUTOMD_HPP

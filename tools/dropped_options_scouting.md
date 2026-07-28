@@ -287,6 +287,30 @@ Round 4's lesson, inverted: **"unreachable" is a claim about a guard and has to
 be read off the guard.** A green suite is consistent with "the routine is a
 no-op on this corpus", which is a different statement.
 
+### Round 6 — `pass2` ported; the automdl surface is CLOSED
+
+Round 5's prediction held exactly: **every argument it named closed, and
+nothing else moved** (5542 -> 5560 passing, zero goldens disturbed).
+
+| argument | round 5 | round 6 |
+|---|---|---|
+| `mixed` | wrong on 3 of 5 | **bit-exact on all 5** |
+| `maxorder` | wrong on ukgas | **bit-exact on all 5** |
+| `maxdiff` at `(1 0)` | wrong on 3 of 5 | **bit-exact on all 5** |
+| `cancel` at `0.9` | wrong on 2 of 5 | **bit-exact on all 5** |
+| `ljungboxlimit` | FATAL | **applied** wherever the oracle moves |
+
+**All 11 automdl arguments that move the oracle now apply. Nothing in
+`automdl{}` is fatal or silently dropped**, which is the first spec block in
+this sweep to reach that state. Details and the three `nloop`-dependent
+`automd.cpp` bugs it surfaced are in `tools/automdl_scouting.md` UPDATE
+2026-07-28d.
+
+One method note worth carrying to the next block: **mutate a ported routine
+per HALF, not as a unit.** pass2's two halves turned out to be covered by
+disjoint specs, and unit-mutating it would have reported "covered" while
+hiding that one gate exercised neither.
+
 ## Where the seven actually stand
 
 | argument | after the port | why |

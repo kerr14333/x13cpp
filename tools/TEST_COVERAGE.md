@@ -91,21 +91,18 @@ list; it is the one that gets updated per feature.)*
 - **pickmdl** (X-11-ARIMA model selection) — still parse-only (M1). **1 corpus
   spec** (`extra/airline_pickmdl`), not the 5 previously claimed, but it is the
   largest single source of real feature skips (9).
-- **`automdl{}`'s `pass2` / nloop re-entry (`automd.f:664-672`, `pass2.f`).**
-  Narrowed twice. 2026-07-28b: the label-30 finalization tail once listed here
-  was ported all along and merely unreachable, and wiring the existing call
-  closed `urfinal`. 2026-07-28c: the aictest/non-aictest BRANCH is gone —
-  `automd.cpp` now runs `automd.f`'s single path — which closed
-  `noautooutlier` (fatal removed), `checkmu`, `cancel` and `maxdiff`, all
-  gated. **`pass2` is what is left, and it is NOT gated on a real outlier
-  scan** (`IF(Lidotl.and.nloop.le.2)`, and the default Lotmod forces `Lidotl`
-  true — so the oracle calls it on every automdl run; it is simply a no-op on
-  every corpus spec's default configuration). It blocks `ljungboxlimit`
-  (fatal, `pass2.f:160-169` increments `Pcr`) and is the measured cause of the
-  last two wrong answers: `mixed=no` on 3 series and `maxorder` on ukgas,
-  where the oracle's final model differs from its own `automdl.first`, i.e. it
-  re-identified. One port closes all three. See `tools/automdl_scouting.md`
-  §3c and `tools/dropped_options_scouting.md` round 5.
+- ~~**`automdl{}`**~~ — **CLOSED 2026-07-28d.** All 11 arguments that move the
+  oracle now apply, and nothing in the block is fatal or silently dropped —
+  the first spec block in the option sweep to reach that state. It took three
+  increments: the label-30 finalization tail was ported all along and merely
+  unreachable (closing `urfinal`); then the aictest/non-aictest BRANCH was
+  removed so `automd.cpp` runs `automd.f`'s single path (closing
+  `noautooutlier`, `checkmu`, `cancel`, `maxdiff`); then `pass2` + the nloop
+  re-entry (closing `mixed`, `maxorder`, `ljungboxlimit`). Still deferred, and
+  genuinely closed by the BIGCV scan finding nothing: the `Lidotl` outlier-ID
+  block on the DEFAULT model (`automd.f:280-321`). See
+  `tools/automdl_scouting.md` UPDATE 2026-07-28d and
+  `tools/dropped_options_scouting.md` round 6.
 - **`composite{}` SEATS branch** (`agr3s.f`), pseudo-additive, and the
   forced/rounded indirect series. The X-11 composite front (direct + indirect
   + comparison statistics + indirect diagnostics) is CLOSED and gated.

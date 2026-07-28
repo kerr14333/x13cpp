@@ -1,8 +1,8 @@
-# Session handoff — 2026-07-28c (automd unified; `pass2` is the residual)
+# Session handoff — 2026-07-28d (automdl CLOSED)
 
-Replaces the 2026-07-28b handoff. Its findings list is still accurate and is
-carried forward below where it still matters; its open item 1 is what this
-session worked, and it is closed.
+Replaces the 2026-07-28c handoff. Its findings are carried forward below where
+they still matter; its open item 1 (`pass2`) is done, and with it the whole
+`automdl{}` front.
 
 ## Where things stand
 
@@ -13,11 +13,11 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5542 passed / 0 failed / 478 skipped** (~80s) |
+| `python -m pytest tests/parity -q -n 8` | **5560 passed / 0 failed / 478 skipped** (~90s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
-**Run the suite with `-n 8`** (pytest-xdist, installed). 262s serial → ~80s,
+**Run the suite with `-n 8`** (pytest-xdist, installed). 262s serial → ~90s,
 same counts. Safe because every gate compares stdout from a read-only
 subprocess and no harness writes side files — re-verify that if a harness ever
 changes. Build is ~25s; use `-k "<name>"` (~3s) while iterating.
@@ -28,121 +28,111 @@ push**; **never run `tests/corpus/generated/genspecs.py` or
 regenerate). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
-## What landed (2 commits, 5516 → 5542 passing)
+## What landed (4 commits, 5516 → 5560 passing)
 
 | commit | what |
 |---|---|
-| `dcbfc35b` | **unify automd's two paths** — one path, as in the Fortran; closes `noautooutlier=` |
+| `dcbfc35b` | unify automd's two paths — one path, as in the Fortran; closes `noautooutlier=` |
 | `aa721bc7` | gate `checkmu=` / `cancel=` / `maxdiff=`; correct the `pass2` reachability note |
+| `9e1d968b` | docs refresh |
+| `e9a31e6b` | **port `pass2` + the nloop re-entry** — closes `mixed=`, `maxorder=`, `ljungboxlimit=` |
 
 ## The one thing to know
 
-**`automd.cpp` no longer has an aictest branch.** `automd.f` has ONE path and
-the AIC tests are conditional *blocks* inside it; this driver had mirrored them
-as a branch, and that split bit twice in two sessions. Last session it was the
-label-30 finalization tail, reached only from the aictest side. This session it
-was label 40 itself plus three things its `tstmd1` arm reads — `tair`
-(`automd.f:343`), `adj0`/`trns0` (`:369-371`) and **`bkdfmd`'s backup**
-(`:379`, which `tstmd1.f:221` restores from). Hoisting them meant hoisting the
-acceptdefault test, the `a0` saves, label 10 and the whole
-put-the-regressors-back block as well. **Measured free** — 5516 → 5516 with no
-golden moving — even though `ssprep`/`bkdfmd`/`rmfix`/`addfix`/`clrotl`/`restor`
-and `amidot` now run on every automdl spec.
+**`automdl{}` is closed.** All 11 arguments that move the oracle now apply,
+nothing in the block is fatal or silently dropped, and each is gated on at
+least one corpus spec. It is the first spec block in the option sweep to reach
+that state.
 
-Where the arguments stand after re-measuring each one **separately** (the
-standing instruction from the last handoff — it earned its keep, the group split
-three ways and not the predicted way):
+It took three increments across two sessions, and **each one revised the
+previous one's sizing**:
 
-| state | arguments |
-|---|---|
-| applied + gated | `diff` `balanced` `acceptdefault` `urfinal` **`noautooutlier`** **`checkmu`** **`cancel`** **`maxdiff`** |
-| **DIFFERS** | `mixed` (ukgas ok, 3 series wrong) · `maxorder` (3 ok, ukgas wrong) |
-| **FATAL** (blocked, not silent) | `ljungboxlimit` |
-| INERT even at extreme values | `ub1` `ub2` `exactdiff` `hrinitial` `armalimit` `percentrse` `reducecv` `firstar` `fcstlim` `seasonaloverdiff` |
-| harness-blind | `rejectfcst` |
+1. The label-30 finalization tail was *already ported* and merely unreachable
+   from the plain path. One added call closed `urfinal`.
+2. The aictest/non-aictest BRANCH itself was the problem — `automd.f` has one
+   path with the AIC tests as conditional blocks inside it. Removing the branch
+   closed `noautooutlier`, `checkmu`, `cancel`, `maxdiff`.
+3. `pass2` + the nloop re-entry closed `mixed`, `maxorder`, `ljungboxlimit`.
 
-**All three remaining are one port: `pass2`.** And the note claiming `pass2`
-was unreachable — which I wrote in `dcbfc35b` and corrected in `aa721bc7` — was
-wrong. Its guard is `IF(Lidotl.and.nloop.le.2)` **and nothing else**; the
-default `Lotmod` forces `Lidotl` true, so the oracle calls `pass2` on every
-automdl run. Its `ichk` revert is guarded `Naut0.le.Naut`, i.e. `0.le.0` here,
-so the BIGCV scan finding nothing does not close it either. It is a no-op on
-every corpus spec's DEFAULT configuration, which is why the suite is green
-without it.
+`automd.cpp` now runs `automd.f`'s real GO-TO graph over labels 10 / 50 / 40 /
+30, with `pass2` returning `igo` 1/2/3 to re-enter at 10/40/50. **Three bugs
+were invisible purely because `nloop` had been pinned at 1** — `lidold`
+(`automd.f:167`, captured BEFORE the Lotmod override, so a re-entry must not
+re-run `amdid`), the `nloop.eq.1` guards on the `nbb`/`a0` revert (`:458-467`,
+`:503`), and `:472`'s `clrotl` guard reading **`nauto0`** rather than `Natotl`.
 
-That is the same lesson as last session, inverted: **"unported" and
-"unreachable" present identically, and "unreachable" is a claim about a GUARD
-— read it off the guard, not off a green suite.** A green suite is consistent
-with "no-op on this corpus", which is a different statement.
+Still deferred in `automd.f`, and genuinely closed by the BIGCV scan finding
+nothing: the `Lidotl` outlier-ID block on the DEFAULT model (`:280-321`).
 
 ## Findings worth not re-deriving
 
-1. **Blocks 2/3 of the AIC round must be gated on the port's `aic` flag, not on
+1. **Mutate a ported routine per HALF, not as a unit.** `pass2`'s two halves
+   turned out to be covered by DISJOINT specs — disabling the `ichk` revert
+   fails only `ukgas_automdl-maxorder`, disabling the `Pcr`/`igo` half fails
+   the `mixed`/`ljungboxlimit` specs. A single whole-routine mutation would
+   have reported "covered" and hidden that `ukgas_automdl-mixed` exercises
+   neither (it pins `amdid`'s filter; said so in the spec).
+2. **Verify the engine's BASELINE before reading any option verdict off a
+   series.** ukgas / nottem / ces_accfood / ces_leis / co2 are clean;
+   **`ces_amuse` (75 keys) and `usdeaths` (17) disagree at baseline**, so
+   nothing is read off those. Related datum: with `noautooutlier=tramo`
+   ces_amuse becomes bit-exact, which localises its default-path gap to the
+   `amidot` arm of label 40 rather than to `iddiff`/`amdid`/`tstmd2`.
+3. **A probe value has a DIRECTION, not just a distance.** `cancel` bites
+   *below* its 0.1 default (0.05 moves 32 keys on nottem; 0.3/0.5/0.9 move 0).
+   `ljungboxlimit` likewise moves at 0.5 and not at 0.99. A sweep that only
+   pushes values up reports INERT.
+4. **The transform can be load-bearing for a probe.** nottem under
+   `function=log` moves 35 keys for `checkmu` and 32 for `cancel`; under
+   `function=none`, 2 and 1.
+5. **Blocks 2/3 of the AIC round are gated on the port's `aic` flag, not on
    `Itdtst`/`Leastr` as the Fortran gates them.** The parser/editor setup that
    fills `Tdayvc`/`Easvec`/`Neasvc` is unported and `automd_aictest_block1`
    stands in for it, so a round without block-1 indexes an uninitialised
-   `Easvec`. This crashed the four `test_m4_aictest` gates on the first
-   attempt (`farray 1d index 0 out of [1,5]`) — that harness passes
-   `do_aictest=false` and runs the AIC tests itself.
-2. **`automd.f:343`'s `armats` is GUARDED on `.not.Lidotl`.** The old
-   aic-branch call carried a comment asserting the guard was always true there;
-   it is always FALSE on the default path, since Lotmod forces `Lidotl` on.
-3. **Verify the engine's BASELINE before reading any option verdict off a
-   series.** Re-checked this session: ukgas / nottem / ces_accfood / ces_leis /
-   co2 are clean at baseline; **`ces_amuse` (75 keys) and `usdeaths` (17)
-   disagree**, so no verdict is read off those. New datum: with
-   `noautooutlier=tramo` ces_amuse becomes bit-exact, which localises its
-   default-path gap to the `amidot` arm of label 40 rather than to
-   `iddiff`/`amdid`/`tstmd2`.
-4. **A probe value has a DIRECTION, not just a distance.** `cancel` bites
-   *below* its 0.1 default — 0.05 moves 32 keys on nottem, while 0.3/0.5/0.9 all
-   measure exactly 0. A sweep that only pushes values up reports INERT.
-5. **The transform can be load-bearing for a probe.** nottem under
-   `function=log` moves 35 keys for `checkmu` and 32 for `cancel`; under
-   `function=none`, 2 and 1. The spec would have exercised the plumbing and
-   measured nothing.
-6. **A reverted file may not rebuild.** Restoring a `.bak` gives the source an
+   `Easvec` (`farray 1d index 0 out of [1,5]`). The m4 harness passes
+   `do_aictest=false` and runs the AIC tests itself, which is how this crashed.
+6. **`automd.f:343`'s `armats` is GUARDED on `.not.Lidotl`** — always FALSE on
+   the default path, since Lotmod forces `Lidotl` on.
+7. **A reverted file may not rebuild.** Restoring a `.bak` gives the source an
    mtime OLDER than the object file, so cmake skips it and the next test run
-   silently uses the mutated binary. `touch` the file after any revert-by-copy.
-7. Carried forward from 2026-07-28b: a probe series needs strong seasonality
-   AND near-tied candidates; an argument missing from the probe list reads
-   exactly like one that measured INERT; `acceptdefault` is gated by
-   `payems_automdl-acceptdefault`, not by the airline spec named after it; the
+   silently uses the mutated binary. `touch` after any revert-by-copy.
+8. Carried forward: an argument missing from the probe list reads exactly like
+   one that measured INERT; `acceptdefault` is gated by
+   `payems_automdl-acceptdefault`, not the airline spec named after it; the
    manual is not vendored (fetch from
    `www2.census.gov/software/x-13arima-seats/x13as/unix-linux/documentation/docx13as.pdf`,
    306 pages, PyMuPDF reads it) and `noautooutlier` appears nowhere in it.
 
 ## Open, in the order I would take them
 
-1. **Port `pass2` / the nloop re-entry** (`automd.f:664-672` + `pass2.f`). One
-   port, three arguments: `ljungboxlimit` (fatal today), `mixed` (wrong on
-   nottem/ces_leis/ces_accfood) and `maxorder` (wrong on ukgas). Two halves:
-   `pass2.f:46-150`'s `ichk` revert-to-default (compares the identified model's
-   Ljung-Box `Plbox`/residual variance `Rvr` against the default's, restores
-   `a0`/`lmu0`/`lpr0..lqs0` and calls `bkdfmd(F)` + `regvar` + `rgarma`), and
-   `:160-190`'s `Pcr` increment + `Igo` (1 → GO TO 10, 2 → GO TO 40, 3 → GO TO
-   50), which is the loop `nloop` counts. **The evidence that this is the right
-   target, and the check to repeat after:** on the failing probes the oracle's
-   FINAL model differs from its own `automdl.first`, so it re-identified — and
-   only `Igo` can cause that. `automd.cpp` already has the `nloop`/`nround`
-   locals stubbed at 1. Gate with `mixed=no` on nottem/ces_leis (the oracle
-   gains AR lags) and `maxorder=(1 1)` on ukgas (nefobs 103 vs 104).
-2. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"` →
-   `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`. Latent
-   everywhere a spec supplies a decimal, and it is why the `ljungboxlimit` fatal
-   compares with a tolerance rather than `==`. **Check whether the Fortran
-   reader does the same before changing anything** — if it does, the port is
-   faithful and this is documentation, not a fix.
+1. **`pickmdl{}`** — still parse-only, and now the single largest source of
+   real feature skips (9). It is `automx.f`, the X-11-ARIMA sibling of the
+   `automd.f` front just closed, so the substrate (`rgarma`, `regvar`,
+   `mdlset`, `mdlchk`, the outlier family) is all in place. Start by re-running
+   the option sweep against it the way rounds 2-6 did for `automdl{}` —
+   including the two traps that cost the most there: **probe values must be
+   far from the default AND in the right direction**, and **the probe series
+   must be verified clean at baseline first**.
+2. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
+   → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
+   Latent everywhere a spec supplies a decimal. This was the reason the removed
+   `ljungboxlimit` fatal had to compare with a tolerance rather than `==`, so
+   the one place it was visibly biting is gone — it is now a latent-only issue.
+   **Check whether the Fortran reader does the same before changing anything**;
+   if it does, the port is faithful and this is documentation, not a fix.
 3. The `Iagr==4` indirect names with the composite front (note the total's
    golden carries `npind*`/`spcind*` but no `qsind*`, and `genqs.f:439/482`
    uses a savelog index as a `Savtab` subscript — check before porting, may be
    a CB).
-4. **`pickmdl{}`** — still parse-only, and the single largest source of feature
-   skips.
-5. `spectrum{altfreq=yes}` pending CB-30; composite `agr3s.f`;
+4. `spectrum{altfreq=yes}` pending CB-30; composite `agr3s.f`;
    `history{outlier=auto}` / `x11outlier=no` / `additivesa=`; the slidingspans
-   `chs` per-span prior phase; `generated/usdeaths_automdl`'s iddiff d=0/d=1
-   (baseline-broken, 17 keys — see finding 3).
+   `chs` per-span prior phase.
+5. **Two baseline disagreements worth their own task**, both now isolated:
+   `generated/usdeaths_automdl` (17 keys; the known iddiff d=0/d=1 split, and
+   `nreg` 1 vs 0 — the engine is missing the Constant) and `ces_amuse`
+   (75 keys, model 5 vs 4 ARMA terms, localised to label 40's `amidot` arm per
+   finding 2). Neither is gated; both make every option verdict on those
+   series uninterpretable.
 
 ## Environment notes
 
@@ -154,22 +144,24 @@ here-strings in the Bash tool; oracle flag order is
 `option_sweep.py` stages every `tests/corpus/data/*.dat` and abspaths
 `--outdir`; BLS needs a contact User-Agent, and
 `download.bls.gov/pub/time.series/ce/ce.data.*` has full history where the
-public API v1 silently caps an unregistered request at ~3 years).
+public API v1 silently caps an unregistered request at ~3 years; the Bash
+tool's cwd persists across calls and is NOT shared with the PowerShell tool).
 
-One addition: the Bash tool's cwd persists across calls and is NOT shared with
-the PowerShell tool. A `cd tests/parity` in one call leaves the next call
-there; prefix with `cd /d/code_projects/x13new &&` when it matters.
+Adding a `core/src/**/*.cpp` still needs the build run twice — the first prints
+`GLOB mismatch!` and stops.
 
 ## Methodology, reconfirmed
 
 Every increment ended with a **mutation test**, and on auto-discovering gates it
-is the only evidence the new specs are compared at all. Disabling the `tstmd1`
-arm fails 5 of the 11 `noautooutlier` tests; hardcoding
-`lchkmu`/`cancel`/`diffam` to their defaults fails 9 of the 15 for the three
-newly gated arguments — including at least one gate per spec, which is the
-property to check rather than the raw count.
+is the only evidence the new specs are compared at all. This session added the
+per-half refinement in finding 1.
 
-**Re-measure separately, even when a shared cause is likely.** The last handoff
-flagged that "one further port explains `mixed`/`maxdiff`/`maxorder`" was a
-hypothesis. It was wrong in an informative way: `maxdiff` closed entirely,
-while `mixed` and `maxorder` turned out to fail on **disjoint** series.
+**Re-measure separately, even when a shared cause is likely — and then again
+after the port.** The 2026-07-28b handoff flagged "one further port explains
+`mixed`/`maxdiff`/`maxorder`" as a hypothesis. Measuring split it three ways
+(`maxdiff` closed on its own; `mixed` and `maxorder` failed on *disjoint*
+series), and only the third increment closed the rest. The prediction that
+`pass2` was the residual did hold — and the check that confirmed it was cheap
+and specific: on every failing probe the oracle's FINAL model differed from its
+own `automdl.first`, i.e. it had re-identified, which only `pass2`'s `igo` can
+cause.
