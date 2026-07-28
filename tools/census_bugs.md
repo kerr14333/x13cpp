@@ -886,3 +886,51 @@ makes this a slip rather than a convention.
   call site names this entry.
 - **Pinned by:** `tests/parity/test_spectrum_peaks.py`'s `spcrsd.tukey.s1`-`s6`
   and `.td` keys (239 goldens). Fixing the argument moves them.
+
+## CB-29 — `getreg.f:97` — the `noapply` dictionary runs two tokens together, so `seasonal` is unusable
+
+`MDLDIC` for the `regression{noapply=}` argument is
+
+```
+PARAMETER(MDLDIC='tdaolsholidayuserseasonalusertcso')
+DATA mdlptr/1,3,5,7,14,26,30,32,34/
+```
+
+The intended entry list is `td ao ls holiday user seasonal user tc so` — but
+`user` and `seasonal` were concatenated into ONE dictionary entry and `mdlptr`
+was built around the result. Decoding the pointers gives:
+
+| entry | span | token |
+|---|---|---|
+| 1-4 | 1..14 | `td` `ao` `ls` `holiday` |
+| **5** | **14..26** | **`userseasonal`** (12 characters) |
+| 6 | 26..30 | `user` |
+| 7-8 | 30..34 | `tc` `so` |
+
+Entry 5 is the one whose branch sets `Adjsea=-1` (`getreg.f:305-306`). So the
+documented spelling `noapply=(seasonal)` matches no entry and is **rejected**,
+and the only string that reaches the seasonal-regressor arm is the nonsense
+token `noapply=(userseasonal)`.
+
+Measured on the oracle (airline, `variables=(td easter[8] ao1955.jan
+ls1958.jul)`, comparing `d11.f`):
+
+```
+no noapply     0.42911     seasonal       ERROR: rejected
+td             0.61979     userseasonal   parses (inert here -- no seasonal regressor)
+ao             0.44078     tc / so        parse, inert here
+ls             0.52636
+holiday        0.66599
+```
+
+The argument's own error message — "Choices for the noapply argument are td, ao,
+ls, holiday, or user." — lists neither `seasonal` nor `tc` nor `so`, so the
+defect is invisible from the diagnostics as well as from the manual.
+
+- **Port:** reproduced verbatim in `gt_regression`'s `argidx == 12` branch —
+  `MDLDIC`/`mdlptr` are transcribed character for character, so `seasonal` is
+  rejected and `userseasonal` reaches `adjsea` exactly as in the oracle. A
+  comment at the line says so, since it otherwise reads as a typo.
+- **Pinned by:** `tests/corpus/generated/airline_noapply-{td,ao,ls,holiday}` —
+  the four reachable groups. The `userseasonal` spelling is not gated: it needs
+  a `regression{variables=(seasonal)}` spec, which is its own front.

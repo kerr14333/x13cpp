@@ -393,32 +393,53 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
                      sprior + (adjc.setpri - 1));
                 ctx.prior.priadj = -ctx.prior.priadj;
             } else {
-                // Adjtd==0 branch (tdlom.f:44-59): unported, and MEASURED
-                // unreachable -- it needs Adjtd cleared while Nflwtd>0 and
-                // Priadj>1 still hold, and the oracle rejects or bails out of
-                // every route to that state:
-                //   * chkadj.f:209 (a transform that is neither log nor
-                //     identity) -- but the automatic lom/leap prior that makes
-                //     Priadj>1 is only created under `td`+log, and an EXPLICIT
-                //     transform{adjust=lom|lpyear} alongside
-                //     regression{variables=(td)} is rejected outright ("Cannot
-                //     include a length-of-month type variable as both a
-                //     regression variable and a prior adjustment");
-                //   * editor.f:2277 (.not.Lmodel) -- regression{} with no
-                //     arima{}/automdl{} is rejected outright ("A spec that
-                //     requires modeling was found ... but no provision for an
-                //     ARIMA model");
-                //   * x11ari.f:110 (a constant series) -- the oracle refuses
-                //     the run and writes no tables at all, so there is nothing
-                //     to gate against;
-                //   * xrgdrv.f:80 -- runs with Ixreg==2, which the tdlom call
-                //     site above already excludes, and it zeroes/restores
-                //     Priadj around itself anyway.
-                // Left fatal rather than guessed at. If a route is ever found,
-                // the body is the six lines at tdlom.f:52-58.
-                x11_not_ported(ctx, "x11pt2 tdlom Adjtd==0 LOM removal");
-                return;
+                // tdlom.f:44-59, the Adjtd != 1 branch. REACHED BY
+                // `regression{noapply=(td)}`, which sets Adjtd = -1 and leaves
+                // it there (chkadj.f:157-158 only move Adjtd between 0 and 1).
+                //
+                // This block carried a written-out proof that the branch was
+                // unreachable, and the proof was sound for every route it
+                // considered. It could not consider this one: `noapply=` was
+                // in the ARGDIC with no case in the reader, so the argument was
+                // consumed and thrown away and no spec could set Adjtd < 0.
+                // GENERALIZABLE: a reachability argument is only valid over the
+                // options the PARSER actually honours -- a dropped option
+                // silently removes edges from the graph you are reasoning about,
+                // and the analysis then proves something narrower than it looks.
+                // The four routes it did rule out are kept below; they remain
+                // correct, and none of them is this one.
+                //
+                // The arithmetic: put the prior back into BOTH the original and
+                // the calendar-adjusted series, replace Sprior with the user
+                // prior alone (Adjtmp, i.e. the LOM/leap part removed), then
+                // take that back out of both. Net effect is to strip the
+                // length-of-month factor while leaving any user prior applied.
+                // Priadj goes to 0 here, NOT to -Priadj as on the Adjtd==1 arm
+                // above -- the ssprep/restor pair keys on the sign, so the two
+                // arms leave genuinely different state behind.
+                addmul(stcsi, stcsi, sprior, pos1bk, n2, muladd);
+                addmul(stocal, stocal, sprior, pos1bk, n2, muladd);
+                copy(adjtmp + (adjc.setpri - 1), adjc.nadj, 1,
+                     sprior + (adjc.setpri - 1));
+                divsub(stcsi, stcsi, sprior, pos1bk, n2, muladd);
+                divsub(stocal, stocal, sprior, pos1bk, n2, muladd);
+                ctx.prior.priadj = 0;
             }
+            // The pre-existing reachability analysis, retained as prose: these
+            // four routes to Adjtd != 1 with Nflwtd>0 and Priadj>1 really are
+            // closed by the oracle, and re-deriving them is not free.
+            //   * chkadj.f:209 (a transform that is neither log nor identity)
+            //     -- the automatic lom/leap prior that makes Priadj>1 exists
+            //     only under `td`+log, and an EXPLICIT transform{adjust=lom|
+            //     lpyear} alongside regression{variables=(td)} is rejected
+            //     outright ("Cannot include a length-of-month type variable as
+            //     both a regression variable and a prior adjustment");
+            //   * editor.f:2277 (.not.Lmodel) -- regression{} with no arima{}/
+            //     automdl{} is rejected outright;
+            //   * x11ari.f:110 (a constant series) -- the oracle refuses the
+            //     run and writes no tables, so there is nothing to gate;
+            //   * xrgdrv.f:80 -- runs with Ixreg==2, which the tdlom call site
+            //     above already excludes.
         } else {
             // Nflwtd==0 (x11pt2.f:125-128): strip LOM from Stocal directly.
             divsub(stocal, stocal, sprior, pos1bk, n2, muladd);

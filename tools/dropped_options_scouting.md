@@ -30,7 +30,7 @@ guess:
 
 | argument | keys moved | what it does |
 |---|---:|---|
-| **`regression{noapply=}`** | **70** | estimate the regressor but do NOT remove its effect from the series. `d11.f` 0.54795 → 0.62289 |
+| ~~`regression{noapply=}`~~ | ~~70~~ | **CLOSED** — see below |
 | **`regression{tcrate=}`** | 64 | the TC outlier decay rate |
 | **`forecast{lognormal=}`** | 33 | log-normal forecast bias correction |
 | **`spectrum{start=}`** | 30 | `Bgspec` override — the diagnostic span start |
@@ -92,15 +92,35 @@ Recorded because both are easy to rebuild:
    field-by-field with a 1e-6 relative bound; the question here is "did the
    engine do the same THING", and the parity gates answer bit-exactness.
 
+## `regression{noapply=}` — CLOSED, and it was NOT parse-only
+
+The prediction that it would be parse-only was wrong in an instructive way. The
+parse is three dozen lines and `chkadj`'s `< 0` handling was indeed already
+ported — but `noapply=(td)` then **fatalled the engine** on a wall that
+`x11parts.cpp` carried a written-out proof was UNREACHABLE.
+
+The proof was sound for the four routes it considered (`chkadj.f:209`,
+`editor.f:2277`, `x11ari.f:110`, `xrgdrv.f:80`) and it could not consider this
+one, because `noapply=` was consumed and discarded and therefore no spec could
+set `Adjtd < 0`.
+
+**A reachability argument is only valid over the options the PARSER honours.** A
+dropped option silently deletes edges from the graph being reasoned about, so
+the analysis proves something strictly narrower than it appears to. Any "this
+branch is unreachable" claim in this port should be re-checked against the
+dropped-option list above before it is trusted.
+
+`tdlom.f:44-59` is now ported (six lines; note it sets `Priadj = 0` where the
+`Adjtd==1` arm sets `-Priadj`, and ssprep/restor key on that sign). Gated by
+`generated/airline_noapply-{td,ao,ls,holiday}`; **CB-29** records the dictionary
+defect that makes `noapply=(seasonal)` unusable.
+
 ## Suggested order
 
-1. `regression{noapply=}` — biggest blast radius, and it is a documented,
-   ordinary user option (`chkadj`'s Adj* indicators, which are already ported —
-   this is likely a parse-only fix).
-2. `forecast{lognormal=}` and `regression{tcrate=}`/`{eastermeans=}` — same
+1. `forecast{lognormal=}` and `regression{tcrate=}`/`{eastermeans=}` — same
    class, self-contained.
-3. `estimate{outofsample=}` — cheapest correct action is to make the existing
+2. `estimate{outofsample=}` — cheapest correct action is to make the existing
    wall REACHABLE (parse it, then fatal) so it stops reporting a mislabelled
    within-sample answer. Porting the arithmetic is separate.
-4. The four `spectrum{}` grid arguments together — they share `mkfreq`.
-5. `outlier{tcrate=}`'s DIFFERS, which needs diagnosis before it can be scoped.
+3. The four `spectrum{}` grid arguments together — they share `mkfreq`.
+4. `outlier{tcrate=}`'s DIFFERS, which needs diagnosis before it can be scoped.

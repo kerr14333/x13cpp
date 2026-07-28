@@ -747,6 +747,11 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     static const int urgptr[17] = {1, 9, 17, 19, 22, 25, 31, 38, 46, 54, 62,
         70, 72, 74, 76, 86, 90};
     constexpr int PURG = 16;
+    // noapply dictionary (getreg.f:97/110). See the argidx==12 branch for why
+    // entry 5 reads `userseasonal` -- it is transcribed, not mistyped.
+    constexpr int PMODEL = 8;
+    static const char MDLDIC[] = "tdaolsholidayuserseasonalusertcso";
+    static const int mdlptr[PMODEL + 1] = {1, 3, 5, 7, 14, 26, 30, 32, 34};
     // centeruser dictionary (getreg.f:103).
     static const char URRDIC[] = "meanseasonal";
     static const int urrptr[3] = {1, 5, 13};
@@ -826,6 +831,44 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                    ctx.arima.bgusrx.data(), nelt, argok, inptok);
             if (ctx.error.lfatal) return;
             hvstrt = argok && nelt > 0;
+        } else if (argidx == 12) {   // noapply (getreg.f:289-317)
+            // "Estimate this regressor but do NOT remove its effect from the
+            // series": each named group's Adj* indicator is set to -1, and
+            // chkadj.f:27-33 then reads `< 0` to clear the matching Fin* flag
+            // and to decide whether ANY effect is being removed at all.
+            //
+            // MDLDIC is transcribed verbatim, and it has a defect worth knowing
+            // about before reading the table below as a typo: entry 5 is the
+            // twelve-character token `userseasonal`, not `user` + `seasonal`.
+            // The names ran together and mdlptr was built around the result, so
+            // `noapply=(seasonal)` is REJECTED by the oracle and the only way to
+            // reach Adjsea is to write `noapply=(userseasonal)`. Measured on the
+            // oracle: td/ao/ls/holiday each move d11.f to a distinct value,
+            // `seasonal` errors, `userseasonal` parses. See CB-29.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            int mdlind[PMODEL];
+            int nelt = 0;
+            gtdcvc(ctx, LPAREN, true, PMODEL, MDLDIC, mdlptr, PMODEL,
+                   "Choices for the noapply argument are td, ao, ls, holiday, "
+                   "or user.", mdlind, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                auto& J = ctx.x11adj;
+                for (int i = 1; i <= nelt; ++i) {
+                    switch (mdlind[i - 1]) {
+                    case 1: J.adjtd = -1; break;
+                    case 2: J.adjao = -1; break;
+                    case 3: J.adjls = -1; break;
+                    case 4: J.adjhol = -1; break;
+                    case 5: J.adjsea = -1; break;   // the `userseasonal` token
+                    case 6: J.adjusr = -1; break;
+                    case 7: J.adjtc = -1; break;
+                    case 8: J.adjso = -1; break;
+                    default: break;
+                    }
+                }
+            }
         } else if (argidx == 13) {   // usertype (getreg.f:321)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             bool argok = true;
