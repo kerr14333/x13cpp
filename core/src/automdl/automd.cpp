@@ -1,12 +1,21 @@
-// automd.cpp -- automd.f driver. See automd.hpp for the two paths (plain
-// identification spine vs. the full aictest finalization) and scope/deferred
-// features. The plain path mirrors automd.f: default airline model -> chkmu
-// (mean test) -> iddiff (differencing) -> amdid (ARMA orders) -> re-add the
-// mean when significant -> final estimate. The aictest path (automd.f l.322-
-// 982, Lidotl=F) additionally runs block-1/2/3 tdaic/easaic, the a0/ismd0
-// revert via rmfix/addfix/ssprep/restor, tstmd1, and the label-30 finalization
-// tail (pass0/chkrt1/redomd/testodf/tstmd2/autoer) -- see automd_finalize.cpp
-// for those primitives.
+// automd.cpp -- automd.f driver. See automd.hpp for scope/deferred features.
+//
+// automd.f has ONE path: label 10 -> iddiff -> amdid -> label 40 -> label 30
+// finalization -> label 70. The AIC tests are conditional BLOCKS inside that
+// flow, not a branch around it. This driver splits them for readability, and
+// the split has bitten once already: the label-30 finalization tail
+// (pass0/chkrt1/redomd/testodf/tstmd2/autoer) used to be called only from the
+// aictest branch, so a plain `automdl{}` spec silently skipped the unit-root
+// redomd, the over-differencing check, the residual-mean Constant add and the
+// insignificant-lag drop. Both branches now converge on
+// automd_finalize_tail(); keep it that way. Primitives are in
+// automd_finalize.cpp.
+//
+// Plain path: default airline model -> chkmu (mean test) -> iddiff
+// (differencing) -> amdid (ARMA orders) -> re-add the mean when significant ->
+// final estimate -> finalization tail. The aictest path (automd.f l.322-982,
+// Lidotl=F) additionally runs block-1/2/3 tdaic/easaic, the a0/ismd0 revert via
+// rmfix/addfix/ssprep/restor, and tstmd1.
 #include "automdl/automd.hpp"
 
 #include "automdl/adqtst.hpp"        // mdlchk, tstmd1, tstmd2, testodf, bkdfmd
@@ -340,34 +349,24 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
 
     bool inptok = true;
 
-    // ---- Two automdl{} arguments are parsed (gtauto.f labels 180/190) but are
-    // consumed ONLY by the model-adequacy stage this driver does not port (see
-    // the closing note at the end of this file, automd.f:577-850). Measured
-    // engine-vs-oracle on ukgas and the CES probe series, they moved the oracle
-    // by 17-66 .udg keys and the engine by zero, i.e. the run came back
+    // ---- `noautooutlier` is parsed (gtauto.f label 190) but consumed only at
+    // automd.f:577, where it selects tstmd1 over the amidot path -- and this
+    // driver reaches tstmd1 only from its aictest branch. Measured
+    // engine-vs-oracle on ukgas and the CES probe series it moved the oracle by
+    // 28-79 .udg keys and the engine by zero, i.e. the run came back
     // `OUTCOME: OK` carrying the DEFAULT model. Fatal instead: an unported
     // computation behind a silently-accepted argument is the one shape this
-    // port has repeatedly been bitten by.
+    // port has repeatedly been bitten by. Undocumented, incidentally -- it
+    // appears nowhere in the 306-page reference manual, only in gtauto.f's
+    // NOTDIC.
     //
-    //   urfinal       -- the FINAL unit root test threshold. The manual: "if
-    //                    the magnitude of an AR root for the final model is
-    //                    less than this number, a unit root is assumed". That
-    //                    test is chkrt1 at automd.f:717 -- inside the stage.
-    //   noautooutlier -- selects tstmd1 (automd.f:577) over the amidot path.
-    //                    Undocumented: it appears nowhere in the 306-page
-    //                    reference manual, only in gtauto.f's NOTDIC.
+    // Keyed to the NON-DEFAULT value, so every existing spec is unaffected
+    // (noautooutlier=same).
     //
-    // Both are keyed to the NON-DEFAULT value, so every existing spec and the
-    // whole corpus are unaffected (urfinal 1.05 / noautooutlier=same).
-    if (ar.ubfin != 1.05) {
-        errhdr(ctx);
-        writln(ctx,
-               "ERROR: automdl{urfinal=} not yet ported (automd.f:717 chkrt1, "
-               "in the unported model-adequacy stage).",
-               stdio::STDERR, ctx.units.mt2, true);
-        abend(ctx);
-        return;
-    }
+    // `urfinal` used to be fatal alongside it, for the same stated reason. It
+    // is not any more: its consumer is chkrt1 (automd.f:717), which lives in
+    // the label-30 finalization tail, and that tail now runs on this path too.
+    // Gated by generated/{ukgas,ces_accfood}_automdl-urfinal.
     if (!ar.lotmod) {
         errhdr(ctx);
         writln(ctx,
@@ -755,6 +754,19 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             if (ctx.error.lfatal) return;
         }
     }
+
+    // ---- label 30 onward: the shared finalization tail (automd.f:654-983).
+    // automd.f has ONE path -- label 10 -> iddiff/amdid -> label 40 -> label 30
+    // -- and the AIC tests are conditional BLOCKS inside it, not a separate
+    // branch. This driver split them into an aic / non-aic branch and reached
+    // the tail only from the aic one, so a plain `automdl{}` spec ran neither
+    // chkrt1's unit-root redomd, nor testodf, nor the residual-mean Constant
+    // add, nor tstmd2's insignificant-lag drop. kstep is 1 here: automd.f:366
+    // sets it unconditionally, before label 10.
+    automd_finalize_tail(ctx, trnsrs, frstry, nefobs, a, na, lpr, ldr, lqr, lps,
+                         lds, lqs, lmu, /*kstep=*/1);
+    if (ctx.error.lfatal) return;
+
     // DEFERRED (non-ismd0 aictest + non-aictest adequacy):
     //
     // 1. Non-default-model aictest series (automd.f:378-648). The block-1 AIC tests
@@ -768,13 +780,23 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     //    the fxreg dictionary + ssprep/restor are only needed for that faithful
     //    nloop (this driver uses a ctx snapshot for the ismd0 revert instead).
     //
-    // 2. Model-adequacy stage (tstmd1 revert + redomd/testodf finalization + final
-    //    re-estimate, automd.f:577-850). tstmd1/bkdfmd/testodf are ported
-    //    (automdl/adqtst.cpp) and tstmd1 correctly reverts usdeaths/region to the
-    //    airline default, but wiring only tstmd1 broke parity on the non-revert
-    //    cases: the oracle re-estimates AFTER tstmd1, so tstmd1's intermediate fit
-    //    must not be the reported one. Wire the whole finalization together (see
-    //    automdl_scouting.md 3c / FABLE_REVIEW.md).
+    // 2. tstmd1 on THIS path (automd.f:576-582, label 40's `ELSE IF(.not.ismd0)`
+    //    arm). The label-30 finalization tail that used to be listed here as
+    //    unported is now wired -- see the call above; wiring it closed
+    //    `urfinal`, `checkmu` and `cancel` and moved `mixed`/`maxdiff` on part
+    //    of the probe set. What is still missing is the branch AHEAD of it:
+    //    label 40 dispatches `IF(Lidotl) amidot ELSE tstmd1`, and this path runs
+    //    neither. Lidotl is true by default (Lotmod forces a BIGCV AO scan that
+    //    finds nothing), so the default is observationally fine; the tstmd1 arm
+    //    is what `automdl{noautooutlier=tramo}` selects, and that argument is
+    //    fatal above rather than silent.
+    //
+    //    The earlier note here said wiring tstmd1 alone broke parity because the
+    //    oracle re-estimates AFTER it -- that re-estimate is exactly what the
+    //    tail now provides, so the two have to land together. tstmd1 also needs
+    //    blpct0/rvr0/rtval0/adj0/trns0/tair, which automd.f:322-344 computes
+    //    UNCONDITIONALLY and this driver computes only inside `if (aic)`; that
+    //    block has to be hoisted first.
     //
     // The identified model is left estimated in ctx.
 }

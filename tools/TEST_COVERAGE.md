@@ -91,11 +91,13 @@ list; it is the one that gets updated per feature.)*
 - **pickmdl** (X-11-ARIMA model selection) — still parse-only (M1). **1 corpus
   spec** (`extra/airline_pickmdl`), not the 5 previously claimed, but it is the
   largest single source of real feature skips (9).
-- **`automdl{}`'s model-adequacy + nloop stage** (`automd.f:577-850` and the
-  `pass2` call at `:665`). Every leaf is ported; the wiring is not, because the
-  oracle re-estimates after `tstmd1`. Blocks the remaining `automdl{}` option
-  surface — see `tools/automdl_scouting.md` §3c and
-  `tools/dropped_options_scouting.md` round 3.
+- **`automdl{}`'s label-40 `tstmd1` arm and the `pass2`/nloop call at `:665`.**
+  Narrowed 2026-07-28b: the label-30 finalization tail previously listed here
+  was ported all along and merely unreachable on the plain (non-aictest) path —
+  wiring the existing call closed `urfinal`, `checkmu` and `cancel`. What
+  remains blocks `noautooutlier` (fatal) and `ljungboxlimit` (fatal), and leaves
+  `mixed`/`maxdiff`/`maxorder` partly wrong. See `tools/automdl_scouting.md`
+  §3c and `tools/dropped_options_scouting.md` round 3.
 - **`composite{}` SEATS branch** (`agr3s.f`), pseudo-additive, and the
   forced/rounded indirect series. The X-11 composite front (direct + indirect
   + comparison statistics + indirect diagnostics) is CLOSED and gated.

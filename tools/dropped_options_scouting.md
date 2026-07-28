@@ -216,6 +216,37 @@ and nloop stages** (`:577-850` and the `pass2` call at `:665`), which
 *only* there. **Stop adding parse cases expecting matches — the remaining
 automdl option surface is gated on that one port.**
 
+### Round 4 — the blocker was one unreachable CALL, and the table above is now wrong
+
+The shared-cause claim held. The sizing did not: there was **no unported
+stage**. `automd_finalize_tail` — `mdlchk` / `pass0` / `chkrt1`+redomd /
+`testodf` / the residual-mean Constant / the `tstmd2` drop loop, i.e.
+`automd.f:654-983` — was already ported and already bit-exact, and was simply
+never called on the plain (non-aictest) path. `automd.f` has one path with the
+AIC tests as conditional blocks *inside* it; this driver had branched around it.
+One added call, re-measured on the same probe set:
+
+| argument | round 3 | round 4 |
+|---|---|---|
+| `urfinal` | FATAL | **applied** — fatal removed, gated |
+| `checkmu` | DIFFERS | **applied** (ukgas); harness-blind elsewhere |
+| `cancel` | DIFFERS | **applied** (nottem); inert elsewhere |
+| `mixed` | DIFFERS | applied (ukgas); DIFFERS on 3 |
+| `maxdiff` | DIFFERS | applied (ces_leis); DIFFERS on 3 |
+| `maxorder` | DIFFERS | unchanged |
+| `noautooutlier` | FATAL | FATAL — needs label 40's `tstmd1` arm |
+| `ljungboxlimit` | FATAL | FATAL — needs `pass2`/nloop, genuinely unported |
+
+Zero regressions (5509 → 5516 passing). Gated by
+`generated/{ukgas,ces_accfood}_automdl-urfinal`, mutation-tested.
+
+**"Unported" and "unreachable" present identically** — an option that moves the
+oracle and not the engine — **and cost three orders of magnitude apart.** The
+closing note in `automd.cpp` had asserted "unported" for two sessions on the
+strength of a single failed experiment (wiring `tstmd1` alone, whose *missing*
+re-estimate is precisely what the tail supplies). Read the call graph before
+sizing.
+
 ## Where the seven actually stand
 
 | argument | after the port | why |

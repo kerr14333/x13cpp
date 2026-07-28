@@ -224,6 +224,53 @@ rather than declaring the group closed.
 
 Both usdeaths and region remain gated on identification only until it lands.
 
+### UPDATE 2026-07-28b — the blocker was a BRANCH, not a missing port
+
+The hypothesis above was **half right, and the framing was wrong**. There was no
+unported "stage". `automd_finalize_tail` — `mdlchk` / `pass0` / `chkrt1`+redomd /
+`testodf` / the residual-mean Constant add / the `tstmd2` lag-drop loop, i.e.
+`automd.f:654-983` — **was already ported and already bit-exact.** It was simply
+unreachable on the plain path.
+
+`automd.f` has **one** path: label 10 → iddiff → amdid → label 40 → label 30 →
+label 70, with the AIC tests as conditional *blocks* inside it. This driver
+split them into an `if (aic)` branch and a non-aic branch and called the tail
+from the aic branch only (`automd.cpp`, sole call site). So every plain
+`automdl{}` spec skipped the unit-root redomd, the over-differencing check, the
+residual-mean Constant and the insignificant-lag drop — silently, because on the
+corpus series those are all no-ops and the whole suite stayed green.
+
+**One call, added on the non-aic path. Measured before/after** on the round-2/3
+probe set (ukgas, nottem, ces_leis, ces_accfood):
+
+| argument | before | after |
+|---|---|---|
+| `urfinal` | FATAL | **applied** on all 3 series where the oracle moves |
+| `checkmu` | DIFFERS | **applied** (ukgas); harness-blind elsewhere |
+| `cancel` | DIFFERS | **applied** (nottem); inert elsewhere |
+| `mixed` | DIFFERS | applied (ukgas); still DIFFERS on 3 |
+| `maxdiff` | DIFFERS | applied (ces_leis); still DIFFERS on 3 |
+| `maxorder` | DIFFERS | unchanged |
+
+Zero regressions (5509 → 5516 passing, the +7 being the two new `urfinal`
+gates). `urfinal`'s fatal is removed and gated by
+`generated/{ukgas,ces_accfood}_automdl-urfinal`; mutation-tested (hardcoding
+`chkrt1`'s limit to the 1.05 default fails 4 of 7).
+
+**Still open here:** label 40 itself — `IF(Lidotl) amidot ELSE tstmd1` — is not
+wired on the plain path. `Lidotl` is true by default (Lotmod's BIGCV AO scan),
+so the default is observationally fine; the `tstmd1` arm is what
+`noautooutlier=tramo` selects, and that stays fatal. It needs
+`automd.f:322-344`'s default-model `rgarma`/`mdlchk`/`armats` hoisted out of
+`if (aic)` first, for `blpct0`/`rvr0`/`rtval0`/`adj0`/`trns0`/`tair`.
+
+**The generalizable bit: "the routine is unported" and "the routine is
+unreachable" produce the same symptom — an option that moves the oracle and not
+the engine — and the fix costs are three orders of magnitude apart.** The
+closing note in `automd.cpp` had asserted the former for two sessions on the
+strength of one failed experiment (wiring `tstmd1` alone). Check the call graph
+before sizing the port.
+
 ## 4. First corpus gate target
 
 `tests/corpus/census-examples/03-automdl.spc` — the canonical automdl example.
