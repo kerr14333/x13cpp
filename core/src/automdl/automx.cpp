@@ -527,7 +527,9 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         if (mdskip) continue;
 
         // ---- score the candidate (automx.f:562-628) ----------------------
-        aape_diagnostics(ctx, trnsrs);
+        // automx.f:575 passes `argok` as Lauto: on the out-of-sample path a
+        // failed re-estimation clears it and the candidate is dropped.
+        aape_diagnostics(ctx, trnsrs, &argok);
         if (ctx.error.lfatal) return;
         const bool fctok = ctx.aape.ok;
         const double mape4 = ctx.aape.mape[3];

@@ -47,6 +47,7 @@ struct arima_cmn {
     bool cvtype;  // Cvtype
     bool lognrm;  // Lognrm
     int outest;   // gtestm.f's outest -- estimate{outofsample=}, NOTSET if unset
+    int outamd;   // gtautx.f's outamd -- pickmdl{outofsample=}, NOTSET if unset
     bool rmcnst;  // Rmcnst
     bool ch2tst;  // Ch2tst
     x13::farray2<int, 3, 2> dflist;  // Dflist(PDFLG,2)

@@ -174,6 +174,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.arima.ciprob = 0.95;          // gtinpt.f: Ciprob=.95D0
     ctx.arima.lognrm = false;         // gtinpt.f: Lognrm=F
     ctx.arima.outest = prm::NOTSET;   // gtestm.f outest; gtinpt.f:1202 resolves
+    ctx.arima.outamd = prm::NOTSET;   // gtautx.f outamd; same resolution
     // Outlier-identification defaults (gtinpt.f 304-421); gt_outlier overrides
     // when an outlier{} spec is present.
     ctx.arima.ltstao = false;
@@ -787,6 +788,29 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
         // The parse-tail rules above (gtinpt.f:1151) can still ARM Ldestm after
         // the dispatch loop has made its last copy, so re-publish it here.
         ctx.arima.ldestm = ldestm;
+
+        // gtinpt.f:1203-1216 -- resolve the two out-of-sample switches. Each spec
+        // supplies at most one (`estimate{outofsample=}` -> outest,
+        // `pickmdl{outofsample=}` -> outamd), and whichever is given sets BOTH
+        // flags; given both, each sets its own. Outfer is what the automatic
+        // model search reads (amdfct's `Lauto` arm), Outfct what everything else
+        // does. Needs Lmodel, so it lives here rather than in either reader.
+        if (lmodel) {
+            const int oe = ctx.arima.outest, oa = ctx.arima.outamd;
+            if (oe == prm::NOTSET && oa == prm::NOTSET) {
+                ctx.arima.outfct = false;
+                ctx.arima.outfer = false;
+            } else if (oe == prm::NOTSET) {
+                ctx.arima.outfer = (oa == 1);
+                ctx.arima.outfct = ctx.arima.outfer;
+            } else if (oa == prm::NOTSET) {
+                ctx.arima.outfct = (oe == 1);
+                ctx.arima.outfer = ctx.arima.outfct;
+            } else {
+                ctx.arima.outfer = (oa == 1);
+                ctx.arima.outfct = (oe == 1);
+            }
+        }
 
         // gtinpt.f:1170 -- a COMPONENT (Iagr 1 or 2; the total is 3) ANDs its own
         // Lx11 into X11agr. One SEATS component is enough to send the total's

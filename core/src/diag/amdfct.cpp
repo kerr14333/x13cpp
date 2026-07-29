@@ -2,27 +2,88 @@
 #include "diag/amdfct.hpp"
 
 #include "common/x13context.hpp"
+#include "gen/model.hpp"           // prm::PRGT* (outlier regressor types)
+#include "regarima/estimate.hpp"   // rgarma
 #include "regarima/forecast.hpp"   // fcstxy
+#include "regarima/regvar.hpp"     // regvar
+#include "specparse/specparse.hpp" // getstr, dlrgef, addate, dfdate, cpyint
+#include "regarima/outlier.hpp"    // rdotlr
 #include "transform/transform.hpp" // invfcn
-#include "numeric/numeric.hpp"     // dpeq
+#include "numeric/numeric.hpp"     // dpeq, daxpy
+#include "x11/slidingspans.hpp"    // ssprep_snapshot / restor_span
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <vector>
 
 namespace x13 {
 
-void aape_diagnostics(X13Context& ctx, const double* trnsrs) {
+namespace {
+
+// amdfct.f:108-115 -- the regressor types the out-of-sample pass strips when
+// they fall inside the three-year window. Two of the listed types are commented
+// out in the Fortran (PRGUAO/PRGULS/PRGUSO and PRGTAS) and are omitted here for
+// the same reason.
+bool is_outlier_type(int t) {
+    return t == prm::PRGTAO || t == prm::PRGTAA || t == prm::PRGTMV ||
+           t == prm::PRGTLS || t == prm::PRGTAL || t == prm::PRGTRP ||
+           t == prm::PRGTTC || t == prm::PRGTAT || t == prm::PRGTSO ||
+           t == prm::PRGTTL || t == prm::PRGTQI || t == prm::PRGTQD ||
+           t == prm::PRSQAO || t == prm::PRSQLS;
+}
+
+// The estimation state amdfct.f:71-79 saves and :285-292 puts back. Everything
+// here is `/mdldat/`; the model span and the regression dictionary are handled
+// separately (Endmdl by hand, the dictionary by ssprep/restor).
+struct EstState {
+    std::vector<double> chlxpx, chlgpg, chlvwp, matd, armacm;
+    double lndtcv = 0.0, lnlkhd = 0.0, var = 0.0;
+};
+
+void save_est(const X13Context& ctx, EstState& s) {
+    const mdldat_cmn& d = ctx.mdldat;
+    s.chlxpx.assign(d.chlxpx.data(), d.chlxpx.data() + d.chlxpx.size());
+    s.chlgpg.assign(d.chlgpg.data(), d.chlgpg.data() + d.chlgpg.size());
+    s.chlvwp.assign(d.chlvwp.data(), d.chlvwp.data() + d.chlvwp.size());
+    s.matd.assign(d.matd.data(), d.matd.data() + d.matd.size());
+    s.armacm.assign(d.armacm.data(), d.armacm.data() + d.armacm.size());
+    s.lndtcv = d.lndtcv;
+    s.lnlkhd = d.lnlkhd;
+    s.var = d.var;
+}
+
+void load_est(X13Context& ctx, const EstState& s) {
+    mdldat_cmn& d = ctx.mdldat;
+    std::copy(s.chlxpx.begin(), s.chlxpx.end(), d.chlxpx.data());
+    std::copy(s.chlgpg.begin(), s.chlgpg.end(), d.chlgpg.data());
+    std::copy(s.chlvwp.begin(), s.chlvwp.end(), d.chlvwp.data());
+    std::copy(s.matd.begin(), s.matd.end(), d.matd.data());
+    std::copy(s.armacm.begin(), s.armacm.end(), d.armacm.data());
+    d.lndtcv = s.lndtcv;
+    d.lnlkhd = s.lnlkhd;
+    d.var = s.var;
+}
+
+}  // namespace
+
+void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
     AapeDiagnostics& out = ctx.aape;
     out = AapeDiagnostics{};
 
-    const model_cmn& m = ctx.model;
-    const mdldat_cmn& d = ctx.mdldat;
+    model_cmn& m = ctx.model;
+    mdldat_cmn& d = ctx.mdldat;
+    arima_cmn& ar = ctx.arima;
     const int sp = m.sp;
     const int nspobs = d.nspobs;
     const int nfc = sp;
     int nobsf = 3 * sp;
     const int nobsot = nspobs - nobsf;
+
+    // amdfct.f:45-50 -- which switch applies. `Lauto` is the automatic-model
+    // caller (automx / idotlr); everything else reads estimate{outofsample=}.
+    const bool outf = lauto ? ar.outfer : ar.outfct;
+    out.outofsample = outf;
 
     // amdfct.f:55-60 -- not enough observations BEFORE the three-year window to
     // have estimated the model there. The oracle prints a NOTE and returns
@@ -39,6 +100,77 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs) {
     const double lam = ctx.arima.lam;
     constexpr int PFCST = 120;   // srslen.prm: 10*PSP
 
+    // amdfct.f:63 -- the working series. Within-sample this is just `Trnsrs`;
+    // out-of-sample the outliers inside the three-year window are subtracted
+    // out of it below, because the model is about to be re-estimated without
+    // them and must not see them in the data either.
+    std::vector<double> tsrs(trnsrs, trnsrs + nspobs);
+
+    EstState saved;
+    int emdl2[2] = {0, 0};
+    if (outf) {
+        // amdfct.f:71-82 -- everything the three re-estimations overwrite.
+        save_est(ctx, saved);
+        ssprep_snapshot(ctx);           // the regression dictionary + coefficients
+        emdl2[0] = ar.endmdl(1);
+        emdl2[1] = ar.endmdl(2);
+
+        // amdfct.f:92-146 -- strip every OUTLIER regressor dated inside the
+        // window from the design, accumulating its fitted contribution into
+        // `fotl` so it can be taken out of the series too. Backwards over the
+        // columns, because dlrgef renumbers everything above the one it deletes.
+        std::vector<double> fotl(static_cast<std::size_t>(ar.nrxy) + 1, 0.0);
+        bool any = false;
+        for (int icol = m.nb; icol >= 1; --icol) {
+            if (!is_outlier_type(m.rgvrtp(icol))) continue;
+            std::string str;
+            int nchr = 0;
+            getstr(ctx, m.colttl.data(), m.colptr.data(), m.ncoltl, icol, str, nchr);
+            if (ctx.error.lfatal) { ar.fctdrp = fdbak; return; }
+            int otltyp = 0, begotl = 0, endotl = 0;
+            bool locok = true;
+            rdotlr(ctx, str.substr(0, static_cast<std::size_t>(nchr)),
+                   ar.begxy.data(), sp, otltyp, begotl, endotl, locok);
+            if (!locok || ctx.error.lfatal) { ar.fctdrp = fdbak; return; }
+            // amdfct.f:127-129 -- a RAMP is judged by its END date, everything
+            // else by its start. (Bckcst would use the mirror test at :129.)
+            constexpr int RP = 4;
+            const bool inwin = (otltyp == RP) ? (endotl > nobsot) : (begotl > nobsot);
+            if (!inwin) continue;
+            daxpy(ar.nrxy, d.b(icol), &d.xy(icol), m.ncxy, fotl.data(), 1);
+            dlrgef(ctx, icol, ar.nrxy, 1);
+            if (ctx.error.lfatal) { ar.fctdrp = fdbak; return; }
+            any = true;
+        }
+        // amdfct.f:148 -- eltfcn(SUB, Trnsrs, fotl, Nspobs, ...).
+        if (any)
+            for (int k = 0; k < nspobs; ++k)
+                tsrs[static_cast<std::size_t>(k)] -= fotl[static_cast<std::size_t>(k)];
+    }
+
+    // A local restore, used by every early exit below once the save has been
+    // taken. Mirrors amdfct.f:270-300 minus the per-year span arithmetic.
+    auto restore = [&]() {
+        if (outf) {
+            ar.endmdl(1) = emdl2[0];
+            ar.endmdl(2) = emdl2[1];
+            ar.endspn(1) = emdl2[0];
+            ar.endspn(2) = emdl2[1];
+            int n = 0;
+            dfdate(ar.endspn.data(), d.begspn.data(), sp, n);
+            d.nspobs = n + 1;
+            ctx.extend.nobspf =
+                std::min(d.nspobs + std::max(nfc - ar.fctdrp, 0), ar.nomnfy);
+            restor_span(ctx);
+            load_est(ctx, saved);
+            int frstry = 0;
+            regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst, 0,
+                   ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
+                   ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+        }
+        ar.fctdrp = fdbak;
+    };
+
     // amdfct.f:161-184 -- the scale the errors are divided by. `ave` is 1
     // unless the ORIGINAL-scale series dips to or below zero in the window, in
     // which case a percentage is meaningless and the oracle switches to an
@@ -52,11 +184,11 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs) {
     double ave = 1.0;
     {
         std::vector<double> tmpsrs(static_cast<std::size_t>(nobsf), 0.0);
-        for (int i = 0; i < nobsf; ++i) tmpsrs[i] = trnsrs[nobsot + i];
+        for (int i = 0; i < nobsf; ++i) tmpsrs[i] = tsrs[static_cast<std::size_t>(nobsot + i)];
         if (ctx.fxreg.nfxttl > 0)
             for (int i = 0; i < nobsf; ++i) tmpsrs[i] += ctx.fxreg.fixfac(nobsot + i + 1);
         invfcn(ctx, tmpsrs.data(), nobsf, fcntyp, lam, tmpsrs.data());
-        if (ctx.error.lfatal) { ctx.arima.fctdrp = fdbak; return; }
+        if (ctx.error.lfatal) { restore(); return; }
         double ad1 = 1.0;
         for (int i = 0; i < nobsf; ++i) ad1 = std::min(ad1, tmpsrs[i]);
         if (ad1 <= 0.0) {
@@ -69,15 +201,52 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs) {
     }
 
     // amdfct.f:186-263 -- one pass per year back.
+    std::vector<double> a(1092, 0.0);
     for (int i = 1; i <= 3; ++i) {
         const int disp = -i * sp;
-        const int fctori = nspobs + disp;
-        nobsf = std::min(nfc, ctx.extend.nobspf - fctori);
-        if (nobsf <= 0) { ctx.arima.fctdrp = fdbak; return; }
+        int fctori;
+        if (outf) {
+            // amdfct.f:196-235 -- OUT OF SAMPLE. Pull the model span end back a
+            // year and RE-FIT, so the forecast is made by a model that has never
+            // seen the period it is forecasting. Note the span shrinks
+            // cumulatively: each pass moves Endmdl one more year back, and the
+            // origin is always the new span's own end.
+            addate(ar.endmdl.data(), sp, -sp, ar.endmdl.data());
+            ar.endspn(1) = ar.endmdl(1);
+            ar.endspn(2) = ar.endmdl(2);
+            int n = 0;
+            dfdate(ar.endspn.data(), d.begspn.data(), sp, n);
+            d.nspobs = n + 1;
+            ctx.extend.nobspf =
+                std::min(d.nspobs + std::max(nfc - ar.fctdrp, 0), ar.nomnfy);
+            fctori = d.nspobs;
+
+            int frstry = 0;
+            regvar(ctx, tsrs.data(), ctx.extend.nobspf, ar.fctdrp, nfc, 0,
+                   ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
+                   ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+            if (ctx.error.lfatal) { restore(); return; }
+
+            int na = 0, nefobs = 0;
+            bool argok = lauto ? *lauto : true;
+            rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a.data(), na, nefobs,
+                   argok);
+            // amdfct.f:227 -- `IF(Lfatal.or.(latemp.and.(.not.Lauto)))RETURN`:
+            // an automatic caller that just lost its model gets the flag back
+            // and the diagnostic is abandoned (Fctok stays false), WITHOUT the
+            // restore block -- the Fortran returns before it.
+            if (lauto && !argok) { *lauto = false; ar.fctdrp = fdbak; return; }
+            if (ctx.error.lfatal) { restore(); return; }
+            nobsf = nfc;
+        } else {
+            fctori = nspobs + disp;
+            nobsf = std::min(nfc, ctx.extend.nobspf - fctori);
+        }
+        if (nobsf <= 0) { restore(); return; }
 
         std::vector<double> fcst(PFCST, 0.0), se(PFCST, 0.0), fdiff(PFCST, 0.0);
         fcstxy(ctx, fctori, nfc, fcst.data(), se.data(), fdiff.data());
-        if (ctx.error.lfatal) { ctx.arima.fctdrp = fdbak; return; }
+        if (ctx.error.lfatal) { restore(); return; }
 
         // subset.f -- the ACTUALs are the dependent-variable column of Xy over
         // the forecast rows. Xy is (Ncxy, Nrxy) in the Fortran, i.e. the last
@@ -101,9 +270,9 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs) {
         }
 
         invfcn(ctx, fcst.data(), nobsf, fcntyp, lam, fcst.data());
-        if (ctx.error.lfatal) { ctx.arima.fctdrp = fdbak; return; }
+        if (ctx.error.lfatal) { restore(); return; }
         invfcn(ctx, tmpsrs.data(), nobsf, fcntyp, lam, tmpsrs.data());
-        if (ctx.error.lfatal) { ctx.arima.fctdrp = fdbak; return; }
+        if (ctx.error.lfatal) { restore(); return; }
 
         double dn = 0.0, acc = 0.0;
         for (int k = 0; k < nobsf; ++k) {
@@ -116,7 +285,13 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs) {
     }
 
     out.mape[3] = (out.mape[0] + out.mape[1] + out.mape[2]) / 3.0;
-    ctx.arima.fctdrp = fdbak;
+    // amdfct.f:270-300. Note what the Fortran does NOT put back: `Nfev`/`Niter`
+    // (the optimizer counters) are left holding the LAST re-estimation's totals,
+    // because the final `rgarma` at :299 is commented out. Measured on the
+    // oracle -- `nfev` 19 -> 13 and `niter` 6 -> 4 with outofsample=yes, on a
+    // run where every other .udg key is unchanged. Reproduced by not restoring
+    // them either.
+    restore();
     out.ok = true;
 }
 

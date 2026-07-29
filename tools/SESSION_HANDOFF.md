@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-29b (composite under SEATS — `agr3s.f` — CLOSED)
+# Session handoff — 2026-07-29b (composite under SEATS + `outofsample=` — CLOSED)
 
 Replaces the 2026-07-29 handoff. Its findings are carried forward below where
 they still matter; its open item 4 (composite `agr3s.f`) is done, and with it
@@ -13,7 +13,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5688 passed / 0 failed / 469 skipped** (~78s) |
+| `python -m pytest tests/parity -q -n 8` | **5715 passed / 0 failed / 469 skipped** (~85s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -25,8 +25,8 @@ changes. Build is ~25s; use `-k "<name>"` (~3s) while iterating.
 Standing constraints, unchanged: **never merge this branch to `main`, never
 push**; **never run `tests/corpus/generated/genspecs.py` or
 `tests/corpus/extra/genextra.py`** (both wipe committed specs they cannot
-regenerate — the six pickmdl specs and both `composite-seats*` corpora are
-hand-authored and say so in a header comment). Build with
+regenerate — the six pickmdl specs, both `composite-seats*` corpora and the
+three `*outofsample*` specs are hand-authored and say so in a header comment). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
 ## This session: `composite{}` under `seats{}` — `agr3s.f`
@@ -104,6 +104,60 @@ observed span and says why at the skip. Everything else is bit-exact.
 composite tail from `run_seats`), through
 `tests/parity/test_composite_seats.py` (50 tests). Mutation-tested three ways,
 each failing a different set.
+
+## This session, part 2: `outofsample=` — amdfct.f's out-of-sample arm
+
+Two options walled in two different places (`estimate{outofsample=}` fataled in
+`run_pre_model`, `pickmdl{outofsample=}` was rejected by the parser) because the
+computation behind both did not exist. Now ported and gated; only amdfct's
+BACKCAST arm is left.
+
+**What the arm does.** For each of the last three years it pulls the model span
+END back another year, **RE-ESTIMATES**, and forecasts one year from the new
+span's end — so each forecast is made by a model that has never seen the period
+it is forecasting, where within-sample forecasts from a past origin of the model
+fitted to everything. The span shrinks cumulatively across the three passes.
+
+**It changes the ANSWER, not just a label.** The aape is the first of pickmdl's
+three acceptance screens: `extra/airline_pickmdl` selects `(0 1 2)(0 1 1)` by
+default and `(0 1 1)(0 1 1)` with the flag on (`nmodel` 3 → 2). The scouting
+doc's claim was right, and this confirms it engine-side.
+
+### Findings worth not re-deriving
+
+1. **`Nfev`/`Niter` are deliberately NOT restored.** amdfct puts back eight
+   pieces of estimation state, the ssprep snapshot and `Endmdl` — but its final
+   `rgarma` (`amdfct.f:299`) is COMMENTED OUT, so the `.udg` reports the LAST
+   re-fit's optimizer counters. Measured: `nfev` 19 → 13, `niter` 6 → 4, on a
+   run where **every other `.udg` key is byte-identical**. Reproduced by not
+   restoring them; `generated/airline_outofsample` pins it.
+2. **The outlier strip is the non-mechanical half.** Before each re-estimation
+   every OUTLIER regressor dated INSIDE the three-year window is deleted from
+   the design (`dlrgef`, backwards, because dlrgef renumbers) and its fitted
+   contribution subtracted out of the series. It has to be: the shortened span
+   no longer contains those dates, so the column would be identically zero. A
+   RAMP is judged by its END date, everything else by its start.
+3. **And then the `ave` scale block reads the STRIPPED series**, not the
+   caller's `Trnsrs`. Easy to miss, because on the within-sample path the two
+   are the same buffer.
+4. On the automatic path `Lauto` is in/out: a failed re-estimation clears it,
+   the candidate is dropped, and the Fortran returns THERE — before the restore
+   block (`amdfct.f:227`). Transcribed.
+
+### Gated by
+
+`generated/airline_outofsample` (the `estimate{}` twin + the `nfev`/`niter`
+pin), `generated/airline_outofsample-otl` (the strip, with an out-of-window
+outlier as the negative control) and `extra/airline_pickmdl-outofsample`.
+Mutation-tested four ways, each failing a different set: force within-sample
+(11), restore the counters (1), never strip (1), strip everything (2).
+
+**A corpus judgment worth knowing:** `-otl` carries no `x11{}` on purpose. Its
+three outlier regressors put the D9A ratios ~4e-10 off the golden — measured
+IDENTICAL on the within-sample twin, so it is the ordinary outlier-estimation
+floor and a property of the spec, not of this feature. `test_d8b_d9a` is
+byte-exact by design, so the spec simply does not carry the adjustment that
+would drag it in; `airline_outofsample` covers the X-11 side.
 
 ## Previous session (2026-07-29a): `pickmdl{}` — what landed
 
@@ -228,7 +282,7 @@ generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5688<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5715<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -250,16 +304,14 @@ not parse.
 
 ## Open, in the order I would take them
 
-1. **`pickmdl{}`'s three remaining walls**, each measured against the oracle and
-   each a clean fatal rather than a silent wrong answer:
-   - `outofsample=yes` (`Outfer`) — needs amdfct's out-of-sample arm
-     (`amdfct.f:70-90`, `:186-235`, `:270-300`), which re-fits the model three
-     times and saves/restores the whole estimation state. **Measured: the
-     oracle picks a DIFFERENT model there** ((0 1 1)(0 1 1) vs the default
-     run's (0 1 2)(0 1 1)), so this is a real gap, not a formality. It would
-     also close `estimate{outofsample=}`, walled for the same reason.
+1. **`pickmdl{}`'s two remaining walls** (its `outofsample=` one closed this
+   session), each measured against the oracle and each a clean fatal:
    - `bcstlim=` / `forecast{maxback=}` — the backcast acceptance pass
-     (`automx.f:903-928`) needs amdfct's `Bckcst` arm. Oracle runs it fine.
+     (`automx.f:903-928`) needs amdfct's `Bckcst` arm, now the only unported
+     part of that routine. It mirrors the out-of-sample arm just landed:
+     advance `Begmdl` instead of retreating `Endmdl`, reverse the Xy design,
+     take the window from the FIRST three years, and judge a ramp by its start
+     rather than its end. Oracle runs the combination fine.
    - per-candidate AIC-regressor testing (`automx.f:404-500`, `:750-870`) and
      the Picktd trading-day restore (`:255-292`, `:700-725`) it drags in.
      Reachable with `regression{aictest=}` alongside `pickmdl{}`.

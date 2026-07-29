@@ -62,7 +62,7 @@ than 1e-5 relative.
 | `method=` | `first` (default `best`) | 156 | 0 | **gated** (`-first`) |
 | `identify=` | `first` + `outlier{}` | 189 | 0 | **gated** (`-identify-first`) |
 | `mode=` | `both` vs `fcst` | **0** | 0 | **INERT, provably** |
-| `outofsample=` | `yes` | (different model) | — | **WALLED** (fatal) |
+| `outofsample=` | `yes` | (different model) | 0 | **gated** (`-outofsample`) |
 | `bcstlim=` | needs `maxback=` | (runs) | — | **WALLED** (fatal) |
 | `print=` / `savelog=` | — | — | — | print surface |
 
@@ -116,17 +116,34 @@ ones — `test_check_diagnostics`, `test_qs_diagnostics`, `test_spectrum_peaks`,
 > contradict itself for several sessions.
 
 
-1. **`outofsample=yes` (`Outfer`).** amdfct's out-of-sample arm
-   (`amdfct.f:70-90`, `:186-235`, `:270-300`) re-fits the model three times over
-   successively shorter spans and saves/restores the entire estimation state
-   (`Chlxpx`/`Chlgpg`/`Chlvwp`/`Matd`/`Armacm`/`Lndtcv`/`Lnlkhd`/`Var` plus the
-   model span). **Measured: the oracle selects a different model with it on**,
-   so this changes the answer, not just a label. Closing it also closes
-   `estimate{outofsample=}`, walled for the same reason.
+1. ~~**`outofsample=yes` (`Outfer`)**~~ — **CLOSED 2026-07-29b**, together with
+   `estimate{outofsample=}`. What it does: for each of the last three years pull
+   the model span end back another year, RE-ESTIMATE, and forecast one year from
+   the new span end, so the forecast is made by a model that has never seen the
+   period it forecasts. Around it, `amdfct.f:71-82`/`:285-292` save and restore
+   `Chlxpx`/`Chlgpg`/`Chlvwp`/`Matd`/`Armacm`/`Lndtcv`/`Lnlkhd`/`Var`, the
+   ssprep snapshot and `Endmdl` -- but NOT `Nfev`/`Niter`, because the final
+   `rgarma` at `:299` is commented out, so the .udg reports the LAST re-fit's
+   optimizer counters. Measured and reproduced (19/6 -> 13/4).
+   Two things the port had to get right beyond transcription: the arm strips
+   every OUTLIER regressor dated inside the three-year window from the design
+   (`dlrgef`) and subtracts its fitted contribution out of the series
+   (`daxpy` -> `fotl` -> `eltfcn SUB`), because the shortened span no longer
+   contains those dates; and the `ave` scale block reads the STRIPPED series,
+   not the caller's `Trnsrs`. **Confirmed the scouting claim: the oracle selects
+   a different model with it on** -- `(0 1 2)(0 1 1)` -> `(0 1 1)(0 1 1)`,
+   `nmodel` 3 -> 2 on `extra/airline_pickmdl`. Gated by
+   `extra/airline_pickmdl-outofsample` plus `generated/airline_outofsample`
+   (the `estimate{}` twin, and the `nfev`/`niter` pin) and
+   `generated/airline_outofsample-otl` (the outlier strip, with an
+   out-of-window outlier as the negative control).
 2. **`bcstlim=` / `forecast{maxback=}`.** `automx.f:903-928` re-scores the
    winner over the backcast span via amdfct's `Bckcst` arm and can un-select it
    for backcasting (`Nbcst=0`, `Pos1bk=Pos1ob`). The oracle runs this
-   combination fine.
+   combination fine. Now the ONLY unported arm of amdfct: `Bckcst` mirrors the
+   out-of-sample one (advance `Begmdl` instead of retreating `Endmdl`, reverse
+   the Xy design, take the window from the FIRST three years and judge a ramp by
+   its start rather than its end).
 3. **Per-candidate AIC-regressor testing** (`automx.f:404-500`, `:750-870`) —
    `tdaic`/`lomaic`/`easaic`/`usraic`/`chkchi` inside the candidate loop, i.e.
    `regression{aictest=}` alongside `pickmdl{}`. It can flip `Picktd` between

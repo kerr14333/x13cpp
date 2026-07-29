@@ -40,11 +40,11 @@ reproduce.
   pickmdl{}: the Picktd per-candidate restore (automx.f:317-323) is not ported.
   *Fortran:* `automx.f:317-323`
 
-- **`core/src/automdl/automx.cpp:593`**
+- **`core/src/automdl/automx.cpp:595`**
   pickmdl{}: the Picktd restore at automx.f:717-724 is not ported.
   *Fortran:* `automx.f:717-724`
 
-- **`core/src/automdl/automx.cpp:646`**
+- **`core/src/automdl/automx.cpp:648`**
   pickmdl{} with forecast{maxback=} is not yet ported: the backcast acceptance pass (automx.f:903-928) needs amdfct's Bckcst arm.
   *Fortran:* `automx.f:903-928`
 
@@ -124,7 +124,7 @@ inventory.
 - **`core/src/automdl/automx.cpp:422`**
   Every pickmdl candidate model failed to estimate.
 
-- **`core/src/automdl/automx.cpp:607`**
+- **`core/src/automdl/automx.cpp:609`**
   pickmdl{}: the selected model failed to re-estimate.
 
 

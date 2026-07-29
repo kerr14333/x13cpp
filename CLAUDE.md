@@ -1483,18 +1483,16 @@ diagnostics front (force / slidingspans / history) is now closed.
   the placement matters, because it forecasts from origins INSIDE the span
   using the design `regvar` has already built, so anything that rebuilds `Xy`
   first would invalidate it. Three things worth knowing:
-  (1) **Only the WITHIN-SAMPLE variant is ported, and that is not a compromise
-  here** -- measured, all 283 goldens that carry the block are
-  `aape.mode: withinsample` and the other 4 are `none`. Out-of-sample re-fits
-  the model three times over successively shorter spans and saves/restores the
-  entire estimation state (`Chlxpx`/`Chlgpg`/`Chlvwp`/`Matd`/`Armacm`/`Lndtcv`/
-  `Lnlkhd`/`Var` plus the model span) around it; it is walled, not
-  approximated. Backcast error likewise. **UPDATE 2026-07-28: the wall was real
-  and unreachable.** `estimate{outofsample=}` was parsed and discarded, so the
-  engine reported the within-sample numbers AND labelled them
-  `aape.mode: withinsample` against the oracle's `outofsample`. The argument is
-  now parsed (`ctx.arima.outest`) and `run_pre_model` FATALS on it. "The
-  computation is walled" and "the option is safe" are different claims.
+  (1) **Only the WITHIN-SAMPLE variant was ported at first** -- all 283 goldens
+  that carry the block are `aape.mode: withinsample` and the other 4 are `none`.
+  Two updates since. **2026-07-28: the wall was real and unreachable.**
+  `estimate{outofsample=}` was parsed and discarded, so the engine reported the
+  within-sample numbers AND labelled them `aape.mode: withinsample` against the
+  oracle's `outofsample` -- "the computation is walled" and "the option is safe"
+  are different claims. **2026-07-29b: the OUT-OF-SAMPLE arm is now ported and
+  gated, closing `estimate{outofsample=}` and `pickmdl{outofsample=}` together;
+  only the BACKCAST arm (`Bckcst`, reached from `pickmdl{bcstlim=}`) is left.**
+  See the dedicated entry below.
   (2) **`ave` is seeded to ONE and then accumulated into**, so on the branch
   that uses it the divisor is `(1 + sum|x|)/n` rather than the mean -- a Census
   defect, reachable only on a series that dips to or below zero in the window
@@ -2046,5 +2044,51 @@ diagnostics front (force / slidingspans / history) is now closed.
   came with it: `x11ari.f:329-374` is now `driver/composite_tail.cpp`, called
   from BOTH drivers, because the oracle has one x11ari and this block sits after
   its Lseats/Lx11 branch rejoins.
+- **`estimate{outofsample=}` / `pickmdl{outofsample=}` -- amdfct.f's
+  OUT-OF-SAMPLE arm -- CLOSED (bit-exact), and it is not a label change.**
+  Both options were walled, one in the parser and one in the driver, because the
+  computation behind them did not exist. What the arm does: for each of the last
+  three years it pulls the model span END back another year, **RE-ESTIMATES**,
+  and forecasts one year from the new span's end -- so each forecast is made by
+  a model that has never seen the period it is forecasting, where the
+  within-sample variant forecasts from a past origin of the model fitted to
+  everything. The span shrinks CUMULATIVELY across the three passes.
+  Ported in `core/src/diag/amdfct.cpp` (`amdfct.f:70-90`, `:186-235`,
+  `:270-300`) plus `gtinpt.f:1203-1216`'s resolution of the two switches into
+  `Outfct`/`Outfer` -- whichever spec supplies one sets BOTH flags, and given
+  both, each sets its own. Four things worth knowing:
+  (1) **It changes the ANSWER on the pickmdl path, not just a diagnostic.** The
+  aape is the first of pickmdl's three acceptance screens, so
+  `extra/airline_pickmdl` selects `(0 1 2)(0 1 1)` by default and
+  `(0 1 1)(0 1 1)` with `outofsample=yes` (`nmodel` 3 -> 2).
+  (2) **`Nfev`/`Niter` are deliberately NOT restored.** amdfct saves and puts
+  back eight pieces of estimation state, the ssprep snapshot and `Endmdl`, but
+  its final `rgarma` (`amdfct.f:299`) is COMMENTED OUT -- so the `.udg` reports
+  the LAST re-fit's optimizer counters, not the main run's. Measured on the
+  oracle: `nfev` 19 -> 13 and `niter` 6 -> 4 with the flag on, on a run where
+  **every other `.udg` key is byte-identical**. Reproduced by not restoring them.
+  (3) **The outlier strip is the non-mechanical half.** Before each re-estimation
+  every OUTLIER regressor DATED INSIDE the three-year window is deleted from the
+  design (`dlrgef`, backwards over the columns because dlrgef renumbers) and its
+  fitted contribution subtracted out of the series (`daxpy` into `fotl`, then
+  `eltfcn SUB`) -- it has to be, because the shortened span no longer contains
+  those dates and the column would be identically zero. A RAMP is judged by its
+  END date and everything else by its start. **And the `ave` scale block then
+  reads the STRIPPED series, not the caller's `Trnsrs`** -- easy to miss, since
+  the two are the same buffer on the within-sample path.
+  (4) On the automatic path `Lauto` is in/out: a failed re-estimation clears it
+  and the candidate is dropped, and the Fortran returns THERE, before the
+  restore block (`amdfct.f:227`). Transcribed.
+  Gated by `generated/airline_outofsample` (the `estimate{}` twin + the
+  `nfev`/`niter` pin), `generated/airline_outofsample-otl` (the strip, with an
+  out-of-window outlier as the negative control) and
+  `extra/airline_pickmdl-outofsample`. Mutation-tested four ways, each failing a
+  different set: force within-sample (11), restore the counters (1), never strip
+  (1), strip everything (2). **Corpus note:** the `-otl` spec carries no `x11{}`
+  on purpose -- three outlier regressors put its D9A ratios ~4e-10 off the
+  golden, measured IDENTICAL on the within-sample twin, i.e. the ordinary
+  outlier-estimation floor and a property of the spec rather than of this
+  feature; `test_d8b_d9a` is byte-exact by design, so the spec simply does not
+  carry the adjustment that would drag it in.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

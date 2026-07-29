@@ -737,28 +737,10 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // design regvar has already built, so it must run before anything
             // rebuilds Xy for the real forecast. Gated on Var>0 (arima.f:872).
             if (ctx.mdldat.var > 0.0) {
-                // gtinpt.f:1202-1216 -- `Outfct` selects the OUT-OF-SAMPLE
-                // variant. Only the within-sample one is ported (amdfct.f's
-                // out-of-sample arm re-fits the model over three successively
-                // shorter spans and saves/restores Chlxpx/Chlgpg/Chlvwp/Matd/
-                // Armacm/Lndtcv/Lnlkhd/Var and the model span around each).
-                //
-                // This is a FATAL and not a silent default on purpose. The wall
-                // in amdfct.cpp already existed; what did not was any way to
-                // REACH it, because estimate{outofsample=} was consumed and
-                // discarded -- so the engine reported the within-sample numbers
-                // AND labelled them `aape.mode: withinsample` against the
-                // oracle's `outofsample`. A caller checking the mode field was
-                // told the wrong thing, which is worse than being told nothing.
-                if (ctx.arima.outest == 1) {
-                    errhdr(ctx);
-                    writln(ctx,
-                           "ERROR: estimate{outofsample=yes} not yet ported "
-                           "(amdfct.f out-of-sample aape).",
-                           stdio::STDERR, ctx.units.mt2, true);
-                    abend(ctx);
-                    return false;
-                }
+                // gtinpt.f:1203-1216 -- `Outfct` (resolved in gtinpt from
+                // estimate{outofsample=}) selects the OUT-OF-SAMPLE variant;
+                // amdfct reads it itself. This is the non-automatic caller, so
+                // no `lauto`.
                 aape_diagnostics(ctx, trnsrs.data());
                 if (ctx.error.lfatal) return false;
             }

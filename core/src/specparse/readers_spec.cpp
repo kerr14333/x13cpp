@@ -3409,6 +3409,7 @@ void gt_pickmdl(X13Context& ctx, bool& inptok) {
                    ivec, nelt, argok, inptok);
             if (ctx.error.lfatal) return;
             if (argok && nelt > 0) outamd = ivec[0];
+            // published to ctx below; gtinpt's tail resolves Outfer/Outfct
             continue;
         case 10:  // identify = first | all (gtautx.f:207-213)
             gtdcvc(ctx, LPAREN, true, 1, IDDIC, idptr, 2,
@@ -3431,18 +3432,9 @@ void gt_pickmdl(X13Context& ctx, bool& inptok) {
     if (iautom == 0) iautom = 1;
     if (iautom > 0) ar.lautox = true;
 
-    // gtinpt.f:1204-1216: outamd feeds Outfer, which amdfct reads on the
-    // AUTOMATIC path (`Lauto` true -> `outf = Outfer`). The out-of-sample
-    // forecast-error computation is walled in the ported amdfct, so this is a
-    // clean fatal rather than a silent within-sample answer under an
-    // outofsample label.
-    if (outamd == 1) {
-        inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
-               "pickmdl{outofsample=yes} is not yet supported: the "
-               "out-of-sample forecast-error computation (amdfct.f:70-90, "
-               ":186-235) is unported.");
-        inptok = false;
-    }
+    // gtinpt.f:1204-1216 resolves outamd (this spec) and outest (estimate{})
+    // into Outfer/Outfct at the parse tail, where BOTH are known. Publish it.
+    ar.outamd = outamd;
 }
 
 // ---- x11regression{} (gtxreg.f) -------------------------------------------
