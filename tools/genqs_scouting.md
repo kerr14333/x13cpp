@@ -144,6 +144,17 @@ Mutation-tested twice: a 1% perturbation of `calcqs` fails 113 of 157, of
 
 ## What is still open
 
+> **Status here is NOT authoritative.** This section records what was *measured*
+> — the cost, the preconditions, the Fortran a future increment has to
+> reproduce. That is durable. Whether an item is still open is not: the
+> authoritative answers are [`docs/WALLS.md`](../docs/WALLS.md) (generated from
+> the engine's own refusals — if it is not walled and not gated, that is the
+> dangerous case) and the open list in
+> [`tools/SESSION_HANDOFF.md`](SESSION_HANDOFF.md), which is rewritten each
+> session. Duplicating status into a scouting doc is what let this file
+> contradict itself for several sessions.
+
+
 * ~~SEATS specs~~ -- **CLOSED**. See the section below.
 * ~~Model-only specs~~ -- **CLOSED**, and it did close both fronts at once
   (`test_qs_diagnostics` 157 -> 249, `test_spectrum_peaks` 140 -> 222). See the

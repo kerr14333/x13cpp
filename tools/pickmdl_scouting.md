@@ -105,6 +105,17 @@ ones — `test_check_diagnostics`, `test_qs_diagnostics`, `test_spectrum_peaks`,
 
 ## Still open
 
+> **Status here is NOT authoritative.** This section records what was *measured*
+> — the cost, the preconditions, the Fortran a future increment has to
+> reproduce. That is durable. Whether an item is still open is not: the
+> authoritative answers are [`docs/WALLS.md`](../docs/WALLS.md) (generated from
+> the engine's own refusals — if it is not walled and not gated, that is the
+> dangerous case) and the open list in
+> [`tools/SESSION_HANDOFF.md`](SESSION_HANDOFF.md), which is rewritten each
+> session. Duplicating status into a scouting doc is what let this file
+> contradict itself for several sessions.
+
+
 1. **`outofsample=yes` (`Outfer`).** amdfct's out-of-sample arm
    (`amdfct.f:70-90`, `:186-235`, `:270-300`) re-fits the model three times over
    successively shorter spans and saves/restores the entire estimation state

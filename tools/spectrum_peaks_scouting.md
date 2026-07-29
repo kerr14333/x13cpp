@@ -154,6 +154,17 @@ back to ~230s.
 
 ## What is still open
 
+> **Status here is NOT authoritative.** This section records what was *measured*
+> — the cost, the preconditions, the Fortran a future increment has to
+> reproduce. That is durable. Whether an item is still open is not: the
+> authoritative answers are [`docs/WALLS.md`](../docs/WALLS.md) (generated from
+> the engine's own refusals — if it is not walled and not gated, that is the
+> dangerous case) and the open list in
+> [`tools/SESSION_HANDOFF.md`](SESSION_HANDOFF.md), which is rewritten each
+> session. Duplicating status into a scouting doc is what let this file
+> contradict itself for several sessions.
+
+
 * ~~`getTPeaks`~~ — **CLOSED**. See the section below.
 * ~~`genqs.f`~~ — **CLOSED**, see `tools/genqs_scouting.md`.
 * ~~The `Iagr>3` indirect tukey names~~ — **CLOSED 2026-07-28f**, with the

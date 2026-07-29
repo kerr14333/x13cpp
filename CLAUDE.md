@@ -82,6 +82,32 @@ improvise:
   `census_bugs.md`, `FABLE_REVIEW.md`, `TEST_COVERAGE.md`, build/coverage scripts.
 - `r-pkg/`, `py-pkg/` — language wrappers.
 
+## Keeping the docs honest (they went stale three times)
+
+Three generated artifacts, and one ownership rule. A 2026-07-29 audit found the
+deliverable report advertising a parity count five fronts out of date, a
+coverage ledger understating itself by 240 routines, and a scouting doc
+contradicting its own later section. All three were true when written.
+
+- **Numbers.** `python tools/metrics.py --write` regenerates `docs/METRICS.md`
+  and every `<!--x13:name-->value<!--/x13-->` marker in the tree; `--check`
+  exits nonzero if any has drifted. **Never type a count into prose** — add a
+  marker, or link to METRICS.md. (`--fast` skips the pytest/ctest runs.)
+- **What is unported.** `python tools/walls.py --write` regenerates
+  `docs/WALLS.md` from the engine's own refusal messages, split into GAPS (the
+  oracle does it, we decline) and FAITHFUL refusals (the oracle declines too).
+  This cannot go stale: delete a wall and it leaves the list. If a feature is
+  neither walled nor gated, that is the dangerous case.
+- **What is ported.** `python tools/coverage_map.py oracle/fortran --audit`
+  re-derives `tools/ported.yaml` from the C++ tree rather than trusting it;
+  `--promote` writes what it can prove. `--write` alone only DISCOVERS files.
+- **Ownership rule.** `tools/SESSION_HANDOFF.md` owns *what is open* — it is
+  rewritten each session, so it cannot rot. Scouting docs own *how something
+  works and what was measured* — durable, and they must NOT keep their own
+  status lists. Code comments describe *their own file*; a comment asserting
+  another subsystem's status is a bug. Every cross-file staleness finding in
+  that audit was duplicated ownership.
+
 ## Progress & commits
 
 - **Track dev time** via `tools/worklog.py`; this is a PoC, so lead progress
