@@ -2,7 +2,7 @@
 
 *Proof of concept: directing Claude Code to port a large legacy codebase, prove it correct, and document it.*
 
-Last updated: 2026-07-21. Figures in this document are pulled from the live repository (parity suite, `git`/`worklog.py`, source counts) and are cited as of that date.
+Last updated: **2026-07-29**. Every figure here is pulled from the live repository (parity suite, `git` / `worklog.py`, `tools/ported.yaml`, source counts) and re-derived on each update rather than carried forward — a 2026-07-29 audit found this document quoting a suite result five times out of date, so the numbers are now dated at the point of use.
 
 ---
 
@@ -46,8 +46,8 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 ## 3. Method
 
 - **Oracle-driven parity.** A Python harness (`oracle/run_oracle.py`) blesses save-tables from the Fortran; `tests/parity/` re-runs the C++ and diffs every table.
-- **`xfail` as the work frontier.** Not-yet-ported paths are marked as *expected failures* (pytest strict xfail). The count of xfails is a live measure of remaining work; an unexpected **pass** turns into a loud failure, so the frontier can never silently drift.
-- **Census-bug fidelity.** Every genuine bug found in the Fortran is catalogued (`tools/census_bugs.md`, currently **CB-1 … CB-11**) and reproduced deliberately in the C++, with a comment pointing back to the Fortran line.
+- **The frontier is a clean FATAL, not an xfail.** Early on, not-yet-ported paths were marked as strict `xfail`. That was replaced once the port got far enough that the real risk was different: the dangerous failure is not a test that fails, it is an option the engine **accepts and silently ignores**, returning `OUTCOME: OK` with wrong numbers. Unported branches now abend with a message naming the Fortran line, and options are measured against the oracle before being declared inert. The suite has carried **0 xfails** since 2026-07-27.
+- **Census-bug fidelity.** Every genuine bug found in the Fortran is catalogued (`tools/census_bugs.md`, currently **CB-1 … CB-31**) and reproduced deliberately in the C++, with a comment pointing back to the Fortran line — or, where the defect is unreachable or is a save-file artefact this port does not produce, recorded with the reason it is *not* reproduced.
 - **Multi-agent execution.** Independent background agents run parallel fronts (e.g. the SEATS decomposition) and perform independent **code review** of completed areas, with the main thread coordinating and triaging.
 - **Layered architecture.** A bit-exact engine core underneath a modern, readable C++ API surface (`core/include/x13/api/`) that R and Python wrappers will bind to. Engine-internal modernization is deliberately deferred until the port is complete, to preserve the bit-exact anchor.
 
@@ -61,21 +61,28 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 | Transform / pre-model tables | **Done, bit-exact** | `test_m2_tables.py` |
 | regARIMA estimation + forecasting | **Done, bit-exact** | `test_m3_estimate.py`, `test_m3_forecast.py` |
 | Automatic model ID + AIC tests | **Done for corpus** | `test_m4_aictest.py`, `test_m4_iddiff.py`, `test_m4_trnaic.py` |
-| X-11 decomposition (B/C/D/E tables) | **Done** (17/19 specs ~5e-15) | `test_x11_tables.py` |
-| `force{}` (Denton / Cholette-Dagum / rounding) | **Done, bit-exact** | `test_force_tables.py` |
+| X-11 decomposition (B/C/D/E tables) | **Done, bit-exact** — the full spine plus Part E and the x11pt4 F2/F3 summary + quality statistics | `test_x11_tables.py`, `test_x11_etables.py`, `test_x11_diagnostics.py` |
+| `force{}` (Denton / Cholette-Dagum / rounding) | **Done, bit-exact** — all four `target=` values, plus the negative-value correction | `test_force_tables.py` |
 | SEATS decomposition | **Done, bit-exact** — every SEATS corpus spec's s10–s18 gate (~5e-15), plus general-shape p>0 (`ar2-seats`), bp>0 (`sar-seats`), and `imean!=0` (mean regressor) for both d>=1 (`mean-seats`) and d==0 (`mean-d0-seats`), plus a mean **alongside TD** regressors (`mean-td-seats`: s16/s18 refold the removed TD effect + lom/leap prior) | `test_seats_tables.py` |
 | `slidingspans{}` | **Done, bit-exact** — all 4 spans, sfs+chs | `test_slidingspans_tables.py` |
-| `history{}` | **Done, bit-exact** — sar/sae/trr/tre (~7e-6 re-estimation floor) | `test_history_tables.py` |
-| Other diagnostics / less-common options | **Partial / planned** | see `tools/coverage_plan.md` |
+| `history{}` | **Done, bit-exact** — sar/sae/trr/tre (~7e-6 re-estimation floor), the forecast + model histories, and the alternate revision targets | `test_history_tables.py` |
+| Automatic model selection | **Done, bit-exact** — both engines: `automdl{}` (TRAMO, `automd.f`) with all 11 arguments applying, and `pickmdl{}` (X-11-ARIMA, `automx.f`) | `test_m4_*.py`, the `.udg` gates |
+| regARIMA residual diagnostics (`check{}`) | **Done, line-exact** over 275 specs | `test_check_diagnostics.py` |
+| Spectrum + peaks, QS / NP seasonality | **Done, byte-exact** — including the model-only and SEATS paths | `test_spectrum_peaks.py`, `test_qs_diagnostics.py` |
+| `composite{}` / indirect adjustment (X-11) | **Done, bit-exact** — direct + indirect + comparison statistics + the diagnostics front, direct and indirect | `test_composite_tables.py` |
+| R / Python in-process bindings | **Working, not yet packaged** — one shared library + two single-file loaders over a flat C ABI | `test_bindings.py`, `test_capi.cpp`, `bindings/r/test_x13c.R` |
+| `composite{}` SEATS branch, pseudo-additive | **Planned** | — |
+| Other less-common options | **Partial / planned** | see `tools/coverage_plan.md` |
 
 ---
 
 ## 5. Testing
 
-- **Parity suite result (current):** **1088 passed · 0 failed · 0 xfailed · 25 skipped.**
-- **Corpus:** spec files across 11 parity test modules, spanning the airline model, Census example series, and real economic series (unemployment, payroll employment, exports).
-- **0 open xfails.** The X-11 decomposition spine, SEATS decomposition, the whole diagnostics front (force / slidingspans / history), the model X-11 path, and the X-11 spec-option front (type / shrink / sigmavec / x11easter / user-regression prior factor) all gate bit-exact. The 17 skips are legitimate (oracle ships no golden / no table for those specs). Remaining work is interdependent x11 factor-producer chains, not a passing/failing ledger.
-- **Census bugs reproduced:** 13 (CB-1 … CB-13), each verified to match the oracle bug-for-bug.
+- **Parity suite result (2026-07-29):** **5,634 passed · 0 failed · 0 xfailed · 469 skipped**, plus 11/11 unit tests and 165/165 R-binding tests. Runs in ~85s on 8 workers.
+- **Corpus:** 386 spec files across 26 parity test modules, spanning the airline model, Census example series, real economic series (unemployment, payroll employment, exports), and unedited production specs from the BLS Current Employment Statistics program.
+- **0 open xfails.** Every front listed in §4 gates bit-exact. The skips are legitimate — a spec whose oracle run ships no golden for that table, or one that exercises a still-unported branch and says so with a reason.
+- **Census bugs catalogued:** 31 (CB-1 … CB-31), each either reproduced bug-for-bug against the oracle or recorded with the reason it cannot be (unreachable, or a save-file artefact this port does not write).
+- **Mutation testing.** A green run on an auto-discovering gate is not evidence that a newly added spec is compared at all, so each increment ends by deliberately perturbing the code it just added and confirming the gate fails — **per half of a routine, not per routine**, because the two halves often turn out to be covered by disjoint specs. Gaps this finds are recorded at the code and at the gate rather than absorbed.
 - **Independent review:** completed areas are re-audited by a separate agent pass, checking port-fidelity axes (integer-power semantics, DO-loop counts, column-major indexing, 1-based↔0-based conversions) and standard C++ correctness. Findings are triaged into *real defects* vs *intentional Census-faithful* vs *unported-feature backlog*.
 
 ---
@@ -84,28 +91,31 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 Engineering documentation is generated as a byproduct of the work, not as an afterthought:
 
-- **Scope / trace docs** (`tools/`): `seats_scope.md`, `slidingspans_scope.md`, `engine_scope.md`, `lmdif_port_spec.md`, `coverage_plan.md`, and per-milestone scouting notes.
+- **Scope / trace docs** (`tools/`, 31 documents): `seats_scope.md`, `slidingspans_scope.md`, `engine_scope.md`, `lmdif_port_spec.md`, `coverage_plan.md`, and a per-front scouting note for each area attacked (`automdl`, `pickmdl`, `composite`, `spectrum_peaks`, `genqs`, `x11regression`, `history_options`, `dropped_options`, …). Each records what was measured, what it cost, and what was deliberately left open.
 - **`tools/census_bugs.md`** — the catalogue of original-source bugs, for a later modernization pass.
 - **`tools/coverage_plan.md`** — the plan to gate *every* documented spec option against the oracle (the hardening phase after the core lands).
-- **Persistent project memory** — a running narrative of vision, milestones, and hard-won gotchas that survives across sessions.
+- **Persistent project memory** — `CLAUDE.md` plus a per-session handoff (`tools/SESSION_HANDOFF.md`), carrying the vision, the milestones, and the hard-won gotchas across sessions. This is load-bearing: most of the defects found in the last week were found by re-reading a measurement someone had written down, not by re-deriving it.
 - **This summary** (`docs/PROJECT_SUMMARY.md`).
 
 ---
 
 ## 7. Metrics dashboard
 
+All figures below are as of **2026-07-29** and are re-derived from the repository, not carried forward.
+
 | Metric | Value | Notes |
 |---|---|---|
-| C++ ported | **~28,800 non-blank lines**, 212 files | reproduces the behavior of the Fortran below |
+| C++ written | **~44,100 non-blank lines**, 176 files | excludes generated COMMON headers |
 | Fortran reference | ~166,000 lines, 712 files | not all on the port's critical path |
-| Parity result | 1088 pass / 0 fail / 0 xfail / 25 skip | as of 2026-07-24 |
-| Corpus | spec files across 11 test modules | real + synthetic series |
-| Census bugs catalogued | 13 (CB-1 … CB-13) | reproduced bug-for-bug |
-| Active development time | **~19h 46m** over 3 calendar days | via `worklog.py`, through last commit (2026-07-20) |
-| Commits | 239 | through 2026-07-24 (SEATS general-shape p>0/bp>0 close) |
-| Measured bit-exactness | ~5e-15 on 17/19 X-11 specs | double-precision noise floor |
+| Fortran routines ported | **401 of 690** (58.1%) | `tools/ported.yaml`; excludes 22 not-applicable files, and counts 3 `partial` as neither |
+| Parity result | 5,634 pass / 0 fail / 0 xfail / 469 skip | plus ctest 11/11, R bindings 165/165 |
+| Corpus | 386 spec files, 26 test modules | real + synthetic series |
+| Census bugs catalogued | 31 (CB-1 … CB-31) | reproduced bug-for-bug, or recorded as unreachable |
+| Active development time | **~56h** over 11 calendar days | `worklog.py`, gaps >45m excluded |
+| Commits | 355 | 2026-07-18 → 2026-07-29 |
+| Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
-*Note on time: `worklog.py` measures committed activity through 2026-07-20. The most recent session (completing `force{}`, moving SEATS s11/s12 to bit-exact, and applying a batch of review fixes) is additional and not reflected in that figure.*
+*Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*
 
 ---
 
@@ -124,11 +134,15 @@ Engineering documentation is generated as a byproduct of the work, not as an aft
 
 ## 9. Status and what remains
 
-**Landed:** the full regARIMA → automatic-model → X-11 pipeline is bit-exact on the corpus; `force{}` is complete; the SEATS decomposition is fully bit-exact — the whole corpus (all s10–s18) plus the general-shape p>0 (`ar2-seats`), bp>0 (`sar-seats`), and `imean!=0` (mean regressor) models for both d>=1 (`mean-seats`) and d==0 (`mean-d0-seats`), plus a mean **alongside TD** regressors (`mean-td-seats`); the whole diagnostics front (`slidingspans{}` / `history{}`) is closed; the model X-11 path and the X-11 spec-option front (`type` / `shrink` / `sigmavec` / `x11easter` / user-regression prior factor) all gate bit-exact.
+**Landed.** The whole spine is bit-exact on the corpus: regARIMA estimation and forecasting, **both** automatic model-selection engines (`automdl{}`/TRAMO and `pickmdl{}`/X-11-ARIMA), the X-11 decomposition through Part E and the F2/F3 quality statistics, the SEATS decomposition (all s10–s18, including general-shape p>0, bp>0, and a mean regressor with and without trading day), `force{}`, `slidingspans{}`, `history{}`, `composite{}`/indirect adjustment for X-11, and the full `.udg` diagnostics surface — `check{}` residual diagnostics, the spectrum and its peak tests, and the QS / NP seasonality statistics, on the X-11, SEATS and model-only paths alike. R and Python can call the engine in-process today over a flat C ABI.
 
-**In progress / next:**
+**What remains, in rough order:**
 
-- Remaining interdependent x11 factor-producer chains: user PRIOR factors (Nuspad/Nustad), Adjsea/Adjso regARIMA-seasonal combine, x11regression prior-TD, force non-original target (Iftrgt>0), revisions getrev.
-- **Hardening phase:** exhaustive spec-option coverage against the oracle (`coverage_plan.md`), then the R and Python library wrappers.
+- `composite{}`'s SEATS branch (`agr3s.f`), pseudo-additive, and the forced/rounded indirect series.
+- `amdfct.f`'s out-of-sample arm, which closes the last `outofsample=` walls in both `pickmdl{}` and `estimate{}`.
+- A long tail of less-common spec options, tracked in `tools/coverage_plan.md` against the oracle's own `ARGDIC` dictionaries rather than against the manual.
+- **Priority #2:** turning the working in-process bindings into real CRAN- and PyPI-compliant packages, then the plotting layer they exist for.
+
+**How "remaining" is decided.** Not by what fails — the suite is green — but by what is *silently accepted*. The recurring defect in this port is an option the parser consumes and the engine ignores, which looks identical to a working feature from the outside. The method is therefore to measure each option against the oracle on-vs-off, then measure the engine against the oracle, and to wall anything unported with a fatal that names the Fortran line. Several fronts closed in the last week were found this way rather than by a failing test.
 
 This is a proof of concept and is tracked as one: progress is measured by the bit-exact parity frontier, and the remaining work is explicit rather than hidden.
