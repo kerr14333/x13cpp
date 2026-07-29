@@ -10,8 +10,13 @@
 // and LSPCTP/LSPCQC (115/116), NOT LSPCQS -- so quarterly specs are in scope.
 //
 // Covers the DIRECT X-11 path (Iagr<4, Lx11), the MODEL-ONLY path (x12run.f:181
-// reaches x11ari with neither Lx11 nor Lseats) and the SEATS path. Still open:
-// the Iagr==4 indirect names, which belong with the composite front.
+// reaches x11ari with neither Lx11 nor Lseats) and the SEATS path. There is no
+// Iagr==4 INDIRECT counterpart to write, and that is the oracle's behaviour
+// rather than a gap in this port: CB-31 -- x11ari.f:346 hands the indirect call
+// `LSLIQS` (=69, a savelog index) where genqs.f:439 uses it as a `Savtab`
+// subscript, so no `qsind*` key is ever emitted. `gennpsa` below DOES have an
+// indirect pass (its call site passes the right index); see its `iagr4`
+// parameter.
 //
 // THE SEATS ARMS read four COMMONs the oracle fills through the ansub9 USRENTRY
 // bridge and this port publishes onto ctx instead -- see the publish in

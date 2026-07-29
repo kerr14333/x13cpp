@@ -29,7 +29,7 @@ regenerate — the six new pickmdl specs are hand-authored and say so in a heade
 comment). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
-## What landed (3 commits, 5560 → 5634 passing)
+## What landed (6 commits, 5560 → 5634 passing)
 
 `M5/pickmdl: port automx.f -- the classic X-11-ARIMA candidate search`.
 

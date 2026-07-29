@@ -1,11 +1,11 @@
 # Spectrum peak diagnostics — scouting
 
-**Status: steps 1–4 CLOSED (byte-exact, gated by
-`tests/parity/test_spectrum_peaks.py`, every spec that ships the block, zero
-new goldens); step 5
-(genqs) closed separately in `tools/genqs_scouting.md`. Only the SEATS branch
-and the Iagr>3 indirect names are still open — see "What is still open" at the
-bottom.** Originally written 2026-07-27.
+**Status: CLOSED. Steps 1–4 are byte-exact and gated by
+`tests/parity/test_spectrum_peaks.py` (every spec that ships the block, zero
+new goldens); step 5 (genqs) closed separately in `tools/genqs_scouting.md`;
+the SEATS branch and the `Iagr>3` indirect names are closed too — see the
+sections at the bottom. Only the PLOTS/warnings and `spectrum{altfreq=}`
+(CB-30) remain.** Originally written 2026-07-27.
 
 This is the largest remaining `.udg` diagnostic block, and it is **silently
 absent on every monthly run**, not merely on specs that ask for `spectrum{}`.
@@ -156,13 +156,19 @@ back to ~230s.
 
 * ~~`getTPeaks`~~ — **CLOSED**. See the section below.
 * ~~`genqs.f`~~ — **CLOSED**, see `tools/genqs_scouting.md`.
-* **The `Iagr>3` indirect tukey names** (`spcindsa.tukey.*`,
-  `peaks.tukey.seas.ind`, …), 3 goldens, with the composite front. Pinned by
-  `test_indirect_tukey_keys_are_not_claimed`.
-* **SEATS specs** (51 of the 278 goldens): `run_seats` never calls
-  `run_spectrum`, and spcdrv's SEATS branch reads `Hvstsa`/`Hvstir`/`Stocsa`/
-  `Stocir` where the X-11 branch reads Stcime/Stime. A different INPUT, not just
-  a different driver.
+* ~~The `Iagr>3` indirect tukey names~~ — **CLOSED 2026-07-28f**, with the
+  composite front. `run_spectrum` takes an `iagr4` parameter; the two things
+  that were not obvious are that the peak-label lists are SHARED between the
+  passes (savpk.f splits one accumulated string at `Nspdir`) and that
+  `svtukp.f` sets `iLb=7` on the indirect tables, so the KEY keeps `ind`
+  (`spcindsa`) while the LABEL in `peaks.tukey.*.ind` drops it (`sa`). See
+  `tools/composite_scouting.md`. Still ungated there: savpk's real `.dir`/`.ind`
+  split, which needs a composite whose components carry a residual peak.
+  `test_spectrum_peaks` still excludes these names from BOTH sides on purpose —
+  they are gated by `test_composite_tables.py` instead.
+* ~~SEATS specs~~ — **CLOSED**, see "spcdrv's SEATS branch" below. (This bullet
+  contradicted that section for several sessions; it is the reason the header
+  above now states the status once rather than twice.)
 * ~~Model-only specs~~ -- **CLOSED** (the gate went 140 -> 222 specs). The
   predicted detrend difference was real: spcdrv.f:193-200 keys on
   `dpeq(Lam,ZERO)` without Lx11 rather than on `Muladd.ne.1`, and the engine was

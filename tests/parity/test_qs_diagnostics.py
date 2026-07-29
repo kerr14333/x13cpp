@@ -66,10 +66,14 @@ these specs add is the ``qsori``/``qsorievadj``/``qsrsd`` block -- nonzero and
 discriminating (167.64858 on the airline family) -- which the whole-spec skip
 was throwing away along with the rest.
 
-NOT COVERED YET, deliberately and visibly:
+NOT COVERED HERE, deliberately and visibly:
 
-  * The ``Iagr==4`` indirect names (``qsindsadj`` etc.), which belong with the
-    composite front. Pinned by ``test_indirect_keys_are_not_claimed``.
+  * The ``Iagr==4`` indirect names (``qsindsadj`` etc.). The ORACLE never writes
+    them -- CB-31, x11ari.f:346 hands genqs a savelog index where genqs.f:439
+    uses it as a ``Savtab`` subscript -- so there is nothing to gate, and the
+    engine reproduces that by making no second call. Pinned from both sides by
+    ``test_composite_tables.py::test_composite_no_indirect_qs``, and kept
+    unclaimed here by ``test_indirect_keys_are_not_claimed``.
 
 Run:  python -m pytest tests/parity/test_qs_diagnostics.py -q
 """
@@ -91,7 +95,8 @@ _TREES = ["generated", "extra", "census-examples", "ces"]
 
 # Every key genqs.f can write on the DIRECT (Iagr<4) path. Spelled out rather
 # than matched by prefix so that the indirect names (`qsindsadj`, `qssindirr`,
-# ...) stay visibly unclaimed until the composite increment ports them.
+# ...) stay visibly unclaimed -- the oracle never writes them at all (CB-31),
+# which is asserted in test_composite_tables.py rather than assumed here.
 _KEYS = {
     "qslog",
     "qsori", "qsorievadj", "qsrsd", "qssadj", "qssadjevadj",

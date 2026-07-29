@@ -2,10 +2,12 @@
 
 Scouted 2026-07-19 against `oracle/fortran` (v1.1 b61). Scope: the `automdl{}`
 TRAMO-style automatic model identification driven by `automd.f`. Sibling
-`pickmdl{}` (X-11-ARIMA method, `automx.f`) is a separate, later milestone.
+`pickmdl{}` (X-11-ARIMA method, `automx.f`) was a separate, later milestone and
+is **CLOSED as of 2026-07-28e** — map at `tools/pickmdl_scouting.md`.
 
-Corpus payoff: **33 of 366 specs use `automdl`** (1 uses `pickmdl`; counts
-refreshed 2026-07-28 — the 2026-07-19 figures were 24/76 and 5). Everything
+Corpus payoff: **33 of 366 specs use `automdl`** (7 use `pickmdl` as of
+2026-07-28e, up from 1; counts refreshed 2026-07-28 — the 2026-07-19 figures
+were 24/76 and 5). Everything
 funnels through `rgarma` + `regvar`, both already ported and oracle-verified
 (see `m3_scouting.md` §7). automdl is orchestration + a handful of new numeric
 leaves on top of that engine.

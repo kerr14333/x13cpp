@@ -46,11 +46,13 @@ are printed E20.10 -- ten significant digits, finer than an auto-selected
 model's residuals agree -- and the fallback is restricted to those two key
 suffixes so a wrong label or a wrong peak count can never be absorbed by it.
 
-NOT COVERED YET, deliberately and visibly (these skip with a reason rather than
+NOT COVERED HERE, deliberately and visibly (these skip with a reason rather than
 being filtered out of discovery):
 
-  * The INDIRECT tukey names (``peaks.tukey.seas.ind`` etc., Iagr>3), which
-    belong with the composite front -- 3 goldens carry them.
+  * The INDIRECT tukey names (``peaks.tukey.seas.ind`` etc., Iagr>3). Ported and
+    bit-exact as of 2026-07-28f, but gated by ``test_composite_tables.py`` --
+    only a composite TOTAL has them and this gate is per single-series spec.
+    3 goldens carry them.
 SEATS specs (51 of the 278) are now IN, run through ``x13run_seats``. spcdrv's
 SEATS arms take the pair ``run_seats`` publishes -- ``Lrbstsa ? Stocsa : Seatsa``
 (spcdrv.f:322-327) and ``Lrbstsa ? Stocir : Seatir`` (:446-451), gated on
@@ -92,8 +94,9 @@ _PEAK_RE = re.compile(
     r"(median|range|dom|[st]\.dom|[st][0-9])$")
 # getTPeaks (specpeak.f Tpeaks2): the Tukey window and the six seasonal + one
 # trading-day peak PROBABILITIES, plus svtukp.f's four accumulated label lists.
-# `spcindsa`/`spcindirr` are deliberately absent -- the Iagr>3 indirect names go
-# with the composite front, and their `.ind` label rows with them.
+# `spcindsa`/`spcindirr` are deliberately absent -- the Iagr>3 indirect names are
+# gated by test_composite_tables.py (only a composite total has them), and their
+# `.ind` label rows with them.
 _TUKEY_RE = re.compile(
     r"^spc(ori|sa|irr|rsd)\.tukey\.(m|td|s[1-6])$")
 _TUKEY_SCALARS = {"peaks.tukey.seas", "peaks.tukey.td",
@@ -236,16 +239,19 @@ def test_every_owned_key_is_readable() -> None:
 
 
 def test_indirect_tukey_keys_are_not_claimed() -> None:
-    """The Iagr>3 tukey names belong to the unported composite/indirect path.
+    """The Iagr>3 tukey names belong to a DIFFERENT gate, not to nothing.
 
-    They must be excluded from BOTH sides, or a composite total's indirect rows
-    would read as `missing`. Pinned so that porting them has to come here and
-    do it deliberately -- this is what the old `test_tukey_keys_are_not_claimed`
-    became when getTPeaks landed.
+    They are ported and bit-exact (x11ari.f:344's second spcdrv pass) and gated
+    by ``test_composite_tables.py::test_composite_indirect_diag_block``, which
+    is where they belong: only a composite TOTAL has them, and this gate runs
+    per single-series spec. Excluding them from BOTH sides here keeps that
+    division honest -- claim them and a composite's indirect rows would be
+    double-counted across two gates.
     """
     for k in ("spcindsa.tukey.s1", "spcindirr.tukey.m",
               "peaks.tukey.seas.ind", "peaks.tukey.p90.td.ind"):
-        assert not _is_peak_key(k), f"{k} is claimed but the indirect path is unported"
+        assert not _is_peak_key(k), (
+            f"{k} is claimed here, but it is gated by test_composite_tables.py")
 
 
 @pytest.mark.skipif(not CASES, reason="no corpus golden ships the peak block")

@@ -8,9 +8,10 @@
 // This is NOT gated on a `spectrum{}` spec: x11ari.f:282-287 calls spcdrv under
 // a plain IF(Ny.eq.12), so the oracle computes the whole block on every monthly
 // run. getTPeaks' Tukey peak probabilities (specpeak.f Tpeaks2, in
-// spectrum_peaks.cpp), genqs, the model-only path and the SEATS branch
-// (spcdrv's Hvstsa/Hvstir arms) are all closed. Still follow-on: the plots and
-// warnings, the Iagr>3 indirect names, and `spectrum{altfreq=}` (CB-30).
+// spectrum_peaks.cpp), genqs, the model-only path, the SEATS branch (spcdrv's
+// Hvstsa/Hvstir arms) and the Iagr>3 INDIRECT names (the `iagr4` pass below,
+// x11ari.f:344) are all closed. Still follow-on: the plots and warnings, and
+// `spectrum{altfreq=}` (CB-30).
 #include "driver/run_spectrum.hpp"
 
 #include <cmath>

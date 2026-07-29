@@ -1652,8 +1652,10 @@ diagnostics front (force / slidingspans / history) is now closed.
   `qsrsd`/`qssrsd` for the two `airline_automdl-x11` specs (measured 2.30823 vs
   2.30858) -- the same bound and reason as `test_check_diagnostics`, restricted
   to those two keys so an X-11 statistic drifting still fails loudly.
-  Still open: only the `Iagr==4` indirect names (the MODEL-ONLY path and the
-  SEATS path are both closed -- see below). Map: **`tools/genqs_scouting.md`**.
+  Nothing open here: the MODEL-ONLY path, the SEATS path and the `Iagr==4`
+  indirect names are all closed (see below, and the composite entry at the end
+  of this list for why there is deliberately no `qsind*` -- CB-31). Map:
+  **`tools/genqs_scouting.md`**.
   **`gennpsa.f`'s NP residual-seasonality verdict landed alongside it** (the
   `nplog`/`npsadj`/`npsadjevadj`/`npssadj`/`npssadjevadj` keys, 230 goldens) --
   same call chain (`x11ari.f:322-326`, straight after spcdrv, again with no

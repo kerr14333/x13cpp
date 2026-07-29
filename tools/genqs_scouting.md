@@ -1,11 +1,10 @@
 # `genqs.f` — the QS seasonality statistics — scouting
 
-**Status: CLOSED for BOTH `genqs.f` and its sibling `gennpsa.f` on the DIRECT
-X-11 path, the MODEL-ONLY path and the SEATS path (byte-exact, gated by
-`tests/parity/test_qs_diagnostics.py`, every spec that ships a `qs*` key,
-zero new goldens). Only the
-`Iagr==4` indirect names are still open -- see "What is still open".**
-Originally written 2026-07-27.
+**Status: CLOSED for BOTH `genqs.f` and its sibling `gennpsa.f`, on every path:
+DIRECT X-11, MODEL-ONLY, SEATS and (2026-07-28f) `Iagr==4` INDIRECT. Byte-exact,
+gated by `tests/parity/test_qs_diagnostics.py` for the first three and by
+`tests/parity/test_composite_tables.py` for the fourth; every spec that ships a
+`qs*` key, zero new goldens.** Originally written 2026-07-27.
 
 327 of the 331 `.udg` goldens carry a `qs*` key and the port emitted none of
 them.
@@ -149,10 +148,19 @@ Mutation-tested twice: a 1% perturbation of `calcqs` fails 113 of 157, of
 * ~~Model-only specs~~ -- **CLOSED**, and it did close both fronts at once
   (`test_qs_diagnostics` 157 -> 249, `test_spectrum_peaks` 140 -> 222). See the
   section below.
-* **The `Iagr==4` indirect names** (`qsindsadj`, `qssindirr`, ...), which belong
-  with the composite front. Note the indirect call site passes `Tblind = LSLIQS`
-  — a *savelog* index used as a `Savtab` subscript — which wants checking before
-  it is ported.
+* ~~The `Iagr==4` indirect names~~ (`qsindsadj`, `qssindirr`, ...) — **CLOSED
+  2026-07-28f, and the suspicion recorded here was right.** The indirect call
+  site passes `Tblind = LSLIQS` (=69, a *savelog* index from `spcsvl.i`) where
+  `genqs.f:439` uses it as a `Savtab` subscript; the direct call one screen
+  earlier passes `LSPCQS` (=113) correctly, and the evidently-intended
+  `LSPQSI` (=114) is passed nowhere. **The oracle therefore emits no `qsind*`
+  key at all** — confirmed against the composite total's golden, which carries a
+  full set of `npind*`/`spcind*` beside it. Logged as **CB-31** and reproduced
+  by NOT making the call; pinned from both sides by
+  `test_composite_no_indirect_qs`. `gennpsa`'s indirect pass IS real (its call
+  site passes the right index) and is ported.
+  **Worth keeping as method:** checking the suspicion before porting is what
+  turned a phantom gap into a two-line CB entry.
 (`gennpsa.f` is CLOSED -- see the section below.)
 
 ## The SEATS path (CLOSED)
