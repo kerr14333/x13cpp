@@ -302,6 +302,15 @@ struct X13Context {
     // `indtrendma`. Empty unless a composite total actually ran.
     std::vector<double> agr_cmpstat;
     int agr_indtrendma = 0;
+    // X11agr -- "every component of this composite was adjusted by X-11".
+    // aaamain.f:73 initializes it TRUE once for the whole metafile, gtinpt.f:594
+    // re-arms it on the first component, and gtinpt.f:1170 ANDs each component's
+    // own Lx11 into it -- so ONE SEATS component turns it off for the total, and
+    // x11ari.f:338-343 then routes the indirect adjustment through agr3s instead
+    // of agr3. Not a COMMON in the oracle: it is an argument threaded from
+    // aaamain through x12run, which is why the metafile harness has to carry it
+    // between specs exactly as it carries /mq11/ and /agreg/.
+    bool x11agr = true;
     // The INDIRECT x11pt4 diagnostics (x11ari.f:341's second x11pt4 call, run on
     // the buffers agr3 installs) -- the .udg's `if2.*` / `if3.*` block. Same
     // snapshot discipline as the x11_f2* direct set: they share the live /inpt2/,
@@ -317,6 +326,18 @@ struct X13Context {
     // the final replacement values. Save surface only -- nothing downstream reads
     // them (the tests above run on their own AO-adjusted copy).
     std::vector<double> agr_id8, agr_id9;
+    // --- agr3s.f (the SEATS branch of the indirect adjustment) ---------------
+    // agr3s produces a much smaller table set than agr3 -- no indirect trend or
+    // irregular, no D8/D9, no x11pt4 -- so it hands the caller its own ranges
+    // rather than sharing x11pt4's. `agr3s_ran` is what selects that emit.
+    bool agr3s_ran = false;
+    std::vector<double> agr_ils, agr_iao;      // indirect LS / AO factors
+    std::vector<double> agr_frcfac;            // the `iff` forcing factor
+    int agr_isf_frst = 0, agr_isf_last = 0;    // the isf / i18 punch range
+    int agr_frcfac_last = 0;                   // lstfrc
+    int agr_e6_ify = 0;                        // the i6a / i6r change start
+    int agr_e18_last = 0;
+    int agr_indforce = -1;                     // the `indforce:` savelog, -1 = absent
     // transform{constant=}: the D11 / published D12 as they stand BEFORE x11pt3
     // subtracts the constant back out (the oracle's Stcipc / stc2pc), i.e. the
     // `sac` and `tac` save tables. Empty when no constant was given.

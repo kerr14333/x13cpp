@@ -482,11 +482,22 @@ bool run_spectrum(X13Context& ctx, bool iagr4) {
         // (Stocsa / Seatsa) instead, and note it gets NEITHER the Facls divide
         // below (that sits in the Iagr==4 and Lx11 arms only) NOR the ispos
         // refusal (guarded on Lx11). Its own gate is Hvstsa, spcdrv.f:299.
-        const double* sa = ctx.captured.has_seats
-                               ? (lrbstsa ? ctx.seatcm.stocsa.data()
-                                          : ctx.seatcm.seatsa.data())
-                               : (lrbstsa ? ctx.adxser.stcime.data()
-                                          : ctx.x11srs.stci.data());
+        // spcdrv.f:302-313 -- the Iagr==4 (INDIRECT) branch comes FIRST and does
+        // not care whether THIS spec was adjusted by SEATS: the series it wants
+        // is the indirect one agr3/agr3s left in Stci. Under X11agr it is the
+        // same choice the direct Lx11 arm makes; under !X11agr (agr3s) it is
+        // Stci unconditionally, never Stcime and never Seatsa. Without this
+        // branch a SEATS composite TOTAL took the `has_seats` arm and reported
+        // its own DIRECT spectrum under the indirect names (measured:
+        // spcindsa.median equal to spcsa.median to the last digit).
+        const double* sa =
+            iagr4 ? ((ctx.x11agr && lrbstsa) ? ctx.adxser.stcime.data()
+                                             : ctx.x11srs.stci.data())
+                  : (ctx.captured.has_seats
+                         ? (lrbstsa ? ctx.seatcm.stocsa.data()
+                                    : ctx.seatcm.seatsa.data())
+                         : (lrbstsa ? ctx.adxser.stcime.data()
+                                    : ctx.x11srs.stci.data()));
         for (int i = 1; i <= posfob; ++i) srs[i - 1] = sa[i - 1];
         // spcdrv.f:318 -- the LEVEL SHIFT is taken back out of the SA series
         // before its spectrum, on the Lrbstsa (default) path only. Note this
@@ -534,7 +545,12 @@ bool run_spectrum(X13Context& ctx, bool iagr4) {
                                           : ctx.seatcm.seatir.data())
                                : (lrbstsa ? ctx.mq5a_stime.data()
                                           : ctx.sti_live());
-        const bool goirr = lx11 || !ctx.captured.has_seats || ctx.seatlg.hvstir;
+        // spcdrv.f:434-436 -- and on the INDIRECT pass there is no indirect
+        // irregular at all unless every component was X-11 adjusted: agr3s
+        // never forms one. Measured: the composite-seats golden carries zero
+        // `spcindirr` keys where composite-fixed's carries twenty.
+        bool goirr = lx11 || !ctx.captured.has_seats || ctx.seatlg.hvstir;
+        if (iagr4) goirr = goirr && ctx.x11agr;
         if (goirr) {
             for (int i = ipos; i <= posfob; ++i) {
                 tmp[i - 1] = ir[i - 1];

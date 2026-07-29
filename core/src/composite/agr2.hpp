@@ -11,9 +11,10 @@ struct X13Context;
 void setapt(X13Context& ctx, int nb, int nf, const int* begspn, int sp);
 
 // agr2.f (component path) -- stamp/verify the common span (Itest) and accumulate
-// this component into the composite buffers. Returns false (and sets Iagr=-1) if
-// the component's span does not match the first component's.
-// Increment 1 accumulates the direct original `O` only.
+// this component into the composite buffers. Returns false (and sets Iagr=-1)
+// when the component's span does not match the first component's, or when a
+// SEATS component produced no signal extraction; the matching NOTE is written to
+// Mt2 here, so the caller only has to stop.
 bool agr2_component(X13Context& ctx);
 
 // agr2.f, the Iagr==4 path (agr2.f:66-192): once agr3 has produced the indirect

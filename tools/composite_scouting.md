@@ -103,9 +103,9 @@ series whose data is the component sum. Gates b1/d10-d13 of `total` against a
 metafile-blessed golden. This alone unblocks the CES composite specs that only
 want the direct aggregate.
 
-**inc2 — indirect adjustment.** The remaining `agr2` buffers + `agr3`/`agrxpt`
-(and `agr3s` if a SEATS composite spec shows up). Gates the indirect
-seasonal/SA/trend tables.
+**inc2 — indirect adjustment.** The remaining `agr2` buffers + `agr3`/`agrxpt`.
+Gates the indirect seasonal/SA/trend tables. (`agr3s` — the SEATS branch — is a
+separate front; see its own section below.)
 
 **inc3 — comparison diagnostics.** `Iagr==4` stats (`aggmea`), the direct-trend
 `Tem` / `Ckhs` pair agr3 needs to feed them, and the pointer restore back onto
@@ -139,8 +139,72 @@ inc3 heading are all shared with the direct path or are pure output:
 - `prtagr`/`pragr2` and the aggregate-composition header — print surface, which
   this port defers to the caller by design.
 
-Still genuinely open for composite: the SEATS branch (`agr3s.f`, `Seatsa`/
-`Setsa2`) and pseudo-additive (`Psuadd`).
+### The SEATS branch (`agr3s.f`) — LANDED (bit-exact over the observed span)
+
+`X11agr` is a metafile-wide flag, not a spec option: `aaamain.f:73` arms it TRUE
+once for the whole run, `gtinpt.f:594` re-arms it on the first component, and
+`gtinpt.f:1170` ANDs each COMPONENT's own `Lx11` into it. One SEATS component
+therefore turns it off for the total, and `x11ari.f:338-343` routes the indirect
+adjustment through **`agr3s`** instead of `agr3`. Because it outlives a spec, the
+metafile harness has to carry it exactly as it carries `/mq11/` and `/agreg/`.
+
+**What agr3s actually is.** Not a variant of agr3 — a different answer. There is
+no extreme-value pass, no Henderson, no D8/D9 battery and no `x11pt4` behind it:
+the indirect SA series simply IS the aggregate `Ci` of the components' own SA
+series, and the seasonal factor is `O5 / Ci`. Measured on the oracle, the whole
+output is `isf isa ie5 ip5 ie6 ip6 i18` (plus `ita` when `pre18b` fires and the
+forced/rounded family when `force{}` is on) even when the spec asks for the full
+indirect list. Three consequences worth knowing:
+
+- **`agr2` drops its whole R2 half** (`:128-131`, `:175-178`): R2 is the variance
+  of the SA/trend ratio and there is no indirect trend to form it from. The
+  printed header changes to "MEASURES OF ROUGHNESS R1" and the `.udg` carries
+  `r1mse`/`r1rmse` with no `r2` line.
+- **`spcdrv` has an `Iagr==4` branch that comes BEFORE its Lseats arm**
+  (`:302-313`): the indirect spectrum is taken from `Stci` — the series agr3s
+  left — and never from `Seatsa`, even when the TOTAL is SEATS-adjusted. And
+  `:436`'s `goirr = goirr .and. X11agr` means there is **no `spcindirr` block at
+  all** on this path (the composite-seats golden carries zero such keys where
+  composite-fixed's carries twenty).
+- **`agr3s` omits agr3's `tempo`/`Orig2` store** — see **CB-32**. The DIRECT
+  column of the comparison statistics is the roughness of the aggregate
+  ORIGINAL.
+
+**Ported asymmetries against agr3, all transcribed:** no `Lindot` guard on the
+LS/AO factor build (`agr3s.f:149-153`); the divide that would take the level
+shift back out of `Stci` is commented out at `:151`; `ststd` is computed at
+`:181` and then never read, so a spec asking for `ita`/`iaf` on this path gets
+nothing; and the residual-seasonality test on the ROUNDED series is gated on
+`Lx11` (`:327`) where agr3 has no such guard.
+
+**The one gap, measured.** Everything over the OBSERVED span is bit-exact
+(~5e-15). Past it is not: `Ci` is the aggregate of the components' `Seatsa`, and
+`seatad.f:49-54` appends `Setfsa` — the SEATS FORECAST decomposition
+(`ansub3.f:356-678`) — into `Seatsa` over `[Posfob+1, Posffc]`. That is unported,
+so `Ci` is zero there. It matters because `agr3s.f:412-418` widens i18's punch
+range to `Posffc` **unconditionally** (unlike isf, which is gated on `Savfct`),
+and the forecast span is not avoidable by configuration: `editor.f:387-400`
+forces `Nfcst >= max(12, 3*Sp)` on any SEATS run regardless of
+`forecast{maxlead=}`. Costs: i18's forecast rows (measured 1.44 relative), and —
+when the TOTAL also carries forecasts, so `Series` extends where `Ci` does not —
+a spurious `ita` table, since a nonzero original over a zero SA is exactly
+`pre18b`'s trigger. The run says so on Mt2 rather than doing it silently. Gated
+around in `tests/parity/test_composite_seats.py`.
+
+Two corpora: `census-examples/composite-seats/` (X-11 total, agr3s's `Lx11`
+true) and `composite-seats-total/` (SEATS total, `Lx11` false — the only case
+where the composite tail is reached from `run_seats`). Both pin the components'
+MA coefficients: with them estimated this port's SEATS decomposition sits
+**1.3e-6** from the oracle's on this synthetic series while every printed
+coefficient agrees to 11 digits, and the same 1.3e-6 appears on a STANDALONE run
+of the component — optimizer path noise, not aggregation. The indirect
+adjustment is the sum of the component SA series, so it would land there
+undiluted.
+
+Still genuinely open for composite: pseudo-additive (`Psuadd`) and the
+forced/rounded indirect series on the **agr3** path (agr3.f:426-538 — ported for
+agr3s, still absent for agr3, and ungated on both for want of a `force{}`
+composite spec).
 
 ## Harness / gate notes
 

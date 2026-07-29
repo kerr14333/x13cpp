@@ -278,7 +278,10 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 // gtinpt.f:591-594 -- series{comptype=...} on the FIRST component
                 // of a composite run (lagr) initializes the aggregation state
                 // (agr1 with Iagr==0 zeroes the /agreg/ buffers and sets Iagr=1).
-                if (lagr) agr1(ctx, ctx.arima.y.data(), ctx.arima.nobs);
+                if (lagr) {
+                    agr1(ctx, ctx.arima.y.data(), ctx.arima.nobs);
+                    ctx.x11agr = true;   // gtinpt.f:594
+                }
                 ctx.captured.spec_order.push_back("series");
                 break;
             case 2:  // transform
@@ -784,6 +787,11 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
         // The parse-tail rules above (gtinpt.f:1151) can still ARM Ldestm after
         // the dispatch loop has made its last copy, so re-publish it here.
         ctx.arima.ldestm = ldestm;
+
+        // gtinpt.f:1170 -- a COMPONENT (Iagr 1 or 2; the total is 3) ANDs its own
+        // Lx11 into X11agr. One SEATS component is enough to send the total's
+        // indirect adjustment down agr3s rather than agr3.
+        if (ctx.agr.iagr > 0 && ctx.agr.iagr < 3) ctx.x11agr = ctx.x11agr && lx11;
 
         // gtinpt.f 1172-1181: if an X-11 regression is done, set its forecast
         // horizon (Nfcstx) to at least one seasonal year. The transparent xrgdrv

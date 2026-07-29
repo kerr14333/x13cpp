@@ -69,6 +69,25 @@ void dump(std::string& out, const std::string& prefix, const char* tag,
     }
 }
 
+// Which driver a spec belongs to. The oracle has one x11ari and branches inside
+// it; this port has two entry points, so the metafile harness has to make the
+// same call the parity gates' `_binary_for` makes -- seats{} and no x11{}.
+// Comments are stripped first: an X-13 comment runs from `#` to end of line, and
+// the composite corpus' own header comments MENTION `x11{`, which a naive scan
+// reads as a spec block. (The identical trap cost a probe run on pickmdl.)
+bool spec_wants_seats(const std::string& text) {
+    std::string stripped;
+    stripped.reserve(text.size());
+    bool in_comment = false;
+    for (char c : text) {
+        if (c == '#') in_comment = true;
+        else if (c == '\n') in_comment = false;
+        if (!in_comment) stripped += c;
+    }
+    return stripped.find("seats{") != std::string::npos &&
+           stripped.find("x11{") == std::string::npos;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -106,6 +125,11 @@ int main(int argc, char** argv) {
     // so they persist exactly like /mq11/ and /agreg/ do.
     auto carry_revsrs = std::make_unique<x13::revsrs_cmn>();
     int carry_indrev = 0, carry_nrcomp = 0;
+    // X11agr -- aaamain.f:73 initializes it once for the whole run and each
+    // component's gtinpt ANDs its own Lx11 in, so it outlives a spec exactly as
+    // the aggregation COMMONs do. Without carrying it a SEATS component's
+    // verdict never reaches the total and the total takes agr3 instead of agr3s.
+    bool carry_x11agr = true;
     int carry_indrvs[2] = {0, 0};
     bool have_carry = false;
     std::string out;   // buffered table lines (printed after OUTCOME:)
@@ -134,11 +158,14 @@ int main(int argc, char** argv) {
             ctx.rev.indrvs(1) = carry_indrvs[0];
             ctx.rev.indrvs(2) = carry_indrvs[1];
             ctx.rev.nrcomp = carry_nrcomp;
+            ctx.x11agr = carry_x11agr;
         }
 
+        const bool lseats = spec_wants_seats(text);
         bool ok;
         try {
-            ok = x13::run_x11(ctx, text, base);
+            ok = lseats ? x13::run_seats(ctx, text, base)
+                        : x13::run_x11(ctx, text, base);
         } catch (const std::exception& e) {
             std::fprintf(stderr, "x13run_composite: %s: exception: %s\n",
                          base.c_str(), e.what());
@@ -158,6 +185,7 @@ int main(int argc, char** argv) {
         carry_indrvs[0] = ctx.rev.indrvs(1);
         carry_indrvs[1] = ctx.rev.indrvs(2);
         carry_nrcomp = ctx.rev.nrcomp;
+        carry_x11agr = ctx.x11agr;
         have_carry = true;
 
         // Tables: the composite total (the last spec) prints unprefixed so the
@@ -173,10 +201,114 @@ int main(int argc, char** argv) {
                                 ? posfob
                                 : (ctx.extend.nfcst > 0 ? ctx.x11ptr.posffc
                                                         : posfob + sp);
+        // A SEATS-adjusted spec (component or total) publishes its decomposition
+        // on ctx rather than into the X-11 buffers; s11/s12/s13 are what the
+        // indirect adjustment aggregates.
+        if (lseats && !ctx.seats_sa.empty()) {
+            const int n = static_cast<int>(ctx.seats_sa.size());
+            auto sdump = [&](const char* tag, const std::vector<double>& v) {
+                if (static_cast<int>(v.size()) < n) return;
+                char b[128];
+                for (int k = 0; k < n; ++k) {
+                    int idate[2];
+                    x13::addate(begspn, sp, k, idate);
+                    std::snprintf(b, sizeof b, "%s %04d%02d %.15E\n", tag,
+                                  idate[0], idate[1], v[static_cast<std::size_t>(k)]);
+                    out += prefix;
+                    out += b;
+                }
+            };
+            sdump("s10", ctx.seats_seasonal_add);
+            sdump("s11", ctx.seats_sa);
+            sdump("s12", ctx.seats_trend);
+            sdump("s13", ctx.seats_ir);
+        }
+
         // The composite total is the run that produced an indirect adjustment.
         // (Iagr no longer says so: agr2's Iagr==4 branch clears it at the end of
         // the run, exactly as the oracle does.)
-        if (!ctx.agr_direct_d11.empty()) {
+        if (ctx.agr3s_ran) {
+            // --- agr3s.f: the SEATS branch of the indirect adjustment. A much
+            // smaller table set than agr3's -- no indirect trend or irregular, no
+            // D8/D9, no x11pt4 -- so this is its own emit rather than a subset of
+            // the block below. (The DIRECT snapshot is still taken; d10-d13 only
+            // exist when the TOTAL itself was X-11 adjusted.)
+            if (!lseats) {
+                dump(out, prefix, "d10", begspn, sp, sf_frst, sf_last,
+                     ctx.agr_direct_d10.data());
+                dump(out, prefix, "d11", begspn, sp, pos1ob, posfob,
+                     ctx.agr_direct_d11.data());
+                dump(out, prefix, "d12", begspn, sp, pos1ob, posfob,
+                     ctx.agr_direct_d12.data());
+                dump(out, prefix, "d13", begspn, sp, pos1ob, posfob,
+                     ctx.agr_direct_d13.data());
+            }
+            dump(out, prefix, "isf", begspn, sp, ctx.agr_isf_frst,
+                 ctx.agr_isf_last, ctx.x11srs.sts.data(), pos1ob);
+            dump(out, prefix, "isa", begspn, sp, pos1ob, posfob,
+                 ctx.x11srs.stci.data());
+            char cb[160];
+            if (ctx.agr_cmpstat.size() > 24) {
+                const double* di = ctx.agr_cmpstat.data();
+                // !X11agr drops the whole R2 half (agr2.f:128-131/175-178): a
+                // SEATS composite's .udg carries r1mse/r1rmse and nothing else.
+                std::snprintf(cb, sizeof cb, "r1mse %.15E %.15E\n", di[5], di[6]);
+                out += cb;
+                std::snprintf(cb, sizeof cb, "r1rmse %.15E %.15E\n", di[11], di[12]);
+                out += cb;
+                // All 24, not just the R1 half: di(13..24) must be exactly ZERO
+                // here (aggmea returns before computing R2, and agr2's
+                // percentage loop stops at i2=7), and a gate that only reads
+                // twelve cannot tell that from an engine that computed them.
+                for (int k = 1; k <= 24; ++k) {
+                    std::snprintf(cb, sizeof cb, "cmpstat %d %.15E\n", k, di[k]);
+                    out += cb;
+                }
+            }
+            if (ctx.agr_indforce >= 0) {
+                std::snprintf(cb, sizeof cb, "indforce %s\n",
+                              ctx.agr_indforce ? "yes" : "no");
+                out += cb;
+            }
+            // The Part-E change tables agr3s computes itself (agr3s.f:345-410),
+            // each with the percent twin pragr2.f punches beside it.
+            const double pscale = (ctx.x11opt.muladd != 1) ? 100.0 : 1.0;
+            struct { const char* t; const char* p; const std::vector<double>* v; int b; }
+                chg[] = {{"ie5", "ip5", &ctx.x11_e5,  pos1ob + 1},
+                         {"ie6", "ip6", &ctx.x11_e6,  pos1ob + 1},
+                         {"i6a", "ipa", &ctx.x11_e6a, ctx.agr_e6_ify},
+                         {"i6r", "ipr", &ctx.x11_e6r, ctx.agr_e6_ify}};
+            for (const auto& c : chg) {
+                if (c.v->empty()) continue;
+                dump(out, prefix, c.t, begspn, sp, c.b, posfob, c.v->data(), pos1ob);
+                for (int i = c.b; i <= posfob; ++i) {
+                    int idate[2];
+                    x13::addate(begspn, sp, i - pos1ob, idate);
+                    std::snprintf(cb, sizeof cb, "%s%s %04d%02d %.15E\n",
+                                  prefix.c_str(), c.p, idate[0], idate[1],
+                                  (*c.v)[static_cast<std::size_t>(i - 1)] * pscale);
+                    out += cb;
+                }
+            }
+            // i18 = A1/D11 over the same widened range as isf; ita = the total
+            // adjustment factors, which exist only when some ratio could not be
+            // formed (agr3s.f's `pre18b`).
+            dump(out, prefix, "i18", begspn, sp, ctx.agr_isf_frst,
+                 ctx.agr_e18_last, ctx.x11_e18.data(), pos1ob);
+            if (!ctx.x11_eb.empty())
+                dump(out, prefix, "ita", begspn, sp, ctx.agr_isf_frst,
+                     ctx.agr_e18_last, ctx.x11_eb.data(), pos1ob);
+            // The forced / rounded indirect series.
+            if (ctx.force.iyrt > 0) {
+                dump(out, prefix, "iaa", begspn, sp, pos1ob, posfob,
+                     ctx.adxser.stci2.data());
+                dump(out, prefix, "iff", begspn, sp, pos1ob,
+                     ctx.agr_frcfac_last, ctx.agr_frcfac.data());
+            }
+            if (ctx.force.lrndsa)
+                dump(out, prefix, "irn", begspn, sp, pos1ob, posfob,
+                     ctx.adxser.stcirn.data());
+        } else if (!ctx.agr_direct_d11.empty()) {
             // The DIRECT adjustment of the aggregate, snapshotted by run_x11
             // before agr3 overwrote the buffers.
             dump(out, prefix, "d10", begspn, sp, sf_frst, sf_last, ctx.agr_direct_d10.data());

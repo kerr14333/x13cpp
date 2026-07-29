@@ -27,8 +27,8 @@
 #include "driver/run_history.hpp"  // run_history
 #include "driver/run_spectrum.hpp"  // run_spectrum
 #include "diag/genqs.hpp"           // genqs / gennpsa (QS + NP seasonality)
-#include "composite/agr2.hpp"       // agr2_component / agr2_compare (composite)
-#include "composite/agr3.hpp"       // agr3, agrxpt (indirect adjustment)
+#include "composite/agr3.hpp"        // agrxpt (direct/indirect geometry reconcile)
+#include "driver/composite_tail.hpp" // run_composite_tail (x11ari.f:329-374)
 
 #include <algorithm>
 #include <string>
@@ -143,75 +143,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // the oracle runs AFTER spcdrv -- and, like genqs, with no Ny==12 gate.
     if (!gennpsa(ctx, /*lseats=*/false)) return false;
 
-    // composite{} (x11ari.f:372-373): if this run is a COMPONENT of a composite
-    // adjustment (series{comptype=...} set Iag>=0 and the metafile driver carried
-    // Iagr>0 in), accumulate it into the aggregation buffers. Iagr==3 means this
-    // run IS the composite total, which accumulates nothing. No-op for every
-    // single-series run (Iag<0). See tools/composite_scouting.md.
-    if (ctx.agr.iagr > 0 && ctx.agr.iagr != 3 && ctx.agr.iag >= 0) {
-        if (!agr2_component(ctx)) {
-            writln(ctx, "ERROR: Component series has a non-overlapping time "
-                        "span.  Aggregation not computed.",
-                   ctx.units.mt2, ctx.units.mt2, true);
-            return false;
-        }
-    }
-    // x11ari.f:333-341: this run IS the composite total (Iagr==3), so after its
-    // own DIRECT adjustment above, rebuild the D-tables from the aggregated
-    // component results -- the INDIRECT adjustment. (Ixreg/Kswv are zeroed
-    // around it in the oracle; neither is set on this path.)
-    if (ctx.agr.iagr == 3) {
-        // agr3 REPLACES the D-table buffers with the indirect adjustment, so
-        // snapshot the composite total's own DIRECT d10-d13 first. Not an oracle
-        // step (the oracle has already printed/punched them by this point); this
-        // port defers all output to the caller, so the caller needs both sets.
-        constexpr int PLEN_D = 1020;
-        ctx.agr_direct_d10.assign(ctx.x11srs.sts.data(), ctx.x11srs.sts.data() + PLEN_D);
-        ctx.agr_direct_d11.assign(ctx.x11srs.stci.data(), ctx.x11srs.stci.data() + PLEN_D);
-        ctx.agr_direct_d12.assign(ctx.x11srs.stc.data(), ctx.x11srs.stc.data() + PLEN_D);
-        ctx.agr_direct_d13.assign(ctx.x11srs.sti.data(), ctx.x11srs.sti.data() + PLEN_D);
-        agr3(ctx, begspn_full);
-        if (ctx.error.lfatal) return false;
-        // x11ari.f:341 -- the SAME x11pt4 over the indirect buffers agr3 just
-        // installed, producing the `if2.*`/`if3.*` diagnostics block. Its inputs
-        // are the indirect analogues: Sti is already the final indirect irregular
-        // and Stc the pre-level-shift trend filter output (Stc2 the folded,
-        // published one), so there is no internal-vs-published split to undo the
-        // way x11pt3 needs on the direct side. The direct block was snapshotted
-        // above, so overwriting /inpt2/, /work2/ and Mcd here is safe.
-        x11pt4_etables(ctx, ctx.x11srs.stc.data(), ctx.x11srs.stc2.data(),
-                       /*lttc=*/false);
-        if (x11pt4_partf(ctx, ctx.x11srs.sti.data(), ctx.x11srs.stc.data())) {
-            ctx.agr_f2inpt2 = ctx.inpt2;
-            ctx.agr_f2work2 = ctx.work2;
-            ctx.agr_f2tests = ctx.tests;
-            ctx.agr_f2mcd = ctx.x11opt.mcd;
-            ctx.agr_f2ratic = ctx.x11opt.ratic;
-            ctx.agr_f2ratis = ctx.x11opt.ratis;
-            ctx.agr_f3_set = true;
-        }
-        // --- the INDIRECT diagnostics (x11ari.f:343-370) --------------------
-        // agr3 has replaced the D-table buffers with the indirect adjustment, so
-        // genqs / spcdrv / gennpsa run a SECOND time over them under Iagr==4.
-        //
-        // genqs first (x11ari.f:346-349), and it is a NO-OP by CENSUS DEFECT --
-        // CB-31. Its `Tblind` argument is `LSLIQS` (=69, a SAVELOG index from
-        // spcsvl.i) where genqs.f:439 uses it as `Savtab(Tblind)`, a TABLE-log
-        // subscript; the direct call one screen earlier correctly passes
-        // `LSPCQS` (=113). `LSPQSI` (=114) exists in spctbl.i and is plainly the
-        // intended one, and is never passed anywhere. So the whole indirect QS
-        // savelog block is gated on an unrelated table's save flag and the
-        // oracle emits no `qsind*` key at all -- which is exactly what the
-        // composite total's golden shows, next to a full set of `npind*` and
-        // `spcind*`. Reproduced by not calling it; there is nothing to compute.
-        if (!run_spectrum(ctx, /*iagr4=*/true)) return false;
-        if (!gennpsa(ctx, /*lseats=*/false, /*iagr4=*/true)) return false;
-
-        // x11ari.f:372-373: agr3 leaves Iagr==4, which routes the SAME agr2 call
-        // into its comparison-statistics branch -- direct vs indirect roughness,
-        // and the restore of the direct pointer geometry.
-        agr2_compare(ctx, begspn_full);
-    }
+    // composite{} (x11ari.f:329-374) -- fold this run into the aggregation, or,
+    // on the composite total, build and diagnose the indirect adjustment. Shared
+    // with run_seats; see driver/composite_tail.cpp.
+    if (!run_composite_tail(ctx, begspn_full, /*lx11=*/has_x11)) return false;
 
     // --- the span-replay diagnostics (x12run.f:225/257) ----------------------
     // sspdrv and revdrv are separate re-runs that x12run.f calls AFTER x11ari

@@ -20,6 +20,7 @@
 #include "driver/run_history.hpp"     // run_history (revdrv.f, Lseats)
 #include "driver/x11_prestage.hpp"  // x11_prestage (x11ari.f:60-199, shared with run_x11)
 #include "driver/run_spectrum.hpp"   // run_spectrum (spcdrv.f, x11ari.f:282-287)
+#include "driver/composite_tail.hpp" // run_composite_tail (x11ari.f:329-374)
 #include "diag/genqs.hpp"      // genqs / gennpsa (QS + NP seasonality, x11ari.f:277/322)
 #include "gen/model.hpp"       // prm::PRGTCN (mean-regressor type), prm::DIFF
 #include "regarima/regvar.hpp" // ratpos (rebuild the undifferenced Constant column)
@@ -265,6 +266,14 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
     if (!genqs(ctx, /*lseats=*/true)) return false;
     if (!run_spectrum(ctx)) return false;
     if (!gennpsa(ctx, /*lseats=*/true)) return false;
+
+    // composite{} (x11ari.f:329-374) -- the same tail run_x11 reaches, because
+    // the oracle has ONE x11ari and this block sits after its Lseats/Lx11 branch
+    // has rejoined. A SEATS COMPONENT accumulates its Seatsa (agr2.f:281-296);
+    // a SEATS-adjusted composite TOTAL builds the indirect adjustment here. Runs
+    // after publish_seats_commons because agr2 reads /seatcm/.
+    const int begspn_agr[2] = {ctx.mdldat.begspn(1), ctx.mdldat.begspn(2)};
+    if (!run_composite_tail(ctx, begspn_agr, /*lx11=*/false)) return false;
     return true;
 }
 

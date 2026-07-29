@@ -87,7 +87,15 @@ bool agr2_component(X13Context& ctx) {
     if (!(ag.itest(1) == ny && ag.itest(2) == begspn[MO - 1] &&
           ag.itest(3) == ctx.x11opt.lstmo && ag.itest(4) == ctx.lzero.ly0 &&
           ag.itest(5) == ctx.x11opt.lstyr)) {
-        // agr2.f:311-315: "Series <name> has non-overlapping time span."
+        // agr2.f:311-315.
+        const int n = ctx.title.nser > 0 ? ctx.title.nser : 0;
+        writln(ctx, " ERROR : Series " +
+                        std::string(ctx.title.serno.data(),
+                                    static_cast<std::size_t>(n)) +
+                        " has non-overlapping time span.",
+               ctx.units.mt2, ctx.units.mt2, true);
+        writln(ctx, "         Aggregation not computed.", ctx.units.mt2,
+               ctx.units.mt2, false);
         ag.iagr = -1;
         return false;
     }
@@ -154,13 +162,36 @@ bool agr2_component(X13Context& ctx) {
     agr(srs3.data(),           as.o3.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
     agr(srs4.data(),           as.o4.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
     agr(srs5.data(),           as.o5.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
-    // Lx11 && X11agr: the X-11 modified original (agr2.f:273-274).
-    agr(ctx.adxser.stome.data(), as.omod.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
-    // The component SA (Stci) and its forced counterpart (Stci2) -- the indirect
-    // adjustment IS this sum (agr2.f:276-281). The SEATS branch (Seatsa/Setsa2)
-    // is increment 2b.
-    agr(ctx.x11srs.stci.data(),  as.ci.data(),  ag.iag, ind1, posffc, ag.ind1bk, ag.w);
-    agr(ctx.adxser.stci2.data(), as.ci2.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    // agr2.f:273-274 -- the X-11 modified original, only when THIS component was
+    // X-11 adjusted and every component so far was too (a SEATS component has no
+    // Stome, and Omod is what the indirect Stome/E-tables are built from).
+    const bool lx11 = ctx.captured.has_x11;
+    if (lx11 && ctx.x11agr)
+        agr(ctx.adxser.stome.data(), as.omod.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    // agr2.f:275-296 -- the component SA and its forced counterpart. The indirect
+    // adjustment IS this sum. SEATS supplies Seatsa/Setsa2 instead of Stci/Stci2,
+    // and a SEATS run that could not extract a signal (Havesa false) stops the
+    // whole aggregation.
+    if (lx11) {
+        agr(ctx.x11srs.stci.data(),  as.ci.data(),  ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+        agr(ctx.adxser.stci2.data(), as.ci2.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    } else if (ctx.seatlg.hvstsa) {
+        agr(ctx.seatcm.seatsa.data(), as.ci.data(),  ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+        // Setsa2 is seatad.f's forced SEATS SA. force{} under seats{} is not
+        // ported, so it is the zero buffer here -- faithful in that the oracle
+        // leaves it zero too when nothing forced the component, and Ci2 is only
+        // read by the indirect force block, which is guarded on Iyrt>0.
+        agr(ctx.seatcm.setsa2.data(), as.ci2.data(), ag.iag, ind1, posffc, ag.ind1bk, ag.w);
+    } else {
+        // agr2.f:289-294.
+        writln(ctx, " NOTE: Aggregation cannot be done when SEATS cannot "
+                    "perform a signal",
+               ctx.units.mt2, ctx.units.mt2, true);
+        writln(ctx, "       extraction on the data.", ctx.units.mt2,
+               ctx.units.mt2, false);
+        ag.iagr = -1;
+        return false;
+    }
 
     ag.ncomp = ag.ncomp + 1;   // agr2.f:296
     return true;
@@ -209,13 +240,29 @@ void agr2_compare(X13Context& ctx, const int* begspn) {
     extend_cmn& ext = ctx.extend;
     const int ny = ctx.x11opt.ny;
     const int muladd = ctx.x11opt.muladd;
-    // X11agr: the composite is adjusted by X-11 (the SEATS composite runs agr3s
-    // and is not ported), so the R2 half of the statistics is always computed.
-    const bool x11agr = true;
+    // X11agr false means at least one component came from SEATS; agr2.f then
+    // drops the whole R2 half (di 13..24, `r2mse`/`r2rmse`) and prints the
+    // R1-only header. Measured on the oracle: a SEATS composite's .udg carries
+    // r1mse/r1rmse and no r2 line at all.
+    const bool x11agr = ctx.x11agr;
 
     ag.iagr = 0;
     if (ctx.hiddn.issap > 0 || ctx.hiddn.irev > 0) ag.iagr = 5;
     if (ctx.hiddn.issap == 0 && ctx.hiddn.irev == 0) ag.ncomp = 0;
+
+    // agr2.f:76-84 -- with no direct adjustment to compare against there is
+    // nothing to measure. (Lx11 is the TOTAL's own adjustment here; Havesa says
+    // whether SEATS got a signal out of the aggregate.)
+    if (!ctx.captured.has_x11 && !ctx.seatlg.hvstsa) {
+        writln(ctx, " NOTE: Comparison diagnsotics for composite adjustment "
+                    "cannot be generated ",
+               ctx.units.mt2, ctx.units.mt2, true);
+        writln(ctx, "       when SEATS cannot perform a signal extraction on "
+                    "the composite data.",
+               ctx.units.mt2, ctx.units.mt2, false);
+        ag.iagr = -1;
+        return;
+    }
 
     // agr2.f:88-119 -- four aggmea calls: DIRECT (Orig2 = the SA agr3 stashed,
     // Tem = its forced-Henderson trend) and INDIRECT (Stci/Stc), each over the

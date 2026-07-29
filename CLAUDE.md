@@ -1991,5 +1991,60 @@ diagnostics front (force / slidingspans / history) is now closed.
   **passes the whole suite**. Gating it needs a composite whose components carry
   a residual seasonal or trading-day peak; the note is at the code and at the
   gate.
+- **`composite{}` under `seats{}` -- `agr3s.f` -- CLOSED (bit-exact over the
+  observed span), and a SEATS metafile used to come back FATAL.** `X11agr` is a
+  metafile-wide flag, not a spec option: `aaamain.f:73` arms it TRUE once for the
+  whole run and `gtinpt.f:1170` ANDs each COMPONENT's own `Lx11` into it, so ONE
+  SEATS component routes the total's indirect adjustment through **`agr3s`**
+  (`x11ari.f:342`) instead of `agr3`. Nothing of that existed: `agr2_component`
+  accumulated `Stci` unconditionally (a SEATS component has none),
+  `agr2_compare` hardcoded `const bool x11agr = true`, and the metafile harness
+  handed every spec to `run_x11`, which refuses a `seats{}` spec outright.
+  **`agr3s` is a different answer, not a variant.** No extreme-value pass, no
+  Henderson, no D8/D9 battery, no `x11pt4` behind it: the indirect SA series IS
+  the aggregate `Ci` of the components' own SA series and the seasonal factor is
+  `O5/Ci`. Measured on the oracle, the entire output is `isf isa ie5 ip5 ie6 ip6
+  i18` even when the spec asks for the full indirect family -- the gate asserts
+  the ABSENCES in both directions. Three things that fall out of it and were
+  each a real defect until now: (1) `agr2` drops its whole R2 half
+  (`:128-131`/`:175-178`) because R2 is the variance of the SA/trend ratio and
+  there is no indirect trend; (2) **`spcdrv`'s `Iagr==4` branch comes BEFORE its
+  Lseats arm** (`:302-313`) -- the indirect spectrum is taken from `Stci`, the
+  series agr3s left, and NEVER from `Seatsa` even when the total is
+  SEATS-adjusted, which the port got wrong by keying on `has_seats`
+  (`spcindsa.median` came back equal to `spcsa.median` to the last digit); and
+  (3) `:436`'s `goirr = goirr .and. X11agr` means there is **no `spcindirr`
+  block at all** here -- the engine was emitting twenty keys the oracle does not,
+  and the gate could not see it until the diag comparison was made
+  bidirectional. Ported asymmetries, all transcribed: no `Lindot` guard on the
+  LS/AO factor build, the `Stci /= flsind` divide commented out at
+  `agr3s.f:151`, `ststd` computed at `:181` and never read, and the rounded-
+  series ftest gated on `Lx11` where agr3 has no such guard. **CB-32**: agr3s
+  omits `agr3.f:101-108`'s store of the direct SA into the `Orig2`-aliased
+  scratch, so `agr2`'s DIRECT roughness column measures the aggregate ORIGINAL
+  -- 66.777 against 53.586 down the agr3 path, and 66.777 is R1 of the summed
+  input `.dat` files to all six printed digits. **The one gap, measured and made
+  loud rather than silent:** `Ci` past the observed span needs `Setfsa`, the
+  SEATS forecast decomposition (`ansub3.f:356-678`) `seatad.f:49-54` appends into
+  `Seatsa`, which is unported -- and the forecast span is NOT avoidable by
+  configuration, since `editor.f:387-400` forces `Nfcst >= max(12,3*Sp)` on any
+  SEATS run regardless of `forecast{maxlead=}`. It costs i18's forecast rows
+  (agr3s.f:412-418 widens that punch range unconditionally, unlike isf's
+  `Savfct` gate) and, when the TOTAL also carries forecasts, a spurious `ita`;
+  the run writes a NOTE to Mt2 saying so. Gated by
+  `census-examples/composite-seats/` (X-11 total) and `composite-seats-total/`
+  (SEATS total -- the only corpus case reaching the composite tail from
+  `run_seats`), both with **fixed MA coefficients**: estimated, this port's SEATS
+  decomposition sits 1.3e-6 from the oracle's on this synthetic series while
+  every printed coefficient agrees to 11 digits, and the same 1.3e-6 appears on
+  a STANDALONE component run -- optimizer path noise, and the indirect
+  adjustment is a SUM, so it would land there undiluted. Mutation-tested three
+  ways (perturb `Ci`, force `x11agr` inside `agr2_compare`, drop `gtinpt.f:1170`)
+  -- the second one PASSED at first, because the harness emitted only `cmpstat
+  1..12` and the gate could not tell an uncomputed R2 half from a suppressed
+  one; it now emits all 24 and asserts 13..24 are exactly zero. Refactor that
+  came with it: `x11ari.f:329-374` is now `driver/composite_tail.cpp`, called
+  from BOTH drivers, because the oracle has one x11ari and this block sits after
+  its Lseats/Lx11 branch rejoins.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

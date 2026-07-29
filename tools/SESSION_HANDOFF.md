@@ -1,8 +1,8 @@
-# Session handoff — 2026-07-29 (pickmdl + composite diagnostics CLOSED; docs made self-checking)
+# Session handoff — 2026-07-29b (composite under SEATS — `agr3s.f` — CLOSED)
 
-Replaces the 2026-07-28d handoff. Its findings are carried forward below where
-they still matter; its open item 1 (`pickmdl{}`) is done, and so is the
-`Iagr==4` indirect-names item that followed it.
+Replaces the 2026-07-29 handoff. Its findings are carried forward below where
+they still matter; its open item 4 (composite `agr3s.f`) is done, and with it
+the last structural piece of `composite{}` bar pseudo-additive.
 
 ## Where things stand
 
@@ -13,7 +13,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5634 passed / 0 failed / 469 skipped** (~95s) |
+| `python -m pytest tests/parity -q -n 8` | **5688 passed / 0 failed / 469 skipped** (~78s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -25,11 +25,87 @@ changes. Build is ~25s; use `-k "<name>"` (~3s) while iterating.
 Standing constraints, unchanged: **never merge this branch to `main`, never
 push**; **never run `tests/corpus/generated/genspecs.py` or
 `tests/corpus/extra/genextra.py`** (both wipe committed specs they cannot
-regenerate — the six new pickmdl specs are hand-authored and say so in a header
-comment). Build with
+regenerate — the six pickmdl specs and both `composite-seats*` corpora are
+hand-authored and say so in a header comment). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
-## What landed (10 commits, 5560 → 5634 passing)
+## This session: `composite{}` under `seats{}` — `agr3s.f`
+
+A SEATS metafile came back **FATAL**. `X11agr` is a metafile-wide flag, not a
+spec option: `aaamain.f:73` arms it TRUE once for the whole run, `gtinpt.f:594`
+re-arms it on the first component, and `gtinpt.f:1170` ANDs each COMPONENT's own
+`Lx11` into it — so ONE SEATS component routes the total's indirect adjustment
+through **`agr3s`** (`x11ari.f:342`) instead of `agr3`. None of that existed:
+`agr2_component` accumulated `Stci` unconditionally (a SEATS component has none),
+`agr2_compare` hardcoded `const bool x11agr = true`, and `x13run_composite`
+handed every spec to `run_x11`, which refuses a `seats{}` spec outright.
+
+**`agr3s` is a different answer, not a variant of `agr3`.** No extreme-value
+pass, no Henderson, no D8/D9 battery, no `x11pt4` behind it: the indirect SA
+series IS the aggregate `Ci` of the components' own SA series, and the seasonal
+factor is `O5/Ci`. Measured on the oracle, the entire output is
+`isf isa ie5 ip5 ie6 ip6 i18` even when the spec asks for the full indirect
+family. The gate asserts the ABSENCES, in both directions.
+
+Landed: `core/src/composite/agr3s.{hpp,cpp}` (including the forced and rounded
+indirect series, which agr3 still lacks), the `X11agr` derivation and its carry
+across the metafile, `agr2`'s `!X11agr` branches, and a refactor —
+`x11ari.f:329-374` is now `core/src/driver/composite_tail.cpp`, called from BOTH
+drivers, because the oracle has one `x11ari` and that block sits after its
+Lseats/Lx11 branch rejoins.
+
+### Findings worth not re-deriving
+
+1. **`spcdrv`'s `Iagr==4` branch comes BEFORE its Lseats arm** (`:302-313`). The
+   indirect spectrum is taken from `Stci` — the series agr3s left — and NEVER
+   from `Seatsa`, even when the TOTAL is SEATS-adjusted. The port keyed on
+   `has_seats` and so reported the total's own DIRECT spectrum under the
+   indirect names: `spcindsa.median` came back equal to `spcsa.median` to the
+   last digit.
+2. **`spcdrv.f:436`'s `goirr = goirr .and. X11agr`** — there is no `spcindirr`
+   block at all on this path, because agr3s forms no indirect irregular. The
+   engine was emitting twenty keys the oracle does not, and **the gate could not
+   see it**: the diag comparison iterated over golden keys only. Made
+   bidirectional. This is the third time a one-directional comparison has hidden
+   a real defect in this port.
+3. **A gate that reads N columns cannot see a wrong N.** Mutation B (force
+   `x11agr` true inside `agr2_compare`) PASSED at first, because the harness
+   emitted only `cmpstat 1..12` on this path. It now emits all 24 and the gate
+   asserts 13..24 are exactly zero — the R2 half must be *untouched*, not merely
+   unprinted.
+4. **CB-32**: `agr3s` omits `agr3.f:101-108`'s store of the DIRECT seasonally
+   adjusted series into the `Orig2`-aliased scratch, so `agr2`'s DIRECT
+   roughness column measures the aggregate **ORIGINAL**. Confirmed numerically:
+   66.777 here against 53.586 down the agr3 path, and 66.777 is R1 of the summed
+   input `.dat` files to all six printed digits.
+5. **Fixed coefficients are the right corpus answer for a SUM.** With the
+   components' MA estimated, this port's SEATS decomposition sits **1.3e-6** from
+   the oracle's on this synthetic series while every printed coefficient agrees
+   to 11 digits — and the same 1.3e-6 appears on a STANDALONE component run,
+   i.e. optimizer path noise, not aggregation. The indirect adjustment is a sum,
+   so it would land there undiluted. Fixed, the whole metafile is ~5e-15.
+
+### The one gap, measured and made loud
+
+`Ci` past the observed span needs `Setfsa` — the SEATS FORECAST decomposition
+(`ansub3.f:356-678`) that `seatad.f:49-54` appends into `Seatsa`. Unported, and
+**not avoidable by configuration**: `editor.f:387-400` forces
+`Nfcst >= max(12, 3*Sp)` on any SEATS run regardless of `forecast{maxlead=}`.
+It costs i18's forecast rows (`agr3s.f:412-418` widens that punch range
+unconditionally, unlike isf's `Savfct` gate) and, when the TOTAL also carries
+forecasts so `Series` extends where `Ci` does not, a spurious `ita` table. The
+run writes a NOTE to Mt2 rather than doing it silently; the gate compares the
+observed span and says why at the skip. Everything else is bit-exact.
+
+### Gated by
+
+`census-examples/composite-seats/` (X-11 total — agr3s's `Lx11` true) and
+`composite-seats-total/` (SEATS total — the only corpus case reaching the
+composite tail from `run_seats`), through
+`tests/parity/test_composite_seats.py` (50 tests). Mutation-tested three ways,
+each failing a different set.
+
+## Previous session (2026-07-29a): `pickmdl{}` — what landed
 
 `M5/pickmdl: port automx.f -- the classic X-11-ARIMA candidate search`.
 
@@ -59,7 +135,7 @@ gtinpt.f:248-257's defaults.
 (from the aape diagnostic — `AapeDiagnostics.ok` IS the Fortran's `Fctok`).
 That is why the whole front came in at one increment.
 
-## Findings worth not re-deriving
+### Findings worth not re-deriving (pickmdl)
 
 1. **The bug that was not mechanical: `bstget.f:80-96`'s effective-observation
    split belongs INSIDE `bstget`, not at the call site.** Extracted to a shared
@@ -96,7 +172,7 @@ That is why the whole front came in at one increment.
    null; `automd.f:343`'s `armats` is guarded on `.not.Lidotl`; a reverted file
    may not rebuild (`touch` after any revert-by-copy).
 
-## The composite DIAGNOSTICS front, also closed
+## Previous session: the composite DIAGNOSTICS front
 
 Two increments after pickmdl, and the FIRST was pure harness coverage.
 
@@ -152,7 +228,7 @@ generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5634<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5688<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -193,20 +269,24 @@ not parse.
    (75 keys, model 5 vs 4 ARMA terms; localised to label 40's `amidot` arm,
    since `noautooutlier=tramo` makes it bit-exact). Both make every option
    verdict on those series uninterpretable.
-3. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
+3. **The SEATS FORECAST decomposition (`ansub3.f:356-678` / `Setfsa`).** Now
+   wanted by two separate fronts: the composite i18 forecast tail above and the
+   `hpcycle` filter (`tools/seats_hp_scouting.md`). Nothing else in
+   `composite{}` needs it.
+4. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
    → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
    Latent everywhere a spec supplies a decimal; the one place it was visibly
    biting is gone. **Check whether the Fortran reader does the same before
    changing anything** — if it does, the port is faithful and this is
    documentation, not a fix.
-4. **Composite `agr3s.f`** — the SEATS branch of composite adjustment, plus
-   pseudo-additive and the forced/rounded indirect series. The X-11 composite
-   front (direct, indirect, comparison statistics, indirect diagnostics) is now
-   fully closed, so this is what is left of `composite{}`.
-5. **A composite whose components carry a residual peak**, to gate savpk's real
-   `.dir`/`.ind` split — see above; only the degenerate branch runs today, and
-   a mutation swapping the two output halves passes the whole suite.
-6. `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
+5. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+   the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
+   ported for agr3s this session, still absent for agr3, and ungated on both for
+   want of a `force{}` composite spec).
+6. **A composite whose components carry a residual peak**, to gate savpk's real
+   `.dir`/`.ind` split — only the degenerate branch runs today, and a mutation
+   swapping the two output halves passes the whole suite.
+7. `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase.
 
 ## Environment notes

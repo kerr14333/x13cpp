@@ -1007,3 +1007,44 @@ both from `spctbl.i`, and both families appear in the golden.
   test_composite_no_indirect_qs`, which asserts BOTH that the golden has no
   `qsind*` and that the engine emits none. If the golden ever grows them the test
   fails loudly rather than silently accepting a changed oracle.
+
+## CB-32
+
+**`agr3s.f` never stores the DIRECT seasonally adjusted series, so the composite
+comparison statistics measure the roughness of the UNADJUSTED aggregate.**
+
+- **File:line:** `agr3s.f:99-109` (the missing store), against `agr3.f:101-108`
+  (which has it); consumed at `agr2.f:89`/`:96`.
+- **Severity:** the direct-vs-indirect comparison is not direct-vs-indirect at
+  all on the SEATS composite path -- the numbers are printed and saved with the
+  DIRECT label.
+
+`agr2`'s `Iagr==4` branch is the direct-vs-indirect roughness comparison. It
+reads the DIRECT seasonally adjusted series out of `Orig2` and the direct trend
+out of `Tem`. Neither is an argument: `agr3` puts them there on its way past.
+
+`agr3.f:58` EQUIVALENCEs a local scratch array `tempo` onto `Orig2`, and
+`agr3.f:101-108` fills it with the direct SA (`Stci` under Lx11, `Seatsa`
+otherwise) in the same loop that fills `Tem`. `agr3s.f:99-109` is that loop
+minus the `tempo` line: it writes `Tem`, and `Stci` (dead -- `:139-142`
+overwrites it), and nothing else.
+
+`Orig2` is therefore still what `editor.f:2492` and `arima.f:1432-1440` left
+there: the ORIGINAL series with backcasts and forecasts appended, which is
+exactly the buffer `agr2.f:267` aggregates the components' originals from. So
+`aggmea(Orig2, Tem, ...)` measures the roughness of the aggregate ORIGINAL -- a
+series that still contains its seasonality -- and reports it as the direct
+adjustment's.
+
+- **Confirmed empirically**, on `tests/corpus/census-examples/composite-seats/`
+  (the same synthetic data as `composite-fixed/`, components adjusted by SEATS
+  instead of X-11): the oracle prints DIRECT R1-MSE **66.777** where the agr3
+  path prints **53.586** for the same data, and 66.777 is R1 of the summed input
+  `.dat` files to all six printed digits (66.77653631). The INDIRECT column
+  agrees between the two paths, as it should.
+- **Port:** reproduced by leaving the store out -- `core/src/composite/agr3s.cpp`
+  carries the analysis at the loop. Adding it would be an improvement, which is
+  what this project does not do.
+- **Pinned by:** `tests/parity/test_composite_seats.py::
+  test_seats_composite_roughness_table`, which compares all twelve `di()` values
+  against the oracle's own printed table.
