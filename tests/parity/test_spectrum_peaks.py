@@ -194,9 +194,6 @@ CASES = _discover()
 def _run(rel: str) -> dict[str, str]:
     spec = os.path.join(_CORPUS, rel + ".spc")
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
-    if "pickmdl{" in txt:
-        pytest.skip("pickmdl{} model selection is parse-only (M1); the model "
-                    "the engine fits is not the oracle's")
     if rel in _AUTOMD_IDDIFF_GAP:
         pytest.skip(
             "automd selects (1 0 1)(0 1 1) here against the oracle's "

@@ -3264,16 +3264,185 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
 }
 
 // ---- pickmdl{} (gtautx.f) -------------------------------------------------
-// Classic X-11-ARIMA candidate-model selection. Parse-acceptance only; the
-// .mdl candidate-file read + the estimate/forecast-error selection loop are
-// follow-on.
+// Classic X-11-ARIMA candidate-model selection: estimate up to five candidate
+// models and keep the one whose three-year average forecast error is lowest
+// among those that also pass the Ljung-Box and overdifferencing screens.
+//
+// Every argument here was previously routed through gt_generic, i.e. consumed
+// and thrown away, and with it the whole `automx.f` front (which had no C++ at
+// all). `iautom` is a LOCAL in gtinpt.f:873 and its only use is the `> 0` test
+// that sets `Lautox` -- and gtautx.f:229 forces it to 1 when no `mode=` was
+// given, so a pickmdl{} spec ALWAYS turns Lautox on.
 void gt_pickmdl(X13Context& ctx, bool& inptok) {
     constexpr int PARG = 11;
     static const char ARGDIC[] =
         "modefileqlimfcstlimbcstlimoverdiffprintmethodout"
         "ofsampleidentifysavelog";
     static const int argptr[PARG + 1] = {1, 5, 9, 13, 20, 27, 35, 40, 46, 57, 65, 72};
-    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+    static const char AUTDIC[] = "bothfcst";
+    static const int autptr[3] = {1, 5, 9};
+    static const char MTHDIC[] = "bestfirst";
+    static const int mthptr[3] = {1, 5, 10};
+    static const char IDDIC[] = "firstall";
+    static const int idptr[3] = {1, 6, 9};
+    static const char YSNDIC[] = "yesno";
+    static const int ysnptr[3] = {1, 4, 6};
+
+    auto& ar = ctx.arima;
+    bool havfil = false;
+    int iautom = 0;
+    int outamd = prm::NOTSET;
+
+    int arglog0[2 * PARG];
+    for (auto& v : arglog0) v = -32767;  // NOTSET
+    int a_idx;
+    while (gtarg(ctx, ARGDIC, argptr, PARG, a_idx, arglog0, inptok)) {
+        if (ctx.error.lfatal) return;
+        const int* ep = ctx.lex.errpos.data() + 1;
+        int ivec[1] = {0};
+        double dvec[1] = {0.0};
+        int nelt = 0;
+        bool argok = true;
+        switch (a_idx) {
+        case 1:   // mode = both | fcst (gtautx.f:78-86)
+            gtdcvc(ctx, LPAREN, true, 1, AUTDIC, autptr, 2,
+                   "The automatic modelling options are fcst or both.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) iautom = (ivec[0] > 1) ? 1 : 2;
+            continue;
+        case 2: {  // file = <candidate model file> (gtautx.f:90-93)
+            // gtnmvc bounds the value by the DESTINATION's length, so the
+            // buffer has to be pre-sized to PFILMD (Autofl's own width) --
+            // an empty std::string rejects every filename as "longer than 0".
+            std::string mdlfil(ar.autofl.size(), ' ');
+            int tmpptr[2] = {0, 0};
+            int nfl = 0;
+            gtnmvc(ctx, LPAREN, true, 1, mdlfil, tmpptr, nelt,
+                   static_cast<int>(ar.autofl.size()), argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt == 1) {
+                eltlen(ctx, 1, tmpptr, nelt, nfl);
+                if (ctx.error.lfatal) return;
+                ar.autofl = mdlfil.substr(0, static_cast<std::size_t>(nfl));
+                havfil = true;
+            }
+            continue;
+        }
+        case 3:   // qlim -- the Ljung-Box p-value floor, in PERCENT
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] < 0.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Ljung-Box Q limit cannot be less than zero.");
+                    inptok = false;
+                } else if (dvec[0] > 100.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Ljung-Box Q limit cannot be greater than 100.");
+                    inptok = false;
+                } else {
+                    ar.qlim = dvec[0];
+                }
+            }
+            continue;
+        case 4:   // fcstlim -- the average forecast error ceiling, in PERCENT
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] < 0.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Forecast error limit cannot be less than zero.");
+                    inptok = false;
+                } else if (dvec[0] > 100.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Forecast error limit cannot be greater than 100.");
+                    inptok = false;
+                } else {
+                    ar.fctlim = dvec[0];
+                }
+            }
+            continue;
+        case 5:   // bcstlim -- the same ceiling for the BACKCAST pass
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] < 0.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Backcast error limit cannot be less than zero.");
+                    inptok = false;
+                } else if (dvec[0] > 100.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Backcast error limit cannot be greater than 100.");
+                    inptok = false;
+                } else {
+                    ar.bcklim = dvec[0];
+                }
+            }
+            continue;
+        case 6:   // overdiff -- the MA-sum overdifferencing limit, a FRACTION
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] < 0.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Overdifferencing limit cannot be less than zero.");
+                    inptok = false;
+                } else if (dvec[0] > 1.0) {
+                    inpter(ctx, PERROR, ep,
+                           "Overdifferencing limit cannot be greater than one.");
+                    inptok = false;
+                } else {
+                    ar.ovrdif = dvec[0];
+                }
+            }
+            continue;
+        case 8:   // method = best | first (gtautx.f:189-195)
+            gtdcvc(ctx, LPAREN, true, 1, MTHDIC, mthptr, 2,
+                   "Choices are BEST or FIRST.", ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ar.pck1st = (ivec[0] == 2);
+            continue;
+        case 9:   // outofsample = yes | no -> Outfer (gtinpt.f:1204-1216)
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Available options for outofsample are yes or no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) outamd = ivec[0];
+            continue;
+        case 10:  // identify = first | all (gtautx.f:207-213)
+            gtdcvc(ctx, LPAREN, true, 1, IDDIC, idptr, 2,
+                   "Choices are ALL or FIRST.", ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ar.id1st = (ivec[0] == 1);
+            continue;
+        default:  // 7 print, 11 savelog -- print surface, deferred
+            consume_value(ctx, nullptr);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+    }
+    if (ctx.error.lfatal) return;
+
+    // gtautx.f:226 -- "no file" is signalled by CNOTST in the FIRST character,
+    // not by an empty string; automx.f:79's `havfil` reads exactly that.
+    if (!havfil) ar.autofl = "?";   // notset.prm CNOTST
+    // gtautx.f:230 -- forecast-only is the default mode.
+    if (iautom == 0) iautom = 1;
+    if (iautom > 0) ar.lautox = true;
+
+    // gtinpt.f:1204-1216: outamd feeds Outfer, which amdfct reads on the
+    // AUTOMATIC path (`Lauto` true -> `outf = Outfer`). The out-of-sample
+    // forecast-error computation is walled in the ported amdfct, so this is a
+    // clean fatal rather than a silent within-sample answer under an
+    // outofsample label.
+    if (outamd == 1) {
+        inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+               "pickmdl{outofsample=yes} is not yet supported: the "
+               "out-of-sample forecast-error computation (amdfct.f:70-90, "
+               ":186-235) is unported.");
+        inptok = false;
+    }
 }
 
 // ---- x11regression{} (gtxreg.f) -------------------------------------------

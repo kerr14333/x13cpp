@@ -240,6 +240,20 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.arima.fctlm2 = 15.0;
     ctx.arima.lsovdf = false;
 
+    // pickmdl{} defaults (gtinpt.f:248-257). gt_pickmdl / gtautx override them.
+    // Autofl starts ALL BLANK here and gtautx.f:226 stamps CNOTST into its first
+    // character only when no file= was given, which is the test automx.f:79
+    // reads -- so a run with no pickmdl{} spec at all leaves it blank, and that
+    // is never looked at because Lautox is false.
+    ctx.arima.lautox = false;
+    ctx.arima.pck1st = true;
+    ctx.arima.id1st = true;
+    ctx.arima.autofl = std::string_view("");
+    ctx.arima.fctlim = 15.0;
+    ctx.arima.bcklim = 18.0;
+    ctx.arima.qlim = 5.0;
+    ctx.arima.ovrdif = 0.9;
+
     // Control flags.
     bool havsrs = false, havesp = false, havotl = false, havreg = false, havtd = false;
     bool larma = false, hvfcst = false, hvspec = false, havmdl = false, havreq = false;
@@ -427,7 +441,12 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                 // pickmdl provides the ARIMA model (via the candidate .mdl file),
                 // so it satisfies the "model provision" check (gtinpt.f:877).
                 if (!havmdl) havmdl = true;
-                if (lautox) ldestm = true;  // gtinpt.f:878-881
+                // gtinpt.f:878-881. gtautx.f:230 forces `iautom` to 1 when no
+                // mode= was given, so this always fires -- `lautox` had been a
+                // local nothing ever set, which is why it never did.
+                lautox = ctx.arima.lautox;
+                if (lautox) ldestm = true;
+                ctx.model.imdlfx = 1;       // gtinpt.f:872
                 ctx.captured.spec_order.push_back("pickmdl");
                 break;
             case 20:  // spectrum

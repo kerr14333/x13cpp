@@ -158,10 +158,6 @@ def _fixed(text: str, width: int, n: int) -> list[float | None]:
 def _run(rel: str) -> dict[str, list[str]]:
     spec = os.path.join(_CORPUS, rel + ".spc")
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
-    if "pickmdl{" in txt:
-        pytest.skip("pickmdl{} model selection is parse-only (M1); the model "
-                    "the engine fits is not the oracle's")
-
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"
     assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]
@@ -349,8 +345,6 @@ def _read_udg_prefixed(path: str, prefix: str) -> dict[str, str]:
 def _run_raw(rel: str) -> str:
     spec = os.path.join(_CORPUS, rel + ".spc")
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
-    if "pickmdl{" in txt:
-        pytest.skip("pickmdl{} model selection is parse-only (M1)")
     r = subprocess.run([BIN, spec], capture_output=True, text=True,
                        cwd=os.path.dirname(spec))
     assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"

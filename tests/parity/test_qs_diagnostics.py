@@ -194,9 +194,6 @@ def _run(rel: str) -> dict[str, str]:
     # seats{} and x11{} are mutually exclusive, so the spec text picks the
     # harness. Both emit the identical two blocks (tools/dump_diag.hpp).
     binary = BIN_SEATS if "seats{" in txt else BIN
-    if "pickmdl{" in txt:
-        pytest.skip("pickmdl{} model selection is parse-only (M1); the model "
-                    "the engine fits is not the oracle's")
     if rel in _AUTOMD_IDDIFF_GAP:
         pytest.skip(
             "automd selects (1 0 1)(0 1 1) here against the oracle's "

@@ -135,8 +135,6 @@ ALL_CASES = sorted(set(CASES) | set(_FORCE_CASES))
 def _run(rel: str) -> dict[str, dict[str, float]]:
     spec = os.path.join(_CORPUS, rel + ".spc")
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
-    if "pickmdl{" in txt:
-        pytest.skip("pickmdl{} model selection is parse-only (M1)")
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"
     assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]

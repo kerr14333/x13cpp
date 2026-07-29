@@ -22,6 +22,7 @@
 #include "regarima/forecast.hpp"
 #include "regarima/outlier.hpp"     // idotlr, setcv
 #include "automdl/automd.hpp"       // automd (automatic model selection)
+#include "automdl/automx.hpp"       // automx (pickmdl candidate search)
 #include "automdl/aictst.hpp"       // explicit_aictest (arima.f:569 aictest)
 #include "automdl/automd_finalize.hpp"  // rmfix, addfix (arima.f:283/910)
 #include "numeric/numeric.hpp"      // dpeq
@@ -521,6 +522,34 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 // to trnsrs, which the X-11 stage (adjreg -> B1) needs. For the
                 // non-aictest automdl path automd does not modify trnsrs, so this
                 // is a no-op there.
+                if (out_trnsrs) *out_trnsrs = trnsrs;
+            } else if (ctx.arima.lautox) {
+                // arima.f:416 -- pickmdl{}: the classic X-11-ARIMA candidate
+                // search. See automx.hpp. It estimates the winner in place, so
+                // nothing below re-estimates.
+                bool hvmdl = false;
+                int hvstar = 0;
+                bool lidotl = ctx.captured.has_outlier &&
+                              (ctx.arima.ltstao || ctx.arima.ltstls ||
+                               ctx.arima.ltsttc);
+                automx(ctx, trnsrs.data(), frstry, nefobs, a.data(), na, hvmdl,
+                       hvstar, /*lsadj=*/true, lidotl);
+                if (ctx.error.lfatal) return false;
+                (void)na;
+                if (!hvmdl) {
+                    // arima.f:476-527's "no model selected" cleanup (turn every
+                    // regARIMA prior adjustment back off, drop the forecasts,
+                    // restore the model span) is unported. Fatal rather than
+                    // continue with adjustment flags the oracle would have
+                    // cleared.
+                    errhdr(ctx);
+                    writln(ctx,
+                           "ERROR: pickmdl{}: no candidate model was accepted, "
+                           "and arima.f:476-527's no-model cleanup is unported.",
+                           stdio::STDERR, ctx.units.mt2, true);
+                    abend(ctx);
+                    return false;
+                }
                 if (out_trnsrs) *out_trnsrs = trnsrs;
             } else if (ctx.arima.itdtst > 0 || ctx.arima.lomtst > 0 ||
                        ctx.arima.leastr ||
