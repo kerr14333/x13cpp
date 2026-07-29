@@ -114,7 +114,7 @@ number here is a build failure. Full table: [`docs/METRICS.md`](METRICS.md).
 | Corpus | <!--x13:corpus_specs-->386<!--/x13--> spec files, <!--x13:parity_modules-->26<!--/x13--> test modules | real + synthetic series |
 | Census bugs catalogued | <!--x13:census_bugs-->31<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->31<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
 | Active development time | **<!--x13:active_time-->56h 00m<!--/x13-->** over <!--x13:calendar_days-->12<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
-| Commits | <!--x13:commits-->359<!--/x13--> | 2026-07-18 → 2026-07-29 |
+| Commits | <!--x13:commits-->360<!--/x13--> | 2026-07-18 → 2026-07-29 |
 | Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
 *Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*

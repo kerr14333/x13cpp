@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-28f (pickmdl + the composite diagnostics CLOSED)
+# Session handoff — 2026-07-29 (pickmdl + composite diagnostics CLOSED; docs made self-checking)
 
 Replaces the 2026-07-28d handoff. Its findings are carried forward below where
 they still matter; its open item 1 (`pickmdl{}`) is done, and so is the
@@ -29,7 +29,7 @@ regenerate — the six new pickmdl specs are hand-authored and say so in a heade
 comment). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
-## What landed (6 commits, 5560 → 5634 passing)
+## What landed (10 commits, 5560 → 5634 passing)
 
 `M5/pickmdl: port automx.f -- the classic X-11-ARIMA candidate search`.
 
@@ -136,6 +136,41 @@ significant peak in any table, so all four keys are `none` and only the
 degenerate branch runs -- **a mutation swapping the two output halves passes the
 whole suite**. Gating it needs a composite whose components carry a residual
 seasonal or trading-day peak.
+
+## The docs are now self-checking -- READ THIS BEFORE WRITING A NUMBER
+
+A staleness audit at the end of this session found the deliverable report
+quoting a parity count **five fronts out of date** ("1088 passed" vs 5,634), a
+coverage ledger understating itself by **240 routines**, and a scouting doc
+contradicting its own later section. All three were true when written. Three
+generated artifacts now exist so it cannot recur:
+
+| artifact | command | owns |
+|---|---|---|
+| `docs/METRICS.md` | `tools/metrics.py --write` | every countable claim |
+| `docs/WALLS.md` | `tools/walls.py --write` | what the engine refuses (19 gaps / 4 faithful) |
+| `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
+
+**Never type a count into prose.** Wrap it in a marker --
+`<!--x13:parity_pass-->5634<!--/x13-->` -- and `--write` maintains it while
+`--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
+
+**When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
+fast checks as WARNINGS; **session close runs
+`metrics.py --write --parity <pass>,<fail>,<skip>,<xfail>` and
+`walls.py --write` before the final commit** -- pass `--parity` with the suite
+result you already have, or it re-runs pytest for 85s.
+
+**Ownership rule, now binding.** This file owns *what is open*; scouting docs
+own *how something works and what was measured* and must not keep status lists;
+a code comment describes *its own file*. Every cross-file staleness finding was
+duplicated ownership.
+
+Two data-loss bugs were found in `coverage_map.py` by using it: `partial` was
+not a recognised status and unrecognised words were silently reset (destroying
+three hand-written entries and their notes), and `write_yaml` hardcoded the file
+header. Both fixed; both are the same bug -- a round-trip that drops what it did
+not parse.
 
 ## Open, in the order I would take them
 
