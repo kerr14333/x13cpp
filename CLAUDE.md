@@ -1898,5 +1898,54 @@ diagnostics front (force / slidingspans / history) is now closed.
   every variant read "ORACLE REJECTS", which looks exactly like a finding. Same
   afternoon, an unanchored `file =` match also stripped `series{file=}`. Map:
   **`tools/pickmdl_scouting.md`**.
+- **The composite DIAGNOSTICS front, direct and INDIRECT (`Iagr==4`) -- CLOSED
+  (bit-exact), and the direct half was pure harness coverage.** Two increments.
+  (1) **`x13run_composite` had never emitted the QS / spectrum-peak / NP blocks
+  at all.** x11ari.f reaches genqs (:277), spcdrv (:282) and gennpsa (:322) on
+  EVERY spec of a metafile -- the oracle writes one `.udg` per spec and all of
+  them carry these -- so a composite run reported none of the ~100 keys per spec
+  the other two harnesses had gated since the spectrum-peak and QS increments.
+  Nothing in the ENGINE was wrong: `run_x11` already calls all three ahead of its
+  composite tail (the oracle's own ordering) and **all 103 shared keys matched
+  the moment the emit was wired in**. `dump_diag.hpp`'s three helpers gained an
+  optional key prefix and an optional string sink (the composite harness buffers
+  its output so `OUTCOME:` can lead it, and prints components as
+  `<base>:<key>`); default arguments, so the X-11 and SEATS harnesses are
+  untouched.
+  (2) **The INDIRECT pass, 52 further keys.** x11ari.f:344-370 runs spcdrv and
+  gennpsa a SECOND time after `agr3` has replaced the D-table buffers with the
+  aggregated adjustment. `run_spectrum` and `gennpsa` take an `iagr4` parameter
+  rather than being duplicated: the indirect pass skips the ORIGINAL
+  (spcdrv.f:158 `goori = Iagr.le.3`) and the RESIDUAL block (spcrsd belongs to
+  the regARIMA phase), names its two tables `spcindsa`/`spcindirr` (mkspky.f:22/
+  30), and lands in `*_ind` fields so the direct results survive.
+  **Two things worth knowing.** (a) The peak-label lists are NOT independent
+  between the passes: spcdrv appends to ONE accumulated string and savpk.f:88-115
+  splits it at `Nspdir`, the count x11ari.f:290 recorded between the two calls --
+  so `peaks.seas` is the whole list and `peaks.seas.dir`/`.ind` are its halves.
+  (b) **`svtukp.f` sets `iLb=7` on the indirect tables where it is 4 on the
+  direct ones** (:56, :66), which skips the `ind` as well as the `spc` -- so the
+  KEY is `spcindsa`/`spcindirr` while the LABEL inside `peaks.tukey.*.ind` is
+  plain `sa`/`irr`. That was the single remaining mismatch after everything else
+  lined up (`peaks.tukey.p90.seas.ind: irr`, not `indirr`).
+  **CB-31**: `x11ari.f:346` hands `genqs` **`LSLIQS`** (=69, a SAVELOG index from
+  `spcsvl.i`) where `genqs.f:439` uses it as `Savtab(Tblind)`, a TABLE-log
+  subscript; the direct call one screen earlier correctly passes `LSPCQS` (=113).
+  `LSPQSI` (=114) exists in `spctbl.i`, is plainly the intended argument, and is
+  passed nowhere. So the oracle emits **no `qsind*` key at all** -- confirmed
+  against the golden, which carries a full set of `npind*` and `spcind*` beside
+  it. Reproduced by not making the call; there is nothing to compute. The
+  neighbouring calls are all correct (`gennpsa` gets `LSPNPA`/`LSPNPI`, both
+  from `spctbl.i`), which is what makes it a slip rather than a convention.
+  Result: **155 of 155 shared diagnostic keys on the composite total match, zero
+  golden-only and zero engine-only**, with zero new goldens. Gated by
+  `test_composite_{direct,indirect}_diag_block` and `test_composite_no_indirect_qs`
+  (which pins CB-31 from both sides). **A MEASURED COVERAGE GAP, recorded rather
+  than hidden:** savpk's real `.dir`/`.ind` SPLIT is unexercised -- this composite
+  finds no visually significant peak in any table, so all four keys are `none`
+  and only the degenerate branch runs. A mutation swapping the two output halves
+  **passes the whole suite**. Gating it needs a composite whose components carry
+  a residual seasonal or trading-day peak; the note is at the code and at the
+  gate.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

@@ -156,3 +156,45 @@ Still genuinely open for composite: the SEATS branch (`agr3s.f`, `Seatsa`/
 - Verified 2026-07-24: `x13as_ascii_O2.exe -m composite -s` runs the example
   clean (exit 0) and `total.out` carries BOTH the direct and the indirect
   adjustment sections.
+
+
+## UPDATE 2026-07-28f -- the diagnostics front is CLOSED, direct and indirect
+
+Two increments; see `CLAUDE.md` for the full entry and the session handoff for
+the traps.
+
+**The direct half was pure harness coverage.** `x13run_composite` had never
+emitted the QS / spectrum-peak / NP blocks for ANY spec of a metafile, even
+though x11ari.f reaches genqs (:277), spcdrv (:282) and gennpsa (:322) on every
+one of them and `run_x11` already called all three ahead of its composite tail.
+All 103 shared `.udg` keys matched the moment the emit was wired in.
+
+**The indirect half** (x11ari.f:344-370) is the same three routines run a second
+time over the buffers `agr3` installs, under `Iagr==4`. `run_spectrum` and
+`gennpsa` take an `iagr4` parameter rather than being duplicated; the pass skips
+the ORIGINAL (spcdrv.f:158 `goori = Iagr.le.3`) and the RESIDUAL block, names its
+tables via mkspky.f:22/30, and lands in `*_ind` fields. 155/155 shared keys now
+match on the total, both directions.
+
+Two structural facts worth keeping:
+
+- **The peak-label lists are shared between the passes.** spcdrv appends to ONE
+  accumulated string and savpk.f:88-115 splits it at `Nspdir`, the count
+  x11ari.f:290 records between the calls. `peaks.seas` is the whole list;
+  `.dir`/`.ind` are its halves.
+- **`svtukp.f` uses `iLb=7` on the indirect tables and 4 on the direct ones**
+  (:56, :66), so the KEY keeps `ind` (`spcindsa`) while the LABEL inside
+  `peaks.tukey.*.ind` drops it (`sa`).
+
+**CB-31**: x11ari.f:346 hands genqs `LSLIQS` (=69, a savelog index) where
+genqs.f:439 uses it as a `Savtab` subscript. The oracle emits no `qsind*` key at
+all. Reproduced by not making the call; pinned from both sides by
+`test_composite_no_indirect_qs`.
+
+**Measured coverage gap:** savpk's real `.dir`/`.ind` SPLIT is untested -- this
+composite is peak-free, so all four keys are `none` and a mutation swapping the
+two output halves passes the suite. Needs a composite whose components carry a
+residual seasonal or trading-day peak.
+
+**Still open for composite:** the SEATS branch (`agr3s.f`), pseudo-additive, and
+the forced/rounded indirect series.

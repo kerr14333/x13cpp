@@ -241,7 +241,7 @@ inline void dump_spec_peaks(const x13::X13Context& ctx, const char* keypfx = "",
 // because only a composite TOTAL has them, and because the `peaks.*` label
 // lists they contribute to are interleaved with the direct ones above.
 //
-// There is deliberately NO indirect QS block: see CB-29 -- x11ari.f:346 passes
+// There is deliberately NO indirect QS block: see CB-31 -- x11ari.f:346 passes
 // genqs a SAVELOG index (LSLIQS=69) where genqs.f:439 uses it as a table-log
 // subscript, so the oracle emits no `qsind*` key at all.
 inline void dump_diag_indirect(const x13::X13Context& ctx,

@@ -195,7 +195,7 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
         // genqs / spcdrv / gennpsa run a SECOND time over them under Iagr==4.
         //
         // genqs first (x11ari.f:346-349), and it is a NO-OP by CENSUS DEFECT --
-        // CB-29. Its `Tblind` argument is `LSLIQS` (=69, a SAVELOG index from
+        // CB-31. Its `Tblind` argument is `LSLIQS` (=69, a SAVELOG index from
         // spcsvl.i) where genqs.f:439 uses it as `Savtab(Tblind)`, a TABLE-log
         // subscript; the direct call one screen earlier correctly passes
         // `LSPCQS` (=113). `LSPQSI` (=114) exists in spctbl.i and is plainly the

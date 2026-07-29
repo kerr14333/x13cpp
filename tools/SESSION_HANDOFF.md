@@ -1,7 +1,8 @@
-# Session handoff — 2026-07-28e (pickmdl CLOSED)
+# Session handoff — 2026-07-28f (pickmdl + the composite diagnostics CLOSED)
 
 Replaces the 2026-07-28d handoff. Its findings are carried forward below where
-they still matter; its open item 1 (`pickmdl{}`) is done.
+they still matter; its open item 1 (`pickmdl{}`) is done, and so is the
+`Iagr==4` indirect-names item that followed it.
 
 ## Where things stand
 
@@ -12,7 +13,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5629 passed / 0 failed / 469 skipped** (~97s) |
+| `python -m pytest tests/parity -q -n 8` | **5634 passed / 0 failed / 469 skipped** (~95s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -28,7 +29,7 @@ regenerate — the six new pickmdl specs are hand-authored and say so in a heade
 comment). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
-## What landed (1 commit, 5560 → 5629 passing)
+## What landed (3 commits, 5560 → 5634 passing)
 
 `M5/pickmdl: port automx.f -- the classic X-11-ARIMA candidate search`.
 
@@ -94,6 +95,47 @@ That is why the whole front came in at one increment.
    not just a distance; a null measured under the wrong preconditions is not a
    null; `automd.f:343`'s `armats` is guarded on `.not.Lidotl`; a reverted file
    may not rebuild (`touch` after any revert-by-copy).
+
+## The composite DIAGNOSTICS front, also closed
+
+Two increments after pickmdl, and the FIRST was pure harness coverage.
+
+1. **`x13run_composite` had never emitted the QS / spectrum-peak / NP blocks at
+   all.** x11ari.f reaches genqs (:277), spcdrv (:282) and gennpsa (:322) on
+   EVERY spec of a metafile. Nothing in the engine was wrong -- `run_x11`
+   already calls all three ahead of its composite tail, and **all 103 shared
+   keys matched the moment the emit was wired in**. `dump_diag.hpp`'s helpers
+   gained an optional key prefix + string sink (default arguments; the other two
+   harnesses are untouched).
+2. **The INDIRECT (`Iagr==4`) pass, 52 further keys.** x11ari.f:344-370 runs
+   spcdrv and gennpsa a second time after `agr3` installs the aggregated
+   adjustment. `run_spectrum`/`gennpsa` take an `iagr4` parameter rather than
+   being duplicated. **155 of 155 shared keys now match, zero golden-only and
+   zero engine-only.**
+
+Two things not to re-derive:
+
+- **The peak-label lists are NOT independent between the passes.** spcdrv
+  appends to ONE accumulated string and savpk.f:88-115 splits it at `Nspdir`,
+  the count x11ari.f:290 recorded between the calls.
+- **`svtukp.f` sets `iLb=7` on the indirect tables and 4 on the direct ones**
+  (:56, :66), skipping the `ind` as well as the `spc` -- so the KEY is
+  `spcindsa`/`spcindirr` while the LABEL in `peaks.tukey.*.ind` is plain
+  `sa`/`irr`. Last mismatch standing after everything else lined up.
+
+**CB-31** claimed: `x11ari.f:346` hands `genqs` `LSLIQS` (=69, a SAVELOG index)
+where `genqs.f:439` uses it as a TABLE-log subscript; the direct call passes
+`LSPCQS` (=113) correctly and the evidently-intended `LSPQSI` (=114) is passed
+nowhere. The oracle therefore emits **no `qsind*` key at all**. Reproduced by
+not making the call, and pinned from both sides by
+`test_composite_no_indirect_qs`.
+
+**A measured coverage gap, recorded rather than hidden:** savpk's real
+`.dir`/`.ind` peak SPLIT is unexercised. This composite finds no visually
+significant peak in any table, so all four keys are `none` and only the
+degenerate branch runs -- **a mutation swapping the two output halves passes the
+whole suite**. Gating it needs a composite whose components carry a residual
+seasonal or trading-day peak.
 
 ## Open, in the order I would take them
 

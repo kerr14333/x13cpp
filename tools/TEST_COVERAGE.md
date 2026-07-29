@@ -108,7 +108,11 @@ list; it is the one that gets updated per feature.)*
   `tools/dropped_options_scouting.md` round 6.
 - **`composite{}` SEATS branch** (`agr3s.f`), pseudo-additive, and the
   forced/rounded indirect series. The X-11 composite front (direct + indirect
-  + comparison statistics + indirect diagnostics) is CLOSED and gated.
+  + comparison statistics + indirect diagnostics) is CLOSED and gated -- as of
+  2026-07-28f that includes the QS / spectrum-peak / NP blocks on every spec of
+  a metafile AND their `Iagr==4` indirect names (155/155 keys on the total).
+  Still ungated there: savpk's real `.dir`/`.ind` peak split, which needs a
+  composite whose components carry a residual peak.
 - **`history{}` leftovers** — `outlier=auto` / `outlierwin=` (now a clean fatal,
   not silent), `x11outlier=no`, `additivesa=`.
 - **Misc open** — `spectrum{altfreq=yes}` (pending CB-30), the slidingspans

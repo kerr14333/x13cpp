@@ -525,7 +525,7 @@ def test_composite_direct_diag_block(run_output: str, who: str) -> None:
 # accumulated peak lists, and svtukp's four indirect Tukey lists.
 #
 # There is NO `qsind*` counterpart, and that is the ORACLE's behaviour, not a
-# gap: CB-29 -- x11ari.f:346 hands genqs `LSLIQS` (=69, a SAVELOG index) where
+# gap: CB-31 -- x11ari.f:346 hands genqs `LSLIQS` (=69, a SAVELOG index) where
 # genqs.f:439 uses it as `Savtab(Tblind)`, a table-log subscript. The intended
 # `LSPQSI` (=114) exists in spctbl.i and is never passed. The assertion below
 # pins that: a future change that starts emitting `qsind*` is a REGRESSION away
@@ -560,10 +560,10 @@ def test_composite_indirect_diag_block(run_output: str) -> None:
 
 @pytest.mark.skipif(not _HAVE_STATS, reason="composite golden .udg not present")
 def test_composite_no_indirect_qs(run_output: str) -> None:
-    """CB-29: the oracle emits no `qsind*`, so neither may the engine."""
+    """CB-31: the oracle emits no `qsind*`, so neither may the engine."""
     raw = _udg_raw(os.path.join(_GOLDEN, _TOTAL, _TOTAL + ".udg"))
     assert not [k for k in raw if k.startswith("qsind")], (
-        "total.udg now carries qsind* -- CB-29 may have been fixed upstream; "
+        "total.udg now carries qsind* -- CB-31 may have been fixed upstream; "
         "re-read x11ari.f:346 before changing the port")
     emitted = [k for k in _emitted_diag(run_output, "") if k.startswith("qsind")]
     assert not emitted, f"engine emitted {emitted}, which the oracle does not"
