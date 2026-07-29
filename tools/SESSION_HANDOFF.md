@@ -164,13 +164,15 @@ seasonal or trading-day peak.
    biting is gone. **Check whether the Fortran reader does the same before
    changing anything** — if it does, the port is faithful and this is
    documentation, not a fix.
-4. The `Iagr==4` indirect names with the composite front (note the total's
-   golden carries `npind*`/`spcind*` but no `qsind*`, and `genqs.f:439/482`
-   uses a savelog index as a `Savtab` subscript — check before porting, may be
-   a CB).
-5. `spectrum{altfreq=yes}` pending CB-30; composite `agr3s.f`;
-   `history{outlier=auto}` / `x11outlier=no` / `additivesa=`; the slidingspans
-   `chs` per-span prior phase.
+4. **Composite `agr3s.f`** — the SEATS branch of composite adjustment, plus
+   pseudo-additive and the forced/rounded indirect series. The X-11 composite
+   front (direct, indirect, comparison statistics, indirect diagnostics) is now
+   fully closed, so this is what is left of `composite{}`.
+5. **A composite whose components carry a residual peak**, to gate savpk's real
+   `.dir`/`.ind` split — see above; only the degenerate branch runs today, and
+   a mutation swapping the two output halves passes the whole suite.
+6. `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
+   `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase.
 
 ## Environment notes
 
