@@ -190,6 +190,23 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
             ctx.agr_f2ratis = ctx.x11opt.ratis;
             ctx.agr_f3_set = true;
         }
+        // --- the INDIRECT diagnostics (x11ari.f:343-370) --------------------
+        // agr3 has replaced the D-table buffers with the indirect adjustment, so
+        // genqs / spcdrv / gennpsa run a SECOND time over them under Iagr==4.
+        //
+        // genqs first (x11ari.f:346-349), and it is a NO-OP by CENSUS DEFECT --
+        // CB-29. Its `Tblind` argument is `LSLIQS` (=69, a SAVELOG index from
+        // spcsvl.i) where genqs.f:439 uses it as `Savtab(Tblind)`, a TABLE-log
+        // subscript; the direct call one screen earlier correctly passes
+        // `LSPCQS` (=113). `LSPQSI` (=114) exists in spctbl.i and is plainly the
+        // intended one, and is never passed anywhere. So the whole indirect QS
+        // savelog block is gated on an unrelated table's save flag and the
+        // oracle emits no `qsind*` key at all -- which is exactly what the
+        // composite total's golden shows, next to a full set of `npind*` and
+        // `spcind*`. Reproduced by not calling it; there is nothing to compute.
+        if (!run_spectrum(ctx, /*iagr4=*/true)) return false;
+        if (!gennpsa(ctx, /*lseats=*/false, /*iagr4=*/true)) return false;
+
         // x11ari.f:372-373: agr3 leaves Iagr==4, which routes the SAME agr2 call
         // into its comparison-statistics branch -- direct vs indirect roughness,
         // and the restore of the direct pointer geometry.

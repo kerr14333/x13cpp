@@ -400,7 +400,7 @@ int npsa(const double* sa, int n1, int nz, bool lmodel, int d, int bd, int mq,
 }  // namespace
 
 // gennpsa.f:1-107.
-bool gennpsa(X13Context& ctx, bool lseats) {
+bool gennpsa(X13Context& ctx, bool lseats, bool iagr4) {
     const int ny = ctx.model.sp;
     const bool lx11 = ctx.captured.has_x11;
     const int muladd = ctx.x11opt.muladd;
@@ -413,7 +413,9 @@ bool gennpsa(X13Context& ctx, bool lseats) {
     const int nnsedf = ctx.model.nnsedf;
     const int nseadf = ctx.model.nseadf;
 
-    auto& np = ctx.np;
+    // x11ari.f:367-370 runs this a second time over the aggregated buffers;
+    // keep the two verdict sets apart (the harness emits both).
+    auto& np = iagr4 ? ctx.np_ind : ctx.np;
     np.ran = true;
 
     // gennpsa.f:52-58 -- lplog is DERIVED here rather than latched as a side

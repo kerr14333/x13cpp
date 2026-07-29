@@ -459,9 +459,15 @@ TukeyLabels tukey_peak_labels(const std::vector<TukeyEntry>& entries,
             ori_idx = static_cast<int>(i) + 1;
 
     std::string s99, t99, s90, t90;
+    // svtukp.f builds `thisLb` = "spc" + the table's name and then emits
+    // `thisLb(iLb:nLb)` -- and on the INDIRECT tables it sets `iLb=7` rather
+    // than 4 (:56, :66), which skips the "ind" as well as the "spc". So the KEY
+    // stays `spcindsa` / `spcindirr` while the LABEL in these lists is plain
+    // `sa` / `irr`, identical to the direct one. Measured: the composite
+    // total's golden reads `peaks.tukey.p90.seas.ind: irr`.
     auto append = [](std::string& dst, const std::string& lab) {
         if (!dst.empty()) dst += " ";
-        dst += lab;
+        dst += (lab.rfind("ind", 0) == 0) ? lab.substr(3) : lab;
     };
     for (const TukeyEntry& e : entries) {
         int npk = 0, npk90 = 0;

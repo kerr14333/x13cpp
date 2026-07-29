@@ -374,6 +374,8 @@ int main(int argc, char** argv) {
         dump_qs(ctx, prefix.c_str(), &out);
         dump_np(ctx, prefix.c_str(), &out);
         dump_spec_peaks(ctx, prefix.c_str(), &out);
+        // ... and the INDIRECT (Iagr==4) half, which only the total has.
+        dump_diag_indirect(ctx, prefix.c_str(), &out);
 
         // history{} on a composite: each spec's own sar/sae (the DIRECT
         // revisions of that series) plus, on the aggregate total only, the

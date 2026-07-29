@@ -437,6 +437,9 @@ struct X13Context {
     // gennpsa.f's NP residual-seasonality verdict -- same placement, same
     // no-restore reasoning.
     NpStats np;
+    // gennpsa.f under Iagr==4 (x11ari.f:367) -- the composite total's INDIRECT
+    // verdicts, written as `npind*` / `npsind*`.
+    NpStats np_ind;
     adj_cmn adj;
     adxser_cmn adxser;
     agr_cmn agr;

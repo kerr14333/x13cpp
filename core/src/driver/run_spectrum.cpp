@@ -272,7 +272,7 @@ bool tukey_spectrum(const double* x, int n1, int n2, bool ltk120,
 
 }  // namespace
 
-bool run_spectrum(X13Context& ctx) {
+bool run_spectrum(X13Context& ctx, bool iagr4) {
     // NO gate on ctx.spcout.requested: x11ari.f:282-287 calls spcdrv under a
     // plain IF(Ny.eq.12), with no dependence on the spectrum{} spec at all, so
     // the oracle computes this block on every monthly run -- 289 of the 331
@@ -361,8 +361,15 @@ bool run_spectrum(X13Context& ctx) {
     const SpecPeakGrid pkgrid = spectrum_peak_grid(sp, ctx.rho.peakwd,
                                                    ctx.rho.lfqalt,
                                                    ctx.rho.lprsfq);
-    out.peaks.clear();
+    // x11ari.f:344's second spcdrv APPENDS: savpk.f splits the accumulated
+    // peak strings at the direct pass's own count, so the direct entries have to
+    // survive. Its table/peak results go to the `*_ind` fields instead.
+    if (!iagr4) out.peaks.clear();
+    out.peaks_ind.clear();
+    out.tukey_ind.clear();
     out.grid = pkgrid;
+    std::vector<SpecPeaks>& peaks_sink = iagr4 ? out.peaks_ind : out.peaks;
+    std::vector<TukeyEntry>& tukey_sink = iagr4 ? out.tukey_ind : out.tukey;
 
     // Estimator selector (spcdrv.f: IF Spctyp==0 spgrh ELSE spgrh2): the AR
     // spectrum for type=arspec, the periodogram for type=periodogram. Fills the
@@ -383,9 +390,9 @@ bool run_spectrum(X13Context& ctx) {
             if (pkgrid.ok) spgrh2(series, pkgrid.frqpk, n1, n2, ldecbl, sxx2);
         }
         if (pkgrid.ok)
-            out.peaks.push_back(spectrum_peaks(sxx, sxx2, pkgrid, ctx.rho.spclim,
-                                               ldecbl, ltdfrq, ctx.rho.plocal,
-                                               sp, prefix));
+            peaks_sink.push_back(spectrum_peaks(sxx, sxx2, pkgrid, ctx.rho.spclim,
+                                                ldecbl, ltdfrq, ctx.rho.plocal,
+                                                sp, prefix));
         return true;
     };
     // spcdrv.f:152-153 -- the trading-day frequencies are only searched when the
@@ -411,7 +418,9 @@ bool run_spectrum(X13Context& ctx) {
     // (series=original/a1 -> Series with Adj{ls,ao,tc,so} divided out,
     // spcdrv.f:178-185) is follow-on; no corpus spec exercises it (the default
     // spectrumseries is adjoriginal, Spcsrs==2).
-    {
+    // spcdrv.f:158 -- `goori = Iagr.le.3`: there is no INDIRECT original, and
+    // mkspky.f:14 would name it `spccomp` rather than `spcori` in any case.
+    if (!iagr4) {
         const double* stcsi = ctx.orisrs.stcsi.data();
         for (int i = 1; i <= posfob; ++i) srs[i - 1] = stcsi[i - 1];
         if (lx11 && spcsrs == 2) {
@@ -495,13 +504,18 @@ bool run_spectrum(X13Context& ctx) {
             gosa = ispos(srs.data(), ipos, posfob);
         if (gosa) {
             gendff(srs.data(), l0, posfob, tmp.data(), taklog, spdfor);
-            out.have_sp1 = spec_est(tmp.data(), l1, posfob, ltdfrq_main,
-                                    "spcsa", out.sp1);
+            bool& hsp1 = iagr4 ? out.have_sp1_ind : out.have_sp1;
+            hsp1 = spec_est(tmp.data(), l1, posfob, ltdfrq_main,
+                            iagr4 ? "spcindsa" : "spcsa",
+                            iagr4 ? out.sp1_ind : out.sp1);
             // st1: Tukey spectrum of the same series (spcdrv.f:388-392).
             TukeyPeaks tpk;
-            out.have_st1 = tukey_spectrum(tmp.data(), l1, posfob, ltk120,
-                                          out.st1, out.frq_tukey, &tpk, sp);
-            if (out.have_st1) out.tukey.push_back({"sa", tpk});
+            bool& hst1 = iagr4 ? out.have_st1_ind : out.have_st1;
+            hst1 = tukey_spectrum(tmp.data(), l1, posfob, ltk120,
+                                  iagr4 ? out.st1_ind : out.st1,
+                                  out.frq_tukey, &tpk, sp);
+            // svtukp.f:47-56 -- LSPT1I labels the entry `indsa`, not `sa`.
+            if (hst1) tukey_sink.push_back({iagr4 ? "indsa" : "sa", tpk});
         }
         // --- sp2: irregular (spcdrv.f:438-467) -- no differencing ----------
         // Likewise the irregular is E3 (Stime, the modified irregular), not D13.
@@ -525,20 +539,27 @@ bool run_spectrum(X13Context& ctx) {
                 tmp[i - 1] = ir[i - 1];
                 if (muladd != 1) tmp[i - 1] -= 1.0;
             }
-            out.have_sp2 = spec_est(tmp.data(), ipos, posfob, ltdfrq_main,
-                                    "spcirr", out.sp2);
+            bool& hsp2 = iagr4 ? out.have_sp2_ind : out.have_sp2;
+            hsp2 = spec_est(tmp.data(), ipos, posfob, ltdfrq_main,
+                            iagr4 ? "spcindirr" : "spcirr",
+                            iagr4 ? out.sp2_ind : out.sp2);
             // st2: Tukey spectrum of the same irregular (spcdrv.f:506-510).
             TukeyPeaks tpk;
-            out.have_st2 = tukey_spectrum(tmp.data(), ipos, posfob, ltk120,
-                                          out.st2, out.frq_tukey, &tpk, sp);
-            if (out.have_st2) out.tukey.push_back({"irr", tpk});
+            bool& hst2 = iagr4 ? out.have_st2_ind : out.have_st2;
+            hst2 = tukey_spectrum(tmp.data(), ipos, posfob, ltk120,
+                                  iagr4 ? out.st2_ind : out.st2,
+                                  out.frq_tukey, &tpk, sp);
+            if (hst2) tukey_sink.push_back({iagr4 ? "indirr" : "irr", tpk});
         }
     }
     // --- spr: regARIMA model residuals (spcrsd.f, periodogram path) --------
     // No detrend, no log: the residuals `a` are used directly. Their start date
     // Begrsd = Begspn + (Nspobs - na); the span is [rpos, na] where rpos =
     // dfdate(Bgspec, Begrsd)+1 (clamped to 1 if Bgspec precedes the residuals).
-    if (ctx.resid_na > 0) {
+    // The residual block belongs to the regARIMA phase, so the INDIRECT pass
+    // (which runs after agr3, on a total that has no model of its own) never
+    // re-derives it -- spcrsd is called from arima.f:1126, not from spcdrv.
+    if (!iagr4 && ctx.resid_na > 0) {
         const int na = ctx.resid_na;
         // arima.f:1125's idate, recorded at estimation time (see ctx.resid_begdate).
         const int begrsd[2] = {ctx.resid_begdate[0], ctx.resid_begdate[1]};
@@ -588,8 +609,16 @@ bool run_spectrum(X13Context& ctx) {
         auto find = [&](const char* prefix) -> const SpecPeaks* {
             for (const auto& p : out.peaks)
                 if (p.prefix == prefix) return &p;
+            for (const auto& p : out.peaks_ind)
+                if (p.prefix == prefix) return &p;
             return nullptr;
         };
+        // x11ari.f:290-291 records the DIRECT pass's counts (`nspdir`/`ntpdir`)
+        // between the two spcdrv calls, and savpk.f:85-116 splits the ACCUMULATED
+        // string there: characters 1..nspdir are the direct peaks and the rest
+        // the indirect ones. Tracked here as label counts rather than character
+        // offsets, which is equivalent and does not depend on label widths.
+        std::size_t nsdir = 0, ntdir = 0;
         if (const SpecPeaks* p = find("spcrsd")) {
             // Always `rsd`, on a SEATS run too. spcrsd.f:209-215 picks
             // `extrsd` off its own `Lseats` ARGUMENT, not off the run's, and
@@ -615,18 +644,77 @@ bool run_spectrum(X13Context& ctx) {
             if (p->ltdpk > 0) add(ct, "irr");
             if (p->lsapk > 0) add(cs, "irr");
         }
+        // Everything above belongs to the DIRECT pass; count it before the
+        // indirect entries are appended.
+        auto nlab = [](const std::string& s) {
+            if (s.empty()) return std::size_t{0};
+            std::size_t n = 1;
+            for (char c : s) if (c == ' ') ++n;
+            return n;
+        };
+        nsdir = nlab(cs);
+        ntdir = nlab(ct);
+        if (const SpecPeaks* p = find("spcindsa")) {
+            if (p->ltdpk > 0) add(ct, "indsa");
+            if (p->lsapk > 0) add(cs, "indsa");
+        }
+        if (const SpecPeaks* p = find("spcindirr")) {
+            if (p->ltdpk > 0) add(ct, "indirr");
+            if (p->lsapk > 0) add(cs, "indirr");
+        }
         out.peaks_seas = cs.empty() ? "none" : cs;
         out.peaks_td = ct.empty() ? "none" : ct;
+
+        // savpk.f:88-115 -- the `.dir` / `.ind` split, emitted only on a
+        // composite total (`Iagr.gt.3`). The three degenerate branches are NOT
+        // the same as splitting an empty list: with no peak anywhere BOTH sides
+        // print the whole (i.e. "none") string, with nothing direct the INDIRECT
+        // side gets the whole string and the direct side a literal "none", and
+        // with everything direct it is the other way round.
+        //
+        // UNGATED, and measured to be so: the only composite corpus finds NO
+        // visually significant peak in any table, so all four keys are "none"
+        // and only the first branch is ever taken. A mutation swapping the two
+        // output halves passes the whole suite. Gating the real split needs a
+        // composite whose components carry a residual seasonal or trading-day
+        // peak; until then this transcription is unverified past the degenerate
+        // case.
+        if (iagr4) {
+            auto split = [&](const std::string& all, std::size_t ndir,
+                             std::string& dir, std::string& ind) {
+                const std::size_t n = nlab(all);
+                if (all.empty() || all == "none") { dir = "none"; ind = "none"; return; }
+                if (ndir == 0) { dir = "none"; ind = all; return; }
+                if (ndir == n) { dir = all; ind = "none"; return; }
+                std::size_t cut = 0, seen = 0;
+                for (std::size_t i = 0; i < all.size(); ++i) {
+                    if (all[i] == ' ' && ++seen == ndir) { cut = i; break; }
+                }
+                dir = all.substr(0, cut);
+                ind = all.substr(cut + 1);
+            };
+            split(out.peaks_seas, nsdir, out.peaks_seas_dir, out.peaks_seas_ind);
+            split(out.peaks_td, ntdir, out.peaks_td_dir, out.peaks_td_ind);
+        }
     }
 
     // svtukp.f -- the `peaks.tukey.*` lists, over the Itukey entries above.
     // x11ari.f:76's lsadj is `Lx11.or.Lseats`, i.e. "this run produced an
     // adjustment"; it is the only thing that makes svtukp's oriIdx (CB-28's
     // sibling, see spectrum_peaks.cpp) anything but NOTSET.
-    out.tukey_labels =
-        tukey_peak_labels(out.tukey, lx11 || ctx.captured.has_seats);
-
-    out.ran = true;
+    // x11ari.f:355-357 calls svtukp a second time on the INDIRECT pass, over
+    // that pass's own Itukey entries only (Ntukey is reset between the two by
+    // spcdrv's own accumulator), so the two label sets are independent -- unlike
+    // savpk's, which share one accumulated string and get split.
+    if (iagr4) {
+        out.tukey_labels_ind =
+            tukey_peak_labels(out.tukey_ind, lx11 || ctx.captured.has_seats);
+        out.ran_ind = true;
+    } else {
+        out.tukey_labels =
+            tukey_peak_labels(out.tukey, lx11 || ctx.captured.has_seats);
+        out.ran = true;
+    }
     return true;
 }
 

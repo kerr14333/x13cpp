@@ -180,6 +180,15 @@ inline void dump_spec_peaks(const x13::X13Context& ctx, const char* keypfx = "",
     if (!sp.peaks_seas.empty()) {
         line(fwrite_fmt("(a,a)", "peaks.seas: ", sp.peaks_seas));
         line(fwrite_fmt("(a,a)", "peaks.td: ", sp.peaks_td));
+        // savpk.f:88-115 -- on a composite total the ACCUMULATED lists are
+        // additionally split into their direct and indirect halves. The unsplit
+        // pair above is written either way (savpk.f:86-87).
+        if (sp.ran_ind) {
+            line(fwrite_fmt("(a,a)", "peaks.seas.dir: ", sp.peaks_seas_dir));
+            line(fwrite_fmt("(a,a)", "peaks.seas.ind: ", sp.peaks_seas_ind));
+            line(fwrite_fmt("(a,a)", "peaks.td.dir: ", sp.peaks_td_dir));
+            line(fwrite_fmt("(a,a)", "peaks.td.ind: ", sp.peaks_td_ind));
+        }
     }
 
     // The Tukey half. Two emit points in the oracle, in this order:
@@ -201,8 +210,97 @@ inline void dump_spec_peaks(const x13::X13Context& ctx, const char* keypfx = "",
         const auto& L = sp.tukey_labels;
         line(fwrite_fmt("(a,a)", "peaks.tukey.seas: ", L.seas));
         line(fwrite_fmt("(a,a)", "peaks.tukey.td: ", L.td));
+    }
+    // --- the INDIRECT (Iagr==4) block, composite totals only ---------------
+    // x11ari.f:352-357: the second spcdrv's own `spcindsa`/`spcindirr` peak
+    // rows and Tukey probabilities, then svtukp again over that pass's Itukey
+    // entries alone. Note the ORDER the oracle writes these in -- the indirect
+    // `peaks.tukey.{seas,td}.ind` land between the direct `peaks.tukey.td` and
+    // the direct `peaks.tukey.p90.*`, because svtukp emits its four lists per
+    // call and savtpk merges them afterwards.
+    if (sp.ran_ind) {
+        const auto& LI = sp.tukey_labels_ind;
+        line(fwrite_fmt("(a,a)", "peaks.tukey.seas.ind: ", LI.seas));
+        line(fwrite_fmt("(a,a)", "peaks.tukey.td.ind: ", LI.td));
+    }
+    if (!sp.tukey.empty()) {
+        const auto& L = sp.tukey_labels;
         line(fwrite_fmt("(a,a)", "peaks.tukey.p90.seas: ", L.p90_seas));
         line(fwrite_fmt("(a,a)", "peaks.tukey.p90.td: ", L.p90_td));
+    }
+    if (sp.ran_ind) {
+        const auto& LI = sp.tukey_labels_ind;
+        line(fwrite_fmt("(a,a)", "peaks.tukey.p90.seas.ind: ", LI.p90_seas));
+        line(fwrite_fmt("(a,a)", "peaks.tukey.p90.td.ind: ", LI.p90_td));
+    }
+}
+
+// The INDIRECT (Iagr==4) spectrum + NP blocks: the second spcdrv/gennpsa pass
+// x11ari.f:344-370 runs after agr3 replaced the D-table buffers with the
+// aggregated adjustment. Emitted separately from dump_spec_peaks/dump_np
+// because only a composite TOTAL has them, and because the `peaks.*` label
+// lists they contribute to are interleaved with the direct ones above.
+//
+// There is deliberately NO indirect QS block: see CB-29 -- x11ari.f:346 passes
+// genqs a SAVELOG index (LSLIQS=69) where genqs.f:439 uses it as a table-log
+// subscript, so the oracle emits no `qsind*` key at all.
+inline void dump_diag_indirect(const x13::X13Context& ctx,
+                               const char* keypfx = "",
+                               std::string* sink = nullptr) {
+    using x13::fwrite_fmt;
+    auto line = [&](const std::string& t) {
+        if (sink) { sink->append(keypfx); sink->append(t); sink->push_back('\n'); }
+        else std::printf("%s%s\n", keypfx, t.c_str());
+    };
+    const auto& sp = ctx.spcout;
+    if (sp.ran_ind) {
+        for (const auto& p : sp.peaks_ind) {
+            line(fwrite_fmt("(a,'.',a,': ',e20.10)", p.prefix, "median", p.median));
+            line(fwrite_fmt("(a,'.',a,': ',e20.10)", p.prefix, "range", p.range));
+            auto rows = [&](const std::vector<x13::SpecPeakRow>& v,
+                            const std::string& dom, const char* domkey) {
+                if (v.empty()) return;
+                for (const auto& r : v) {
+                    if (r.nopeak)
+                        line(fwrite_fmt("(a,'.',a,': ',a)", p.prefix, r.label,
+                                        "nopeak"));
+                    else
+                        line(fwrite_fmt("(a,'.',a,': ',f6.1,' ',a)", p.prefix,
+                                        r.label, r.stars,
+                                        r.above_median ? "+" : " "));
+                }
+                line(fwrite_fmt("(a,'.',a,': ',a)", p.prefix, domkey, dom));
+            };
+            if (p.have_td) rows(p.td, p.tdom, "t.dom");
+            rows(p.seas, p.sdom, "s.dom");
+            line(fwrite_fmt("(a,'.dom: ',a)", p.prefix, p.dom));
+        }
+        for (const auto& e : sp.tukey_ind)
+            line(fwrite_fmt("(a,'.tukey.m: ',i5)", "spc" + e.label, e.pk.m));
+        for (const auto& e : sp.tukey_ind) {
+            for (int k = 1; k <= 6; ++k)
+                line(fwrite_fmt("(a,a,i1,a,f9.4)", "spc" + e.label, ".tukey.s",
+                                k, ": ", e.pk.ps[k - 1]));
+            line(fwrite_fmt("(a,a,f9.4)", "spc" + e.label, ".tukey.td: ",
+                            e.pk.ptd));
+        }
+    }
+    const auto& np = ctx.np_ind;
+    if (np.ran) {
+        auto verdict = [&](const char* key, int v) {
+            if (v == x13::prm::NOTSET) return;
+            line(fwrite_fmt("(a,': ',a)", key, v ? "yes" : "no"));
+        };
+        // gennpsa.f:139-176 under Iagr==4. NOTE there is no indirect `nplog`:
+        // that line is written only on the `Iagr.lt.4` branch, like `qslog`.
+        if (np.lnp()) {
+            verdict("npindsadj", np.npsadj);
+            verdict("npindsadjevadj", np.npsadj2);
+        }
+        if (np.lnps()) {
+            verdict("npsindsadj", np.npsadjs);
+            verdict("npsindsadjevadj", np.npsadjs2);
+        }
     }
 }
 

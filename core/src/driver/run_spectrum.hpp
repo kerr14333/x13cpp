@@ -58,13 +58,35 @@ struct SpectrumOutput {
     std::vector<TukeyEntry> tukey;
     // svtukp.f -- the four accumulated `peaks.tukey.*` label lists.
     TukeyLabels tukey_labels;
+
+    // --- the INDIRECT (Iagr==4) pass, composite runs only -------------------
+    // x11ari.f:344-345 calls spcdrv a SECOND time after agr3 has replaced the
+    // D-table buffers with the indirect adjustment. It writes `spcindsa` /
+    // `spcindirr` (mkspky.f:22/30) and, crucially, APPENDS to the same peak-label
+    // accumulators -- savpk.f then splits the accumulated string at `Nspdir`
+    // (x11ari.f:290, the direct pass's count) into `.dir` and `.ind`. There is no
+    // indirect `spcori` (spcdrv.f:158 `goori = Iagr.le.3`) and no indirect `spcrsd`
+    // (the residuals belong to the regARIMA phase).
+    bool ran_ind = false;
+    std::vector<double> sp1_ind, sp2_ind, st1_ind, st2_ind;
+    bool have_sp1_ind = false, have_sp2_ind = false;
+    bool have_st1_ind = false, have_st2_ind = false;
+    std::vector<SpecPeaks> peaks_ind;
+    std::vector<TukeyEntry> tukey_ind;
+    // savpk.f:85-116's four split lists, and svtukp.f's four indirect ones.
+    std::string peaks_seas_dir, peaks_seas_ind, peaks_td_dir, peaks_td_ind;
+    TukeyLabels tukey_labels_ind;
 };
 
 // Compute the spectrum diagnostics after the X-11 decomposition. NOT gated on
 // spectrum{} being present: x11ari.f:282-287 calls spcdrv under a plain
 // IF(Ny.eq.12), so the oracle produces this block on every monthly run. Reads
 // the bit-exact Stcsi/Stci/Sti and the /rho/ options gtinpt defaults.
-bool run_spectrum(X13Context& ctx);
+// `iagr4` selects the INDIRECT pass (x11ari.f:344, run after agr3): the
+// original and residual blocks are skipped, the SA/irregular ones are named
+// `spcindsa`/`spcindirr`, and the results land in the `*_ind` fields so the
+// direct pass's own output survives.
+bool run_spectrum(X13Context& ctx, bool iagr4 = false);
 
 }  // namespace x13
 

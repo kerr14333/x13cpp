@@ -516,3 +516,54 @@ def test_composite_direct_diag_block(run_output: str, who: str) -> None:
         pytest.skip(f"{who}.udg carries no QS/spectrum/NP block")
     prefix = "" if who == _TOTAL else who + ":"
     _cmp_diag(gold, _emitted_diag(run_output, prefix), who)
+
+
+# --- the INDIRECT (Iagr==4) names -------------------------------------------
+# x11ari.f:344-370 runs spcdrv and gennpsa a SECOND time after agr3 has replaced
+# the D-table buffers with the aggregated adjustment: `spcindsa.*`,
+# `spcindirr.*`, `npind*`/`npsind*`, savpk's `.dir`/`.ind` split of the
+# accumulated peak lists, and svtukp's four indirect Tukey lists.
+#
+# There is NO `qsind*` counterpart, and that is the ORACLE's behaviour, not a
+# gap: CB-29 -- x11ari.f:346 hands genqs `LSLIQS` (=69, a SAVELOG index) where
+# genqs.f:439 uses it as `Savtab(Tblind)`, a table-log subscript. The intended
+# `LSPQSI` (=114) exists in spctbl.i and is never passed. The assertion below
+# pins that: a future change that starts emitting `qsind*` is a REGRESSION away
+# from the oracle, not progress.
+def _indirect_keys(raw: dict) -> dict:
+    return {k: v.strip() for k, v in raw.items()
+            if _DIAG_FAMILY.match(k) and _DIAG_INDIRECT.search(k)}
+
+
+@pytest.mark.skipif(not _HAVE_STATS, reason="composite golden .udg not present")
+def test_composite_indirect_diag_block(run_output: str) -> None:
+    """spcdrv / gennpsa under Iagr==4, on the composite total."""
+    raw = _udg_raw(os.path.join(_GOLDEN, _TOTAL, _TOTAL + ".udg"))
+    gold = _indirect_keys(raw)
+    assert gold, "total.udg carries no indirect spectrum/NP block"
+    eng = _emitted_diag(run_output, "")
+    _cmp_diag(gold, eng, "total-indirect")
+    # Both directions: an engine key the oracle does not write is as wrong as a
+    # missing one, and this family is exactly where that can happen.
+    extra = sorted(k for k in _indirect_keys(eng) if k not in gold)
+    assert not extra, f"engine emitted indirect keys the oracle does not: {extra}"
+    # WHAT THIS DOES NOT COVER, measured rather than assumed: savpk.f:88-115's
+    # real `.dir`/`.ind` SPLIT. This composite finds no visually significant peak
+    # in any table, so all four keys are "none" and only the degenerate branch is
+    # taken -- a mutation swapping the two output halves passes the whole suite.
+    # Gating it needs a composite whose components carry a residual seasonal or
+    # trading-day peak.
+    assert raw["peaks.seas.dir"].strip() == "none", (
+        "this corpus is expected to be peak-free; if it no longer is, the "
+        "savpk split is now gated and this note should go")
+
+
+@pytest.mark.skipif(not _HAVE_STATS, reason="composite golden .udg not present")
+def test_composite_no_indirect_qs(run_output: str) -> None:
+    """CB-29: the oracle emits no `qsind*`, so neither may the engine."""
+    raw = _udg_raw(os.path.join(_GOLDEN, _TOTAL, _TOTAL + ".udg"))
+    assert not [k for k in raw if k.startswith("qsind")], (
+        "total.udg now carries qsind* -- CB-29 may have been fixed upstream; "
+        "re-read x11ari.f:346 before changing the port")
+    emitted = [k for k in _emitted_diag(run_output, "") if k.startswith("qsind")]
+    assert not emitted, f"engine emitted {emitted}, which the oracle does not"

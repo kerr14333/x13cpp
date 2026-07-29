@@ -969,3 +969,41 @@ is harmless, because nothing reads `Tup(3)` when `nTfreq` is 2.
   established before a golden means anything. `tests/corpus/extra/
   airline_spectrum-peakwidth{2,3,4}` gate the four non-`Lfqalt` rows, which is
   what makes the table above trustworthy as a transcription.
+
+## CB-31
+
+**`x11ari.f:346` hands `genqs` a SAVELOG index where the routine uses it as a
+TABLE-log subscript, so the indirect QS block is never written.**
+
+- **File:line:** `x11ari.f:346-348` (the call), `genqs.f:439` / `:481` (the use).
+- **Severity:** silent loss of an entire diagnostic block on every composite run.
+
+`genqs` takes a `Tblind` argument and gates both of its savelog blocks on
+`Savtab(Tblind)`. The DIRECT call at `x11ari.f:279` passes `LSPCQS`, which is
+`spctbl.i:30`'s **113** — a table-log index, and one that `gtinpt.f:121-123`
+copies in from `sumtab.var` whenever `Lsumm > 0`, which is why every `-s` golden
+in this corpus carries the direct `qs*` rows.
+
+The INDIRECT call one screen later passes **`LSLIQS`**, which is
+`spcsvl.i:12`'s **69** — a **savelog** index from a different enumeration
+entirely. `Savtab(69)` is some unrelated table's save flag, so the whole
+`qsind*` family (`qsindsadj`, `qsindsadjevadj`, `qsindirr`, `qsindirrevadj`, and
+their `qssind*` twins) is gated on a condition that has nothing to do with it.
+
+`spctbl.i:30` defines **`LSPQSI = 114`**, immediately after `LSPCQS`, and it is
+plainly the intended argument. It is passed nowhere in the source.
+
+The sibling calls are all correct, which is what makes this a slip rather than a
+convention: `gennpsa` gets `LSPNPA` (117) directly and `LSPNPI` (118) indirectly,
+both from `spctbl.i`, and both families appear in the golden.
+
+- **Confirmed empirically:** `tests/golden/census-examples/composite-fixed/total/
+  total.udg` carries a full set of `npind*`/`npsind*` and ~44 `spcind*` keys and
+  **not one `qsind*`**.
+- **Port:** reproduced by NOT calling `genqs` a second time — there is nothing to
+  compute, since the oracle's own gate is false. The reasoning is recorded at the
+  call site in `core/src/driver/run_x11.cpp`.
+- **Pinned by:** `tests/parity/test_composite_tables.py::
+  test_composite_no_indirect_qs`, which asserts BOTH that the golden has no
+  `qsind*` and that the engine emits none. If the golden ever grows them the test
+  fails loudly rather than silently accepting a changed oracle.

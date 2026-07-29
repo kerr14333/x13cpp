@@ -69,7 +69,11 @@ struct NpStats {
     bool lnps() const;
 };
 
-bool gennpsa(X13Context& ctx, bool lseats);
+// `iagr4` selects the INDIRECT pass (x11ari.f:367-370, after agr3): the same
+// four verdicts over the aggregated buffers, written as `npindsadj` /
+// `npindsadjevadj` / `npsindsadj` / `npsindsadjevadj` and kept in ctx.np_ind so
+// the direct pass's own verdicts survive.
+bool gennpsa(X13Context& ctx, bool lseats, bool iagr4 = false);
 
 }  // namespace x13
 
