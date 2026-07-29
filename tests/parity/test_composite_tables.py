@@ -437,3 +437,82 @@ def test_composite_indirect_etable(run_output: str, tag: str) -> None:
             worst, worst_k = rel, k
     assert worst <= RTOL, (
         f"total.{tag}: max rel err {worst:.3e} at {worst_k} (tol {RTOL:.0e})")
+
+
+# --- the DIRECT QS / spectrum-peak / NP savelog blocks -----------------------
+# x11ari.f reaches genqs (:277), spcdrv (:282) and gennpsa (:322) on EVERY spec,
+# a metafile's components included -- the oracle writes one .udg per spec and all
+# of them carry these. This harness had never emitted a single one of them, so a
+# composite run reported none of the ~100 keys per spec that the other two
+# harnesses have gated since the spectrum-peak and QS increments landed. Nothing
+# in the ENGINE was wrong: all 103 shared keys matched the goldens the moment the
+# emit was wired in. Zero new goldens.
+#
+# Tolerance is the .udg's printed precision, as everywhere else in this file:
+# the QS statistics are f16.5/f10.5 and the peak medians/ranges e20.10, so a
+# relative 5e-5 with a 5e-5 absolute floor covers both. Non-numeric values
+# (`yes`/`no`, `nopeak`, the peak-frequency lists) compare EXACTLY -- they are
+# verdicts, and a verdict that drifts is a different answer, not a rounding.
+_DIAG_FAMILY = re.compile(
+    r"^(qs|np|spc|peaks|nspecfreq|nsfreq|ntdfreq|[st]\d+\.)")
+_DIAG_RTOL = 5e-5
+_DIAG_ATOL = 5e-5
+
+# The INDIRECT names (Iagr==4) are a separate front -- see
+# test_composite_indirect_diag_block below for what the oracle emits and why
+# `qsind*` is not among them.
+_DIAG_INDIRECT = re.compile(r"^(spcind|npind|npsind)|\.(ind|dir)$")
+
+
+def _diag_keys(raw: dict) -> dict:
+    return {k: v.strip() for k, v in raw.items()
+            if _DIAG_FAMILY.match(k) and not _DIAG_INDIRECT.search(k)}
+
+
+def _emitted_diag(run_output: str, prefix: str) -> dict:
+    out = {}
+    for ln in run_output.splitlines():
+        ln = ln.strip()
+        if prefix:
+            if not ln.startswith(prefix):
+                continue
+            ln = ln[len(prefix):]
+        k, sep, v = ln.partition(":")
+        if not sep or " " in k or not k:
+            continue
+        out[k.strip()] = v.strip()
+    return out
+
+
+def _cmp_diag(gold: dict, eng: dict, who: str) -> None:
+    missing = sorted(set(gold) - set(eng))
+    assert not missing, f"{who}: engine emitted no {missing[:8]}"
+    worst, worst_k = 0.0, None
+    for k in sorted(gold):
+        g, e = gold[k].split(), eng[k].split()
+        assert len(g) == len(e), f"{who}: {k}: {gold[k]!r} vs {eng[k]!r}"
+        for a, b in zip(g, e):
+            try:
+                fa, fb = float(a), float(b)
+            except ValueError:
+                assert a == b, f"{who}: {k}: {gold[k]!r} vs {eng[k]!r}"
+                continue
+            d = abs(fa - fb)
+            if d <= _DIAG_ATOL:
+                continue
+            rel = d / abs(fa) if fa else d
+            if rel > worst:
+                worst, worst_k = rel, k
+    assert worst <= _DIAG_RTOL, (
+        f"{who}: max rel err {worst:.3e} at {worst_k} (tol {_DIAG_RTOL:.0e})")
+
+
+@pytest.mark.skipif(not _HAVE_STATS, reason="composite golden .udg not present")
+@pytest.mark.parametrize("who", _COMPONENTS + [_TOTAL])
+def test_composite_direct_diag_block(run_output: str, who: str) -> None:
+    """genqs / spcdrv / gennpsa on every spec of the metafile."""
+    gold = _diag_keys(_udg_raw(os.path.join(_GOLDEN, who, who + ".udg")))
+    if not gold:
+        pytest.skip(f"{who}.udg carries no QS/spectrum/NP block")
+    prefix = "" if who == _TOTAL else who + ":"
+    _cmp_diag(gold, _emitted_diag(run_output, prefix), who)

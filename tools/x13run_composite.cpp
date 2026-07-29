@@ -28,6 +28,7 @@
 
 #include "common/x13context.hpp"
 #include "specparse/specparse.hpp"
+#include "dump_diag.hpp"          // dump_qs / dump_np / dump_spec_peaks
 
 namespace {
 
@@ -363,6 +364,16 @@ int main(int argc, char** argv) {
             dump(out, prefix, "d12", begspn, sp, pos1ob, posfob, ctx.x11srs.stc.data());
             dump(out, prefix, "d13", begspn, sp, pos1ob, posfob, ctx.x11srs.sti.data());
         }
+
+        // The DIRECT QS / spectrum-peak / NP savelog blocks (x11ari.f:277-326).
+        // They belong to every spec of the metafile, components included -- the
+        // oracle writes one .udg per spec and every one of them carries these.
+        // This harness had never emitted them at all, so a composite run
+        // reported none of the ~90 keys per spec that the other two harnesses
+        // have gated since the spectrum-peak and QS increments landed.
+        dump_qs(ctx, prefix.c_str(), &out);
+        dump_np(ctx, prefix.c_str(), &out);
+        dump_spec_peaks(ctx, prefix.c_str(), &out);
 
         // history{} on a composite: each spec's own sar/sae (the DIRECT
         // revisions of that series) plus, on the aggregate total only, the

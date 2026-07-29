@@ -9,6 +9,12 @@
 // Like every other savelog block in this port these go through fwrite_fmt with
 // the Fortran routine's own FORMAT, not printf -- field overflow and the
 // missing space after `qs*`'s colon are part of the contract.
+//
+// `keypfx` is prepended to every emitted line and is for the COMPOSITE harness,
+// which runs a whole metafile in one process: its components print as
+// `<base>:<key>` so one invocation covers every spec, while the total prints
+// unprefixed and reads like any other single-series run. It is not part of the
+// oracle's output -- the oracle writes one .udg per spec.
 #ifndef X13_TOOLS_DUMP_DIAG_HPP
 #define X13_TOOLS_DUMP_DIAG_HPP
 
@@ -25,11 +31,15 @@
 //   1040 FORMAT(a,': ',a)               -- the qslog yes/no line
 // A DNOTST statistic suppresses its row entirely, and the whole `qss*` block
 // only appears when the diagnostic span starts after the series does.
-inline void dump_qs(const x13::X13Context& ctx) {
+inline void dump_qs(const x13::X13Context& ctx, const char* keypfx = "",
+                     std::string* sink = nullptr) {
     using x13::fwrite_fmt;
     const auto& q = ctx.qs;
     if (!q.ran) return;
-    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    auto line = [&](const std::string& t) {
+        if (sink) { sink->append(keypfx); sink->append(t); sink->push_back('\n'); }
+        else std::printf("%s%s\n", keypfx, t.c_str());
+    };
     auto stat = [&](const char* key, double v) {
         if (v == x13::prm::DNOTST) return;
         line(fwrite_fmt("(a,':',f16.5,1x,f10.5)", key, v, x13::chisq(v, 2)));
@@ -59,11 +69,15 @@ inline void dump_qs(const x13::X13Context& ctx) {
 // (`1040 FORMAT(a,': ',a)`) and four yes/no verdicts plus `nplog`, all through
 // getstr(YSNDIC) on `NPsadj+1`. Absent entirely from a run that produces no
 // seasonal adjustment, since only the SA series is tested.
-inline void dump_np(const x13::X13Context& ctx) {
+inline void dump_np(const x13::X13Context& ctx, const char* keypfx = "",
+                     std::string* sink = nullptr) {
     using x13::fwrite_fmt;
     const auto& np = ctx.np;
     if (!np.ran) return;
-    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    auto line = [&](const std::string& t) {
+        if (sink) { sink->append(keypfx); sink->append(t); sink->push_back('\n'); }
+        else std::printf("%s%s\n", keypfx, t.c_str());
+    };
     auto verdict = [&](const char* key, int v) {
         if (v == x13::prm::NOTSET) return;
         line(fwrite_fmt("(a,': ',a)", key, v ? "yes" : "no"));
@@ -91,10 +105,14 @@ inline void dump_np(const x13::X13Context& ctx) {
 //   smpeak 1020: (a,'.',a,': ',f6.1,' ',a)    a star-height row + its '+' marker
 //   mxpeak 1010: (a,'.dom: ',a)               <prefix>.dom
 //   savpk  1000: (a,a)                        peaks.seas / peaks.td
-inline void dump_spec_peaks(const x13::X13Context& ctx) {
+inline void dump_spec_peaks(const x13::X13Context& ctx, const char* keypfx = "",
+                     std::string* sink = nullptr) {
     using x13::fwrite_fmt;
     const auto& sp = ctx.spcout;
-    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    auto line = [&](const std::string& t) {
+        if (sink) { sink->append(keypfx); sink->append(t); sink->push_back('\n'); }
+        else std::printf("%s%s\n", keypfx, t.c_str());
+    };
     if (!sp.ran || !sp.grid.ok) return;
 
     // svfreq.f: with `saveallfreq` off (the default) the index columns are
