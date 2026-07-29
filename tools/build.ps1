@@ -84,4 +84,27 @@ if (-not $NoTest) {
     }
 }
 
+# --- doc-drift checks (fast; WARN, never fail the build) ---------------------
+# These exist because the docs went stale three times: a report quoting a parity
+# count five fronts old, a coverage ledger 240 routines behind, a scouting doc
+# contradicting its own later section. Both checks are pure source scans -- no
+# suite run -- so they cost ~2s here.
+#
+# They WARN rather than throw on purpose: adding a wall and building before
+# regenerating is a normal mid-edit state, and a build that fails for a docs
+# reason trains you to stop reading build output. The hard gate is the
+# session-close step in CLAUDE.md.
+$py = (Get-Command python -ErrorAction SilentlyContinue).Source
+if ($py) {
+    Write-Host "== doc checks ==" -ForegroundColor Cyan
+    & $py (Join-Path $RepoRoot "tools\walls.py") --check
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  (warning) docs/WALLS.md is stale -- python tools/walls.py --write" -ForegroundColor Yellow
+    }
+    & $py (Join-Path $RepoRoot "tools\metrics.py") --check --fast 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  (warning) a metrics marker has drifted -- python tools/metrics.py --write" -ForegroundColor Yellow
+    }
+}
+
 Write-Host "OK" -ForegroundColor Green

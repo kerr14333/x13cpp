@@ -29,7 +29,7 @@ stale figure is a build error instead of something a reader finds first.
 | Fortran routines in scope (excl. n-a) | **690** |
 | Percent of routines ported | **58.1** |
 | Census bugs catalogued | **31** |
-| Commits | **358** |
+| Commits | **359** |
 | Active development time | **56h 00m** |
 | Calendar days worked | **12** |
 | Last commit | **2026-07-29** |

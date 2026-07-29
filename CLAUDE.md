@@ -101,6 +101,22 @@ contradicting its own later section. All three were true when written.
 - **What is ported.** `python tools/coverage_map.py oracle/fortran --audit`
   re-derives `tools/ported.yaml` from the C++ tree rather than trusting it;
   `--promote` writes what it can prove. `--write` alone only DISCOVERS files.
+**WHEN THESE RUN.** Tools nobody runs rot exactly like the docs did, so this is
+explicit:
+
+| when | what | cost |
+|---|---|---|
+| every `tools/build.ps1` | `walls.py --check` + `metrics.py --check --fast` | ~2s, **warns**, never fails the build |
+| after touching a wall or a `.f` port | `walls.py --write` | instant |
+| after a `--audit --promote` | nothing else; the ledger feeds metrics | — |
+| **session close, before the final commit** | `metrics.py --write --parity <pass>,<fail>,<skip>,<xfail>` using the suite run you just did, then `walls.py --write` | ~3s |
+
+The build checks warn rather than throw on purpose: adding a wall and building
+before regenerating is a normal mid-edit state, and a build that fails for a
+docs reason trains you to stop reading build output. **The session-close step is
+the real gate** — do it in the same breath as rewriting the handoff, and pass
+`--parity` so the suite is not run a second time for 85s.
+
 - **Ownership rule.** `tools/SESSION_HANDOFF.md` owns *what is open* — it is
   rewritten each session, so it cannot rot. Scouting docs own *how something
   works and what was measured* — durable, and they must NOT keep their own

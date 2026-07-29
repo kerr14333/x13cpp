@@ -23,6 +23,8 @@ Usage:
   python tools/metrics.py --write         # regenerate docs/METRICS.md + markers
   python tools/metrics.py --check         # exit 1 if anything is stale
   python tools/metrics.py --fast          # skip the pytest/ctest runs (~90s)
+  python tools/metrics.py --write --parity 5634,0,469,0
+                                          # reuse a suite run you just did
 
 Adding a metric: write one function, register it in METRICS, done. Keep each one
 DERIVED -- if a number cannot be computed from the repository it does not belong
@@ -163,7 +165,12 @@ _SUITE_CACHE = {}
 
 
 def _suite():
-    """pytest's own summary line -- the authoritative parity numbers."""
+    """pytest's own summary line -- the authoritative parity numbers.
+
+    Running the suite here costs ~85s, and the session-close workflow has
+    almost always just run it. `--parity pass,fail,skip,xfail` feeds those
+    counts in instead of paying for them twice; without it we run pytest.
+    """
     if _SUITE_CACHE:
         return _SUITE_CACHE
     if FAST:
@@ -205,6 +212,9 @@ def m_ctest():
     total, failed = int(m.group(3)), int(m.group(2))
     return "{}/{}".format(total - failed, total)
 
+
+# Metrics that need a test run, and so cannot be verified by --check --fast.
+SLOW = {"parity_pass", "parity_fail", "parity_skip", "parity_xfail", "ctest"}
 
 # name -> (callable, human label). Order is the order METRICS.md prints them.
 METRICS = [
@@ -313,17 +323,42 @@ def apply_markers(values, write):
     return stale
 
 
+def _parse_parity_arg(argv):
+    """--parity 5634,0,469,0  (pass,fail,skip,xfail)"""
+    for i, a in enumerate(argv):
+        if a == "--parity" and i + 1 < len(argv):
+            raw = argv[i + 1]
+        elif a.startswith("--parity="):
+            raw = a.split("=", 1)[1]
+        else:
+            continue
+        parts = [p.strip() for p in raw.split(",")]
+        if len(parts) != 4 or not all(p.isdigit() for p in parts):
+            print("metrics: --parity wants pass,fail,skip,xfail (four integers)")
+            return False
+        _SUITE_CACHE.update(dict(passed=int(parts[0]), failed=int(parts[1]),
+                                 skipped=int(parts[2]), xfailed=int(parts[3])))
+        return True
+    return True
+
+
 def main(argv):
     global FAST
     FAST = "--fast" in argv
+    if not _parse_parity_arg(argv):
+        return 2
     write = "--write" in argv
     check = "--check" in argv
 
     values = collect()
 
+    # --check --fast verifies only what is derivable WITHOUT running tests. It
+    # is what tools/build.ps1 calls, so it must not cry wolf about suite counts
+    # it deliberately did not compute -- a warning that always fires is a
+    # warning nobody reads.
     if check and FAST:
-        print("metrics: --check with --fast cannot verify the suite counts")
-        return 2
+        for k in SLOW:
+            values.pop(k, None)
 
     stale = apply_markers(values, write=write and not check)
 
@@ -338,7 +373,11 @@ def main(argv):
         return 0
 
     if check:
-        if os.path.exists(OUT):
+        if FAST:
+            # METRICS.md carries the suite values, which --fast did not compute,
+            # so a whole-file comparison is meaningless here. Markers only.
+            pass
+        elif os.path.exists(OUT):
             with open(OUT, "r", newline="") as fh:
                 if fh.read() != render(values):
                     print("STALE: docs/METRICS.md differs from the computed values")
