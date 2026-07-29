@@ -29,8 +29,8 @@ stale figure is a build error instead of something a reader finds first.
 | Fortran routines in scope (excl. n-a) | **690** |
 | Percent of routines ported | **58.1** |
 | Census bugs catalogued | **33** |
-| Commits | **363** |
-| Active development time | **56h 03m** |
+| Commits | **364** |
+| Active development time | **56h 36m** |
 | Calendar days worked | **12** |
 | Last commit | **2026-07-29** |
 

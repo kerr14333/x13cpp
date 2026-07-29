@@ -113,8 +113,8 @@ number here is a build failure. Full table: [`docs/METRICS.md`](METRICS.md).
 | Parity result | <!--x13:parity_pass-->5754<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->469<!--/x13--> skip | plus ctest 11/11, R bindings 165/165 |
 | Corpus | <!--x13:corpus_specs-->398<!--/x13--> spec files, <!--x13:parity_modules-->28<!--/x13--> test modules | real + synthetic series |
 | Census bugs catalogued | <!--x13:census_bugs-->33<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->33<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
-| Active development time | **<!--x13:active_time-->56h 03m<!--/x13-->** over <!--x13:calendar_days-->12<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
-| Commits | <!--x13:commits-->363<!--/x13--> | 2026-07-18 → 2026-07-29 |
+| Active development time | **<!--x13:active_time-->56h 36m<!--/x13-->** over <!--x13:calendar_days-->12<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
+| Commits | <!--x13:commits-->364<!--/x13--> | 2026-07-18 → 2026-07-29 |
 | Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
 *Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*
