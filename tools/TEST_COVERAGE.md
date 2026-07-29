@@ -88,9 +88,12 @@ Priorities for the next sweep, each an oracle-vs-x13run_m3 diff like sweep_reg.p
 were still listed as "not started". Check `CLAUDE.md` before trusting this
 list; it is the one that gets updated per feature.)*
 
-- **pickmdl** (X-11-ARIMA model selection) — still parse-only (M1). **1 corpus
-  spec** (`extra/airline_pickmdl`), not the 5 previously claimed, but it is the
-  largest single source of real feature skips (9).
+- ~~**pickmdl** (X-11-ARIMA model selection)~~ — **CLOSED 2026-07-28e.**
+  `automx.f` ported (plus `mdlinp`/`setamx`/`bstmdl`/`bstget`/`nofcst`); the 9
+  feature skips are gone and 7 corpus specs gate it. 8 arguments move the
+  oracle and the engine matches all of them; `mode=` is provably inert.
+  Still walled: `outofsample=yes`, `bcstlim`/`forecast{maxback=}`, and
+  per-candidate AIC-regressor testing (with the Picktd restore it drags in).
 - ~~**`automdl{}`**~~ — **CLOSED 2026-07-28d.** All 11 arguments that move the
   oracle now apply, and nothing in the block is fatal or silently dropped —
   the first spec block in the option sweep to reach that state. It took three

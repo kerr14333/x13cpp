@@ -1837,5 +1837,66 @@ diagnostics front (force / slidingspans / history) is now closed.
   Mutation-tested: a 1% perturbation of `fcdf` fails **218 of 224**, the six
   survivors being specs whose series is too short for any Tukey window. Map:
   **`tools/spectrum_peaks_scouting.md`**.
+- **`pickmdl{}` / `automx.f` — CLOSED (bit-exact), and it was parse-only AND
+  silently model-less.** `gt_pickmdl` routed all 11 arguments through
+  `gt_generic`, so a pickmdl spec returned `OUTCOME: OK` having fitted **no
+  ARIMA model at all** — `nmodel: 0`, `nefobs: 144` against the oracle's
+  `(0 1 2)(0 1 1)` and 131 on `extra/airline_pickmdl`. It was the largest
+  single source of real feature skips (9), all now gone.
+  `automx.f` is the CLASSIC X-11-ARIMA selection, the sibling of `automd.f`
+  (TRAMO) and a completely different algorithm: instead of identifying orders
+  from the data it ESTIMATES a fixed candidate list (from `file=`, else five
+  built-ins) and keeps the best one passing three screens — amdfct's three-year
+  average forecast error vs `fcstlim`, the Ljung-Box p-value at lag 24 vs
+  `qlim`, and the NONSEASONAL MA coefficient sum vs `overdiff`. `method=first`
+  stops at the first acceptance; `method=best` tightens the bar to each accepted
+  model's own error, so the last acceptance is the lowest. A candidate carrying
+  a trailing `*` is the DEFAULT: with nothing accepted, and a run that still
+  needs regARIMA preadjustment factors, it is used anyway with forecasting
+  switched off (`nofcst`, `hvstar==2`). Ported into
+  `core/src/automdl/automx.{hpp,cpp}` with the four routines it is the only
+  caller of — `mdlinp.f` (point the lexer at the `.mdl` file; this port's lexer
+  reads an in-memory line vector, so the equivalent of the Fortran's REWIND is
+  to replace it and re-run `intinp.f`'s reset), `setamx.f`, `bstmdl.f`/
+  `bstget.f` — plus `nofcst.f`, a real `gt_pickmdl` carrying gtautx.f's range
+  validation, and gtinpt.f:248-257's defaults.
+  **Everything it needed was already ported** (`rgarma`, `regvar`, `mdlset`/
+  `mdlint`, `getmdl`, `ssprep`, `idotlr`, `acf` from `check{}`, and `amdfct`
+  from the aape diagnostic — `AapeDiagnostics.ok` IS the Fortran's `Fctok`),
+  which is why the whole front landed in one increment.
+  **The one non-mechanical bug: `bstget.f:80-96`'s effective-observation split
+  belongs INSIDE `bstget`, not at the call site.** Extracted to a shared helper
+  and called only from the loop head, the re-estimation of a winner that was not
+  the LAST candidate estimated **crashed** — `Nintvl` still described the
+  previous candidate, so `rgarma` read past the differenced series whenever the
+  winner had a different differencing order.
+  **Measured both directions for all 11 arguments** (oracle on-vs-off, then
+  engine-vs-oracle over all 56 shared `.udg` keys): `identify` 189, `overdiff`
+  168, `qlim` 160, `fcstlim` 160, `method` 156, `file` present-vs-absent — and
+  the engine matches every one at **0** keys differing. All three numeric
+  screens bite only in the REJECT-more direction (`qlim` up from 5, `fcstlim`
+  down from 15, `overdiff` down from 0.9). **`mode=` is provably INERT**:
+  `iautom` is a `gtinpt.f:873` LOCAL whose only use is the `> 0` test setting
+  `Lautox`, and `gtautx.f:230` forces it to 1 regardless.
+  Walled, each measured first and each a clean fatal rather than a silent wrong
+  answer: `outofsample=yes` (`Outfer` — amdfct's out-of-sample arm is unported,
+  and **the oracle picks a DIFFERENT model with it on**, so this is a real gap);
+  `bcstlim=`/`forecast{maxback=}` (the backcast acceptance pass needs amdfct's
+  `Bckcst` arm); per-candidate AIC-regressor testing together with the Picktd
+  restore it drags in; and `arima.f:476-527`'s no-model cleanup.
+  Gated by seven corpus specs — `extra/airline_pickmdl` plus six hand-authored
+  ones (`-first`, `-nofile`, `-qlim`, `-overdiff`, `-default`,
+  `-identify-first`) whose selected models spread across `(0 1 1)(0 1 1)`,
+  `(0 1 2)(0 1 1)` and `(2 1 0)(0 1 1)`. **They are NOT produced by
+  `genextra.py`** and say so in a header comment; running it deletes them (the
+  standing corpus-generator hazard). Mutation-tested four ways, each failing a
+  DIFFERENT set — not tightening `loclim` 9/10, skipping `bstget` 9/10 on a
+  disjoint set, dropping the `ovrdff` screen 27/70, disabling the starred
+  fallback 18/70. **Probe-harness trap worth keeping:** the generated spec's own
+  comment header contains the string `pickmdl{}`, so a `replace("pickmdl{", …)`
+  injects the probe argument into a COMMENT and the oracle rejects the file —
+  every variant read "ORACLE REJECTS", which looks exactly like a finding. Same
+  afternoon, an unanchored `file =` match also stripped `series{file=}`. Map:
+  **`tools/pickmdl_scouting.md`**.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.
