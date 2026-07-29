@@ -44,9 +44,12 @@ reproduce.
   pickmdl{}: the Picktd restore at automx.f:717-724 is not ported.
   *Fortran:* `automx.f:717-724`
 
-- **`core/src/automdl/automx.cpp:648`**
-  pickmdl{} with forecast{maxback=} is not yet ported: the backcast acceptance pass (automx.f:903-928) needs amdfct's Bckcst arm.
-  *Fortran:* `automx.f:903-928`
+
+## Diagnostics
+
+- **`core/src/diag/amdfct.cpp:195`**
+  out-of-sample BACKCASTS with an outlier regressor inside the first three years are not yet ported exactly (amdfct.f:92-148 under Bckcst): measured 6.6959 against the oracle's 6.71.
+  *Fortran:* `amdfct.f:92-148`
 
 
 ## Drivers

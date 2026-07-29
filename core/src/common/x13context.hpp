@@ -213,6 +213,13 @@ struct X13Context {
     EstDiagnostics estdgn{};
     // amdfct.f -- the average absolute percentage forecast error (aape.0-3).
     AapeDiagnostics aape{};
+    // ... and its BACKCAST twin, from automx's acceptance pass (automx.f:906).
+    // The oracle has no savelog key for this one -- prtamd PRINTS it and the
+    // only trace it leaves in the .udg is whether Nbcst survived. Published so
+    // the gate can compare it against that printed block; `ran` distinguishes
+    // "computed zero" from "the pass never happened".
+    AapeDiagnostics aape_bcst{};
+    bool aape_bcst_ran = false;
     // prtd8b.f / prtd9a.f savelog rows. Snapshot at the x11pt3 call sites --
     // the span replays re-run x11pt3 and would overwrite them, the same
     // discipline ctx.x11_f2tests needs.

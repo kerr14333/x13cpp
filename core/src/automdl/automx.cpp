@@ -641,14 +641,31 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         }
     }
 
-    // automx.f:903-928's backcast pass re-scores the winner over the BACKCAST
-    // span, which amdfct's Bckcst arm computes -- unported alongside the
-    // out-of-sample arm. Reject rather than report a forecast-only number.
+    // automx.f:903-928 -- re-score the SELECTED model over the BACKCAST span and,
+    // if it fails, drop backcasting for the run. Skipped when the starred
+    // default was used (hvstar==2), which has forecasting off already.
     if (ctx.extend.nbcst > 0 && hvstar != 2) {
-        fatal(ctx, "pickmdl{} with forecast{maxback=} is not yet ported: the "
-                   "backcast acceptance pass (automx.f:903-928) needs amdfct's "
-                   "Bckcst arm.");
-        return;
+        aape_diagnostics(ctx, trnsrs, &argok, /*bckcst=*/true);
+        if (ctx.error.lfatal) return;
+        // prtamd prints these and writes no savelog key; publish them so the
+        // gate can read the printed block instead of nothing.
+        ctx.aape_bcst = ctx.aape;
+        ctx.aape_bcst_ran = true;
+        // **CB-33** -- `IF(mape(4).gt.Bcklim.and.(.not.argok))`. The `.and.` is
+        // almost certainly a slip for `.or.`: the whole point of `bcstlim=` is to
+        // un-select a model whose backward extrapolation is poor, and the
+        // neighbouring comment ("check to see if argok false and print out error
+        // message for backcasts") reads as two independent reasons. As written,
+        // a model that CONVERGED can never fail the screen no matter how bad the
+        // backcast error is -- and prtamd, which evaluates the screens itself,
+        // says so out loud. Measured on the oracle with `bcstlim=1`: the .out
+        // prints "MODEL 2 REJECTED: Average backcast error > 1.00%" and then
+        // "The model chosen is (0 1 2)(0 1 1)", and the table footer still reads
+        // "Includes 12 backcasts". Transcribed with the `&&`.
+        if (ctx.aape.mape[3] > ar.bcklim && !argok) {
+            ctx.extend.nbcst = 0;
+            ctx.x11ptr.pos1bk = ctx.x11ptr.pos1ob;
+        }
     }
 }
 

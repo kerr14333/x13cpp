@@ -10,8 +10,8 @@
 // and the OUT-OF-SAMPLE one are ported. Out-of-sample re-fits the model three
 // times over successively shorter model spans, forecasting each time from the
 // new span's end, and restores the whole estimation state afterwards
-// (amdfct.f:70-90, :186-235, :270-300). Backcast error (`Bckcst`, reached only
-// from `pickmdl{bcstlim=}` at automx.f:906) is still unported.
+// (amdfct.f:70-90, :186-235, :270-300), and the BACKCAST twin (`Bckcst`) that
+// automx.f:906 uses to score the selected model's backward extrapolation.
 #ifndef X13_DIAG_AMDFCT_HPP
 #define X13_DIAG_AMDFCT_HPP
 
@@ -35,8 +35,12 @@ struct AapeDiagnostics {
 // out-of-sample switch and, on the out-of-sample path, is CLEARED when a
 // re-estimation fails so an automatic-model caller can drop the candidate
 // instead of abending. Pass null on the ordinary (non-automatic) path.
+// `bckcst` runs the BACKCAST twin (amdfct.f's `Bckcst`): the design is time-
+// reversed, the window is the FIRST three years rather than the last, and the
+// out-of-sample variant walks the span START forward instead of the end back.
+// Only automx's acceptance pass (automx.f:906) passes it true.
 void aape_diagnostics(X13Context& ctx, const double* trnsrs,
-                      bool* lauto = nullptr);
+                      bool* lauto = nullptr, bool bckcst = false);
 
 }  // namespace x13
 

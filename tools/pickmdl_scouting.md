@@ -63,7 +63,7 @@ than 1e-5 relative.
 | `identify=` | `first` + `outlier{}` | 189 | 0 | **gated** (`-identify-first`) |
 | `mode=` | `both` vs `fcst` | **0** | 0 | **INERT, provably** |
 | `outofsample=` | `yes` | (different model) | 0 | **gated** (`-outofsample`) |
-| `bcstlim=` | needs `maxback=` | (runs) | — | **WALLED** (fatal) |
+| `bcstlim=` | needs `maxback=` | **0** | 0 | **INERT** — CB-33; gated |
 | `print=` / `savelog=` | — | — | — | print surface |
 
 **`mode=` is inert and the reason is structural, not empirical.** `iautom` is a
@@ -137,13 +137,30 @@ ones — `test_check_diagnostics`, `test_qs_diagnostics`, `test_spectrum_peaks`,
    (the `estimate{}` twin, and the `nfev`/`niter` pin) and
    `generated/airline_outofsample-otl` (the outlier strip, with an
    out-of-window outlier as the negative control).
-2. **`bcstlim=` / `forecast{maxback=}`.** `automx.f:903-928` re-scores the
-   winner over the backcast span via amdfct's `Bckcst` arm and can un-select it
-   for backcasting (`Nbcst=0`, `Pos1bk=Pos1ob`). The oracle runs this
-   combination fine. Now the ONLY unported arm of amdfct: `Bckcst` mirrors the
-   out-of-sample one (advance `Begmdl` instead of retreating `Endmdl`, reverse
-   the Xy design, take the window from the FIRST three years and judge a ramp by
-   its start rather than its end).
+2. ~~**`bcstlim=` / `forecast{maxback=}`**~~ — **CLOSED 2026-07-29b.** The
+   `Bckcst` arm is the out-of-sample one mirrored: the Xy design is time
+   REVERSED so the same forward machinery extrapolates backwards, the outlier
+   window is the FIRST three years (and every type is judged by its start, with
+   no ramp special case), the `ave` scale reads the first three years, and the
+   out-of-sample variant walks `Begmdl` FORWARD instead of `Endmdl` back, taking
+   the ACTUALs from the year it is about to drop, reversed, because
+   `amdfct.f:239` skips `subset` on exactly that path. Gated by
+   `extra/airline_pickmdl-backcast{,-oos,-zero}` through
+   `tests/parity/test_backcast_aape.py`, which reads the oracle's PRINTED block
+   -- prtamd writes no savelog key for it.
+   **`bcstlim=` itself is INERT, and that is CB-33:** `automx.f:922`'s
+   `IF(mape(4).gt.Bcklim.and.(.not.argok))` is `.and.` where the algorithm wants
+   `.or.`, so a converged model can never fail the screen. Measured: with
+   `bcstlim=1` the oracle prints "MODEL 2 REJECTED: Average backcast error >
+   1.00%" and then "The model chosen is (0 1 2)(0 1 1)", and keeps all twelve
+   backcasts; every `.udg` key but `bcstlimit` is unchanged.
+   **One narrow gap left, walled with the measurement:** out-of-sample
+   BACKCASTS with an outlier regressor inside the first three years reads 6.6959
+   against the oracle's printed 6.71. The strip fires (instrumented) and
+   disabling it changes nothing, so the difference is downstream of the window
+   test. Every other combination is bit-exact -- within-sample backcasts with
+   outliers, out-of-sample FORWARD with outliers, out-of-sample backcasts with
+   no outlier in the window, and the `ivalue==1` scale branch.
 3. **Per-candidate AIC-regressor testing** (`automx.f:404-500`, `:750-870`) —
    `tdaic`/`lomaic`/`easaic`/`usraic`/`chkchi` inside the candidate loop, i.e.
    `regression{aictest=}` alongside `pickmdl{}`. It can flip `Picktd` between

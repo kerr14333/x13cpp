@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-29b (composite under SEATS + `outofsample=` — CLOSED)
+# Session handoff — 2026-07-29b (composite under SEATS + all of `amdfct.f` — CLOSED)
 
 Replaces the 2026-07-29 handoff. Its findings are carried forward below where
 they still matter; its open item 4 (composite `agr3s.f`) is done, and with it
@@ -13,7 +13,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5715 passed / 0 failed / 469 skipped** (~85s) |
+| `python -m pytest tests/parity -q -n 8` | **5754 passed / 0 failed / 469 skipped** (~85s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -26,7 +26,8 @@ Standing constraints, unchanged: **never merge this branch to `main`, never
 push**; **never run `tests/corpus/generated/genspecs.py` or
 `tests/corpus/extra/genextra.py`** (both wipe committed specs they cannot
 regenerate — the six pickmdl specs, both `composite-seats*` corpora and the
-three `*outofsample*` specs are hand-authored and say so in a header comment). Build with
+three `*outofsample*` and three `*-backcast*` specs are hand-authored and say
+so in a header comment). Build with
 `export PATH="/c/rtools44/x86_64-w64-mingw32.static.posix/bin:$PATH" && cmake --build build -j 6`.
 
 ## This session: `composite{}` under `seats{}` — `agr3s.f`
@@ -159,6 +160,68 @@ floor and a property of the spec, not of this feature. `test_d8b_d9a` is
 byte-exact by design, so the spec simply does not carry the adjustment that
 would drag it in; `airline_outofsample` covers the X-11 side.
 
+## This session, part 3: `forecast{maxback=}` — amdfct's BACKCAST arm
+
+The last unported piece of `amdfct.f`, and the last thing between here and a
+complete `pickmdl{}`. `pickmdl{}` + `forecast{maxback=}` used to FATAL, on a
+spec the oracle runs to completion.
+
+`Bckcst` is the out-of-sample arm mirrored in every direction: the Xy design is
+time REVERSED so the same forward machinery extrapolates backwards, the outlier
+window is the FIRST three years (every type judged by its start — no ramp
+special case), the `ave` scale reads the first three years, and the
+out-of-sample variant walks `Begmdl` FORWARD instead of `Endmdl` back, taking
+the ACTUALs from the year it is about to drop, in REVERSE order, because
+`amdfct.f:239` skips `subset` on exactly that path.
+
+### Findings worth not re-deriving
+
+1. **CB-33 — `bcstlim=` cannot reject anything.** `automx.f:922`'s
+   `IF(mape(4).gt.Bcklim.and.(.not.argok))` is `.and.` where the algorithm wants
+   `.or.`: a model that CONVERGED passes the screen however bad its backward
+   extrapolation is, and one that did not has been dealt with upstream. The
+   program contradicts itself out loud — `prtamd` evaluates the screens itself
+   and prints "MODEL 2 REJECTED: Average backcast error > 1.00%", after which
+   the `ELSE` arm prints "The model chosen is (0 1 2)(0 1 1)" and the footer
+   still reads "Includes 12 backcasts". Transcribed with `&&`.
+2. **The gate had to read PRINTED output.** This is the one amdfct result with
+   no savelog key at all: `prtamd` prints the four numbers and the `.udg`'s only
+   trace of the block is whether `Nbcst` survived. `test_backcast_aape.py`
+   parses the golden `.out`'s own table and compares the harness's new
+   `bcstaape.*` lines at prtamd's two decimals — the same shape the composite
+   gate uses for the roughness table.
+3. **`airline_zero` earns its place twice.** `-backcast-zero` is the only spec
+   in the corpus that reaches amdfct's `ivalue==1` absolute-error scale, so it
+   is the only gate on the `ave`-seeded-to-ONE Census defect, forward or
+   backward. And because that series is negative in its first three years and
+   positive in its last, it is also what discriminates WHICH window the scale
+   comes from: a mutation reading the forecast window on the backcast path
+   **passed every other spec in the suite**.
+4. **A stale build reads exactly like a bug.** A probe came back `Inf` where the
+   oracle had 43.15; the cause was that a reverted source file had not been
+   rebuilt. The environment notes already say "a reverted file may not rebuild"
+   — the new part is that the symptom can be a plausible-looking numeric result,
+   not a compile error.
+
+### The one gap, walled with its measurement
+
+Out-of-sample BACKCASTS with an outlier regressor inside the first three years
+reads 6.6959 against the oracle's printed 6.71. The strip fires (instrumented:
+`typ=1 beg=15 inwin=1`) and disabling it changes nothing, so the difference is
+downstream of the window test — in how the stripped series feeds the reversed
+per-pass design. Everything else is bit-exact and gated: within-sample backcasts
+with outliers, out-of-sample FORWARD with outliers, out-of-sample backcasts with
+no outlier in the window, and the `ivalue==1` branch. It is a `fatal()`, so it
+appears in `docs/WALLS.md`.
+
+### Gated by
+
+`extra/airline_pickmdl-backcast` (within-sample), `-oos` (BOTH amdfct arms at
+once, the only place they interact) and `-zero`, through
+`tests/parity/test_backcast_aape.py`. Mutation-tested three ways: skip the
+design reversal (11), read the forecast `ave` window (1, and only on `-zero`),
+use the forecast outlier-window test (0 — which is what found the gap above).
+
 ## Previous session (2026-07-29a): `pickmdl{}` — what landed
 
 `M5/pickmdl: port automx.f -- the classic X-11-ARIMA candidate search`.
@@ -282,7 +345,7 @@ generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5715<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5754<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -304,17 +367,13 @@ not parse.
 
 ## Open, in the order I would take them
 
-1. **`pickmdl{}`'s two remaining walls** (its `outofsample=` one closed this
-   session), each measured against the oracle and each a clean fatal:
-   - `bcstlim=` / `forecast{maxback=}` — the backcast acceptance pass
-     (`automx.f:903-928`) needs amdfct's `Bckcst` arm, now the only unported
-     part of that routine. It mirrors the out-of-sample arm just landed:
-     advance `Begmdl` instead of retreating `Endmdl`, reverse the Xy design,
-     take the window from the FIRST three years, and judge a ramp by its start
-     rather than its end. Oracle runs the combination fine.
-   - per-candidate AIC-regressor testing (`automx.f:404-500`, `:750-870`) and
-     the Picktd trading-day restore (`:255-292`, `:700-725`) it drags in.
-     Reachable with `regression{aictest=}` alongside `pickmdl{}`.
+1. **`pickmdl{}`'s ONE remaining wall** (both of its amdfct-dependent ones
+   closed this session): per-candidate AIC-regressor testing
+   (`automx.f:404-500`, `:750-870`) and the Picktd trading-day restore
+   (`:255-292`, `:700-725`) it drags in. Reachable with `regression{aictest=}`
+   alongside `pickmdl{}`. Plus the narrow amdfct corner above — out-of-sample
+   backcasts with an outlier in the first three years — which is measured,
+   walled and 0.2% out, not a structural gap.
 2. **Two automdl BASELINE disagreements**, both isolated, neither gated:
    `generated/usdeaths_automdl` (17 keys; the known iddiff d=0/d=1 split, and
    `nreg` 1 vs 0 — the engine is missing the Constant) and `ces_amuse`

@@ -2090,5 +2090,41 @@ diagnostics front (force / slidingspans / history) is now closed.
   outlier-estimation floor and a property of the spec rather than of this
   feature; `test_d8b_d9a` is byte-exact by design, so the spec simply does not
   carry the adjustment that would drag it in.
+- **`pickmdl{}` + `forecast{maxback=}` -- amdfct's BACKCAST arm -- CLOSED, and
+  `bcstlim=` turns out to be INERT (CB-33).** The combination used to FATAL on a
+  spec the oracle runs to completion. `Bckcst` is the out-of-sample arm
+  mirrored: the Xy design is time REVERSED so the same forward machinery
+  extrapolates backwards, the outlier window is the FIRST three years (every type
+  judged by its start -- no ramp special case), the `ave` scale reads the first
+  three years, and the out-of-sample variant walks `Begmdl` FORWARD instead of
+  `Endmdl` back, taking the ACTUALs from the year it is about to drop, in REVERSE
+  order, because `amdfct.f:239` skips `subset` on exactly that path.
+  **CB-33**: `automx.f:922`'s `IF(mape(4).gt.Bcklim.and.(.not.argok))` is `.and.`
+  where the algorithm wants `.or.`, so a model that CONVERGED can never fail the
+  screen -- and `prtamd`, which evaluates the screens itself, says otherwise out
+  loud. Measured with `bcstlim=1`: the `.out` prints "MODEL 2 REJECTED: Average
+  backcast error > 1.00%" and then "The model chosen is (0 1 2)(0 1 1)", and the
+  footer still reads "Includes 12 backcasts". Transcribed with `&&`.
+  **The gate had to read PRINTED output**, because this is the one amdfct result
+  with no savelog key at all: `tests/parity/test_backcast_aape.py` parses the
+  golden `.out`'s own table and compares the harness's new `bcstaape.*` lines at
+  prtamd's two decimals -- the same shape the composite gate uses for the
+  roughness table. Corpus: `extra/airline_pickmdl-backcast` (within-sample),
+  `-oos` (both amdfct arms at once, the only place they interact) and `-zero`,
+  which runs on `airline_zero.dat` and is **the only spec in the corpus that
+  reaches the `ivalue==1` absolute-error scale** -- and hence the only gate on
+  the `ave`-seeded-to-ONE defect. It earns its place twice over: airline_zero is
+  negative in its first three years and positive in its last, so it is also what
+  discriminates WHICH window the scale comes from. A mutation reading the
+  forecast window on the backcast path passed every other spec in the suite.
+  **One narrow gap, walled with its measurement rather than shipped:**
+  out-of-sample BACKCASTS with an outlier inside the first three years reads
+  6.6959 against the oracle's printed 6.71. The strip fires (instrumented:
+  `typ=1 beg=15 inwin=1`) and disabling it changes nothing, so the difference is
+  downstream of the window test, in how the stripped series feeds the reversed
+  per-pass design. Everything else is bit-exact: within-sample backcasts with
+  outliers, out-of-sample FORWARD with outliers, out-of-sample backcasts with no
+  outlier in the window, and the ivalue==1 branch. **amdfct is now complete apart
+  from that corner.**
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

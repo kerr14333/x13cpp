@@ -193,6 +193,20 @@ static void dump_aape(const x13::X13Context& ctx) {
     line(fwrite_fmt("(a,f12.4)", "aape.1: ", a.mape[0]));
     line(fwrite_fmt("(a,f12.4)", "aape.2: ", a.mape[1]));
     line(fwrite_fmt("(a,f12.4)", "aape.3: ", a.mape[2]));
+
+    // The BACKCAST twin (automx.f:906). The oracle writes no savelog key for it
+    // -- prtamd PRINTS it -- so this is harness surface, and the gate compares
+    // it against the printed "Average absolute percentage error in ... backcasts"
+    // block of the .out. Emitted at prtamd's own two-decimal precision.
+    if (ctx.aape_bcst_ran && ctx.aape_bcst.ok) {
+        const auto& b = ctx.aape_bcst;
+        line(b.outofsample ? "bcstaape.mode: outofsample"
+                           : "bcstaape.mode: withinsample");
+        line(fwrite_fmt("(a,f12.4)", "bcstaape.0: ", b.mape[3]));
+        line(fwrite_fmt("(a,f12.4)", "bcstaape.1: ", b.mape[0]));
+        line(fwrite_fmt("(a,f12.4)", "bcstaape.2: ", b.mape[1]));
+        line(fwrite_fmt("(a,f12.4)", "bcstaape.3: ", b.mape[2]));
+    }
 }
 
 

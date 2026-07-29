@@ -34,10 +34,11 @@
 //     tdaic/easaic per candidate and interacts with the Picktd restore below.
 //   * the Picktd trading-day restore (:255-292, :700-725) -- only reachable
 //     once that AIC testing can change Picktd between candidates.
-// `pickmdl{outofsample=yes}` (Outfer) is now PORTED -- see diag/amdfct.cpp.
-// It is not cosmetic: the aape is the first of the three acceptance screens, so
-// it changes which model is selected (measured on extra/airline_pickmdl,
-// (0 1 2)(0 1 1) -> (0 1 1)(0 1 1)).
+// `pickmdl{outofsample=yes}` (Outfer) and `bcstlim=`/`forecast{maxback=}` are
+// now PORTED -- see diag/amdfct.cpp. The first is not cosmetic: the aape is the
+// first of the three acceptance screens, so it changes which model is selected
+// (measured on extra/airline_pickmdl, (0 1 2)(0 1 1) -> (0 1 1)(0 1 1)). The
+// second is inert, and provably so -- CB-33.
 #ifndef X13_AUTOMDL_AUTOMX_HPP
 #define X13_AUTOMDL_AUTOMX_HPP
 

@@ -9,7 +9,7 @@
 #include "specparse/specparse.hpp" // getstr, dlrgef, addate, dfdate, cpyint
 #include "regarima/outlier.hpp"    // rdotlr
 #include "transform/transform.hpp" // invfcn
-#include "numeric/numeric.hpp"     // dpeq, daxpy
+#include "numeric/numeric.hpp"     // dpeq, daxpy, revrse
 #include "x11/slidingspans.hpp"    // ssprep_snapshot / restor_span
 
 #include <algorithm>
@@ -20,6 +20,15 @@
 namespace x13 {
 
 namespace {
+
+// The same shape automx.cpp uses: a message on the error channel plus abend, so
+// the harness reports OUTCOME: FATAL rather than OK-with-wrong-numbers -- and so
+// tools/walls.py lists it in docs/WALLS.md.
+void fatal(X13Context& ctx, const std::string& what) {
+    errhdr(ctx);
+    writln(ctx, "ERROR: " + what, stdio::STDERR, ctx.units.mt2, true);
+    abend(ctx);
+}
 
 // amdfct.f:108-115 -- the regressor types the out-of-sample pass strips when
 // they fall inside the three-year window. Two of the listed types are commented
@@ -67,7 +76,8 @@ void load_est(X13Context& ctx, const EstState& s) {
 
 }  // namespace
 
-void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
+void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto,
+                      bool bckcst) {
     AapeDiagnostics& out = ctx.aape;
     out = AapeDiagnostics{};
 
@@ -88,7 +98,7 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
     // amdfct.f:55-60 -- not enough observations BEFORE the three-year window to
     // have estimated the model there. The oracle prints a NOTE and returns
     // Fctok=F, which arima.f:904 turns into `aape.mode: none`.
-    if (((nobsot - (m.mxdflg + m.mxarlg)) * m.ncxy) + 1 <= 0) return;
+    if (!bckcst && ((nobsot - (m.mxdflg + m.mxarlg)) * m.ncxy) + 1 <= 0) return;
     if (nobsot <= 0 || nspobs <= 0) return;
 
     // amdfct.f:65-67 -- Fctdrp is forced to 0 for the whole diagnostic and
@@ -106,14 +116,31 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
     // them and must not see them in the data either.
     std::vector<double> tsrs(trnsrs, trnsrs + nspobs);
 
+    // amdfct.f's `revrse` pair. On the BACKCAST path the design is time-
+    // reversed so the same forward machinery (regvar/rgarma/fcstxy) extrapolates
+    // backwards; `xybak` is the scratch the Fortran reverses through.
+    std::vector<double> xybak;
+    auto reverse_xy = [&](int nrows) {
+        xybak.assign(d.xy.data(), d.xy.data() + d.xy.size());
+        revrse(xybak.data(), nrows, m.ncxy, d.xy.data());
+    };
+
     EstState saved;
+    int bmdl2[2] = {0, 0};
     int emdl2[2] = {0, 0};
     if (outf) {
         // amdfct.f:71-82 -- everything the three re-estimations overwrite.
         save_est(ctx, saved);
         ssprep_snapshot(ctx);           // the regression dictionary + coefficients
-        emdl2[0] = ar.endmdl(1);
-        emdl2[1] = ar.endmdl(2);
+        if (bckcst) {
+            // amdfct.f:83-87 -- backcasting moves the span START, so that is
+            // what has to be put back.
+            bmdl2[0] = ar.begmdl(1);
+            bmdl2[1] = ar.begmdl(2);
+        } else {
+            emdl2[0] = ar.endmdl(1);
+            emdl2[1] = ar.endmdl(2);
+        }
 
         // amdfct.f:92-146 -- strip every OUTLIER regressor dated inside the
         // window from the design, accumulating its fitted contribution into
@@ -132,10 +159,14 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
             rdotlr(ctx, str.substr(0, static_cast<std::size_t>(nchr)),
                    ar.begxy.data(), sp, otltyp, begotl, endotl, locok);
             if (!locok || ctx.error.lfatal) { ar.fctdrp = fdbak; return; }
-            // amdfct.f:127-129 -- a RAMP is judged by its END date, everything
-            // else by its start. (Bckcst would use the mirror test at :129.)
+            // amdfct.f:127-130. Forecasting looks at the LAST three years and
+            // judges a RAMP by its end date, everything else by its start;
+            // backcasting looks at the FIRST three years and judges every type
+            // by its start (`tst2`, which has no ramp special case).
             constexpr int RP = 4;
-            const bool inwin = (otltyp == RP) ? (endotl > nobsot) : (begotl > nobsot);
+            const bool inwin =
+                bckcst ? (begotl <= nobsf)
+                       : ((otltyp == RP) ? (endotl > nobsot) : (begotl > nobsot));
             if (!inwin) continue;
             daxpy(ar.nrxy, d.b(icol), &d.xy(icol), m.ncxy, fotl.data(), 1);
             dlrgef(ctx, icol, ar.nrxy, 1);
@@ -146,16 +177,48 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
         if (any)
             for (int k = 0; k < nspobs; ++k)
                 tsrs[static_cast<std::size_t>(k)] -= fotl[static_cast<std::size_t>(k)];
+
+        // MEASURED GAP, walled rather than shipped wrong. Every other
+        // combination of these two arms is bit-exact against the oracle:
+        // within-sample backcasts with outliers, out-of-sample FORWARD with
+        // outliers, out-of-sample backcasts with no outlier in the window, and
+        // the ivalue==1 scale branch. The one that is not is all three at once
+        // -- out-of-sample BACKCASTS with an outlier actually stripped, where
+        // the port reads 6.6959 against the oracle's printed 6.71 on
+        // `regression{variables=(ao1950.mar)}` + `pickmdl{outofsample=yes}` +
+        // `forecast{maxback=12}`. The strip itself fires (instrumented:
+        // typ=1 beg=15 inwin=1) and disabling it changes nothing, so the
+        // difference is downstream of it, in how the stripped series feeds the
+        // reversed per-pass design -- not in the window test. Left as a fatal
+        // with the measurement rather than a silent 0.2%.
+        if (bckcst && any) {
+            fatal(ctx, "out-of-sample BACKCASTS with an outlier regressor inside "
+                       "the first three years are not yet ported exactly "
+                       "(amdfct.f:92-148 under Bckcst): measured 6.6959 against "
+                       "the oracle's 6.71.");
+            return;
+        }
+    } else if (bckcst) {
+        // amdfct.f:152-154 -- within-sample backcasts reuse the fitted model, so
+        // only the design is reversed (over the OBSERVED rows: Nrxy-Nfcst).
+        reverse_xy(ar.nrxy - ctx.extend.nfcst);
     }
 
     // A local restore, used by every early exit below once the save has been
     // taken. Mirrors amdfct.f:270-300 minus the per-year span arithmetic.
     auto restore = [&]() {
         if (outf) {
-            ar.endmdl(1) = emdl2[0];
-            ar.endmdl(2) = emdl2[1];
-            ar.endspn(1) = emdl2[0];
-            ar.endspn(2) = emdl2[1];
+            if (bckcst) {
+                ar.begmdl(1) = bmdl2[0];
+                ar.begmdl(2) = bmdl2[1];
+                d.begspn(1) = bmdl2[0];
+                d.begspn(2) = bmdl2[1];
+            } else {
+                ar.endmdl(1) = emdl2[0];
+                ar.endmdl(2) = emdl2[1];
+                ar.endspn(1) = emdl2[0];
+                ar.endspn(2) = emdl2[1];
+            }
             int n = 0;
             dfdate(ar.endspn.data(), d.begspn.data(), sp, n);
             d.nspobs = n + 1;
@@ -167,6 +230,10 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
             regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst, 0,
                    ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
                    ar.reglom, ar.nrxy, ar.begxy.data(), frstry, true, ar.elong);
+        } else if (bckcst) {
+            // amdfct.f:301-303 -- put the design back the way round the caller
+            // handed it over.
+            reverse_xy(ar.nrxy - ctx.extend.nfcst);
         }
         ar.fctdrp = fdbak;
     };
@@ -184,9 +251,12 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
     double ave = 1.0;
     {
         std::vector<double> tmpsrs(static_cast<std::size_t>(nobsf), 0.0);
-        for (int i = 0; i < nobsf; ++i) tmpsrs[i] = tsrs[static_cast<std::size_t>(nobsot + i)];
+        // amdfct.f:159-165 -- the FIRST three years for backcasts, the last
+        // three for forecasts.
+        const int w0 = bckcst ? 0 : nobsot;
+        for (int i = 0; i < nobsf; ++i) tmpsrs[i] = tsrs[static_cast<std::size_t>(w0 + i)];
         if (ctx.fxreg.nfxttl > 0)
-            for (int i = 0; i < nobsf; ++i) tmpsrs[i] += ctx.fxreg.fixfac(nobsot + i + 1);
+            for (int i = 0; i < nobsf; ++i) tmpsrs[i] += ctx.fxreg.fixfac(w0 + i + 1);
         invfcn(ctx, tmpsrs.data(), nobsf, fcntyp, lam, tmpsrs.data());
         if (ctx.error.lfatal) { restore(); return; }
         double ad1 = 1.0;
@@ -202,6 +272,7 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
 
     // amdfct.f:186-263 -- one pass per year back.
     std::vector<double> a(1092, 0.0);
+    std::vector<double> bck_actual;   // amdfct.f's reversed `tmpsrs` seed
     for (int i = 1; i <= 3; ++i) {
         const int disp = -i * sp;
         int fctori;
@@ -211,15 +282,35 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
             // seen the period it is forecasting. Note the span shrinks
             // cumulatively: each pass moves Endmdl one more year back, and the
             // origin is always the new span's own end.
-            addate(ar.endmdl.data(), sp, -sp, ar.endmdl.data());
-            ar.endspn(1) = ar.endmdl(1);
-            ar.endspn(2) = ar.endmdl(2);
+            if (bckcst) {
+                // amdfct.f:191-195 -- backcasting walks the span START forward
+                // instead, so the model never sees the year it extrapolates into.
+                addate(ar.begmdl.data(), sp, sp, ar.begmdl.data());
+                d.begspn(1) = ar.begmdl(1);
+                d.begspn(2) = ar.begmdl(2);
+            } else {
+                addate(ar.endmdl.data(), sp, -sp, ar.endmdl.data());
+                ar.endspn(1) = ar.endmdl(1);
+                ar.endspn(2) = ar.endmdl(2);
+            }
             int n = 0;
             dfdate(ar.endspn.data(), d.begspn.data(), sp, n);
             d.nspobs = n + 1;
             ctx.extend.nobspf =
                 std::min(d.nspobs + std::max(nfc - ar.fctdrp, 0), ar.nomnfy);
             fctori = d.nspobs;
+
+            if (bckcst) {
+                // amdfct.f:212-219 -- take the year about to be dropped as the
+                // ACTUALs, in REVERSE order (the design is reversed too), then
+                // drop it from the working series.
+                std::vector<double> keep(tsrs.begin() + sp, tsrs.end());
+                bck_actual.assign(static_cast<std::size_t>(sp), 0.0);
+                for (int j = 0; j < sp; ++j)
+                    bck_actual[static_cast<std::size_t>(sp - 1 - j)] =
+                        tsrs[static_cast<std::size_t>(j)];
+                tsrs.swap(keep);
+            }
 
             int frstry = 0;
             regvar(ctx, tsrs.data(), ctx.extend.nobspf, ar.fctdrp, nfc, 0,
@@ -238,6 +329,8 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
             if (lauto && !argok) { *lauto = false; ar.fctdrp = fdbak; return; }
             if (ctx.error.lfatal) { restore(); return; }
             nobsf = nfc;
+            // amdfct.f:230-233 -- re-reverse after the re-estimation rebuilt Xy.
+            if (bckcst) reverse_xy(ar.nrxy - nfc);
         } else {
             fctori = nspobs + disp;
             nobsf = std::min(nfc, ctx.extend.nobspf - fctori);
@@ -252,10 +345,18 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto) {
         // the forecast rows. Xy is (Ncxy, Nrxy) in the Fortran, i.e. the last
         // element of each row, which is `xy(ncxy*irow)` in this port's flat
         // 1-based buffer.
+        // amdfct.f:239-241 -- `IF(.not.(outf.and.Bckcst)) CALL subset(...)`:
+        // on the out-of-sample BACKCAST path the actuals are the reversed year
+        // stashed above, because the row it names has already left the design.
         std::vector<double> tmpsrs(PFCST, 0.0);
-        for (int k = 0; k < nobsf; ++k) {
-            const int irow = fctori + 1 + k;
-            tmpsrs[k] = d.xy(m.ncxy * irow);
+        if (outf && bckcst) {
+            for (int k = 0; k < nobsf && k < static_cast<int>(bck_actual.size()); ++k)
+                tmpsrs[k] = bck_actual[static_cast<std::size_t>(k)];
+        } else {
+            for (int k = 0; k < nobsf; ++k) {
+                const int irow = fctori + 1 + k;
+                tmpsrs[k] = d.xy(m.ncxy * irow);
+            }
         }
 
         // amdfct.f:246-251 -- a FIXED regressor's contribution was subtracted

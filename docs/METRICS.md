@@ -14,22 +14,22 @@ stale figure is a build error instead of something a reader finds first.
 
 | Metric | Value |
 |---|---|
-| Parity tests passing | **5715** |
+| Parity tests passing | **5754** |
 | Parity tests failing | **0** |
 | Parity tests skipped | **469** |
 | Parity tests xfailed | **0** |
 | Unit tests (ctest) | **11/11** |
-| Corpus spec files | **395** |
-| Parity test modules | **27** |
-| C++ non-blank lines (excl. generated) | **44767** |
+| Corpus spec files | **398** |
+| Parity test modules | **28** |
+| C++ non-blank lines (excl. generated) | **44893** |
 | C++ files (excl. generated) | **180** |
 | Fortran reference, non-blank lines | **166076** |
 | Fortran reference, files | **712** |
 | Fortran routines ported or gated | **401** |
 | Fortran routines in scope (excl. n-a) | **690** |
 | Percent of routines ported | **58.1** |
-| Census bugs catalogued | **32** |
-| Commits | **362** |
+| Census bugs catalogued | **33** |
+| Commits | **363** |
 | Active development time | **56h 03m** |
 | Calendar days worked | **12** |
 | Last commit | **2026-07-29** |

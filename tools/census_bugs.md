@@ -1048,3 +1048,56 @@ adjustment's.
 - **Pinned by:** `tests/parity/test_composite_seats.py::
   test_seats_composite_roughness_table`, which compares all twelve `di()` values
   against the oracle's own printed table.
+
+## CB-33
+
+**`automx.f:922`'s backcast acceptance test is `.and.` where the algorithm wants
+`.or.`, so `pickmdl{bcstlim=}` can never reject anything.**
+
+- **File:line:** `automx.f:922-928`.
+- **Severity:** an option that is documented, parsed, validated and printed
+  about, and that cannot change the run.
+
+`pickmdl{}` re-scores its selected model over the BACKCAST span
+(`automx.f:906` -> `amdfct` with `Bckcst=T`) and is meant to drop backcasting
+when the backward extrapolation is poor:
+
+```
+IF(mape(4).gt.Bcklim.and.(.not.argok))THEN
+ Nbcst=0
+ Pos1bk=Pos1ob
+ IF(Prttab(LAXMCH))WRITE(Mt1,1110)
+ELSE IF(Prttab(LAXMCH))THEN
+ WRITE(Mt1,1090)Mdldsn(1:Nmddcr)
+END IF
+```
+
+`argok` is the estimation-success flag. A model that CONVERGED therefore passes
+the screen no matter how large `mape(4)` is, and a model that did NOT converge
+has already been dealt with upstream -- so the branch is effectively dead. The
+neighbouring comment ("check to see if argok false and print out error message
+for backcasts", BCM May 2007) reads as two independent reasons to reject, which
+is what `.or.` would give.
+
+**The program contradicts itself out loud.** `prtamd` evaluates the screens on
+its own and prints its verdict; the action branch above does not agree with it.
+
+- **Confirmed empirically.** `pickmdl{bcstlim=1}` on airline (default 18):
+  `.out` prints
+
+  ```
+   MODEL   2 REJECTED:
+     Average backcast error >   1.00%
+
+                 The model chosen is (0 1 2)(0 1 1)
+  ```
+
+  -- the REJECTED line from prtamd, the "model chosen" line from the `ELSE`
+  arm -- and the table footer still reads `Includes 12 backcasts.` Every `.udg`
+  key is identical to the `bcstlim` default run except `bcstlimit` itself.
+- **Port:** transcribed with `&&`
+  (`core/src/automdl/automx.cpp`, the `ctx.aape.mape[3] > ar.bcklim && !argok`
+  test), with the analysis at the line.
+- **Pinned by:** `tests/parity/test_backcast_aape.py::test_backcasts_survive`,
+  which asserts the golden's own "Includes 12 backcasts" footer -- so if the
+  oracle is ever fixed the test fails rather than the port silently diverging.
