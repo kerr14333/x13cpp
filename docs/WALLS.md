@@ -23,26 +23,18 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**19 walls.**
+**17 walls.**
 
 
 ## Automatic model selection
 
-- **`core/src/automdl/automx.cpp:371`**
-  pickmdl{} with regression{aictest=} / user or holiday chi-square testing is not yet ported (automx.f:404-500 runs the AIC tests inside the candidate loop).
-  *Fortran:* `automx.f:404-500`
+- **`core/src/automdl/automx.cpp:458`**
+  pickmdl{} with regression{aictest=(user)} or user-defined holiday chi-square testing is not yet ported (usraic.f / chkchi.f have no C++; automx.f:463-500 runs them inside the candidate loop).
+  *Fortran:* `automx.f:463-500`
 
-- **`core/src/automdl/automx.cpp:431`**
-  pickmdl{}: the Picktd trading-day restore (automx.f:255-292) is not ported; it is reachable only with regression{aictest=(td)}, which is walled above.
-  *Fortran:* `automx.f:255-292`
-
-- **`core/src/automdl/automx.cpp:445`**
-  pickmdl{}: the Picktd per-candidate restore (automx.f:317-323) is not ported.
-  *Fortran:* `automx.f:317-323`
-
-- **`core/src/automdl/automx.cpp:595`**
-  pickmdl{}: the Picktd restore at automx.f:717-724 is not ported.
-  *Fortran:* `automx.f:717-724`
+- **`core/src/automdl/automx.cpp:555`**
+  pickmdl{}: a trading-day AIC verdict that DIFFERS between candidates (automx.f:259-296's Picktd restore) is not yet bit-exact -- d11/d13 land 0.885%/2.655% off on Februaries.
+  *Fortran:* `automx.f:259-296`
 
 
 ## Diagnostics
@@ -118,16 +110,16 @@ inventory.
 
 ## Automatic model selection
 
-- **`core/src/automdl/automx.cpp:387`**
+- **`core/src/automdl/automx.cpp:480`**
   Must have user supplied models stored in
 
-- **`core/src/automdl/automx.cpp:413`**
+- **`core/src/automdl/automx.cpp:514`**
   No ARIMA models stored in
 
-- **`core/src/automdl/automx.cpp:422`**
+- **`core/src/automdl/automx.cpp:523`**
   Every pickmdl candidate model failed to estimate.
 
-- **`core/src/automdl/automx.cpp:609`**
+- **`core/src/automdl/automx.cpp:793`**
   pickmdl{}: the selected model failed to re-estimate.
 
 

@@ -1101,3 +1101,62 @@ its own and prints its verdict; the action branch above does not agree with it.
 - **Pinned by:** `tests/parity/test_backcast_aape.py::test_backcasts_survive`,
   which asserts the golden's own "Includes 12 backcasts" footer -- so if the
   oracle is ever fixed the test fails rather than the port silently diverging.
+
+## CB-34
+
+**`automx.f:264`'s Picktd restore assigns `padj2=Priadj` where its two
+identical siblings assign `Priadj=padj2`, so the prior-adjustment mode is not
+restored -- the SAVE is overwritten with the live value instead.**
+
+- **File:line:** `automx.f:264` (against `automx.f:330` and `automx.f:725`).
+- **Severity:** silent. Nothing errors; the run continues with a `Priadj` that
+  describes a different candidate's trading-day verdict.
+
+`pickmdl{}` saves the entry state at `automx.f:97-100`:
+
+```
+      pktd=Picktd
+      padj2=Priadj
+      CALL copy(Trnsrs,PLEN,1,tsrs)
+      CALL copy(Adj,PLEN,1,a2)
+```
+
+`Picktd` ("a trading-day regressor is in the model") decides whether the
+program's length-of-month / leap-year prior is divided into the series, so a
+candidate whose AIC verdict differs from the entry state is modelling a
+DIFFERENT series. Three places put the entry state back, and all three are the
+same four-line idiom -- copy `tsrs` into `Trnsrs`, copy `a2` into `Adj`, set
+`Picktd`, restore `Priadj`. Two of them do:
+
+```
+          Picktd=pktd
+          Priadj=padj2
+```
+
+and the third, inside the post-loop re-estimation of the best model, does:
+
+```
+         IF(bstptd.eqv.pktd)THEN
+          CALL copy(tsrs,PLEN,1,Trnsrs)
+          CALL copy(a2,PLEN,1,Adj)
+          padj2=Priadj
+```
+
+The two series copies are correct and `Picktd=bstptd` was set one line above,
+so the only difference is the direction of the `Priadj` assignment. It reads as
+a transposition of the neighbouring lines rather than a deliberate choice:
+`padj2` is a save slot that is written once at entry and read nowhere after
+this point, so the statement has no effect other than to skip the restore.
+
+- **Reachability.** Only on the branch that re-estimates a best model whose
+  `Picktd` differs from the LAST candidate's but equals the ENTRY state -- i.e.
+  a `regression{aictest=(td)}` run where the AIC verdict flips between
+  candidates. That configuration is separately walled in this port (see
+  `docs/WALLS.md`, `automx.cpp`'s Picktd-flip fatal), so the defect is not
+  currently exercised.
+- **Port:** transcribed as written, at the `bstptd == pktd` sub-branch in
+  `core/src/automdl/automx.cpp`, with the analysis at the line.
+- **Not the cause of the walled discrepancy.** Mutation-tested by reversing the
+  assignment to what the siblings do: the walled spec's d11/d13 February gap is
+  unchanged (identical 5 failures), so CB-34's direction and that gap are
+  independent.

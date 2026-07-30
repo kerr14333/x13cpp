@@ -61,6 +61,10 @@ FREF_RE = re.compile(r"\b([a-z0-9_]+\.f:[\d\-,: ]*\d)")
 #   FAITHFUL  the oracle refuses the same input, so the refusal IS the port
 #             (e.g. "No ARIMA models stored in <file>" is automx.f:1050).
 #
+# A third shape files as GAP too: the code IS transcribed but does not yet agree
+# with the oracle, so it refuses rather than emitting wrong numbers ("not yet
+# bit-exact"). That is a hole in the port, not a faithful refusal.
+#
 # The HELPER NAME decides it wherever there is one: `*_not_ported` means exactly
 # GAP, and its message carries no keyword because the name already said it --
 # classifying on the message alone filed all 14 of them as faithful. Only the
@@ -69,7 +73,7 @@ GAP_HELPERS = ("x11_not_ported", "seats_not_ported", "xrg_not_ported",
                "not_ported")
 GAP_RE = re.compile(
     r"not (yet )?ported|unported|deferred|not yet supported|is walled|"
-    r"not implemented", re.I)
+    r"not implemented|not (yet )?bit-exact", re.I)
 
 
 def classify(helper, msg):

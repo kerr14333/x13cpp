@@ -770,6 +770,8 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     int arglog[2 * PARG];
     for (auto& v : arglog) v = -32767;
     bool havhol = false, havln = false, havlp = false;
+    // getreg.f:130-131 -- aicdiff and pvaictest are alternatives, not both.
+    bool hvaicd = false, hvpva = false;
     // User-defined regressor parse state (getreg.f). usrttl/usrptr feed
     // ctx.usrreg; the X matrix lands in ctx.arima.userx; ctx.arima.bgusrx holds
     // its start date. Only the default (untyped -> PRGTUD) path is built here.
@@ -952,6 +954,69 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                     else if (u == 14) ut = prm::PRGUSO;
                     else if (u == 15) ut = prm::PRGUCY;
                     else ut = prm::PRGTUD;   // 16/user or unset
+                }
+            }
+        } else if (argidx == 15) {   // aicdiff (getreg.f:405-428)
+            // The per-test AICC difference each AIC regressor test has to beat.
+            // Was PARSED AND DROPPED: the value reached no COMMON, so every
+            // aictest run used the gtinpt default of 0.0 whatever the spec
+            // said. Measured on `pickmdl{} + aictest=(td) + aicdiff=(19.0)`:
+            // the oracle DROPS the trading-day regressor (nreg 0,
+            // `aictest.td: no`) and the engine kept it (nreg 1) -- and the
+            // ARIMA coefficients, the likelihood and 28 other .udg keys follow.
+            // One element sets every test; a list sets them positionally, and
+            // a NULL element leaves that test's threshold alone.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            if (hvpva) {
+                inpter(ctx, PERROR, L.errpos.data() + 1,
+                       "Use either aicdiff or pvaictest, not both");
+                inptok = false;
+            }
+            bool argok = true;
+            double daicdf[prm::PAICT];
+            for (auto& v : daicdf) v = prm::DNOTST;
+            int nelt = 0;
+            gtdpvc(ctx, LPAREN, false, prm::PAICT, daicdf, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok) {
+                hvaicd = true;
+                if (nelt == 1) {
+                    for (int i = 1; i <= prm::PAICT; ++i)
+                        ctx.arima.rgaicd(i) = daicdf[0];
+                } else if (nelt > 0) {
+                    for (int i = 1; i <= prm::PAICT; ++i)
+                        if (!dpeq(daicdf[i - 1], prm::DNOTST))
+                            ctx.arima.rgaicd(i) = daicdf[i - 1];
+                }
+            }
+        } else if (argidx == 21) {   // pvaictest (getreg.f:474-497)
+            // The alternative to aicdiff: give a PROBABILITY and let each test
+            // derive its own threshold from a chi-square quantile
+            // (tdaic.f:399-402 -- `chsppf(Pvaic, df) - 2*df`). Also dropped,
+            // and the two are mutually exclusive by the same rule.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            if (hvaicd) {
+                inpter(ctx, PERROR, L.errpos.data() + 1,
+                       "Use either aicdiff or pvaictest, not both");
+                inptok = false;
+            }
+            bool argok = true;
+            double dvec[1] = {prm::DNOTST};
+            int nelt = 0;
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt > 0 && argok) {
+                if (dvec[0] <= 0.0) {
+                    inpter(ctx, PERROR, L.errpos.data() + 1,
+                           "Value of pvaictest must be greater than 0.");
+                    inptok = false;
+                } else if (dvec[0] >= 1.0) {
+                    inpter(ctx, PERROR, L.errpos.data() + 1,
+                           "Value of pvaictest must be less than 1.");
+                    inptok = false;
+                } else {
+                    ctx.arima.pvaic = 1.0 - dvec[0];
+                    hvpva = true;
                 }
             }
         } else if (argidx == 17) {   // centeruser (getreg.f:376)

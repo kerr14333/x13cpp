@@ -85,9 +85,10 @@ static bool automd_aictest_block1(X13Context& ctx, double* trnsrs, double* a,
     ctx.adj.adj1st = a1st + 1;
 
     // aictest defaults the parser would install (gtinpt.f:294-301 + picktd state).
-    ar.pvaic = DNOTST;
-    for (int k = 1; k <= PAICT; ++k) ar.rgaicd(k) = 0.0;
-    ar.traicd = DNOTST;
+    // Pvaic / Rgaicd / Traicd used to be reset HERE as well, which silently
+    // discarded a `regression{aicdiff=}` or `pvaictest=` the spec supplied --
+    // they are gtinpt defaults, and gtinpt.cpp now owns them, so that a value
+    // the parser writes survives to the test that reads it.
     ar.lomtst = 0;
     ctx.picktd.lrgmtd = false;
     ctx.picktd.tdzero = 0;

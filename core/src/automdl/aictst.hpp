@@ -75,6 +75,14 @@ void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
 // regime zero indicator; lnindx = 1/2/3 for lom/loq/lpyear.
 void addlom(X13Context& ctx, const int* aicrgm, int aicln0, int sp, int lnindx);
 
+// editor.f:1151-1166 / :1410-1442 -- the AIC-test CANDIDATE vectors (Tdayvc /
+// Easvec). The oracle builds these once in the editor; this port has no editor
+// block for them, so each caller runs them at its own equivalent point. Call
+// aictest_td_vectors only when Itdtst>0 and aictest_eas_vectors only when
+// Leastr -- the first can rewrite Itdtst (the isrflw==2 stock-TD promotion).
+void aictest_td_vectors(X13Context& ctx);
+void aictest_eas_vectors(X13Context& ctx);
+
 // arima.f:569-700 explicit-model AIC regressor test: when an explicit arima{}
 // model carries aictest=(...), run the td/lom/easter (user/chi deferred) AIC
 // tests in place of the plain rgarma estimate. The aic routines self-estimate.

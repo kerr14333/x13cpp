@@ -5,10 +5,12 @@
 
 #include <cmath>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "automdl/aictst.hpp"          // tdaic/lomaic/easaic + the candidate vectors
 #include "automdl/amdest.hpp"          // acf (Ljung-Box Q into ctx.autoq)
 #include "automdl/automd_finalize.hpp" // ssprep_save
 #include "automdl/mdlset.hpp"          // mdlint, mdlset, mkmdsn
@@ -16,10 +18,12 @@
 #include "numeric/numeric.hpp"         // dpeq
 #include "regarima/estimate.hpp"       // rgarma
 #include "regarima/outlier.hpp"        // idotlr
-#include "regarima/regvar.hpp"         // regvar
+#include "regarima/regvar.hpp"         // regvar, gtrgpt, td7var
+#include "transform/transform.hpp"     // trnfcn
 #include "specparse/lexstate.hpp"
 #include "gen/model.hpp"             // prm PARIMA/POPR/PB/PMDL/AR/MA/DIFF
 #include "gen/notset.hpp"            // prm::DNOTST
+#include "gen/srslen.hpp"            // prm::PLEN
 #include "specparse/specparse.hpp"     // getmdl, getstr, maxlag
 #include "x11/x11drv.hpp"              // setxpt
 
@@ -347,15 +351,98 @@ void ma_sums(X13Context& ctx, double& rma, double& sma) {
     }
 }
 
-// automx.f:404-411 / :748-753 -- the AIC-regressor tests inside the candidate
-// loop. Walled: each candidate would re-run tdaic/easaic/lomaic/usraic, which
-// can flip Picktd between candidates and so drags in the trnsrs/Adj restore at
-// :255-292 as well.
-bool amx_aic_walled(const X13Context& ctx) {
+// automx.f:407-408 / :750-751 -- does this run replace the plain rgarma estimate
+// with the AIC-regressor tests? The two call sites word the condition
+// differently (:407 leads with Itdtst, :750 with Leastr) but test the same set.
+bool amx_has_aictest(const X13Context& ctx) {
     const auto& ar = ctx.arima;
     return ar.itdtst > 0 || ar.leastr || ar.lomtst > 0 ||
-           (ar.luser && ctx.usrreg.ncusrx > 0) ||
+           (ar.luser && ctx.usrreg.ncusrx > 0);
+}
+
+// usraic (user-regressor AIC) and chkchi (chi-square user-holiday) have no C++
+// at all; automd.cpp and aictst.cpp's explicit path decline them the same way.
+// Fatal rather than silently skipping a test that changes the model.
+bool amx_aic_unported(const X13Context& ctx) {
+    const auto& ar = ctx.arima;
+    return (ar.luser && ctx.usrreg.ncusrx > 0) ||
            (ar.ch2tst && ctx.usrreg.nguhl > 0);
+}
+
+// automx.f:404-500 and :748-845 -- the AIC-regressor tests standing in for the
+// plain rgarma. tdaic/lomaic/easaic each self-estimate, so there is no rgarma
+// call on this branch; `argok` becomes `.not.lester`. Unlike arima.f's explicit
+// path there is no ssprep between the tests -- automx's second call site takes
+// ONE ssprep before the whole block (:748) and the in-loop one takes none, the
+// per-candidate `ssprep_save` at the head of the loop having already run.
+void amx_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
+                 int& na, int& frstry, bool& lester) {
+    auto& ar = ctx.arima;
+    if (ar.itdtst > 0) {
+        int tdauto = 0;
+        // arima.f:125 -- `ltdlom = Kfulsm.eq.2`, i.e. the pseudo-additive mode
+        // takes the length-of-month regressor where the others take Leap Year.
+        const bool ltdlom = ctx.x11opt.kfulsm == 2;
+        tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdauto, ltdlom, lester);
+        if (ctx.error.lfatal) return;
+    }
+    if (!lester && ar.lomtst > 0) {
+        lomaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        if (ctx.error.lfatal) return;
+    }
+    if (!lester && ar.leastr) {
+        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        if (ctx.error.lfatal) return;
+    }
+}
+
+// automx.f:266-296 -- rebuild the transformed series and the prior-adjustment
+// factors to match a NEW setting of Picktd. The AIC trading-day test owns
+// Picktd, and with a log transform the length-of-month / leap-year prior is
+// applied only when a TD regressor is NOT in the model -- so flipping Picktd
+// between candidates changes the series being modelled, not just the design.
+// `Priadj` follows: 4 (the program-supplied TD prior) or 1 (none).
+void amx_picktd_rebuild(X13Context& ctx, double* trnsrs) {
+    using namespace prm;
+    auto& ar = ctx.arima;
+    auto& m = ctx.model;
+    auto& aj = ctx.adj;
+    auto& pu = ctx.priusr;
+    auto& pad = ctx.priadj;
+    const int nspobs = ctx.mdldat.nspobs;
+
+    if (ctx.picktd.picktd) {
+        auto begrgm = std::make_unique<bool[]>(PLEN);
+        if (ctx.picktd.lrgmtd && (ctx.picktd.tdzero % 2) != 0) {
+            gtrgpt(ctx, aj.begadj.data(), ctx.picktd.tddate.data(),
+                   ctx.picktd.tdzero, begrgm.get(), aj.nadj);
+            if (ctx.error.lfatal) return;
+        } else {
+            setlg(true, PLEN, begrgm.get());
+        }
+        td7var(aj.begadj.data(), m.sp, aj.nadj, 1, 1, false, false, true,
+               &aj.adj(1), begrgm.get());
+        if (pu.nustad > 0)
+            eltfcn(ELT_MULT, &aj.adj(1), &pad.usrtad(pu.frstat), nspobs, &aj.adj(1));
+        if (pu.nuspad > 0)
+            eltfcn(ELT_MULT, &aj.adj(1), &pad.usrpad(pu.frstap), nspobs, &aj.adj(1));
+        eltfcn(ELT_DIV, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), nspobs, trnsrs);
+        ctx.prior.priadj = 4;
+    } else {
+        if (pu.nustad > 0 || pu.nuspad > 0) {
+            if (pu.nustad > 0)
+                eltfcn(ELT_DIV, &ar.y(ar.frstsy), &pad.usrtad(pu.frstat), nspobs,
+                       trnsrs);
+            if (pu.nuspad > 0)
+                eltfcn(ELT_DIV, &ar.y(ar.frstsy), &pad.usrpad(pu.frstap), nspobs,
+                       trnsrs);
+        } else {
+            copy(&ar.y(ar.frstsy), nspobs, -1, trnsrs);
+        }
+        ctx.prior.priadj = 1;
+    }
+    const int ntrn = (m.lmvaft || m.ln0aft) ? nspobs : ctx.extend.nobspf;
+    trnfcn(ctx, trnsrs, ntrn, ar.fcntyp, ar.lam, trnsrs);
 }
 
 }  // namespace
@@ -367,12 +454,18 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     auto& m = ctx.model;
     auto& d = ctx.mdldat;
 
-    if (amx_aic_walled(ctx)) {
-        fatal(ctx, "pickmdl{} with regression{aictest=} / user or holiday "
-                   "chi-square testing is not yet ported (automx.f:404-500 "
-                   "runs the AIC tests inside the candidate loop).");
+    if (amx_aic_unported(ctx)) {
+        fatal(ctx, "pickmdl{} with regression{aictest=(user)} or user-defined "
+                   "holiday chi-square testing is not yet ported (usraic.f / "
+                   "chkchi.f have no C++; automx.f:463-500 runs them inside "
+                   "the candidate loop).");
         return;
     }
+    const bool laictst = amx_has_aictest(ctx);
+
+    // The oracle builds these in the editor, once, before automx is entered.
+    if (laictst && ar.itdtst > 0) aictest_td_vectors(ctx);
+    if (laictst && ar.leastr) aictest_eas_vectors(ctx);
 
     hvmdl = false;
     double loclim = ar.fctlim;
@@ -389,7 +482,14 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         }
     }
 
+    // automx.f:97-100 -- the entry state of the trading-day selection. The AIC
+    // test can flip Picktd per candidate, and Picktd decides whether the
+    // length-of-month / leap-year prior is IN the series, so the transformed
+    // series and the prior factors have to be recoverable too.
     const bool pktd = ctx.picktd.picktd;
+    int padj2 = ctx.prior.priadj;
+    std::vector<double> tsrs0(trnsrs, trnsrs + PLEN);
+    std::vector<double> a2(&ctx.adj.adj(1), &ctx.adj.adj(1) + PLEN);
 
     RegSnapshot reg0;
     reg_save(ctx, reg0);
@@ -400,6 +500,7 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     bool tstmdl = true;
     bool gsovdf = false;
     bool argok = true;
+    bool id = false;
     int nbstds = 0;
 
     while (tstmdl) {
@@ -427,12 +528,55 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             if (nummdl == numbst) break;
             bstget(ctx, nbstds);
             estbst = true;
+            // automx.f:259-296 -- the winner's Picktd is not the live one, so
+            // put the series and the prior factors back the way that model saw
+            // them before re-estimating it.
             if (bstptd != ctx.picktd.picktd) {
-                fatal(ctx, "pickmdl{}: the Picktd trading-day restore "
-                           "(automx.f:255-292) is not ported; it is reachable "
-                           "only with regression{aictest=(td)}, which is "
-                           "walled above.");
+                // WALLED, with the measurement, because the restore below is
+                // transcribed and still lands 0.9% off on FEBRUARIES ONLY.
+                // Reachable only when the AIC trading-day verdict DIFFERS
+                // between candidates, which on this corpus needs
+                // `regression{aicdiff=}` tuned between two candidates' AICC
+                // gaps (18.33 18.82 18.85 18.49 20.20 on airline, so 19.0
+                // splits them). Measured against the oracle on that spec:
+                // d10, d12 and d16 are BIT-EXACT and only d11/d13 move, by
+                // exactly the leap-year prior (0.885% non-leap February,
+                // 2.655% leap) -- so the seasonal and calendar FACTORS are
+                // right and the disagreement is one application of the
+                // length-of-month prior to the SERIES, in x11pt3's prior fold
+                // rather than in the factor combine. The .udg model block
+                // (all 52 shared keys, including nreg and every ARMA
+                // coefficient) already agrees, so the model choice and the
+                // Picktd/Trnsrs/Adj restore themselves are correct; what is
+                // not yet resolved is which of Kfmt / Lpradj / Priadj the
+                // oracle carries out of the last candidate's tdaic. Fatal
+                // rather than silent: the alternative is an `OUTCOME: OK`
+                // whose Februaries are wrong.
+                fatal(ctx, "pickmdl{}: a trading-day AIC verdict that DIFFERS "
+                           "between candidates (automx.f:259-296's Picktd "
+                           "restore) is not yet bit-exact -- d11/d13 land "
+                           "0.885%/2.655% off on Februaries.");
                 return;
+                // The transcription below is kept because it is the whole of
+                // automx.f:259-296 and is what the fix will build on; it is
+                // unreachable until the note above is resolved.
+                ctx.picktd.picktd = bstptd;
+                if (bstptd == pktd) {
+                    copy(tsrs0.data(), PLEN, 1, trnsrs);
+                    copy(a2.data(), PLEN, 1, &ctx.adj.adj(1));
+                    // **CB-34**: automx.f:264 is `padj2=Priadj`, where its two
+                    // sibling restores (:330, :725) are `Priadj=padj2`. The
+                    // series and the factors have just gone back to their entry
+                    // values, so Priadj should follow; instead the ENTRY value
+                    // is overwritten with the last candidate's, leaving Priadj
+                    // describing a series that is no longer there AND
+                    // corrupting the saved value for a later restore.
+                    // Transcribed as written.
+                    padj2 = ctx.prior.priadj;
+                } else {
+                    amx_picktd_rebuild(ctx, trnsrs);
+                    if (ctx.error.lfatal) return;
+                }
             }
         } else {
             mdlint(ctx);
@@ -441,10 +585,13 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             // has to go back to the original columns first.
             if (!ar.id1st && lidotl && nummdl > 0) {
                 reg_restore(ctx, reg0);
+                // automx.f:326-331 -- and the series with it, if the previous
+                // candidate's AIC test moved Picktd.
                 if (pktd != ctx.picktd.picktd) {
-                    fatal(ctx, "pickmdl{}: the Picktd per-candidate restore "
-                               "(automx.f:317-323) is not ported.");
-                    return;
+                    copy(tsrs0.data(), PLEN, 1, trnsrs);
+                    copy(a2.data(), PLEN, 1, &ctx.adj.adj(1));
+                    ctx.picktd.picktd = pktd;
+                    ctx.prior.priadj = padj2;
                 }
             }
             // automx.f:335-341 -- skip forward to the model's opening paren.
@@ -475,6 +622,9 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             } else if (!havfil && nummdl == 1) {
                 hvstar = 1;
             }
+            // automx.f:345 -- assigned only when a new candidate is read; the
+            // re-estimation pass keeps the last value (and gates on !estbst).
+            id = (ar.id1st && nummdl == 1) || !ar.id1st;
         }
 
         int nrxy2 = 0;
@@ -483,9 +633,27 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
                ar.reglom, nrxy2, ar.begxy.data(), frstry, true, ar.elong);
         if (ctx.error.lfatal) return;
 
+        // automx.f:404-503 -- the AIC-regressor tests REPLACE the plain estimate
+        // for a freshly identified candidate; the aic routines self-estimate, so
+        // `argok` is just "no estimation error inside them".
         argok = true;
-        rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
-        if (ctx.error.lfatal) return;
+        bool lester = false;
+        if (laictst && id && !estbst) {
+            amx_aictest(ctx, trnsrs, a, nefobs, na, frstry, lester);
+            if (ctx.error.lfatal) return;
+            argok = !lester;
+            // automx.f:420-427 etc -- with identification on the first model
+            // only, an estimation error inside the tests ends the whole search.
+            if (lester && ar.id1st) {
+                ar.bstdsn = std::string_view("none");
+                ar.nbstds = 4;
+                hvmdl = false;
+                return;
+            }
+        } else {
+            rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+            if (ctx.error.lfatal) return;
+        }
 
         if (!argok) {
             // automx.f:663-686 -- an estimation failure only counts as an error;
@@ -497,8 +665,8 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         // automx.f:503 -- the re-estimation of an already-chosen winner is done.
         if (estbst) break;
 
-        const bool id = (ar.id1st && nummdl == 1) || !ar.id1st;
-        if (lidotl && id) {
+        // automx.f:515 -- `Lidotl.and.id.and.argok.and.(.not.lester)`.
+        if (lidotl && id && argok && !lester) {
             amx_idotlr(ctx, trnsrs, frstry, nefobs, a, argok);
             if (ctx.error.lfatal) return;
             if (!argok && ar.id1st) {
@@ -589,12 +757,14 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     // With identification done on the FIRST candidate only, a later winner was
     // estimated against that model's outlier/TD columns; put the original
     // design back and re-estimate it.
-    if (ar.id1st && lidotl && numbst > 1) {
+    if (ar.id1st && (lidotl || ar.leastr || ar.itdtst > 0) && numbst > 1) {
         reg_restore(ctx, reg0);
+        // automx.f:721-726 -- and the series, if the AIC test moved Picktd.
         if (pktd != ctx.picktd.picktd) {
-            fatal(ctx, "pickmdl{}: the Picktd restore at automx.f:717-724 is "
-                       "not ported.");
-            return;
+            copy(tsrs0.data(), PLEN, 1, trnsrs);
+            copy(a2.data(), PLEN, 1, &ctx.adj.adj(1));
+            ctx.picktd.picktd = pktd;
+            ctx.prior.priadj = padj2;
         }
         set_intvl(ctx);
         int nrxy2 = 0;
@@ -603,8 +773,22 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
                ar.reglom, nrxy2, ar.begxy.data(), frstry, true, ar.elong);
         if (ctx.error.lfatal) return;
         argok = true;
-        rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
-        if (ctx.error.lfatal) return;
+        // automx.f:748-847 -- the AIC tests again, this time behind ONE ssprep.
+        if (laictst) {
+            ssprep_save(ctx);
+            bool lester = false;
+            amx_aictest(ctx, trnsrs, a, nefobs, na, frstry, lester);
+            if (ctx.error.lfatal) return;
+            if (lester) {
+                ar.bstdsn = std::string_view("none");
+                ar.nbstds = 4;
+                hvmdl = false;
+                return;
+            }
+        } else {
+            rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+            if (ctx.error.lfatal) return;
+        }
         if (!argok) {
             fatal(ctx, "pickmdl{}: the selected model failed to re-estimate.");
             return;

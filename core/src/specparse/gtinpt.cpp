@@ -191,6 +191,16 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.model.havtca = false;   // gtinpt.f: Tcalfa=DNOTST
     ctx.arima.traicd = prm::DNOTST;   // gtinpt.f:293: Traicd=DNOTST (aicdiff);
                                       // editor.f defaults it to -2 (monthly/qtly)
+    // gtinpt.f:294 / :300 -- the per-test AIC difference thresholds and the
+    // aictest chi-square probability. These were being set per CALLER (automd
+    // and the explicit-aictest path each reset them on entry) rather than here,
+    // so the pickmdl path read the struct's zero-init for pvaic -- and a
+    // pvaic of 0.0 rather than DNOTST turns tdaic's `chsppf(pvaic, df)`
+    // threshold on, driving Rgaicd(PTDAIC) negative enough that the FIRST TD
+    // candidate always wins its comparison against the later, better ones.
+    for (int i = 1; i <= prm::PAICT; ++i)
+        ctx.arima.rgaicd(i) = 0.0;    // setdp(ZERO,PAICT,Rgaicd)
+    ctx.arima.pvaic = prm::DNOTST;    // gtinpt.f:300: Pvaic=DNOTST
     for (int i = 1; i <= 7; ++i)
         ctx.x11reg.dwt(i) = prm::DNOTST;   // gtinpt.f:470 setdp(DNOTST,7,Dwt)
     // gtinpt.f:457-458/478 -- x11regression{sigma= critical= cvalpha=}. The

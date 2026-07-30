@@ -2126,5 +2126,72 @@ diagnostics front (force / slidingspans / history) is now closed.
   outliers, out-of-sample FORWARD with outliers, out-of-sample backcasts with no
   outlier in the window, and the ivalue==1 branch. **amdfct is now complete apart
   from that corner.**
+- **`pickmdl{}` + `regression{aictest=}` -- the PER-CANDIDATE AIC-regressor
+  tests and the Picktd restore -- CLOSED (bit-exact), and it found three
+  silent-wrongness bugs, two of them on paths that have nothing to do with
+  pickmdl.** The AIC tests REPLACE the plain `rgarma` for a freshly identified
+  candidate (`tdaic`/`lomaic`/`easaic` self-estimate, and `argok` becomes
+  `.not.lester`), which is what makes the **Picktd** restore reachable:
+  `Picktd` decides whether the program's length-of-month / leap-year prior is
+  IN the series, so a verdict that differs between candidates changes the
+  SERIES BEING MODELLED, not just the design, and `Trnsrs`/`Adj` have to be
+  rebuilt (`td7var` + the Usrtad/Usrpad folds + `trnfcn`) with `Priadj`
+  following (4 = program TD prior, 1 = none). Ported with the two reachable
+  restores (`automx.f:317-323`, `:700-725`) and the post-loop `identify=first`
+  block (`:750-870`).
+  - **The three bugs.** (1) `Pvaic`/`Rgaicd`/`Traicd` were reset by each CALLER
+    -- both `automd` and the explicit-aictest path clobbered them on entry --
+    instead of once in `gtinpt` (`gtinpt.f:293-300`), so the pickmdl path read
+    the struct's zero-init, and a `pvaic` of 0.0 rather than `DNOTST` turns
+    tdaic's `chsppf(pvaic, df)` threshold ON, driving `Rgaicd(PTDAIC)` negative
+    enough that the FIRST TD candidate always wins its comparison against the
+    later, better ones. (2) `regression{aicdiff=}` (`getreg.f:405-428`) and
+    (3) `pvaictest=` (`:474-497`) were **parsed and discarded**. Both are
+    ordinary documented options and both affect EVERY aictest path. The
+    pre-existing `generated/cover_reg-aicdiff` could never have caught them:
+    it carries `aicdiff=0.0`, which is the DEFAULT and therefore inert.
+  - **A saturated precondition, found by a mutation that PASSED.** Deleting the
+    per-candidate design restore left the whole suite green, because
+    `pickmdl{identify=}` was structurally inert across the entire corpus --
+    `lidotl` is `Ltstao.or.Ltstls.or.Ltsttc` (`arima.f:118`), so an `outlier{}`
+    spec is what makes it do anything, and no pickmdl spec carried one. Closed
+    by `extra/airline_pickmdl-aictest-otl` (oracle finds 5 outliers); the
+    mutation then fails 10.
+  - **Two structural notes.** `editor.f:1151-1166`'s TD candidate vector is
+    built ONCE in the oracle's editor before any model is estimated; this port
+    has no editor block for it, so both callers run the shared
+    `aictest_td_vectors` at their own equivalent point -- a per-candidate
+    rebuild would read a design the editor never saw, since `tdaic` itself adds
+    and deletes TD groups. And `Setpri = Pos1bk` (`editor.f:851`, after
+    `setxpt` at `:233`) is 0 during this port's model phase because `setxpt` is
+    never called pre-model, so tdaic's `Sprior` writes stay guarded off.
+  - **WALLED, with the measurement**: a trading-day AIC verdict that DIFFERS
+    between candidates (`automx.f:259-296`), reachable only with a
+    `regression{aicdiff=}` tuned between two candidates' AICC gaps. d10, d12
+    and d16 are BIT-EXACT and all 52 shared `.udg` model keys agree (including
+    `nreg` and every ARMA coefficient); only d11/d13 move, by exactly the
+    leap-year prior on FEBRUARIES ONLY (0.885% non-leap, 2.655% leap). Ruled
+    out: CB-34's assignment direction (mutation-tested -- identical failures)
+    and the `Sprior`/`Setpri` deferral (`x11int` copies `Adj` into `Sprior`
+    whenever `Nadj>0`, always true here). Remaining suspects, named at the
+    wall: which of `Kfmt` / `Lpradj` / `Priadj` the oracle carries out of the
+    LAST candidate's tdaic. `aictest=(user)` and user-holiday chi-square
+    testing stay walled too -- `usraic.f`/`chkchi.f` have no C++ at all.
+  - **CB-34**: `automx.f:264` assigns `padj2=Priadj` where its two identical
+    siblings (`:330`, `:725`) assign `Priadj=padj2`, so the save slot is
+    overwritten with the live value instead of the mode being restored.
+    Transcribed as written.
+  - **`walls.py` had a matching blind spot**, fixed here: `GAP_RE` knew
+    "not ported"/"unported"/"deferred" but not "not yet **bit-exact**", so a
+    wall over code that IS transcribed but does not yet agree filed as a
+    FAITHFUL refusal -- the most dangerous kind of gap classified as a
+    non-gap. `docs/WALLS.md` is 17 gaps / 4 faithful after it.
+  - Gated by `extra/airline_pickmdl-aictest-{td,tdeas,first,otl}` and
+    `generated/airline_aictest-td-aicdiff` (where the oracle REJECTS trading
+    day -- `nreg` 0 -- and the engine kept it before the parse fix). Mutations,
+    each failing a different set: never run the AIC tests 30; never restore the
+    design between candidates 10; skip the AIC tests in the post-loop block 10;
+    revert the `gtinpt` `pvaic` default 105; narrow the post-loop gate back to
+    `lidotl` only 4.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

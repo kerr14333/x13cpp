@@ -860,6 +860,45 @@ void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
     }
 }
 
+// editor.f:1151-1166 -- build the TD candidate vector from Itdtst. In the oracle
+// this runs ONCE, in the editor, before any model is estimated; this port has no
+// editor block for it, so each caller of the AIC tests runs it at its own
+// equivalent point (arima.f's explicit path just before tdaic, automx's once
+// before the candidate loop -- tdaic itself adds and deletes TD groups, so a
+// per-candidate rebuild would read a design the editor never saw).
+// ktd/kstd flag an already-present flow/stock TD group.
+void aictest_td_vectors(X13Context& ctx) {
+    auto& m = ctx.model;
+    auto& ar = ctx.arima;
+    const int ktd = find_td_group(m) > 0 ? 1 : 0;
+    const int kstd = 0;
+    ar.ntdvec = 2;
+    ar.tdayvc(1) = 0;
+    ar.tdayvc(2) = ar.itdtst;
+    if ((ar.itdtst <= 2 && ktd == 0) || (ar.itdtst == 3 && kstd == 0)) {
+        ar.tdayvc(3) = ar.itdtst + 3;
+        ar.ntdvec = 3;
+    }
+    if (m.isrflw == 2 && ktd == 0 && kstd == 0 && ar.itdtst <= 2) {
+        ar.tdayvc(2) = 3;
+        ar.tdayvc(3) = 6;
+        ar.itdtst = 3;
+    }
+}
+
+// editor.f:1410-1442 -- the aictest=easter candidate windows Easvec=(-1,1,8,15).
+void aictest_eas_vectors(X13Context& ctx) {
+    auto& ar = ctx.arima;
+    if (ar.eastst == 0) ar.eastst = 1;
+    ar.neasvc = 4;
+    ar.easvec(1) = -1;
+    ar.easvec(2) = 1;
+    ar.easvec(3) = 8;
+    ar.easvec(4) = 15;
+    ctx.x11adj.neas = 0;
+    if (!ctx.x11adj.finhol) ctx.x11adj.finhol = true;
+}
+
 // arima.f:569-700 -- explicit-model AIC regressor test. Runs the td/lom/easter
 // AIC tests (user/chi deferred) in place of the plain rgarma when an explicit
 // arima{} model carries aictest=(...). Setup mirrors automd's block-1.
@@ -868,10 +907,11 @@ void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
     using namespace prm;
     auto& m = ctx.model; auto& ar = ctx.arima;
 
-    // aictest defaults the automatic-model path installs (automd.cpp:73-76).
-    ar.pvaic = DNOTST;
-    for (int k = 1; k <= PAICT; ++k) ar.rgaicd(k) = 0.0;
-    ar.traicd = DNOTST;
+    // Pvaic / Rgaicd / Traicd are gtinpt defaults (gtinpt.f:293-300) and are
+    // set there; resetting them here discarded a `regression{aicdiff=}` or
+    // `pvaictest=` the spec supplied. Measured on
+    // `generated/airline_aictest-td-aicdiff`: with aicdiff=(20.0) the oracle
+    // REJECTS trading day (nreg 0) and the engine kept it (nreg 1).
 
     // Prior-adjustment span the AIC tests' leap-year preadjust needs
     // (automd.cpp:60-71). Nbcst==0 for these specs.
@@ -908,23 +948,7 @@ void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
 
     bool lester = false;
     if (ar.itdtst > 0) {
-        // editor.f:1151-1166: build the TD candidate vector from Itdtst. ktd/
-        // kstd flag an already-present flow/stock TD group (0 for the plain
-        // aictest path). Tdayvc=(0, Itdtst[, Itdtst+3]).
-        int ktd = find_td_group(m) > 0 ? 1 : 0;
-        int kstd = 0;
-        ar.ntdvec = 2;
-        ar.tdayvc(1) = 0;
-        ar.tdayvc(2) = ar.itdtst;
-        if ((ar.itdtst <= 2 && ktd == 0) || (ar.itdtst == 3 && kstd == 0)) {
-            ar.tdayvc(3) = ar.itdtst + 3;
-            ar.ntdvec = 3;
-        }
-        if (m.isrflw == 2 && ktd == 0 && kstd == 0 && ar.itdtst <= 2) {
-            ar.tdayvc(2) = 3;
-            ar.tdayvc(3) = 6;
-            ar.itdtst = 3;
-        }
+        aictest_td_vectors(ctx);
         int tdmdl1 = 0;
         tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, false, lester);
         if (ctx.error.lfatal) return;
@@ -936,12 +960,7 @@ void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
         ssprep_save(ctx);   // arima.f:619
     }
     if (!lester && ar.leastr) {
-        // editor.f:1410-1442: aictest=easter candidates Easvec=(-1,1,8,15).
-        if (ar.eastst == 0) ar.eastst = 1;
-        ar.neasvc = 4;
-        ar.easvec(1) = -1; ar.easvec(2) = 1; ar.easvec(3) = 8; ar.easvec(4) = 15;
-        ctx.x11adj.neas = 0;
-        if (!ctx.x11adj.finhol) ctx.x11adj.finhol = true;
+        aictest_eas_vectors(ctx);
         easaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
         if (ctx.error.lfatal) return;
     }
