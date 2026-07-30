@@ -782,11 +782,12 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
     //     because it is what fills fortbias past lf, and because dropping a
     //     block on a "nothing reads it" argument is exactly the reasoning that
     //     has been wrong before in this port.
-    std::vector<double> f_trend_i, f_sc_i, f_cycle_i, f_sa_i;
+    std::vector<double> f_trend_i, f_sc_i, f_cycle_i, f_sa_i, f_ir_i;
     const bool have_cycle_fcst =
         comp.varwnc > 1.0e-10 && (comp.nthetc != 0 || cd.ncyc != 1);
     if (lfor > 0 && lf > 0 && nz + l2 <= nz + static_cast<int>(zextFwd.size())) {
         f_trend_i.assign(lf, 0.0);
+        f_ir_i.assign(lf, 0.0);
         f_sc_i.assign(lf, 0.0);
         f_cycle_i.assign(lf, 0.0);
         f_sa_i.assign(lf, 0.0);
@@ -866,7 +867,22 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
         };
         int lf_fold = lf_full;
         const auto& trnfct = ctx.forecasts.trnfct;
+        // `lf = max(fh, qbqmq + max(qbqmq, p+bp*mq))` with `fh = Nfcst`, so lf
+        // EXCEEDS the regARIMA forecast whenever the model-order term wins --
+        // and then this port has no TramLin for the tail. NOT ported: the
+        // oracle's z is filled by FCAST to `fhi` before ESTBUR, so it always
+        // has one. Rather than fall back to the pre-Tramo `FCX` extension --
+        // which is the defect this block exists to fix, and would be SILENT --
+        // emit no forecast tables at all, so the gate's both-directions
+        // presence assertion fires. No corpus spec reaches this (verified: all
+        // 52 keep their tables), which is exactly why it must not be silent.
         const bool have_tram = static_cast<int>(trnfct.size()) >= lf_full;
+        if (!have_tram) {
+            f_trend_i.clear();
+            f_sc_i.clear();
+            f_cycle_i.clear();
+            f_sa_i.clear();
+        }
         if (have_tram) {
             // :558-563 (ILAM==0 arm; the non-log arm drops the LOG, and this
             // port's transformed scale IS the log, so trnfct serves both).
@@ -908,9 +924,16 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
                 fold_into(f_sc_i);
             } else if (have_cycle_fcst) {
                 fold_into(f_cycle_i);
+            } else {
+                // :601-613 / :638-650 -- the third arm ASSIGNS ir (it does not
+                // accumulate: `ir(i) = d1(i)...`, where the other two arms are
+                // `sc(i) = sc(i) + ...`). ir is not saved, but :660 is
+                // `trend = z - sc - cycle - ir`, so a non-zero ir moves the
+                // trend -- it is NOT subtracted back out. f_ir_i starts at 0,
+                // which is ansub3.f:545-547.
+                for (int k = 1; k <= lf_fold; ++k) f_ir_i[k - 1] = 0.0;
+                fold_into(f_ir_i);
             }
-            // else: the third arm writes `ir`, which is not saved and which
-            // :660 subtracts back out of the trend -- transcribed as a no-op.
         }
 
         // ansub3.f:651-672. ir is identically 0 over the forecast span
@@ -919,9 +942,9 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
         // largest |z| over the HISTORICAL span only.
         double maxz = 0.0;
         for (int i = 0; i < nz; ++i) maxz = std::max(maxz, std::fabs(z[i]));
-        for (int i = 1; i <= lf; ++i) {
-            double zk = have_tram ? ztram[i] : FCX(nz + i);
-            double t = zk - f_sc_i[i - 1] - f_cycle_i[i - 1];
+        for (int i = 1; have_tram && i <= lf; ++i) {
+            double zk = ztram[i];
+            double t = zk - f_sc_i[i - 1] - f_cycle_i[i - 1] - f_ir_i[i - 1];
             if (std::fabs(t) < 1.0e-15 * maxz) t = 0.0;
             f_trend_i[i - 1] = t;
             f_sa_i[i - 1] = zk - f_sc_i[i - 1];  // isCloseToTD always false
