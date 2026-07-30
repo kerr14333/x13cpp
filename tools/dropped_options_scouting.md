@@ -53,7 +53,8 @@ argument nor reproducing the oracle's default, because automd's own
 
 ### `estimate{outofsample=}` — the doc was half right, and the wrong half
 
-`CLAUDE.md` says the out-of-sample `aape` variant is "walled, not approximated".
+`docs/M5_PORT_NOTES.md` entry 38 says the out-of-sample `aape` variant is
+"walled, not approximated".
 The WALL is real and is in `amdfct.cpp`; **the option that reaches it is not
 parsed**, so the wall never fires. Measured:
 

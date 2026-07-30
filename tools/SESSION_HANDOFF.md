@@ -198,7 +198,8 @@ near-non-invertible MA capped to `xl`) and `MEAN` (23, `imean != 0`, no capping
 
 ## Previous session (2026-07-29b): composite under SEATS + all of `amdfct.f`
 
-Three increments, all closed. Details in `CLAUDE.md`; the durable pieces:
+Three increments, all closed. Details in `docs/M5_PORT_NOTES.md` (entries
+49-51); the durable pieces:
 
 - **`agr3s.f`** — one SEATS component routes the whole metafile's indirect
   adjustment through `agr3s` rather than `agr3` (`X11agr` is metafile-wide:

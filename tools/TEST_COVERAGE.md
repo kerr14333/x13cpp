@@ -85,8 +85,9 @@ Priorities for the next sweep, each an oracle-vs-x13run_m3 diff like sweep_reg.p
 ## Still blocked on unported subsystems
 
 *(Section rewritten 2026-07-28 — four of its five bullets had been closed and
-were still listed as "not started". Check `CLAUDE.md` before trusting this
-list; it is the one that gets updated per feature.)*
+were still listed as "not started". Check `tools/SESSION_HANDOFF.md` for what
+is open and `docs/M5_PORT_NOTES.md` for what closed, before trusting this
+list; those are the ones that get updated per feature.)*
 
 - ~~**pickmdl** (X-11-ARIMA model selection)~~ — **CLOSED 2026-07-28e.**
   `automx.f` ported (plus `mdlinp`/`setamx`/`bstmdl`/`bstget`/`nofcst`); the 9

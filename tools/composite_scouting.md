@@ -224,8 +224,8 @@ composite spec).
 
 ## UPDATE 2026-07-28f -- the diagnostics front is CLOSED, direct and indirect
 
-Two increments; see `CLAUDE.md` for the full entry and the session handoff for
-the traps.
+Two increments; see `docs/M5_PORT_NOTES.md` entry 48 for the full record and
+the session handoff for the traps.
 
 **The direct half was pure harness coverage.** `x13run_composite` had never
 emitted the QS / spectrum-peak / NP blocks for ANY spec of a metafile, even

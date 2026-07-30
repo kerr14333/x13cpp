@@ -85,8 +85,9 @@ separable second step — the port already computes the Tukey spectra
    when `spectrum{}` is present. Verify the existing `test_spectrum_tables`
    gate is unmoved and that nothing else shifts — this touches a driver that
    runs before the span replays, so watch the `ctx` restore set (see the D8B
-   entry in `CLAUDE.md`: anything written from inside the x11 spine needs
-   adding to `run_x11`'s save/restore block).
+   entry in `docs/M5_PORT_NOTES.md`, no. 39: anything written from inside the
+   x11 spine needs adding to `run_x11`'s save/restore block — it is also one
+   of the standing rules in `CLAUDE.md`).
 2. `shlsrt` + `mkmdsx` + `ispeak` + `idpeak` → the `s*/t*.freq/.index`,
    `nsfreq`/`ntdfreq` keys. Gateable on their own.
 3. `smpeak` + `svpeak` + `mxpeak` → the `spcXXX.*` families.
