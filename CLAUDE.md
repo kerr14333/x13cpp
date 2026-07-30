@@ -2193,5 +2193,60 @@ diagnostics front (force / slidingspans / history) is now closed.
     design between candidates 10; skip the AIC tests in the post-loop block 10;
     revert the `gtinpt` `pvaic` default 105; narrow the post-loop gate back to
     `lidotl` only 4.
+- **The SEATS FORECAST decomposition (`ansub3.f:353-678`) -- the `tfd`/`sfd`/
+  `afd`/`yfd` tables -- PORTED, 13 of 52 specs bit-exact, 39 measurably wrong
+  and asserted as such.** Map: **`tools/seats_forecast_scouting.md`**. The
+  Burman recursions are continued past Nz, `sigsub.f:1586-1605`'s antilog
+  applied, and the tables punched; **zero new goldens** (every SEATS spec
+  already ships them). Two real bugs closed on the way, and one puzzle left
+  open with its measurements rather than a tolerance.
+  - **`editor.f:389-401` was unported: an EXPLICIT short `forecast{maxlead=}`
+    is RAISED to `max(12,3*Sp)` on a seats{} run.** `gtinpt.f:1151` applies
+    that floor only as the DEFAULT when no maxlead was given, so the four
+    corpus specs carrying `forecast{maxlead = 12}` alongside `seats{}` ran with
+    `nfcst: 12` against the golden's `nfcst: 36`. Silent, because nothing
+    downstream of the HISTORICAL decomposition read it -- the forecast tables
+    punched 24 rows where the oracle punches 36. Ported at the `parse_spec.cpp`
+    tail beside the other two editor rules.
+  - **The forecast trend's bias factor is `bias1c` where `sigsub.f:1594`
+    literally reads `bias3c`, and the reason is a NORMALIZATION degeneracy.** A
+    SEATS decomposition is unique only up to a constant log shift between the
+    seasonal and the trend, and the bias block absorbs exactly such a shift:
+    this port's raw `sc_i` sits `ln(bias1c)` above the oracle's and its raw
+    `trend_i` `ln(bias3c)` below, so the HISTORICAL transform lands on the same
+    s10-s13 either way (all four gate bit-exact, airline `bias1c` 1.00882 /
+    `bias2c` 1.00010 / `bias3c` 1.00893). The FORECAST trend is not built by
+    the filter at all -- it is the residual `z - sc - cycle` (`ansub3.f:660`,
+    with `ir` identically zero there) -- so it inherits the shift from `sc`,
+    one factor of `bias1c`. **The historical tables cannot pin this**:
+    `mean(s11/s12) == 1` holds identically for any `bias2c`, which is why it
+    was invisible until the forecast span existed.
+  - **What the goldens' own identities say**, asserted by the gate ON THE
+    GOLDENS rather than on the engine: `tfd == afd` to the last digit on the 39
+    specs with no transitory component, `afd = tfd*yfd/100` on the
+    multiplicative ones that have one, `afd = tfd + yfd` on the additive ones.
+  - **The open puzzle, and both halves are measured.** On the 39 failing specs
+    the error is in the forecast of `z`, not in its decomposition (`tfd` and
+    `afd` move together, `sfd` settles exact after the first year, and the
+    error grows LINEARLY in the horizon -- a drift). The oracle's saved tables
+    imply a `z` equal to the regARIMA `.fct` **to the last bit** (verified on
+    the two specs shipping both). But the port's extension is ALSO what makes
+    the historical span bit-exact, and that span is NOT insensitive to it: a
+    coherent `+3.64e-3` log shift of the whole extension moves `s12` by 8.3e-4,
+    and a single-point `1e-6` shift by 7.6e-4 (~-755 per unit log). Both facts
+    hold at once and are not yet reconciled. **Dead ends, all measured, do not
+    repeat**: extending with the RAW pre-cap MA (makes the historical worse AND
+    still misses the forecast), using `ctx.forecasts.trnfct` as the extension
+    (breaks the historical), and keeping `bias3c` on the forecast trend. The
+    next step is oracle instrumentation of `z(Nz+1)` vs `extZ(Nz+1)` at
+    `ansub3.f:660` -- the same technique that closed the CALCFX seeding
+    question. The two failing families are independent: `APPROX` (16 specs, a
+    near-non-invertible MA capped to the `xl` bound) and `MEAN` (23 specs,
+    `imean != 0`, no capping involved -- `th == th_raw` on every one).
+  - Gated by `tests/parity/test_seats_forecast_tables.py`, which asserts the
+    gap list from BOTH sides -- a KNOWN_GAP spec must stay ABOVE tolerance, so
+    fixing one fails the test and says to move its row. It cannot rot into a
+    silent allowlist. `ofd` (LSEFCD+2) has no golden anywhere in the corpus and
+    is deliberately not produced.
 - **No open xfails.** The former estimation-frontier xfails (`unrate_automdl-
   aictest-x11`, `payems_automdl-acceptdefault`) now pass; the suite is 0 xfail.

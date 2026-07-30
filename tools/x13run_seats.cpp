@@ -270,6 +270,34 @@ int main(int argc, char** argv) {
         // s14 -- transitory component (SEATS). Non-trivial only for AR/cycle
         // models; airline-family est.cycle is all-1 (no transitory).
         dump("s14", begspn, sp, n, est.cycle.data());
+        // The FORECAST decomposition (ansub3.f:353-678, punched by
+        // sigex.f:3631-3636 / seatpr.f). Dates start the period AFTER the
+        // series span, so the anchor is advanced by n -- the same date
+        // arithmetic every other harness needed a separate anchor for.
+        if (!est.f_trend.empty()) {
+            int fbeg[2] = {begspn[0], begspn[1]};
+            int adv = n;
+            fbeg[0] += (fbeg[1] - 1 + adv) / sp;
+            fbeg[1] = (fbeg[1] - 1 + adv) % sp + 1;
+            int nf = static_cast<int>(est.f_trend.size());
+            dump("tfd", fbeg, sp, nf, est.f_trend.data());
+            dump("afd", fbeg, sp, nf, est.f_sa.data());
+            // ansub9.f:71-92 -- Havfsf/Havfcy are `.not.allzro`: the oracle
+            // writes no file for a slice that is identically zero. That is the
+            // ONLY suppression on sfd (an npsi==1 LOG run still writes it, as
+            // a flat 100); yfd additionally needs sigex.f:3634's guard, which
+            // estbur applies by clearing f_cycle. The gate asserts these
+            // absences in both directions.
+            auto allzero = [](const std::vector<double>& v) {
+                for (double x : v)
+                    if (x != 0.0) return false;
+                return true;
+            };
+            if (!est.f_sc.empty() && !allzero(est.f_sc))
+                dump("sfd", fbeg, sp, nf, est.f_sc.data());
+            if (!est.f_cycle.empty() && !allzero(est.f_cycle))
+                dump("yfd", fbeg, sp, nf, est.f_cycle.data());
+        }
     }
 
     // slidingspans{} under seats{} (sspdrv.f with Lseats -- the store is

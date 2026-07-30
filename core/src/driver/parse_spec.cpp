@@ -57,6 +57,27 @@ bool parse_spec(X13Context& ctx, const std::string& spec_text,
             if (!dpeq(ctx.arima.y(i), mv)) ctx.arima.y(i) += c;
     }
 
+    // editor.f:389-401 -- SEATS needs a longer forecast horizon than the user
+    // may have asked for, so an EXPLICIT `forecast{maxlead=}` below
+    // max(12,3*Sp) is silently RAISED to it (the oracle writes a NOTE saying
+    // so). gtinpt.f:1151 already applies the same floor, but only as the
+    // DEFAULT when no maxlead was given -- which is why this was invisible:
+    // every corpus spec that asks for a short horizon alongside seats{}
+    // (`*_fixed-airline-seats`, `*_finite-seats`, `airline_seats-qmax-rmod`,
+    // `airline_seats-tabtables`, all `forecast{maxlead=12}`) came out with
+    // `nfcst: 12` against the golden's `nfcst: 36`, and nothing downstream of
+    // the HISTORICAL decomposition read it. The forecast decomposition
+    // (tfd/sfd/afd/yfd) does: it punched 24 rows against the golden's 36.
+    // Placed here rather than in gtinpt because gtinpt's own rule is keyed on
+    // "not set" and must stay that way; the pointer bookkeeping the Fortran
+    // does alongside (Posffc/Nobspf/Nofpob/setxpt) is derived from Nfcst later
+    // in this port, so raising Nfcst before anything reads it is equivalent.
+    if (inptok && !ctx.error.lfatal && ctx.captured.has_seats) {
+        const int ip1 = std::max(12, 3 * ctx.model.sp);
+        if (ctx.extend.nfcst >= 0 && ctx.extend.nfcst < ip1)
+            ctx.extend.nfcst = ip1;
+    }
+
     // editor.f:517-518 -- on a run with NO x11{} (SEATS, or model-only) that is
     // not taking a log, the adjustment mode is forced ADDITIVE, overriding the
     // multiplicative default gtinpt.f:956 just resolved. gtinpt cannot do this

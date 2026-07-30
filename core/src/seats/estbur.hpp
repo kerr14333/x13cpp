@@ -7,11 +7,12 @@
 // spectrum.f:1529-1533/1570-1573/1625-1628 filter-numerator construction
 // (SeatsComponentModels::ct/cs/cc).
 //
-// SCOPE: only the historical span (i=1..Nz) is ported -- ansub3.f:356-678
-// (Tramo passthrough + the npsi!=1/Nchi!=1/cycle FORECAST blocks) only ever
-// write trend/sc/cycle(Nz+1..Nz+lf), never touching i<=Nz, confirmed by
-// inspection of every forecast-block guard (`if (k.le.Nz+lf)` etc, all
-// downstream of `k=Nz+i` for i>=1). A small forward/backward extension
+// SCOPE: the FORECAST span (ansub3.f:353-678) is now ported too -- see
+// EstburResult::f_trend/f_sc/f_sa/f_cycle. It never touches i<=Nz (every
+// forecast-block guard is downstream of `k=Nz+i` for i>=1), so the historical
+// results are unchanged by it. The Tramo passthrough (ansub3.f:565-650) is
+// NOT ported and cannot be reached: `Tramo` is the TRAMO-SEATS chaining flag
+// and X-13's bridge never sets it. A small forward/backward extension
 // (FCAST-style, ansub1.f:2183-2201, `lext = qstar+maxpq-2` points) IS
 // needed even for the historical output whenever maxpq>1, since the
 // two-sided filter (`gt`) needs `extZ`/`bz` slightly beyond the sample
@@ -94,6 +95,19 @@ struct EstburResult {
     // z/sa RATIO (s18); combined_add is z/sa (log/mult) or z-sa (additive) (s16).
     std::vector<double> combined_factor;
     std::vector<double> combined_add;
+    // ---- FORECAST SPAN (ansub3.f:353-678 + sigsub.f:1586-1605) ----
+    // The `tfd`/`sfd`/`afd`/`yfd` save tables: the decomposition over
+    // Nz+1..Nz+lfor, in the units the oracle punches them in. `f_sc` and
+    // `f_cycle` are in PERCENT (sigsub.f:1603-1604) on the log path, because
+    // seatad.f:39/110 is what divides them by 100 when they are APPENDED onto
+    // Seatsf/Seatcy -- seatpr.f saves the raw Setf* arrays. `f_trend`/`f_sa`
+    // are levels. On the additive path all four are exactly what ESTBUR left
+    // (sigsub.f:1525-1534's lamd==1 arm only rebuilds `sa` over 1..Nz).
+    // Empty when the run produced no forecast span.
+    std::vector<double> f_trend;   // tfd
+    std::vector<double> f_sc;      // sfd
+    std::vector<double> f_sa;      // afd
+    std::vector<double> f_cycle;   // yfd
     bool ok = false;
 };
 

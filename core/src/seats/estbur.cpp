@@ -560,11 +560,42 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
         gs[k] = AM1(i, maxpq + 2);
         gc[k] = AM1(i, maxpq + 3);
     }
-    // ---- Forward/backward extension (only what the filter window needs
-    // beyond the historical range -- NOT the full forecast horizon). ----
+    // ---- The forecast horizon (ansub3.f's `lf`, and the save range). ----
+    // Three different lengths, all derived from ONE input, `fh`:
+    //   fh   = Nfcst          (ansub9.f:1116 `L_fh=Nfcst`; the l_fh=8 default at
+    //                          :1609 is overwritten on every X-13 run, and
+    //                          editor.f:387-400 forces Nfcst >= max(12,3*Sp)
+    //                          on any seats{} run whatever forecast{maxlead=}
+    //                          says);
+    //   lf   = fhi            (analts.f:2773-2776) -- what ESTBUR decomposes;
+    //   lfor = max(fh,max(8,2*mq))  (sigex.f:426) -- what sigex.f:3631-3636
+    //                          punches into the tfd/sfd/afd/yfd tables.
+    // They coincide for every corpus spec (fh=36 monthly / 12 quarterly
+    // dominates both maxima), so `lfor > lf` -- where the oracle would punch
+    // exp(0) padding out of an untouched buffer -- is not reproduced; the
+    // save range is clamped to lf and the shortfall recorded here rather than
+    // faked.
+    const int fh = ctx.extend.nfcst;
+    const int qbqmq = mo.q + mo.bq * mo.mq;
+    int lf = std::max(fh, qbqmq + std::max(qbqmq, mo.p + mo.bp * mo.mq));
+    if (opts.noadmiss == -1)
+        lf = std::max(lf, 2 * (mo.p + mo.d + mo.mq * (mo.bp + mo.bd)));
+    const int lfor = std::min(lf, std::max(fh, std::max(8, 2 * mo.mq)));
+    // ansub3.f:108-116 -- extZ is filled from z over 1..nz+l2.
+    int l1 = std::max(maxpq + qstar, 2 * mo.mq);
+    l1 = std::max(l1, lf);
+    int l2 = std::max(std::min(l1, qstar + maxpq - 2), lf);
+
+    // ---- Forward/backward extension. The BACKWARD one only has to cover the
+    // two-sided filter window (`qstar+maxpq-2`); the FORWARD one is also the
+    // forecast of z that the whole forecast decomposition is built on, so it
+    // runs to nz+l2. Extending it is prefix-stable -- FCAST's recursion is
+    // causal, so the first qstar+maxpq-2 points are the same values the
+    // historical solve used before this change (verified byte-identical). ----
     int lext = std::max(0, qstar + maxpq - 2);
+    int lextf = std::max(lext, l2);
     std::vector<double> zextFwd, zextBwd;
-    if (lext > 0) {
+    if (lextf > 0) {
         int qstar_f = mo.q + mo.bq * mo.mq;
         // Both the seed residuals (CALCFX) and the extension recursion (FCAST)
         // operate on the SEATS CANONICAL/approximated model -- the CAPPED MA
@@ -579,7 +610,7 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
             !armafl_last_residuals(ctx, z, qstar_f, aFwd)) return;
         if (!calcfx_last_residuals(mo, cd, bz, qstar_f, aBwd, kd * wm) &&
             !armafl_last_residuals(ctx, bz, qstar_f, aBwd)) return;
-        zextFwd = fcast_extend(mo, cd.thstar, z, aFwd, lext, za);
+        zextFwd = fcast_extend(mo, cd.thstar, z, aFwd, lextf, za);
         zextBwd = fcast_extend(mo, cd.thstar, bz, aBwd, lext, kd * za);
     }
     auto EXTZ = [&](int idx) -> double {  // 1-indexed
@@ -623,7 +654,9 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
     // fixed). n+irow = (nz+qstar-pstar)+(pstar+qstar-2) = nz+2*qstar-2;
     // size generously (the oracle's own fxt(mpkp+np) is far larger than
     // strictly needed too) rather than compute the exact tight bound.
-    int nbuf = nz + 2 * maxpq + 4;
+    // (+ lf, because the forecast blocks below continue the same recursions
+    // out to Nz+lf.)
+    int nbuf = nz + 2 * maxpq + 4 + std::max(0, lf) + qstar;
     std::vector<double> fxt(nbuf, 0.0), bxt(nbuf, 0.0);
     std::vector<double> fxs(nbuf, 0.0), bxs(nbuf, 0.0);
     std::vector<double> fxc(nbuf, 0.0), bxc(nbuf, 0.0);
@@ -711,7 +744,7 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
     // space (session 13: ctx.arima.lam==0.0 for log, ==1.0 for none --
     // confirmed via a probe against payems_seats/unrate_seats).
     std::vector<double> trend_i(nz), cycle_i(nz), sc_i(nz), sa_i(nz), ir_i(nz);
-    bool npsi1 = (cd.npsi == 1);
+    const bool npsi1 = (cd.npsi == 1);
     for (int i = 1; i <= nz; ++i) {
         trend_i[i - 1] = fxt[i] + bxt[nz - i + 1];
         cycle_i[i - 1] = fxc[i] + bxc[nz - i + 1];
@@ -728,6 +761,88 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
             z[i - 1] - sc_i[i - 1] - trend_i[i - 1] - cycle_i[i - 1];
         sa_i[i - 1] = z[i - 1] - sc_i[i - 1];  // isCloseToTD always false here
     }
+
+    // ---- FORECAST SPAN (ansub3.f:353-524 + :651-672) ----------------------
+    // Continue the same one-sided recursions past Nz. Three blocks -- seasonal
+    // (npsi!=1), trend (Nchi!=1) and cycle -- each with the same three steps:
+    // run the fx* forward recursion on the total denominator, REFLECT the
+    // first qstar bx* values onto Nz-qstar+1..Nz, then run the bx* recursion
+    // driven by the filter (gs/gt/gc) applied to the forecast of z.
+    //
+    // Two deliberate narrowings, both observationally equivalent here.
+    // (1) The Fortran loops run to `kp` (=PFCST, the ARRAY bound) rather than
+    //     to lf, and store into sc/trend only when `k <= Nz+lf`; everything
+    //     past that lands in forsbias/fortbias, which feed only ABIASC's
+    //     `xx` (an over-limit PRINT flag) and the annual-average rate tables.
+    //     Running to lf therefore changes no saved value -- and it is what
+    //     lets the `forbias` fallback at ansub3.f:424-428 be dropped, since
+    //     for k <= Nz+lf the index `k-j+1` is never past Nz+lf.
+    // (2) The TREND block is transcribed but its result is DEAD: ansub3.f:660
+    //     overwrites trend(Nz+1..Nz+lf) with `z - sc - cycle - ir`. It is kept
+    //     because it is what fills fortbias past lf, and because dropping a
+    //     block on a "nothing reads it" argument is exactly the reasoning that
+    //     has been wrong before in this port.
+    std::vector<double> f_trend_i, f_sc_i, f_cycle_i, f_sa_i;
+    const bool have_cycle_fcst =
+        comp.varwnc > 1.0e-10 && (comp.nthetc != 0 || cd.ncyc != 1);
+    if (lfor > 0 && lf > 0 && nz + l2 <= nz + static_cast<int>(zextFwd.size())) {
+        f_trend_i.assign(lf, 0.0);
+        f_sc_i.assign(lf, 0.0);
+        f_cycle_i.assign(lf, 0.0);
+        f_sa_i.assign(lf, 0.0);
+        // ansub3.f:355-361 -- the forecast span starts zeroed, so a block that
+        // does not run leaves its component at 0 (i.e. no seasonal / no cycle).
+        auto FCX = [&](int k) -> double {  // extZ(k), 1-indexed, k may exceed nz
+            return (k <= nz) ? z[k - 1] : zextFwd[k - nz - 1];
+        };
+        // One block, three times (ansub3.f:363-405 / :407-444 / :447-478).
+        // `g` is the one-sided filter, `fx`/`bx` the component's own halves.
+        auto forecast_component = [&](const std::vector<double>& g,
+                                       std::vector<double>& fx,
+                                       std::vector<double>& bx,
+                                       std::vector<double>& outc) {
+            int k0 = 2 * qstar - 1;
+            if (k0 <= lf) {
+                for (int i = k0; i <= lf; ++i) {
+                    double sum = 0.0;
+                    for (int j = 2; j <= pstar; ++j)
+                        sum -= totden[j] * fx[nz + i - j + 1];
+                    fx[nz + i] = sum;
+                }
+            }
+            // ansub3.f:377-379 -- the BACKWARD half is reflected: bx runs on
+            // the reversed series, so its first qstar values are what the
+            // forward direction needs at the sample's far end.
+            for (int i = 1; i <= qstar; ++i) bx[nz - i + 1] = bx[i];
+            for (int i = 1; i <= lf; ++i) {
+                int k = nz + i;
+                double sum = 0.0;
+                for (int j = 1; j <= maxpq; ++j) sum += g[j] * FCX(k - j + 1);
+                if (qstar != 1)
+                    for (int j = 2; j <= qstar; ++j)
+                        sum -= thstr0[j] * bx[k - j + 1];
+                bx[k] = sum;
+                outc[i - 1] = fx[k] + bx[k];
+            }
+        };
+        if (!npsi1) forecast_component(gs, fxs, bxs, f_sc_i);
+        if (cd.nchi != 1) forecast_component(gt, fxt, bxt, f_trend_i);
+        if (have_cycle_fcst) forecast_component(gc, fxc, bxc, f_cycle_i);
+        // ansub3.f:651-672. ir is identically 0 over the forecast span
+        // (:518-520), so the trend is the RESIDUAL of the other two -- which
+        // is what discards the trend block above. The floor is relative to the
+        // largest |z| over the HISTORICAL span only.
+        double maxz = 0.0;
+        for (int i = 0; i < nz; ++i) maxz = std::max(maxz, std::fabs(z[i]));
+        for (int i = 1; i <= lf; ++i) {
+            double zk = FCX(nz + i);
+            double t = zk - f_sc_i[i - 1] - f_cycle_i[i - 1];
+            if (std::fabs(t) < 1.0e-15 * maxz) t = 0.0;
+            f_trend_i[i - 1] = t;
+            f_sa_i[i - 1] = zk - f_sc_i[i - 1];  // isCloseToTD always false
+        }
+    }
+
 
     // Back-transform to the ORIGINAL-units tables SEATS actually saves
     // (s10-s18): additive as-is for lam==1 (no transform); exp() (additive
@@ -790,6 +905,53 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
                 (out.sa[i] != 0.0) ? zc / out.sa[i] : 1.0;
             out.combined_add[i] = out.combined_factor[i];
         }
+        // sigsub.f:1586-1605 -- the forecast span's own antilog. NOT the same
+        // expression as the historical one above: `noC` gates the trend's bias
+        // scaling, `sa` is formed from the ALREADY-scaled sc (before its x100),
+        // and sc/cycle are punched in PERCENT.
+        const bool noC = comp.varwnc < 1.0e-10 && comp.nthetc == 0 &&
+                         cd.ncyc == 1;
+        for (int i = 0; i < lfor && i < static_cast<int>(f_trend_i.size());
+             ++i) {
+            double sck = npsi1 ? std::exp(f_sc_i[i])
+                                : std::exp(f_sc_i[i]) / bias1c;
+            // MEASURED, and it is `bias1c` where sigsub.f:1594 literally reads
+            // `bias3c`. The reason is a NORMALIZATION difference, not a
+            // transcription choice, and it is only visible here.
+            //
+            // A SEATS decomposition is unique only up to a constant log shift
+            // between the seasonal and the trend, and the bias block absorbs
+            // exactly such a shift: this port's raw `sc_i` sits ln(bias1c)
+            // above the oracle's and its raw `trend_i` ln(bias3c) below, so
+            // the HISTORICAL transform (`exp(sc)/bias1c`, `exp(trend)*bias3c`)
+            // lands on the same s10/s11/s12/s13 either way -- all four gate
+            // bit-exact. The oracle's own bias1c/bias3c are therefore ~1 where
+            // this port's are 1.00882/1.00893 on airline.
+            //
+            // The FORECAST trend is not built by the filter at all: it is the
+            // RESIDUAL `z - sc - cycle` (ansub3.f:660), so it inherits the
+            // shift from `sc` rather than from `trend` -- one factor of
+            // bias1c, not bias1c*bias2c. Two independent identities in the
+            // goldens pin it: `tfd == afd` to the last digit on all 39 specs
+            // with no transitory component, and `tfd*yfd/100 == afd` on the
+            // 13 that have one. Using bias3c leaves tfd exactly bias2c
+            // (1.0001048 on airline) off while sfd/afd/yfd are already exact.
+            double trk = std::exp(f_trend_i[i]) * bias1c;
+            double cyk = std::exp(f_cycle_i[i]);
+            double zk = std::exp(f_sa_i[i] + f_sc_i[i]);  // exp(z(k))
+            out.f_trend.push_back(trk);
+            out.f_sa.push_back(zk / sck);
+            out.f_cycle.push_back(cyk * 100.0);
+            out.f_sc.push_back(sck * 100.0);
+        }
+        // sigex.f:3634 -- the cycle slice is punched only under this guard.
+        // Fortran precedence: `A .and. B .or. C` is `(A and B) or C`, so a
+        // model with Ncyc>1 qualifies whatever varwnc says. NOT the same test
+        // as the ESTBUR forecast block above (which reads `ncycth != 0 ||
+        // Ncyc != 1`), so a spec can decompose a cycle and still not save it.
+        if (!((comp.varwnc > 1.0e-10 && comp.nthetc > 0) || cd.ncyc > 1)) {
+            out.f_cycle.clear();
+        }
     } else {
         for (int i = 0; i < nz; ++i) {
             out.trend[i] = trend_i[i];
@@ -809,6 +971,18 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
             out.combined_factor[i] = (sa_i[i] != 0.0) ? zc / sa_i[i] : 1.0;
             out.combined_add[i] = zc - sa_i[i];
         }
+        // sigsub.f:1525-1534's lamd==1 arm rebuilds `sa` over 1..Nz ONLY, so
+        // the forecast span is punched exactly as ESTBUR left it -- no antilog,
+        // no bias scaling, and no x100 on sc/cycle.
+        for (int i = 0; i < lfor && i < static_cast<int>(f_trend_i.size());
+             ++i) {
+            out.f_trend.push_back(f_trend_i[i]);
+            out.f_sc.push_back(f_sc_i[i]);
+            out.f_sa.push_back(f_sa_i[i]);
+            out.f_cycle.push_back(f_cycle_i[i]);
+        }
+        if (!((comp.varwnc > 1.0e-10 && comp.nthetc > 0) || cd.ncyc > 1))
+            out.f_cycle.clear();
     }
     out.ok = true;
 }
