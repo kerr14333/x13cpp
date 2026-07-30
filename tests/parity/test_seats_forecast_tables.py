@@ -1,17 +1,24 @@
 """SEATS FORECAST decomposition -- the tfd/sfd/afd/yfd save tables.
 
-ansub3.f:353-678 continues the Burman one-sided recursions past Nz and
-sigsub.f:1586-1605 antilogs the result; sigex.f:3631-3636 punches
-trend/sc/sa/cycle over Nz+1..Nz+lfor into Setftr/Setfsf/Setfsa/Setfcy, which
+ansub3.f:353-678 continues the Burman one-sided recursions past Nz,
+sigsub.f:1586-1605 antilogs the result, and ansub4.f:3144-3210 (log) /
+:2284-2337 (non-log) refolds the deterministic preadjustment factors back on
+before punching trend/sc/sa/cycle into Setftr/Setfsf/Setfsa/Setfcy, which
 seatpr.f saves as tfd/sfd/afd/yfd. Every SEATS corpus spec already ships the
 goldens (52 tfd, 51 sfd, 52 afd, 12 yfd), so this gate blesses nothing new.
 
-STATUS -- read this before touching the numbers. 46 of the 52 specs gate
-bit-exact (most at ~5e-15). The 6 that do not are in `KNOWN_GAP` below with
-the sub-cause each belongs to, and this file asserts them from BOTH sides: a
-passing spec must stay under RTOL, and a known-gap spec must stay ABOVE it.
-Fixing one therefore fails this test and tells you to move its row -- the gap
-list cannot rot into a silent allowlist.
+NOT sigex.f:3631-3636. Those USRENTRY 1409/1410/1411/1413 calls are inside
+`if (Tramo .le. 0)` and are DEAD on an X-13 run (Tramo == 1); probing all five
+call sites shows only ansub4.f's fire. That mis-identification is what left
+the last six gaps: this port punched the antilogged components straight, with
+no refold, and separately fed ansub3.f's Tramo block the transformed-scale
+regARIMA forecast instead of `TramLin = Tram/TramDet`. The two errors cancel
+except for the length-of-month/leap prior, so 46 of 52 specs passed anyway.
+
+STATUS -- read this before touching the numbers. All 52 gate bit-exact and
+`KNOWN_GAP` is empty. It is deliberately kept: this file asserts from BOTH
+sides, so a spec listed there must stay ABOVE RTOL, and the gap list cannot
+rot into a silent allowlist.
 """
 import math
 import pathlib
@@ -27,44 +34,32 @@ BIN = ROOT / "build" / "x13run_seats.exe"
 TABLES = ("tfd", "sfd", "afd", "yfd")
 
 # The arithmetic floor the SEATS s-tables already hold. The forecast span runs
-# the same recursions, so a correct port lands here too -- 11 of the 12 passing
-# specs are at 1e-12 or better and the twelfth (unrate_sar) at 1.04e-11.
+# the same recursions, so a correct port lands here too -- 48 of the 52 specs
+# are at 1e-12 or better and the worst is payems_mean-td at 1.01e-11, which
+# runs the ansub4.f refold through a trading-day factor series and so carries
+# one extra rounding.
 RTOL = 5e-11
 
-# Specs whose forecast decomposition is still wrong, with the measured worst
-# relative error and the sub-cause. History: ansub3.f's Tramo block (:552-653)
-# was believed unreachable and was unported, which left 39 specs wrong in what
-# looked like two families (APPROX / near-non-invertible MA, MEAN / imean!=0).
-# Measured 2026-07-30 against an instrumented oracle, it is REACHABLE on an
-# ordinary X-13 SEATS run and rewrites z(Nz+1..) with LOG(TramLin) -- the
-# regARIMA forecast of the LINEARIZED series, which is what :660's trend/sa
-# residual reads, while the filter recursions keep reading the untouched extZ
-# that this port already reproduced. Porting it took 39 gaps down to 6. The
-# old APPROX/MEAN split was never two mechanisms, only the size of the
-# discrepancy the block folds back. Full record:
-# tools/seats_forecast_scouting.md section 3.
+# EMPTY, and kept that way on purpose -- the both-directions assertion below
+# means a row here must stay ABOVE RTOL, so a stale entry fails loudly instead
+# of quietly excusing a spec.
+#
+# History, because it is the shape of the defect rather than the arithmetic
+# that is worth keeping. ansub3.f's Tramo block (:552-653) was believed
+# unreachable and was unported, which left 39 specs wrong in what looked like
+# two families. Measured against an instrumented oracle it is REACHABLE on an
+# ordinary X-13 run (Tramo == 1) and rewrites z(Nz+1..) with LOG(TramLin);
+# porting it took 39 gaps to 6. The last 6 were a SECOND unreached-code
+# mistake in the same front: the saved tables do not come from
+# sigex.f:3631-3636 (dead under Tramo == 1) but from ansub4.f, which refolds
+# the deterministic factors. Feeding the block `ctx.forecasts.trnfct` instead
+# of Tram/TramDet is wrong by exactly TramDet, and the missing refold is wrong
+# by exactly TramDet the other way, so the two cancelled everywhere except the
+# length-of-month/leap prior that only trnfct carries -- which is why the gap
+# was 4 `mean-td` specs plus 2 near the floor and looked like two unrelated
+# causes. Full record: tools/seats_forecast_scouting.md section 3.
 KNOWN_GAP = {
     # spec: (family, measured worst relative error)
-    # TDLIN -- the last sub-cause. TramLin = Tram/TramDet divides out every
-    #          DETERMINISTIC preadjustment factor, trading day included
-    #          (analts.f:717-733), and this port feeds the Tramo block
-    #          ctx.forecasts.trnfct, which is the forecast of the series WITH
-    #          the TD effect still in it. Exactly the four `mean-td` specs are
-    #          left, which is the signature. Fix: subtract the forecast-span
-    #          TD contribution before the block, the same decomposition
-    #          run_seats already does historically (seats_combined_orig / the
-    #          "add back only the Constant's contribution" rule).
-    "expgs_mean-td-seats": ("TDLIN", 7.18e-03),
-    "airline_mean-td-seats": ("TDLIN", 1.26e-02),
-    "payems_mean-td-seats": ("TDLIN", 2.58e-02),
-    "unrate_mean-td-seats": ("TDLIN", 6.85e-01),
-    # RESIDUE -- near the floor and NOT the TD gap (no TD regressor on either).
-    # Both improved by 6-9 orders when the Tramo block landed (3.81e-01 and
-    # 1.51e+01 before it), so whatever is left is a second, much smaller term.
-    # unrate is the additive/lam==1 series; suspect the non-log arm of
-    # ansub3.f:565-568, which drops the LOG rather than taking it.
-    "unrate_mean-seats": ("RESIDUE", 1.36e-10),
-    "unrate_mean-d0-seats": ("RESIDUE", 9.12e-08),
 }
 
 def _read_golden(path):
@@ -105,11 +100,23 @@ def _run(spec):
 
 
 def _worst(golden, engine):
-    """Worst RELATIVE deviation, and the date it happens on."""
+    """Worst deviation relative to the TABLE'S OWN SCALE, and where.
+
+    Not per-value relative. On the non-log path sfd and yfd are additive
+    DIFFERENCES that cross zero -- unrate_mean-d0's yfd runs down to 1.4e-08 --
+    so dividing by |g| measures cancellation rather than accuracy: an absolute
+    agreement of 1.3e-15 there reads as 9.1e-08 "relative". Normalising by
+    max|g| over the table is the same yardstick ansub3.f:653-663 uses on the
+    trend itself (`abs(trend) < 1e-15 * maxZ -> 0`), and it does not loosen the
+    multiplicative tables, whose values are all within an order of magnitude of
+    their own max.
+    """
+    scale = max((abs(g) for g in golden.values()), default=0.0)
+    if scale <= 0.0:
+        scale = 1e-30
     worst, where = 0.0, None
     for k, g in golden.items():
-        e = engine[k]
-        rel = abs(e - g) / max(abs(g), 1e-30)
+        rel = abs(engine[k] - g) / scale
         if rel > worst:
             worst, where = rel, k
     return worst, where

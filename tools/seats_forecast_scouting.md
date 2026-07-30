@@ -1,12 +1,13 @@
 # The SEATS FORECAST decomposition — `ansub3.f:353-678` / the `tfd sfd ofd afd yfd` tables
 
-**Status:** **46 of the 52** corpus specs gate bit-exact (most at ~5e-15); 6
-remain and are asserted from both sides by
-`tests/parity/test_seats_forecast_tables.py`. §3 records the defect that
-accounted for 33 of them — ansub3.f's Tramo block, believed unreachable and
-therefore unported — and the two sub-causes still open (`TDLIN`, `RESIDUE`).
-This file is the map for finishing it — including the dead ends, which cost
-most of the time and should not be re-walked.
+**Status:** **CLOSED.** All **52** corpus specs gate bit-exact (48 of them at
+1e-12 or better, worst 1.01e-11), and `KNOWN_GAP` in
+`tests/parity/test_seats_forecast_tables.py` is empty. Section 3 records the
+two defects that accounted for every gap -- ansub3.f's Tramo block and
+ansub4.f's refold, BOTH of them live code this port had written off as
+unreachable, and each of which hid the other by cancelling. This file is the
+map, including the dead ends, which cost most of the time and should not be
+re-walked.
 
 Status here is NOT authoritative for *what is open* (that is
 `tools/SESSION_HANDOFF.md`); what is durable here is *what was measured*.
@@ -32,9 +33,30 @@ sigex.f:1395    ESTBUR(..., trend, sc, cycle, sa, ir, ..., fhi) ansub3.f
   ansub3.f:651-672   trend = z - sc - cycle - ir  (floored at 1e-15*max|z|)
                      sa    = z - sc
 sigsub.f:1586-1605  SECOND's antilog for the forecast span (lamd==0 only)
-sigex.f:3631-3636   USRENTRY 1410/1411/1413/1409 -> Setftr/Setfsf/Setfcy/Setfsa
+sigex.f:3631-3636   USRENTRY 1410/1411/1413/1409 -- DEAD, guarded
+                    `if (Tramo .le. 0)`, and Tramo is 1 on every X-13 run.
+ansub4.f:3144-3210  the LIVE writer, log path: builds ftr/fsa/fs/fcyc by
+                    REFOLDING the deterministic factors onto the antilogged
+                    components; punched at :3287 and again at :3342.
+ansub4.f:2284-2337  the same, non-log path, in sums; punched at :2466.
 seatpr.f:199/351/444/499  savtbl -> LSEFCD{+0,+1,+3,+4} = tfd/sfd/afd/yfd
 ```
+
+**The saved forecast tables are not the components.** With every `Pareg` term
+the identity (why: section 3), ansub4.f's log arm is
+
+```
+fs   = sc(pct) * Paeast*PaTD*Paous                 -> sfd
+fsa  = Tram / (sc(pct)/100 * Paeast*PaTD*Paous)    -> afd
+fcyc = cycle(pct)                                  -> yfd
+fir  = Paouir                                         (before its x100)
+ftr  = (fsa/fir) / (fcyc/100)                      -> tfd
+```
+
+`fortr` is 1 unconditionally (`ansub9.f:1585 l_fortr = 1`), so `ftr` is always
+that RESIDUAL of `fsa` -- which is why `tfd == afd` to the last digit whenever
+there is no transitory component, and `afd == tfd*yfd/100` when there is. The
+sigsub-antilogged trend is never punched at all.
 
 `ofd` (LSEFCD+2, the ORIGINAL-series forecast) has no golden anywhere in the
 corpus and is not produced.
@@ -71,27 +93,22 @@ downstream of the HISTORICAL decomposition read it. Ported at the tail of
 `parse_spec.cpp`, next to the other two editor rules; gated by the row COUNT
 assertion in the new test (24 rows vs the golden's 36).
 
-### The forecast trend's bias factor is `bias1c`, where the Fortran reads `bias3c`
+### RETIRED -- the forecast trend has no bias factor at all
 
-`sigsub.f:1594` is literally `trend(k) = EXP(trend(k)) * bias3c`, and that is
-wrong for this port by exactly `bias2c`. The reason is a NORMALIZATION
-difference, not a transcription choice, and it is only visible here:
+This section used to argue that the forecast trend takes `bias1c` where
+`sigsub.f:1594` literally reads `bias3c`, explained as a normalization
+difference. **The observation was real; the explanation was wrong, and so was
+the code.** The saved `tfd` is not sigsub's antilogged trend at all: it is
+ansub4.f's `ftr = (fsa/fir)/(fcyc/100)`, a residual of `fsa`, and no bias
+factor enters it. `bias1c` happened to be the right fudge because `fsa`
+carries exactly one factor of it, through `sc`.
 
-- a SEATS decomposition is unique only up to a constant log shift between the
-  seasonal and the trend, and the bias block absorbs exactly such a shift;
-- this port's raw `sc_i` sits `ln(bias1c)` above the oracle's and its raw
-  `trend_i` `ln(bias3c)` below, so the HISTORICAL transform lands on the same
-  s10/s11/s12/s13 either way — all four gate bit-exact, on airline with
-  `bias1c = 1.00882`, `bias2c = 1.00010`, `bias3c = 1.00893`;
-- the FORECAST trend is not built by the filter at all — it is the residual
-  `z - sc - cycle` — so it inherits the shift from `sc`, i.e. one factor of
-  `bias1c`.
-
-Pinned by two identities that hold across the whole corpus and are asserted on
-the GOLDENS (not on the engine) by `test_no_transitory_means_trend_equals_sa`:
-`tfd == afd` to the last digit on the 39 specs with no transitory component,
-`afd = tfd*yfd/100` on the multiplicative ones that have it, and
-`afd = tfd + yfd` on the additive ones.
+Kept because the two identities used to pin it are still the right way to
+check this front, and are still asserted on the GOLDENS by
+`test_no_transitory_means_trend_equals_sa`: `tfd == afd` to the last digit on
+the specs with no transitory component, `afd == tfd*yfd/100` on the ones with
+one, and `afd = tfd + yfd` on the additive ones. They are now *derivable* from
+the ansub4.f formulas rather than empirical.
 
 ### Emit conditions
 
@@ -168,35 +185,65 @@ its regARIMA forecast, i.e. the SIZE of `d1`, not two different causes.
 The family labels in the test's `KNOWN_GAP` should be collapsed when this
 closes.
 
-### PORTED -- result
+### PORTED -- result, and the SECOND unreachable-code mistake
 
-Landed in `estbur.cpp` between the component recursions and the `:660`
-residual. All four steps together, as warned below. **39 gaps -> 6**, and the
-33 that closed went to ~5e-15, not merely under tolerance. Full suite
-5818 -> 5851 passed with 0 failed and no change to any historical table.
+The Tramo block landed in `estbur.cpp` between the component recursions and
+the `:660` residual. 39 gaps went to 6, the 33 that closed to ~5e-15.
 
-Two sub-causes remain, both now named in `KNOWN_GAP`:
+The last 6 (4 `*_mean-td-seats` at 7.2e-3..6.9e-1, plus `unrate_mean-seats`
+and `unrate_mean-d0-seats` near the floor) looked like two unrelated
+sub-causes and were labelled `TDLIN` and `RESIDUE`. They were neither. They
+were **one more piece of live code this port had recorded as unreachable**:
 
-| sub-cause | specs | worst | what it is |
+- The Tramo block was being fed `ctx.forecasts.trnfct`. `TramLin` is
+  `Tram / TramDet` -- `Tram(i) = Orixs(i)`, the ORIGINAL-units,
+  missing-value-adjusted, forecast-extended series (`ansub9.f:1395`), divided
+  by the product of the deterministic factors. Wrong by exactly `TramDet`.
+- The saved tables were being built as the antilogged components. They are
+  built by **ansub4.f**, which refolds `TramDet` back on. Wrong by exactly
+  `TramDet` the other way.
+
+The two cancel. What does NOT cancel is the part of `trnfct` that is not a
+regression effect at all -- the length-of-month/leap-year prior, which
+`run_pre_model` divides out of the estimation input and which `TramDet`
+therefore never carried. So the residue was `lpfac` and nothing else, and it
+shows up only in the period containing February. Measured on the goldens,
+engine over oracle:
+
+| spec | period | ratio | `lpfac` |
 |---|---|---|---|
-| `TDLIN` | the 4 `*_mean-td-seats` | 7.2e-3 .. 6.9e-1 | `TramLin = Tram/TramDet` divides out every DETERMINISTIC factor, TD included; the port feeds the block `ctx.forecasts.trnfct`, which still HAS the TD effect. That exactly the four TD specs are left is the signature. Fix: subtract the forecast-span TD contribution first -- the same split `run_seats` already does historically (`seats_combined_orig`, "add back only the Constant's contribution"). |
-| `RESIDUE` | `unrate_mean-seats`, `unrate_mean-d0-seats` | 1.4e-10, 9.1e-8 | no TD regressor, so NOT the above. Both improved 6-9 orders when the block landed (from 1.51e+01 and 3.81e-01). unrate is the additive/`lam==1` series -- suspect `ansub3.f:565-568`, the non-log arm, which drops the LOG rather than taking it. |
+| `airline_mean-td` | every Feb | 1.008928571429 | 28.25/28 |
+| `payems_mean-td` | every Feb | 1.008928571429 | 28.25/28 |
+| `expgs_mean-td` (quarterly) | non-leap Q1 | 1.002777777778 | 90.25/90 |
+| `expgs_mean-td` (quarterly) | leap Q1 (2028) | 0.991758241758 | 90.25/91 |
+| all four | every other period | 1.000000000000 | 1 |
 
-### How it was implemented
+Exactly `lpfac`, to 1e-12, with no free parameter -- which is what identified
+it. The two additive `unrate` specs carried the same defect at the scale of an
+additive series.
 
-The port needs `TramLin` over the forecast span. That is the regARIMA forecast
-in ORIGINAL units (the LOG is taken here), i.e. `ctx.forecasts.fcst` -- NOT
-`trnfct`, and not `zextFwd`. Dead end 2 below tried substituting the regARIMA
-forecast for the WHOLE extension, which breaks the filter; the fix is to keep
-`zextFwd` for the recursions and use `LOG(TramLin)` only from step 1 onward.
-Steps 3 and 4 must land with it -- a partial port that replaces `z` without
-folding `d1` into a component would make `tfd` WORSE, since `:660` would then
-attribute the entire discrepancy to the trend.
+**Result: all 52 specs gate, 48 at 1e-12 or better, `KNOWN_GAP` empty.**
 
-Answer this first: confirm what fills `TramLin` on the X-13 path (the
-`ansub9.f` USRENTRY bridge is the likely writer) rather than assuming
-`ctx.forecasts.fcst` equals it. The probe can print `TramLin(Nz+1)` directly
-in one more run.
+Two things fell out of the fix:
+
+- `Pareg(i,0..7)` is ALWAYS the identity on the X-13 path, and that is
+  measured rather than assumed. `TAKEDETTRAMO` fills it from
+  `Facusr`/`Facsea`/`Faccyc` only under `if (npareg .eq. 1)`; `Npareg` comes
+  from `l_npareg`, which `ansub9.f:1598` initialises to 0 and no bridge line
+  ever sets. The else-branch writes `facint` (1 under log, 0 otherwise) across
+  the whole array. The instrumented oracle prints all eight as exactly 1.0 on
+  a const+td log spec. `analts.f:735-745`'s `Pareg(,2) *= Pareg(,6)` is a
+  no-op for the same reason -- it needs `Neff(6)==1`, and TAKEDETTRAMO zeroes
+  Neff.
+- `ansub4.f`'s own `bias1/bias2/bias3` are dead: `:2795-2797` overwrites all
+  three with 1.0 immediately after computing them, under a comment in Italian
+  saying it needs checking. Reproduce that; do not "fix" it.
+
+**Standing lesson, now twice in one front:** a reachability claim that has not
+been run against the oracle is not a measurement. Both defects here were
+recorded in this port as unreachable code, both were live, and because they
+sat adjacent in the same data path they cancelled -- producing a 46/52 pass
+rate that read as a nearly-finished port.
 
 ### Reproducing the instrumented oracle
 

@@ -444,6 +444,16 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
                fcyc.data(), fusr.data(), fmv.data(), fhol.data(), fcntyp, lam,
                ctx.arima.nrxy, n);
         if (ctx.error.lfatal) return false;
+        // arima.f:1336-1342 -- SEATS gets its own copy of the MISSING-VALUE
+        // adjusted ORIGINAL series, forecast-extended and in original units
+        // (regression effects still IN; that is `Tram` on the SEATS side, via
+        // ansub9.f's TAKEDETTRAMO `TRAM(i)=Orixs(i)`). ansub3.f's Tramo block
+        // and ansub4.f's forecast refold both read it -- see estbur.cpp.
+        if (lseats) {
+            const int nobspf_s = ctx.mdldat.nspobs + std::max(ctx.extend.nfcst, 0);
+            for (int i = 1; i <= nobspf_s && i <= PLEN; ++i)
+                ctx.seatad.orixs(i) = orixmv[static_cast<std::size_t>(pos1ob + i - 2)];
+        }
         // Snapshot the adjreg-adjusted B1 (Stcsi) for the b1 table: x11pt2
         // overwrites Stcsi in place during the C/D passes. Use Stoap -- a x11pt1
         // scratch buffer (original*prior) that is dead after x11pt1 and untouched by

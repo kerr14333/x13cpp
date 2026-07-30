@@ -12,16 +12,15 @@
 // forecast-block guard is downstream of `k=Nz+i` for i>=1), so the historical
 // results are unchanged by it.
 //
-// The Tramo block (ansub3.f:552-653) is NOT ported, and the claim that used to
-// stand here -- "cannot be reached, `Tramo` is the TRAMO-SEATS chaining flag
-// and X-13's bridge never sets it" -- is WRONG. Measured 2026-07-30 against an
-// instrumented oracle: on an ordinary X-13 SEATS run it EXECUTES, and it is
-// the entire remaining forecast-span defect. It rewrites z(Nz+1..) with
-// LOG(TramLin) -- the regARIMA forecast, which is what :660's trend/sa
-// residual then reads, while the filter recursions keep reading the untouched
-// extZ -- shrinks `lf` by mq/2, and folds the discrepancy into sc/cycle/ir.
-// The probe that settled it (z and extZ printed after the copy and again at
-// :660) and the port plan are in tools/seats_forecast_scouting.md section 3.
+// The Tramo block (ansub3.f:552-653) IS ported, and so is ansub4.f's refold of
+// the deterministic factors onto the saved forecast tables. Both were once
+// declared unreachable here, and both claims were wrong -- `Tramo` is 1 on an
+// ordinary X-13 SEATS run, which makes the Tramo block live and makes
+// sigex.f:3631-3636's punches (guarded `if (Tramo .le. 0)`) dead. Measured
+// 2026-07-30 against an instrumented oracle. All 52 corpus specs now gate
+// bit-exact over the forecast span; the record, including the way the two
+// errors cancelled and hid each other, is in
+// tools/seats_forecast_scouting.md section 3.
 // A small forward/backward extension
 // (FCAST-style, ansub1.f:2183-2201, `lext = qstar+maxpq-2` points) IS
 // needed even for the historical output whenever maxpq>1, since the

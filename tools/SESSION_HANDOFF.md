@@ -1,9 +1,9 @@
-# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition 46/52, its main defect FOUND and PORTED)
+# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED, all 52 specs gate)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
 measured corner, now walled, and its open item 3 (the SEATS forecast
-decomposition) is half done — see the second "this session" section.
+decomposition) is closed — see the second "this session" section.
 
 ## Where things stand
 
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5858 passed / 0 failed / 475 skipped** (~92s) |
+| `python -m pytest tests/parity -q -n 8` | **5864 passed / 0 failed / 469 skipped** (~83s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -152,49 +152,72 @@ post-loop `identify=first` block **10**; revert the `gtinpt` `pvaic` default
 pre-existing, general gap affecting every aictest spec, deliberately out of
 scope here.
 
-## This session, part 2: the SEATS FORECAST decomposition — half closed
+## This session, part 2: the SEATS FORECAST decomposition — CLOSED
 
-`ansub3.f:353-678` + `sigsub.f:1586-1605` are ported and the `tfd`/`sfd`/`afd`/
-`yfd` tables punched, with **zero new goldens** (all 52 SEATS specs already
-ship them). **13 specs gate bit-exact; 39 are measurably wrong** and are
-asserted as such from BOTH sides by
-`tests/parity/test_seats_forecast_tables.py`'s `KNOWN_GAP` — a gap spec must
-stay ABOVE tolerance, so fixing one fails the test and says to move its row.
-Full map, including the dead ends: **`tools/seats_forecast_scouting.md`**.
+`ansub3.f:353-678` + `sigsub.f:1586-1605` + **`ansub4.f`'s refold** are ported
+and the `tfd`/`sfd`/`afd`/`yfd` tables punched, with **zero new goldens** (all
+52 SEATS specs already ship them). **All 52 gate bit-exact** — 48 at 1e-12 or
+better, worst `payems_mean-td-seats` at 1.01e-11 — and `KNOWN_GAP` in
+`tests/parity/test_seats_forecast_tables.py` is now **empty**. It is kept, and
+still asserts from both sides, so a stale row would fail loudly rather than
+quietly excuse a spec. Full record: **`tools/seats_forecast_scouting.md` §3**.
 
-Two real bugs closed:
+**Two defects, both of them live code this port had recorded as unreachable,
+and they cancelled each other.**
 
-- **`editor.f:389-401`** — an EXPLICIT short `forecast{maxlead=}` is RAISED to
-  `max(12,3*Sp)` on a `seats{}` run. `gtinpt.f:1151` applies that floor only as
-  the DEFAULT when no maxlead was given, so the four specs carrying
-  `maxlead = 12` beside `seats{}` ran with `nfcst: 12` against the golden's
-  `36`. Silent — nothing downstream of the historical decomposition read it.
-- **The forecast trend's bias factor is `bias1c`, where `sigsub.f:1594`
-  literally reads `bias3c`.** A SEATS decomposition is unique only up to a
-  constant log shift between seasonal and trend, and the bias block absorbs
-  exactly such a shift; the forecast trend is the RESIDUAL `z - sc - cycle`,
-  not a filter output, so it inherits `sc`'s shift and takes one factor of
-  `bias1c`. **The historical tables cannot pin this** — `mean(s11/s12) == 1`
-  holds for any `bias2c` — which is why it was invisible.
+1. `ansub3.f:552-653`, the Tramo block. `Tramo` is 1 on every X-13 SEATS run,
+   so it executes; it rewrites `z` over the forecast span with `LOG(TramLin)`,
+   shrinks `lf` by `mq/2`, and folds the discrepancy into `sc`/`cycle`/`ir`.
+   Closed 33 of the then-39 gaps.
+2. The saved tables do NOT come from `sigex.f:3631-3636` — those USRENTRY
+   1409/1410/1411/1413 calls sit inside `if (Tramo .le. 0)` and never fire.
+   The live writer is `ansub4.f` (`:3144-3210` log, `:2284-2337` non-log),
+   which **refolds the deterministic preadjustment factors** back onto the
+   antilogged components. Probing all five call sites showed only ansub4.f's
+   fire, and its `fsa(1)`/`fs(1)` are the golden `afd`/`sfd` to the last digit.
 
-**The open puzzle, both halves measured.** On the 39 failing specs the error is
-in the forecast of `z`, not in its decomposition (tfd and afd move together,
-sfd settles exact, the error grows LINEARLY in the horizon — a drift). The
-oracle's saved tables imply a `z` equal to the regARIMA `.fct` **to the last
-bit**. But the port's extension is also what makes the HISTORICAL span
-bit-exact, and that span is not insensitive to it (a coherent `+3.64e-3` log
-shift moves `s12` by 8.3e-4; a single-point `1e-6` shift by 7.6e-4). Both hold
-at once and are unreconciled. **Next step: instrument the oracle** — a
-temporary `ansub3.f` write of `z(Nz+1)` vs `extZ(Nz+1)` just before `:660`
-settles it in one run, the same technique that closed the CALCFX seeding
-question. The two failing families are independent: `APPROX` (16, a
-near-non-invertible MA capped to `xl`) and `MEAN` (23, `imean != 0`, no capping
-— `th == th_raw` on all of them).
+Feeding the block `ctx.forecasts.trnfct` is wrong by exactly `TramDet`; the
+missing refold is wrong by `TramDet` the other way. What survives the
+cancellation is the one thing `trnfct` carries and `TramDet` does not — the
+length-of-month/leap prior — so the residue was exactly `lpfac`, in the period
+containing February, and nothing else. That is why it presented as a
+trading-day bug on four `*_mean-td-seats` specs plus two unexplained ones near
+the floor.
+
+Also settled, measured not assumed: `Pareg(i,0..7)` is always the identity on
+the X-13 path (`Npareg` is `l_npareg`, initialised 0 at `ansub9.f:1598` and
+never set), and `ansub4.f`'s own `bias1/bias2/bias3` are dead — `:2795-2797`
+overwrites all three with 1.0 right after computing them.
+
+**Retired by this:** the earlier "the forecast trend takes `bias1c` where
+`sigsub.f:1594` reads `bias3c`" finding. The saved `tfd` is not the antilogged
+trend at all — it is `ftr = (fsa/fir)/(fcyc/100)`, a residual of `fsa`
+(`fortr` is 1 unconditionally), so no bias factor enters it. That also makes
+the two golden identities the test asserts (`tfd == afd` with no transitory
+component, `afd == tfd*yfd/100` with one) derivable rather than empirical.
+
+**One test-metric change, and it is a change of yardstick, not of tolerance.**
+`_worst` now normalises by `max|golden|` over the table rather than by each
+value. On the non-log path `sfd`/`yfd` are additive DIFFERENCES that cross
+zero — `unrate_mean-d0`'s `yfd` runs down to 1.4e-08 — so per-value relative
+error measures cancellation, not accuracy: an absolute agreement of 1.3e-15
+there read as 9.1e-08. Same yardstick `ansub3.f:653-663` uses on the trend
+itself. It does not loosen the multiplicative tables, whose values all sit
+within an order of magnitude of their own max.
 
 **Dead ends, measured, do not repeat:** extending with the RAW pre-cap MA
 (makes the historical WORSE and still misses the forecast), using
-`ctx.forecasts.trnfct` as the extension (breaks the historical), keeping
-`bias3c` on the forecast trend.
+`ctx.forecasts.trnfct` as the *extension* (breaks the historical — it belongs
+only at `:660`), deriving `bias2c` from the goldens (it cancels).
+
+**Standing lesson, twice in one front:** a reachability claim that has not been
+run against the oracle is not a measurement. Both defects here were written off
+as unreachable, both were live, and because they sat adjacent in one data path
+they cancelled into a 46/52 pass rate that read as a nearly-finished port.
+
+**Unblocks two fronts that were waiting on it:** the composite `i18` forecast
+tail, and the `hpcycle` filter (`tools/seats_hp_scouting.md`, whose step 1 was
+exactly this).
 
 ## Previous session (2026-07-29b): composite under SEATS + all of `amdfct.f`
 
@@ -267,7 +290,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5858<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5864<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -293,40 +316,21 @@ duplicated ownership.
    (75 keys, model 5 vs 4 ARMA terms; localised to label 40's `amidot` arm,
    since `noautooutlier=tramo` makes it bit-exact). Both make every option
    verdict on those series uninterpretable.
-3. **Finish the SEATS FORECAST decomposition** — **46 of 52 now gate**
-   bit-exact (was 13). The oracle instrumentation named here last session was
-   done and it found the cause: `ansub3.f`'s **Tramo block (:552-653) is
-   REACHABLE** — the port's comment calling it unreachable was never tested
-   against a running oracle — and it rewrites `z` over the forecast span with
-   `LOG(TramLin)`, the regARIMA forecast of the LINEARIZED series, which is
-   what `:660`'s residual reads while the filter recursions keep reading the
-   untouched `extZ`. Porting it closed 33 of the 39 gaps, all to ~5e-15.
-   **Two sub-causes remain**, both named in `KNOWN_GAP` with measurements:
-   `TDLIN` (the four `*_mean-td-seats`, 7.2e-3..6.9e-1 — `TramLin` divides out
-   TD and the port feeds it `trnfct`, which still has TD in it; fix is the
-   forecast-span analogue of the split `run_seats` already does historically)
-   and `RESIDUE` (`unrate_mean{,-d0}-seats`, 1.4e-10 and 9.1e-8 — no TD, both
-   improved 6-9 orders when the block landed; unrate is the additive series,
-   so suspect the non-log arm at `:565-568`). Full record, including the
-   instrumented-build recipe and the dead ends, in
-   `tools/seats_forecast_scouting.md` §3. Still wanted by two other fronts:
-   the composite i18 forecast tail and the `hpcycle` filter
-   (`tools/seats_hp_scouting.md`, whose step 1 is exactly this).
-4. **`svaict.f`** — the `aictest.*` savelog block, absent for every aictest
+3. **`svaict.f`** — the `aictest.*` savelog block, absent for every aictest
    spec. Pure report surface over arithmetic that is now proven correct, so it
    should be cheap; the goldens already carry the keys.
-5. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
+4. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
    → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
    Latent everywhere a spec supplies a decimal. **Check whether the Fortran
    reader does the same before changing anything** — if it does, the port is
    faithful and this is documentation, not a fix.
-6. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+5. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-7. **A composite whose components carry a residual peak**, to gate savpk's real
+6. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-8. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`

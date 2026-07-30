@@ -783,6 +783,25 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
     //     block on a "nothing reads it" argument is exactly the reasoning that
     //     has been wrong before in this port.
     std::vector<double> f_trend_i, f_sc_i, f_cycle_i, f_sa_i, f_ir_i;
+    // ansub9.f:1341-1470 (TAKEDETTRAMO) -- the deterministic preadjustment
+    // factors SEATS sees, over the FORECAST span only, 1-indexed by lead k.
+    // `Tram(i) = Orixs(i)`: the missing-value-adjusted ORIGINAL series in
+    // original units, forecast-extended (x11_prestage fills ctx.seatad.orixs
+    // from arima.f:1340). The rest are the /x11fac/ factor arrays read at
+    // Pos1ob+i-1. Filled by the Tramo block below and read again by the
+    // ansub4.f refold in the back-transform -- both need them, hence this
+    // scope.
+    //
+    // Pareg(i,0..7) is NOT read here, and that is measured, not assumed:
+    // TAKEDETTRAMO fills it from Facusr/Facsea/Faccyc only under
+    // `if (npareg .eq. 1)`, and `Npareg` comes from `l_npareg`, which
+    // ansub9.f:1598 initialises to 0 and no X-13 bridge line ever sets. The
+    // else-branch writes `facint` (1 under log, 0 otherwise) across the whole
+    // array, so every Pareg term below is the identity. Confirmed on an
+    // instrumented oracle: all eight are exactly 1.0 on a const+td log spec.
+    // analts.f:735-745's `Pareg(,2) *= Pareg(,6)` is a no-op for the same
+    // reason (it needs Neff(6)==1, and TAKEDETTRAMO zeroes Neff).
+    std::vector<double> pa_tram, pa_td, pa_east, pa_outr, pa_ouir, pa_ous;
     const bool have_cycle_fcst =
         comp.varwnc > 1.0e-10 && (comp.nthetc != 0 || cd.ncyc != 1);
     if (lfor > 0 && lf > 0 && nz + l2 <= nz + static_cast<int>(zextFwd.size())) {
@@ -850,9 +869,20 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
         // golden's first forecast to the last digit.
         //
         // `LOG(TramLin(i)) == z(i)` exactly over 1..Nz (verified on both a
-        // no-regressor and a const+td spec), i.e. TramLin is this port's own
-        // linearized series exponentiated -- so over the forecast span the
-        // matching quantity is the transformed-scale forecast, trnfct.
+        // no-regressor and a const+td spec).
+        //
+        // TramLin is NOT the transformed-scale regARIMA forecast. It is
+        // `Tram / TramDet` -- the ORIGINAL-units forecast-extended series over
+        // every deterministic factor. Feeding `ctx.forecasts.trnfct` here (the
+        // first version of this block) is wrong by exactly TramDet, and it
+        // cancelled against a SECOND missing piece -- ansub4.f's refold in the
+        // back-transform below -- everywhere except the length-of-month/leap
+        // prior, which trnfct alone carries. That cancellation is why 46 of 52
+        // specs passed with both halves missing. Measured on the instrumented
+        // oracle, airline_mean-td-seats, lead 1 (Jan 1961):
+        //   Tram    = 442.72740378553277   (== exp(trnfct[0]) to the last bit)
+        //   PaTD    = 0.99899606693432441
+        //   TramLin = 443.17231913050000   == exp(z(Nz+1)) at ansub3.f:660
         const int mq = mo.mq;
         const int lf_full = lf;  // nz1 = Nz+lf is fixed BEFORE the shrink
         std::vector<double> d1(lf_full + 1, 0.0);   // 1-indexed by k
@@ -866,17 +896,18 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
             return (k <= lf_full) ? d1[k] : 0.0;
         };
         int lf_fold = lf_full;
-        const auto& trnfct = ctx.forecasts.trnfct;
+        const bool ilam0 = std::fabs(ctx.arima.lam) < 1e-9;
         // `lf = max(fh, qbqmq + max(qbqmq, p+bp*mq))` with `fh = Nfcst`, so lf
         // EXCEEDS the regARIMA forecast whenever the model-order term wins --
-        // and then this port has no TramLin for the tail. NOT ported: the
-        // oracle's z is filled by FCAST to `fhi` before ESTBUR, so it always
-        // has one. Rather than fall back to the pre-Tramo `FCX` extension --
-        // which is the defect this block exists to fix, and would be SILENT --
-        // emit no forecast tables at all, so the gate's both-directions
-        // presence assertion fires. No corpus spec reaches this (verified: all
-        // 52 keep their tables), which is exactly why it must not be silent.
-        const bool have_tram = static_cast<int>(trnfct.size()) >= lf_full;
+        // and then Orixs stops short (x11_prestage fills it to Nspobs+Nfcst)
+        // and this port has no TramLin for the tail. NOT ported: the oracle's
+        // z is filled by FCAST to `fhi` before ESTBUR, so it always has one.
+        // Rather than fall back to the pre-Tramo `FCX` extension -- which is
+        // the defect this block exists to fix, and would be SILENT -- emit no
+        // forecast tables at all, so the gate's both-directions presence
+        // assertion fires. No corpus spec reaches this (verified: all 52 keep
+        // their tables), which is exactly why it must not be silent.
+        const bool have_tram = ctx.forecasts.nfcst >= lf_full;
         if (!have_tram) {
             f_trend_i.clear();
             f_sc_i.clear();
@@ -884,13 +915,42 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
             f_sa_i.clear();
         }
         if (have_tram) {
-            // :558-563 (ILAM==0 arm; the non-log arm drops the LOG, and this
-            // port's transformed scale IS the log, so trnfct serves both).
-            // ir is identically 0 here (:545-547), so the filter's own
-            // reconstruction is trend+sc+cycle.
+            // ansub9.f:1394-1403 + analts.f:717-733. Index into the /x11fac/
+            // arrays is Pos1ob + (Nz + k) - 1.
+            const int p1 = ctx.x11ptr.pos1ob;
+            pa_tram.assign(lf_full + 1, 0.0);
+            pa_td.assign(lf_full + 1, 0.0);
+            pa_east.assign(lf_full + 1, 0.0);
+            pa_outr.assign(lf_full + 1, 0.0);
+            pa_ouir.assign(lf_full + 1, 0.0);
+            pa_ous.assign(lf_full + 1, 0.0);
+            for (int k = 1; k <= lf_full; ++k) {
+                const int i2 = p1 + nz + k - 1;
+                pa_tram[k] = ctx.seatad.orixs(nz + k);
+                pa_td[k] = ctx.x11fac.factd(i2);
+                pa_east[k] = ctx.x11fac.fachol(i2);
+                pa_outr[k] = ctx.x11fac.facls(i2);
+                pa_ouir[k] = ilam0 ? ctx.x11fac.facao(i2) * ctx.x11fac.factc(i2)
+                                   : ctx.x11fac.facao(i2) + ctx.x11fac.factc(i2);
+                pa_ous[k] = ctx.x11fac.facso(i2);
+            }
+            // :558-570. TramDet is the PRODUCT (log) / SUM (non-log) of the
+            // five; every Pareg term is the identity -- see the note at the
+            // pa_* declaration.
             for (int k = 1; k <= lf_full; ++k) {
                 double recon = f_trend_i[k - 1] + f_sc_i[k - 1] + f_cycle_i[k - 1];
-                ztram[k] = trnfct[k - 1];
+                double tramlin;
+                if (ilam0) {
+                    double det = pa_outr[k] * pa_ouir[k] * pa_ous[k] *
+                                 pa_east[k] * pa_td[k];
+                    tramlin = pa_tram[k] / det;
+                    ztram[k] = std::log(tramlin);
+                } else {
+                    double det = pa_outr[k] + pa_ouir[k] + pa_ous[k] +
+                                 pa_east[k] + pa_td[k];
+                    tramlin = pa_tram[k] - det;
+                    ztram[k] = tramlin;
+                }
                 d1[k] = ztram[k] - recon;
             }
             // :571 -- and note nz1 above is NOT recomputed, so the residual
@@ -1013,44 +1073,45 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
                 (out.sa[i] != 0.0) ? zc / out.sa[i] : 1.0;
             out.combined_add[i] = out.combined_factor[i];
         }
-        // sigsub.f:1586-1605 -- the forecast span's own antilog. NOT the same
-        // expression as the historical one above: `noC` gates the trend's bias
-        // scaling, `sa` is formed from the ALREADY-scaled sc (before its x100),
-        // and sc/cycle are punched in PERCENT.
-        const bool noC = comp.varwnc < 1.0e-10 && comp.nthetc == 0 &&
-                         cd.ncyc == 1;
+        // sigsub.f:1586-1605 antilogs the forecast span, and then ansub4.f
+        // :3144-3210 REFOLDS the deterministic factors back on before the
+        // tables are punched. Both halves matter, and the second one was
+        // missed for the same reason the Tramo block was: the port's map said
+        // the saved tables come from `sigex.f:3631-3636`'s USRENTRY
+        // 1409/1410/1411/1413, and those are inside `if (Tramo .le. 0)` --
+        // DEAD on an X-13 run. The live writer is ansub4.f:3287/3342 (log) and
+        // :2466 (non-log), verified by probing all five call sites: only those
+        // fire, and their `fsa(1)`/`fs(1)` are the golden afd/sfd to the last
+        // digit.
+        //
+        // With every Pareg identity (see the pa_* note above) the log arm is
+        //   fs   = sc(pct) * Paeast*PaTD*Paous          (:3201)
+        //   fsa  = Tram / (sc(pct)/100 * Paeast*PaTD*Paous)   (:3167)
+        //   fcyc = cycle(pct)                           (:3160)
+        //   fir  = Paouir                               (:3153, pre-x100)
+        //   ftr  = (fsa/fir) / (fcyc/100)               (:3185, `fortr` == 1
+        //          unconditionally -- ansub9.f:1585 `l_fortr = 1`)
+        //
+        // ftr being a RESIDUAL of fsa is why `tfd == afd` to the last digit on
+        // every spec with no transitory component and `afd == tfd*yfd/100` on
+        // the ones that have one -- the two identities this front's test
+        // asserts on the goldens. It also retires the earlier `bias1c`-where-
+        // sigsub-reads-`bias3c` finding: sigsub's antilogged trend is never
+        // punched at all, so the forecast trend has no bias factor of its own.
         for (int i = 0; i < lfor && i < static_cast<int>(f_trend_i.size());
              ++i) {
             double sck = npsi1 ? std::exp(f_sc_i[i])
                                 : std::exp(f_sc_i[i]) / bias1c;
-            // MEASURED, and it is `bias1c` where sigsub.f:1594 literally reads
-            // `bias3c`. The reason is a NORMALIZATION difference, not a
-            // transcription choice, and it is only visible here.
-            //
-            // A SEATS decomposition is unique only up to a constant log shift
-            // between the seasonal and the trend, and the bias block absorbs
-            // exactly such a shift: this port's raw `sc_i` sits ln(bias1c)
-            // above the oracle's and its raw `trend_i` ln(bias3c) below, so
-            // the HISTORICAL transform (`exp(sc)/bias1c`, `exp(trend)*bias3c`)
-            // lands on the same s10/s11/s12/s13 either way -- all four gate
-            // bit-exact. The oracle's own bias1c/bias3c are therefore ~1 where
-            // this port's are 1.00882/1.00893 on airline.
-            //
-            // The FORECAST trend is not built by the filter at all: it is the
-            // RESIDUAL `z - sc - cycle` (ansub3.f:660), so it inherits the
-            // shift from `sc` rather than from `trend` -- one factor of
-            // bias1c, not bias1c*bias2c. Two independent identities in the
-            // goldens pin it: `tfd == afd` to the last digit on all 39 specs
-            // with no transitory component, and `tfd*yfd/100 == afd` on the
-            // 13 that have one. Using bias3c leaves tfd exactly bias2c
-            // (1.0001048 on airline) off while sfd/afd/yfd are already exact.
-            double trk = std::exp(f_trend_i[i]) * bias1c;
-            double cyk = std::exp(f_cycle_i[i]);
-            double zk = std::exp(f_sa_i[i] + f_sc_i[i]);  // exp(z(k))
-            out.f_trend.push_back(trk);
-            out.f_sa.push_back(zk / sck);
-            out.f_cycle.push_back(cyk * 100.0);
-            out.f_sc.push_back(sck * 100.0);
+            const int k = i + 1;   // the pa_* arrays are 1-indexed by lead
+            const double east = pa_east[k], td = pa_td[k], ous = pa_ous[k];
+            const double ouir = pa_ouir[k];
+            const double det_s = east * td * ous;     // the SEASONAL-side fold
+            const double cyk = std::exp(f_cycle_i[i]) * 100.0;   // fcyc
+            const double fsa = pa_tram[k] / (sck * det_s);
+            out.f_sa.push_back(fsa);
+            out.f_sc.push_back(sck * 100.0 * det_s);
+            out.f_cycle.push_back(cyk);
+            out.f_trend.push_back((fsa / ouir) / (cyk / 100.0));
         }
         // sigex.f:3634 -- the cycle slice is punched only under this guard.
         // Fortran precedence: `A .and. B .or. C` is `(A and B) or C`, so a
@@ -1080,14 +1141,28 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
             out.combined_add[i] = zc - sa_i[i];
         }
         // sigsub.f:1525-1534's lamd==1 arm rebuilds `sa` over 1..Nz ONLY, so
-        // the forecast span is punched exactly as ESTBUR left it -- no antilog,
-        // no bias scaling, and no x100 on sc/cycle.
+        // the forecast span reaches ansub4.f exactly as ESTBUR left it -- no
+        // antilog, no bias scaling, no x100. ansub4.f:2284-2337 then refolds,
+        // in SUMS rather than products, and with no x100 anywhere (the log
+        // arm's `fir(i) = fir(i)*100` at :3263 has no counterpart here):
+        //   fs   = sc + Paeast + Paous + PaTD          (:2297)
+        //   fsa  = Tram - (sc + Paeast + PaTD + Paous) (:2310)
+        //   fcyc = cycle                               (:2303)
+        //   fir  = Paouir + ir                         (:2294)
+        //   ftr  = fsa - fcyc - fir                    (:2333, fortr == 1)
+        // Every Pareg term is 0 here, not 1 -- `facint` is 0 off the log path
+        // (ansub9.f:1417) -- so they drop out of the sums the same way.
         for (int i = 0; i < lfor && i < static_cast<int>(f_trend_i.size());
              ++i) {
-            out.f_trend.push_back(f_trend_i[i]);
-            out.f_sc.push_back(f_sc_i[i]);
-            out.f_sa.push_back(f_sa_i[i]);
-            out.f_cycle.push_back(f_cycle_i[i]);
+            const int k = i + 1;
+            const double det_s = pa_east[k] + pa_td[k] + pa_ous[k];
+            const double fsa = pa_tram[k] - (f_sc_i[i] + det_s);
+            const double fcyc = f_cycle_i[i];
+            const double fir = pa_ouir[k] + f_ir_i[i];
+            out.f_sa.push_back(fsa);
+            out.f_sc.push_back(f_sc_i[i] + det_s);
+            out.f_cycle.push_back(fcyc);
+            out.f_trend.push_back(fsa - fcyc - fir);
         }
         if (!((comp.varwnc > 1.0e-10 && comp.nthetc > 0) || cd.ncyc > 1))
             out.f_cycle.clear();
