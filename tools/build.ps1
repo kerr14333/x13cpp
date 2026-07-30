@@ -101,10 +101,21 @@ if ($py) {
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  (warning) docs/WALLS.md is stale -- python tools/walls.py --write" -ForegroundColor Yellow
     }
-    & $py (Join-Path $RepoRoot "tools\metrics.py") --check --fast 2>&1 | Out-Null
+    # NO `2>&1` here. In Windows PowerShell 5.1 redirecting a NATIVE command's
+    # stderr wraps each line in an ErrorRecord and raises NativeCommandError,
+    # which failed this whole script on any stderr output at all -- so the doc
+    # check, which is meant to WARN, was aborting the build instead. stderr is
+    # already surfaced by the host.
+    & $py (Join-Path $RepoRoot "tools\metrics.py") --check --fast | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  (warning) a metrics marker has drifted -- python tools/metrics.py --write" -ForegroundColor Yellow
     }
 }
 
 Write-Host "OK" -ForegroundColor Green
+# Explicit, and load-bearing: without it the script exits with $LASTEXITCODE
+# from the LAST native command, which is the metrics doc check -- so a drifted
+# marker made the whole build report failure, the exact "fails for a docs
+# reason" outcome the block above says it is avoiding. Every real failure
+# (configure, build, ctest) throws, so reaching here means success.
+exit 0

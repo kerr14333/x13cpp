@@ -47,13 +47,31 @@ MARKER_ROOTS = (DOCS, HERE, REPO)
 MARKER_RE = re.compile(r"(<!--x13:([a-z0-9_]+)-->)(.*?)(<!--/x13-->)", re.S)
 
 
+class MetricUnavailable(Exception):
+    """A metric could not be derived. NEVER downgrade this to a placeholder.
+
+    The failure mode this exists to prevent: `_run` used to swallow every
+    exception and return the error message AS ITS OUTPUT, so a caller's regex
+    simply did not match and the metric fell back to a sentinel -- `active_time`
+    became the string "unknown" and `calendar_days` became 0. `--write` then
+    wrote those into docs/PROJECT_SUMMARY.md as though they were measurements.
+    Silent degradation of the very tool whose job is keeping numbers honest.
+    """
+
+
 def _run(cmd, cwd=REPO, timeout=600):
+    # encoding is PINNED. Without it `text=True` decodes with
+    # locale.getpreferredencoding(), which is UTF-8 under this repo's Bash but
+    # cp1252 under PowerShell -- and tools/build.ps1 is PowerShell. A single
+    # non-cp1252 byte in a subprocess's output then raised UnicodeDecodeError
+    # inside subprocess's reader thread, which is exactly how the build's doc
+    # check came to fail on every run (and why it had stopped being read).
     try:
         p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                           timeout=timeout)
+                           encoding="utf-8", errors="replace", timeout=timeout)
         return p.stdout + p.stderr
     except Exception as exc:                                    # noqa: BLE001
-        return "metrics: {} failed: {}".format(" ".join(cmd), exc)
+        raise MetricUnavailable("{} failed: {}".format(" ".join(cmd), exc))
 
 
 def _walk(root, exts, skip_gen=True):
@@ -152,13 +170,17 @@ def m_last_commit_date():
 def m_active_time():
     out = _run([sys.executable, os.path.join(HERE, "worklog.py")])
     m = re.search(r"active \(gaps[^)]*\)\s*:\s*(\S+)\s*(\S+)", out)
-    return "{} {}".format(m.group(1), m.group(2)) if m else "unknown"
+    if not m:
+        raise MetricUnavailable("worklog.py printed no active-time line")
+    return "{} {}".format(m.group(1), m.group(2))
 
 
 def m_calendar_days():
     out = _run([sys.executable, os.path.join(HERE, "worklog.py")])
     m = re.search(r"calendar days worked\s*:\s*(\d+)", out)
-    return int(m.group(1)) if m else 0
+    if not m:
+        raise MetricUnavailable("worklog.py printed no calendar-days line")
+    return int(m.group(1))
 
 
 _SUITE_CACHE = {}
@@ -243,7 +265,15 @@ FAST = False
 
 
 def collect():
-    return {name: str(fn()) for name, fn, _ in METRICS}
+    """All metrics, or raise. A metric that cannot be derived must STOP the
+    run -- writing a placeholder in its place is the bug this guards."""
+    values = {}
+    for name, fn, _ in METRICS:
+        try:
+            values[name] = str(fn())
+        except MetricUnavailable as exc:
+            raise MetricUnavailable("{}: {}".format(name, exc))
+    return values
 
 
 HEADER = """\
@@ -350,7 +380,14 @@ def main(argv):
     write = "--write" in argv
     check = "--check" in argv
 
-    values = collect()
+    try:
+        values = collect()
+    except MetricUnavailable as exc:
+        # Loud and non-zero, and NOTHING is written. A half-derived METRICS.md
+        # is worse than a stale one: stale is caught by --check, a placeholder
+        # reads as a measurement.
+        print("metrics: cannot derive {} -- nothing written".format(exc))
+        return 2
 
     # --check --fast verifies only what is derivable WITHOUT running tests. It
     # is what tools/build.ps1 calls, so it must not cry wolf about suite counts
