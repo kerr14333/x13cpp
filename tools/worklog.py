@@ -15,13 +15,37 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 from datetime import datetime, timezone
+
+# This tool PRINTS commit subjects, which are arbitrary text -- this repo's are
+# full of em dashes and at least one carries U+2016. When stdout is a pipe
+# (metrics.py runs this as a subprocess; tools/build.ps1 does so from
+# PowerShell) Python encodes it with the ambient codepage, cp1252 on Windows,
+# and any such character raises UnicodeEncodeError. That crash is the ROOT of
+# the metrics.py placeholder bug fixed in 184a8301: metrics swallowed the
+# failure and reported `active_time: unknown` as though it were a measurement.
+# Fixing it at the data end is not enough -- a future commit subject would
+# reintroduce it -- so the OUTPUT STREAM is pinned instead.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):      # not a reconfigurable stream
+        pass
 
 
 def commits():
+    # encoding is PINNED. `text=True` alone decodes with
+    # locale.getpreferredencoding() -- UTF-8 under this repo's Bash, cp1252
+    # under PowerShell. This repo's commit subjects are full of em dashes, so
+    # under PowerShell `git log` output hit bytes cp1252 cannot decode and this
+    # raised UnicodeDecodeError. That is the ROOT of the metrics.py failure
+    # fixed in 184a8301: metrics runs this file as a subprocess, so the crash
+    # surfaced there as a placeholder rather than an error.
     out = subprocess.run(
         ["git", "log", "--format=%cI\t%h\t%s", "--reverse"],
-        capture_output=True, text=True, check=True).stdout.strip().splitlines()
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=True).stdout.strip().splitlines()
     rows = []
     for ln in out:
         iso, h, subj = ln.split("\t", 2)

@@ -107,6 +107,7 @@ explicit:
 | when | what | cost |
 |---|---|---|
 | every `tools/build.ps1` | `walls.py --check` + `metrics.py --check --fast` | ~2s, **warns**, never fails the build |
+| every parity run | `tests/parity/test_doc_tooling.py` — the tools' own health | ~5s, **fails** |
 | after touching a wall or a `.f` port | `walls.py --write` | instant |
 | after a `--audit --promote` | nothing else; the ledger feeds metrics | — |
 | **session close, before the final commit** | `metrics.py --write --parity <pass>,<fail>,<skip>,<xfail>` using the suite run you just did, then `walls.py --write` | ~3s |
@@ -116,6 +117,34 @@ before regenerating is a normal mid-edit state, and a build that fails for a
 docs reason trains you to stop reading build output. **The session-close step is
 the real gate** — do it in the same breath as rewriting the handoff, and pass
 `--parity` so the suite is not run a second time for 85s.
+
+**Why there is a test for the tools themselves (2026-07-30).** `metrics.py`
+had been broken under PowerShell — the shell `build.ps1` uses — for an unknown
+time, and the design above is exactly what hid it. `worklog.py` prints commit
+subjects; when stdout is a pipe Python encoded them with the ambient codepage
+(cp1252 on Windows), and an em dash raised UnicodeEncodeError. `metrics.py`
+caught the failure, returned the error text **as the command's output**, and
+its regexes then simply did not match — so it fell back to placeholders and
+reported `active_time: unknown`, `calendar_days: 0`. `--write` would have
+committed those as measurements, and `build.ps1` exited nonzero on a docs
+reason every single run, which is the outcome the warn-don't-throw rule exists
+to prevent.
+
+The encoding was incidental. **The real defect was that the check could not
+distinguish "I ran and found nothing wrong" from "I crashed"** — the same class
+as `run_parity.py` once reporting PASS having compared nothing, and as this
+repo's own rule that a null measured under the wrong preconditions is not a
+null. So: `metrics.py` now raises `MetricUnavailable` rather than substituting
+a placeholder, and refuses to write anything at all if a metric cannot be
+derived; both tools pin their stream encodings; and
+`tests/parity/test_doc_tooling.py` asserts the tools produce real VALUES, under
+a forced legacy codepage as well as UTF-8. That test lives in the parity suite
+rather than the build because **the suite is run and read, and a warning that
+is itself wrong is invisible.** It earned its place immediately — it found the
+output-encoding half of the bug that the first fix had missed.
+
+Standing rule this leaves: **a guardrail that cannot fail loudly is not a
+guardrail.** If you add a check, add the case that proves it can fail.
 
 - **Ownership rule.** `tools/SESSION_HANDOFF.md` owns *what is open* — it is
   rewritten each session, so it cannot rot. Scouting docs own *how something
