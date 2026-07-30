@@ -38,15 +38,21 @@ RTOL = 5e-11
 # ruled out (a raw-MA extension, the regARIMA transformed forecast, and a
 # bias3c-vs-bias1c trend factor were each tried and measured).
 #
+# CAUSE FOUND 2026-07-30, and the two "families" below are NOT two causes --
+# keep the labels only until this closes, then delete them. Measured against an
+# instrumented oracle: ansub3.f's Tramo block (:552-653) is REACHABLE on an
+# ordinary X-13 SEATS run -- the port's comment saying otherwise was wrong --
+# and it rewrites z(Nz+1..) with LOG(TramLin), the regARIMA forecast, which is
+# what :660's trend/sa residual reads. The filter recursions keep reading the
+# untouched extZ, which the port DOES reproduce; that is why the historical
+# span is bit-exact while the forecast span is not. APPROX vs MEAN only ever
+# tracked how far each spec's filter reconstruction drifts from its regARIMA
+# forecast (the size of the discrepancy the block folds back), not two
+# mechanisms. Full diagnosis + port plan: tools/seats_forecast_scouting.md #3.
+#
 #   APPROX -- SEATS caps a near-non-invertible MA to the `xl` bound before the
-#             canonical decomposition. The port's forecast of z then follows
-#             the CAPPED model, and the oracle's saved tables follow something
-#             that equals the regARIMA forecast to the last bit. Neither the
-#             capped nor the raw extension reproduces it, and the HISTORICAL
-#             span is bit-exact with the capped one (measured sensitivity
-#             -755 per unit log, so it is not merely insensitive).
-#   MEAN   -- imean!=0 / a Constant regressor. The forecast of z carries the
-#             wrong drift; no capping is involved (th == th_raw on these).
+#             canonical decomposition.
+#   MEAN   -- imean!=0 / a Constant regressor (no capping; th == th_raw).
 KNOWN_GAP = {
     # spec: (family, measured worst relative error)
     "unrate_bias0-seats": ("APPROX", 5.23e-07),

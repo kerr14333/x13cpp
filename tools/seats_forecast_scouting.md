@@ -1,8 +1,11 @@
 # The SEATS FORECAST decomposition — `ansub3.f:353-678` / the `tfd sfd ofd afd yfd` tables
 
 **Status:** ported and **partially closed**. 13 of the 52 corpus specs gate
-bit-exact; the other 39 are measurably wrong in two families and are asserted
-as such from both sides by `tests/parity/test_seats_forecast_tables.py`.
+bit-exact; the other 39 are measurably wrong and are asserted as such from
+both sides by `tests/parity/test_seats_forecast_tables.py`. **The cause is now
+KNOWN and measured against an instrumented oracle — see §3, which supersedes
+the "APPROX / MEAN two families" framing entirely.** Neither family was the
+real axis; both are the same single defect.
 This file is the map for finishing it — including the dead ends, which cost
 most of the time and should not be re-walked.
 
@@ -23,7 +26,10 @@ sigex.f:1395    ESTBUR(..., trend, sc, cycle, sa, ir, ..., fhi) ansub3.f
   ansub3.f:407-444   FORECAST TREND       (Nchi != 1)   <- dead, see below
   ansub3.f:447-478   FORECAST CYCLE       (varwnc>1e-10 && (ncycth!=0 || Ncyc!=1))
   ansub3.f:519-521   ir(Nz+1..) = 0
-  ansub3.f:565-650   the TRAMO passthrough                <- unreachable, Tramo==0
+  ansub3.f:552-653   the TRAMO block   <- REACHABLE and UNPORTED; see section 3.
+                     Rewrites z(Nz+1..) = LOG(TramLin), shrinks lf by mq/2, and
+                     folds the discrepancy d1 into sc / cycle / ir. This is the
+                     whole remaining defect. ("unreachable, Tramo==0" was wrong.)
   ansub3.f:651-672   trend = z - sc - cycle - ir  (floored at 1e-15*max|z|)
                      sa    = z - sc
 sigsub.f:1586-1605  SECOND's antilog for the forecast span (lamd==0 only)
@@ -98,75 +104,112 @@ file for a slice that is identically zero. That is the ONLY suppression on
 forecast block's `ncycth != 0 || Ncyc != 1`, so a spec can decompose a cycle
 and still not save it.
 
-## 3. The two open families — measured
+## 3. RESOLVED (2026-07-30) -- the TRAMO block is REACHABLE, and it rewrites `z`
 
-`tests/parity/test_seats_forecast_tables.py`'s `KNOWN_GAP` carries the full
-per-spec table. Summary:
+Settled by instrumenting the oracle: a probe immediately after the `extZ` copy
+(`ansub3.f:115`) and a second at `:660`, on a rebuilt oracle first VALIDATED
+against the vendored binary (every table of `generated/airline_seats` PASSED,
+0 diffs, including `.tfd`). Build recipe and the exact finding below.
 
-| family | specs | worst rel | what it is |
-|---|---|---|---|
-| `APPROX` | 16 | 5.2e-7 … 4.4e-2 | SEATS caps a near-non-invertible MA to the `xl` bound before the canonical decomposition |
-| `MEAN` | 23 | 5.1e-4 … 1.5e+1 | `imean != 0` / a Constant regressor; the forecast of `z` carries the wrong drift |
+### What the probe showed
 
-**The error is in the forecast of `z`, not in the decomposition of it.** On the
-failing specs `tfd` and `afd` are off by the SAME amount while `sfd` is off by
-much less and settles to exact after the first year, and the error grows
-LINEARLY in the horizon index — a constant slope error, i.e. a drift.
+| point | `z(Nz+1)` | `extZ(Nz+1)` |
+|---|---|---|
+| straight after the copy | 8.1852958887756362 | 8.1852958887756362 |
+| at `:660` | **8.1816488391166384** | 8.1852958887756362 |
 
-### The decisive measurement, and why it is a puzzle
+`z` is overwritten between the two, and `lf` drops 12 to 10 in the same window.
+`lf = lf - mq/2` is `ansub3.f:571`, which is **inside `if (Tramo.ne.0)`** --
+so the block this port documents as "the TRAMO passthrough, unreachable,
+Tramo==0" **runs on an ordinary X-13 SEATS run**. That premise was wrong, and
+it is the whole bug. Same class as entry 25 in `docs/M5_PORT_NOTES.md`: a
+reachability argument never tested against a running oracle.
 
-The oracle's saved forecast tables imply a `z` that equals the regARIMA `.fct`
-forecast **to the last bit** — verified on the two specs that ship both
-(`airline_fixed-airline-seats`, `expgs_fixed-airline-seats`, both `-4e-15`).
-The port's ESTBUR extension of `z` equals it on `airline` (8e-13) and is
-0.365% away on `expgs_fixed`.
+`exp(8.1816488391166384)` = 3574.74 -- the regARIMA forecast, which is exactly
+the value the goldens were measured to imply. So the two facts the previous
+version of this section called "true at once and not reconciled" are simply
+about two DIFFERENT ARRAYS:
 
-But the port's extension is also what makes the HISTORICAL span bit-exact, and
-the historical span is **not** insensitive to it: perturbing the whole
-extension coherently by `+3.64e-3` in logs (the size of the disagreement) moves
-`s12`'s last value by `8.3e-4` relative, and perturbing a single extension
-point by `1e-6` in logs moves it by `7.6e-4` (a sensitivity of ~-755 per unit
-log). So both of these are true at once and are not yet reconciled:
+- the filter recursions (`:386`, `:427`, `:469`) read **`extZ`**, and the
+  port's `zextFwd` reproduces it -- which is why the historical span is
+  bit-exact and why perturbing the extension breaks it;
+- `:660`'s residual reads **`z`**, which by then holds `LOG(TramLin)`.
 
-- the extension the port feeds the FILTER is right (s10–s13 bit-exact);
-- the `z` the oracle's saved forecast tables are built from is a DIFFERENT
-  series, equal to the regARIMA forecast.
+The port's `FCX` lambda serves both, so it feeds the right series to the
+filter and the wrong one to the residual.
 
-`ansub3.f:660` uses `z(i)` while the filter uses `extZ(i)`, and `extZ` is a copy
-of `z` taken at ESTBUR entry — so in the Fortran they are the same array unless
-something modifies `z` in between. Nothing found so far does (`Tramo` is 0 on
-every X-13 run; `AUTOCOMP` and `SERRORL` are read-only on all five component
-arrays; the `Nsfcast`/`Sfcast` swap is dead code — `sigex.f:808`'s
-`Nsfcast = 1` is commented out and `analts.f:310` sets it to 0).
+### What the TRAMO block actually does (`ansub3.f:552-653`)
 
-### Dead ends — measured, do not repeat
+Four things, in order, none of them ported:
 
-1. **Extend with the RAW (pre-cap) MA** (`mo.th_raw`/`mo.bth_raw`, which
-   `model_decode.hpp`'s own comment recommends). Makes the historical WORSE
-   (`expgs_fixed` s12 2.9e-5 off) and does not reproduce the forecast either
-   (raw gives `z(1) = 3586.36`, capped `3587.81`, oracle `3574.74`).
-2. **Use `ctx.forecasts.trnfct`** (the regARIMA transformed forecast) as the
-   extension. Breaks `expgs_fixed`'s historical by 1e-3 and airline's by
-   3.5e-13.
-3. **Keep `bias3c` on the forecast trend.** Leaves `tfd` exactly `bias2c`
-   (1.0001048 on airline) off while `sfd`/`afd`/`yfd` are already exact.
+1. `d1(i) = LOG(TramLin(i)) - (trend+sc+cycle+ir)(i)` over the forecast span --
+   the discrepancy between the regARIMA forecast and the filter's own
+   reconstruction. That is the `ILAM.eq.0` arm; the non-log arm drops the LOG.
+2. `z(i) = LOG(TramLin(i))`, and `forbias(i-nz) = z(i)`.
+3. **`lf = lf - mq/2`.** Note `nz1` was fixed at `Nz + lf` BEFORE this, at
+   `:507`, so the `:660` loops still run to the ORIGINAL horizon while every
+   loop in the block below runs to the SHRUNK one.
+4. `d1` is folded into exactly ONE component -- `sc` if `npsi>1`, else `cycle`
+   if `.not.isCloseToTD .and. varwnc>1e-10 .and. (ncycth/=0 .or. Ncyc/=1)`,
+   else `ir` -- and when `nchi>1` it goes through a centered seasonal moving
+   average rather than being added raw. `mq==3` has its own three-term arm.
+
+Then `:660` recomputes `trend = z - sc - cycle - ir` from the REPLACED `z` and
+the UPDATED components. That fold is why `sfd` is off by much less than `tfd`
+and settles after the first year: the smoother decays.
+
+### Why the old two-family split was a red herring
+
+`zmean` (`ansub3.f:121-134`, gated `d+bd==0 .and. imean==1`) looked like the
+MEAN family's mechanism and is not: the probe reports `zmean = 0.0` on
+`airline_mean-d0-seats`, `airline_mean-seats` AND `expgs_fixed-airline-seats`,
+because `airline_mean-d0` is `(2 0 0)(0 1 1)` -- `d+bd = 1`, not 0. APPROX vs
+MEAN only ever tracked how far each spec's filter reconstruction drifts from
+its regARIMA forecast, i.e. the SIZE of `d1`, not two different causes.
+The family labels in the test's `KNOWN_GAP` should be collapsed when this
+closes.
+
+### Implementing it
+
+The port needs `TramLin` over the forecast span. That is the regARIMA forecast
+in ORIGINAL units (the LOG is taken here), i.e. `ctx.forecasts.fcst` -- NOT
+`trnfct`, and not `zextFwd`. Dead end 2 below tried substituting the regARIMA
+forecast for the WHOLE extension, which breaks the filter; the fix is to keep
+`zextFwd` for the recursions and use `LOG(TramLin)` only from step 1 onward.
+Steps 3 and 4 must land with it -- a partial port that replaces `z` without
+folding `d1` into a component would make `tfd` WORSE, since `:660` would then
+attribute the entire discrepancy to the trend.
+
+Answer this first: confirm what fills `TramLin` on the X-13 path (the
+`ansub9.f` USRENTRY bridge is the likely writer) rather than assuming
+`ctx.forecasts.fcst` equals it. The probe can print `TramLin(Nz+1)` directly
+in one more run.
+
+### Reproducing the instrumented oracle
+
+Do NOT edit `oracle/fortran/` -- copy it to a scratch dir first. gfortran 13
+rejects the vendored source with plain `-O2` ("More actual than formal
+arguments", `adpdrg.f:409`), so `FFLAGS` needs
+`-O2 -std=legacy -fallow-argument-mismatch -w`. Build from **PowerShell**, not
+Bash: msys `make` scrubs `TEMP` and gfortran dies with "Cannot create
+temporary file in C:\WINDOWS\: Permission denied". Then VALIDATE before
+trusting any probe -- `run_parity.py --binary <instrumented> --engine oracle
+--filter "generated/airline_seats"` must report 0 diffs on every table. The
+probe output file shows up as `ONLY_B`, which is expected.
+
+### Dead ends -- measured, do not repeat
+
+1. **Extend with the RAW (pre-cap) MA** (`mo.th_raw`/`mo.bth_raw`). Makes the
+   historical WORSE (`expgs_fixed` s12 2.9e-5 off) and does not reproduce the
+   forecast either. Now explained: the capped extension IS what the oracle's
+   filter uses.
+2. **Use `ctx.forecasts.trnfct` as the extension.** Breaks `expgs_fixed`'s
+   historical by 1e-3 and airline's by 3.5e-13 -- because it replaces the
+   FILTER's input too. The regARIMA forecast belongs only at `:660`.
+3. **Keep `bias3c` on the forecast trend.** Leaves `tfd` exactly `bias2c` off.
+   The `bias1c` choice in section 2 stands and is independent of this finding.
 4. **Deriving `bias2c` from the goldens.** It cancels: `mean(s11/s12) == 1`
-   holds identically for any `bias2c`, so the historical tables cannot pin the
-   normalization. Only the forecast trend can, which is why this was invisible.
-
-### Suggested next step
-
-Instrument the oracle (temporary `ansub3.f` write of `z(Nz+1)` and
-`extZ(Nz+1)` immediately before `:660`) and settle in one run whether they are
-equal. That is the same ground-truth technique that closed the CALCFX seeding
-question in session 14, and every inference above is blocked on it. If they
-differ, find the writer; if they agree, the oracle's own extension is the
-regARIMA forecast and the historical bit-exactness of the capped extension is
-the thing to explain instead.
-
-The `MEAN` family should be probed separately — no capping is involved there
-(`th == th_raw` on every one of them), so it is a second, independent defect in
-the drift handling of `fcast_extend`'s `za` seed, not the same bug.
+   holds identically for any `bias2c`.
 
 ## 4. Not in scope
 
