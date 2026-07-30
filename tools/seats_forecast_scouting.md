@@ -1,11 +1,10 @@
 # The SEATS FORECAST decomposition — `ansub3.f:353-678` / the `tfd sfd ofd afd yfd` tables
 
-**Status:** ported and **partially closed**. 13 of the 52 corpus specs gate
-bit-exact; the other 39 are measurably wrong and are asserted as such from
-both sides by `tests/parity/test_seats_forecast_tables.py`. **The cause is now
-KNOWN and measured against an instrumented oracle — see §3, which supersedes
-the "APPROX / MEAN two families" framing entirely.** Neither family was the
-real axis; both are the same single defect.
+**Status:** **46 of the 52** corpus specs gate bit-exact (most at ~5e-15); 6
+remain and are asserted from both sides by
+`tests/parity/test_seats_forecast_tables.py`. §3 records the defect that
+accounted for 33 of them — ansub3.f's Tramo block, believed unreachable and
+therefore unported — and the two sub-causes still open (`TDLIN`, `RESIDUE`).
 This file is the map for finishing it — including the dead ends, which cost
 most of the time and should not be re-walked.
 
@@ -26,10 +25,10 @@ sigex.f:1395    ESTBUR(..., trend, sc, cycle, sa, ir, ..., fhi) ansub3.f
   ansub3.f:407-444   FORECAST TREND       (Nchi != 1)   <- dead, see below
   ansub3.f:447-478   FORECAST CYCLE       (varwnc>1e-10 && (ncycth!=0 || Ncyc!=1))
   ansub3.f:519-521   ir(Nz+1..) = 0
-  ansub3.f:552-653   the TRAMO block   <- REACHABLE and UNPORTED; see section 3.
+  ansub3.f:552-653   the TRAMO block   <- REACHABLE, and now PORTED; section 3.
                      Rewrites z(Nz+1..) = LOG(TramLin), shrinks lf by mq/2, and
-                     folds the discrepancy d1 into sc / cycle / ir. This is the
-                     whole remaining defect. ("unreachable, Tramo==0" was wrong.)
+                     folds the discrepancy d1 into sc / cycle / ir. Closed 33 of
+                     the 39 gaps. ("unreachable, Tramo==0" was wrong.)
   ansub3.f:651-672   trend = z - sc - cycle - ir  (floored at 1e-15*max|z|)
                      sa    = z - sc
 sigsub.f:1586-1605  SECOND's antilog for the forecast span (lamd==0 only)
@@ -104,7 +103,7 @@ file for a slice that is identically zero. That is the ONLY suppression on
 forecast block's `ncycth != 0 || Ncyc != 1`, so a spec can decompose a cycle
 and still not save it.
 
-## 3. RESOLVED (2026-07-30) -- the TRAMO block is REACHABLE, and it rewrites `z`
+## 3. CLOSED (2026-07-30) -- the TRAMO block is REACHABLE, and it rewrites `z`
 
 Settled by instrumenting the oracle: a probe immediately after the `extZ` copy
 (`ansub3.f:115`) and a second at `:660`, on a rebuilt oracle first VALIDATED
@@ -169,7 +168,21 @@ its regARIMA forecast, i.e. the SIZE of `d1`, not two different causes.
 The family labels in the test's `KNOWN_GAP` should be collapsed when this
 closes.
 
-### Implementing it
+### PORTED -- result
+
+Landed in `estbur.cpp` between the component recursions and the `:660`
+residual. All four steps together, as warned below. **39 gaps -> 6**, and the
+33 that closed went to ~5e-15, not merely under tolerance. Full suite
+5818 -> 5851 passed with 0 failed and no change to any historical table.
+
+Two sub-causes remain, both now named in `KNOWN_GAP`:
+
+| sub-cause | specs | worst | what it is |
+|---|---|---|---|
+| `TDLIN` | the 4 `*_mean-td-seats` | 7.2e-3 .. 6.9e-1 | `TramLin = Tram/TramDet` divides out every DETERMINISTIC factor, TD included; the port feeds the block `ctx.forecasts.trnfct`, which still HAS the TD effect. That exactly the four TD specs are left is the signature. Fix: subtract the forecast-span TD contribution first -- the same split `run_seats` already does historically (`seats_combined_orig`, "add back only the Constant's contribution"). |
+| `RESIDUE` | `unrate_mean-seats`, `unrate_mean-d0-seats` | 1.4e-10, 9.1e-8 | no TD regressor, so NOT the above. Both improved 6-9 orders when the block landed (from 1.51e+01 and 3.81e-01). unrate is the additive/`lam==1` series -- suspect `ansub3.f:565-568`, the non-log arm, which drops the LOG rather than taking it. |
+
+### How it was implemented
 
 The port needs `TramLin` over the forecast span. That is the regARIMA forecast
 in ORIGINAL units (the LOG is taken here), i.e. `ctx.forecasts.fcst` -- NOT

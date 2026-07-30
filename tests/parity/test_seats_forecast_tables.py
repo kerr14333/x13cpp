@@ -6,11 +6,10 @@ trend/sc/sa/cycle over Nz+1..Nz+lfor into Setftr/Setfsf/Setfsa/Setfcy, which
 seatpr.f saves as tfd/sfd/afd/yfd. Every SEATS corpus spec already ships the
 goldens (52 tfd, 51 sfd, 52 afd, 12 yfd), so this gate blesses nothing new.
 
-STATUS -- read this before touching the numbers. The port is bit-exact on 12 of
-the 52 specs and MEASURABLY WRONG on the other 40, in two families with two
-different causes. Both are recorded in `KNOWN_GAP` below and in
-`tools/seats_forecast_scouting.md`, and this file asserts them from BOTH sides:
-a passing spec must stay under RTOL, and a known-gap spec must stay ABOVE it.
+STATUS -- read this before touching the numbers. 46 of the 52 specs gate
+bit-exact (most at ~5e-15). The 6 that do not are in `KNOWN_GAP` below with
+the sub-cause each belongs to, and this file asserts them from BOTH sides: a
+passing spec must stay under RTOL, and a known-gap spec must stay ABOVE it.
 Fixing one therefore fails this test and tells you to move its row -- the gap
 list cannot rot into a silent allowlist.
 """
@@ -32,68 +31,40 @@ TABLES = ("tfd", "sfd", "afd", "yfd")
 # specs are at 1e-12 or better and the twelfth (unrate_sar) at 1.04e-11.
 RTOL = 5e-11
 
-# Specs whose forecast decomposition is KNOWN WRONG, with the measured worst
-# relative error at the time of writing and the family it belongs to. See
-# tools/seats_forecast_scouting.md for the two causes and the dead ends already
-# ruled out (a raw-MA extension, the regARIMA transformed forecast, and a
-# bias3c-vs-bias1c trend factor were each tried and measured).
-#
-# CAUSE FOUND 2026-07-30, and the two "families" below are NOT two causes --
-# keep the labels only until this closes, then delete them. Measured against an
-# instrumented oracle: ansub3.f's Tramo block (:552-653) is REACHABLE on an
-# ordinary X-13 SEATS run -- the port's comment saying otherwise was wrong --
-# and it rewrites z(Nz+1..) with LOG(TramLin), the regARIMA forecast, which is
-# what :660's trend/sa residual reads. The filter recursions keep reading the
-# untouched extZ, which the port DOES reproduce; that is why the historical
-# span is bit-exact while the forecast span is not. APPROX vs MEAN only ever
-# tracked how far each spec's filter reconstruction drifts from its regARIMA
-# forecast (the size of the discrepancy the block folds back), not two
-# mechanisms. Full diagnosis + port plan: tools/seats_forecast_scouting.md #3.
-#
-#   APPROX -- SEATS caps a near-non-invertible MA to the `xl` bound before the
-#             canonical decomposition.
-#   MEAN   -- imean!=0 / a Constant regressor (no capping; th == th_raw).
+# Specs whose forecast decomposition is still wrong, with the measured worst
+# relative error and the sub-cause. History: ansub3.f's Tramo block (:552-653)
+# was believed unreachable and was unported, which left 39 specs wrong in what
+# looked like two families (APPROX / near-non-invertible MA, MEAN / imean!=0).
+# Measured 2026-07-30 against an instrumented oracle, it is REACHABLE on an
+# ordinary X-13 SEATS run and rewrites z(Nz+1..) with LOG(TramLin) -- the
+# regARIMA forecast of the LINEARIZED series, which is what :660's trend/sa
+# residual reads, while the filter recursions keep reading the untouched extZ
+# that this port already reproduced. Porting it took 39 gaps down to 6. The
+# old APPROX/MEAN split was never two mechanisms, only the size of the
+# discrepancy the block folds back. Full record:
+# tools/seats_forecast_scouting.md section 3.
 KNOWN_GAP = {
     # spec: (family, measured worst relative error)
-    "unrate_bias0-seats": ("APPROX", 5.23e-07),
-    "unrate_finite-seats": ("APPROX", 5.23e-07),
-    "unrate_fixed-airline-seats": ("APPROX", 5.23e-07),
-    "unrate_noadmiss-seats": ("APPROX", 5.23e-07),
-    "airline_ar2-seats": ("APPROX", 2.71e-06),
-    "payems_ar2-seats": ("APPROX", 1.83e-04),
-    "payems_bias0-seats": ("APPROX", 4.78e-04),
-    "payems_finite-seats": ("APPROX", 4.78e-04),
-    "payems_fixed-airline-seats": ("APPROX", 4.78e-04),
-    "payems_noadmiss-seats": ("APPROX", 4.78e-04),
-    "payems_mean-d0-seats": ("MEAN", 5.14e-04),
-    "unrate_statseas-seats": ("APPROX", 8.10e-04),
-    "unrate_ar2-seats": ("APPROX", 2.67e-03),
-    "expgs_statseas-seats": ("APPROX", 6.64e-03),
-    "payems_imean-yes-seats": ("MEAN", 6.69e-03),
-    "payems_statseas-seats": ("APPROX", 6.89e-03),
-    "airline_mean-d0-seats": ("MEAN", 9.84e-03),
-    "expgs_bias0-seats": ("APPROX", 1.03e-02),
-    "expgs_finite-seats": ("APPROX", 1.03e-02),
-    "expgs_fixed-airline-seats": ("APPROX", 1.03e-02),
-    "expgs_noadmiss-seats": ("APPROX", 1.03e-02),
-    "expgs_mean-d0-seats": ("MEAN", 1.41e-02),
-    "expgs_imean-no-seats": ("MEAN", 1.67e-02),
-    "airline_imean-no-seats": ("MEAN", 1.97e-02),
-    "payems_imean-no-seats": ("MEAN", 2.47e-02),
-    "payems_mean-td-seats": ("MEAN", 2.87e-02),
-    "payems_mean-seats": ("MEAN", 3.08e-02),
-    "airline_imean-yes-seats": ("MEAN", 3.55e-02),
-    "airline_mean-td-seats": ("MEAN", 4.42e-02),
-    "airline_statseas-seats": ("APPROX", 4.43e-02),
-    "airline_mean-seats": ("MEAN", 5.60e-02),
-    "unrate_imean-no-seats": ("MEAN", 6.91e-02),
-    "expgs_imean-yes-seats": ("MEAN", 2.58e-01),
-    "expgs_mean-seats": ("MEAN", 2.66e-01),
-    "expgs_mean-td-seats": ("MEAN", 2.93e-01),
-    "unrate_mean-d0-seats": ("MEAN", 3.81e-01),
-    "unrate_mean-td-seats": ("MEAN", 4.29e+00),
-    "unrate_imean-yes-seats": ("MEAN", 6.90e+00),
-    "unrate_mean-seats": ("MEAN", 1.51e+01),
+    # TDLIN -- the last sub-cause. TramLin = Tram/TramDet divides out every
+    #          DETERMINISTIC preadjustment factor, trading day included
+    #          (analts.f:717-733), and this port feeds the Tramo block
+    #          ctx.forecasts.trnfct, which is the forecast of the series WITH
+    #          the TD effect still in it. Exactly the four `mean-td` specs are
+    #          left, which is the signature. Fix: subtract the forecast-span
+    #          TD contribution before the block, the same decomposition
+    #          run_seats already does historically (seats_combined_orig / the
+    #          "add back only the Constant's contribution" rule).
+    "expgs_mean-td-seats": ("TDLIN", 7.18e-03),
+    "airline_mean-td-seats": ("TDLIN", 1.26e-02),
+    "payems_mean-td-seats": ("TDLIN", 2.58e-02),
+    "unrate_mean-td-seats": ("TDLIN", 6.85e-01),
+    # RESIDUE -- near the floor and NOT the TD gap (no TD regressor on either).
+    # Both improved by 6-9 orders when the Tramo block landed (3.81e-01 and
+    # 1.51e+01 before it), so whatever is left is a second, much smaller term.
+    # unrate is the additive/lam==1 series; suspect the non-log arm of
+    # ansub3.f:565-568, which drops the LOG rather than taking it.
+    "unrate_mean-seats": ("RESIDUE", 1.36e-10),
+    "unrate_mean-d0-seats": ("RESIDUE", 9.12e-08),
 }
 
 def _read_golden(path):

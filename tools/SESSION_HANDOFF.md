@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition PARTIALLY closed)
+# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition 46/52, its main defect FOUND and PORTED)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5818 passed / 0 failed / 508 skipped** (~70s) |
+| `python -m pytest tests/parity -q -n 8` | **5851 passed / 0 failed / 475 skipped** (~71s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -267,7 +267,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5818<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5851<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -293,11 +293,24 @@ duplicated ownership.
    (75 keys, model 5 vs 4 ARMA terms; localised to label 40's `amidot` arm,
    since `noautooutlier=tramo` makes it bit-exact). Both make every option
    verdict on those series uninterpretable.
-3. **Finish the SEATS FORECAST decomposition** — 39 of 52 specs still wrong,
-   in two independent families, with the next step (oracle instrumentation of
-   `z` vs `extZ` at `ansub3.f:660`) named above and in
-   `tools/seats_forecast_scouting.md`. Still wanted by two other fronts: the
-   composite i18 forecast tail and the `hpcycle` filter
+3. **Finish the SEATS FORECAST decomposition** — **46 of 52 now gate**
+   bit-exact (was 13). The oracle instrumentation named here last session was
+   done and it found the cause: `ansub3.f`'s **Tramo block (:552-653) is
+   REACHABLE** — the port's comment calling it unreachable was never tested
+   against a running oracle — and it rewrites `z` over the forecast span with
+   `LOG(TramLin)`, the regARIMA forecast of the LINEARIZED series, which is
+   what `:660`'s residual reads while the filter recursions keep reading the
+   untouched `extZ`. Porting it closed 33 of the 39 gaps, all to ~5e-15.
+   **Two sub-causes remain**, both named in `KNOWN_GAP` with measurements:
+   `TDLIN` (the four `*_mean-td-seats`, 7.2e-3..6.9e-1 — `TramLin` divides out
+   TD and the port feeds it `trnfct`, which still has TD in it; fix is the
+   forecast-span analogue of the split `run_seats` already does historically)
+   and `RESIDUE` (`unrate_mean{,-d0}-seats`, 1.4e-10 and 9.1e-8 — no TD, both
+   improved 6-9 orders when the block landed; unrate is the additive series,
+   so suspect the non-log arm at `:565-568`). Full record, including the
+   instrumented-build recipe and the dead ends, in
+   `tools/seats_forecast_scouting.md` §3. Still wanted by two other fronts:
+   the composite i18 forecast tail and the `hpcycle` filter
    (`tools/seats_hp_scouting.md`, whose step 1 is exactly this).
 4. **`svaict.f`** — the `aictest.*` savelog block, absent for every aictest
    spec. Pure report surface over arithmetic that is now proven correct, so it

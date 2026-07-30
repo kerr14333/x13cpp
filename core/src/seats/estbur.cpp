@@ -828,6 +828,91 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
         if (!npsi1) forecast_component(gs, fxs, bxs, f_sc_i);
         if (cd.nchi != 1) forecast_component(gt, fxt, bxt, f_trend_i);
         if (have_cycle_fcst) forecast_component(gc, fxc, bxc, f_cycle_i);
+
+        // ---- ansub3.f:552-653, the TRAMO block ----
+        // MEASURED 2026-07-30 against an instrumented oracle: `Tramo` is 1 on
+        // an ordinary X-13 SEATS run, so this block EXECUTES. (The comment
+        // that used to stand in estbur.hpp said it could not be reached; that
+        // was never tested against a running oracle, and it was the whole
+        // remaining forecast-span defect.)
+        //
+        // It replaces z over the forecast span with the regARIMA forecast of
+        // the LINEARIZED series -- `LOG(TramLin)`, where TramLin = Tram
+        // (forecast-extended) / TramDet (every deterministic preadjustment
+        // factor), analts.f:717-733. The filter recursions above keep reading
+        // the untouched extZ, which is why the two must not share one buffer:
+        // extZ is what makes the HISTORICAL span bit-exact, and z is what
+        // :660's residual reads. Probe, on generated/expgs_fixed-airline-seats:
+        //   after the extZ copy   z(Nz+1) = extZ(Nz+1) = 8.1852958887756362
+        //   at :660               z(Nz+1) = 8.1816488391166384 (extZ unchanged)
+        // and exp(8.1816488391166384) = 3574.7439819266024, which is the .fct
+        // golden's first forecast to the last digit.
+        //
+        // `LOG(TramLin(i)) == z(i)` exactly over 1..Nz (verified on both a
+        // no-regressor and a const+td spec), i.e. TramLin is this port's own
+        // linearized series exponentiated -- so over the forecast span the
+        // matching quantity is the transformed-scale forecast, trnfct.
+        const int mq = mo.mq;
+        const int lf_full = lf;  // nz1 = Nz+lf is fixed BEFORE the shrink
+        std::vector<double> d1(lf_full + 1, 0.0);   // 1-indexed by k
+        std::vector<double> ztram(lf_full + 1, 0.0);
+        // d1 offset by k, i.e. the Fortran's d1(Nz+k). ansub3.f:553-555 zeroes
+        // d1 over 1..Nz, so a non-positive k reads 0 rather than running off
+        // the front; k never exceeds lf_full, because the fold stops at
+        // lf_full-mq/2 and reaches at most (lf_full-mq/2)+mq/2.
+        auto D1AT = [&](int k) -> double {
+            if (k < 1) return 0.0;
+            return (k <= lf_full) ? d1[k] : 0.0;
+        };
+        int lf_fold = lf_full;
+        const auto& trnfct = ctx.forecasts.trnfct;
+        const bool have_tram = static_cast<int>(trnfct.size()) >= lf_full;
+        if (have_tram) {
+            // :558-563 (ILAM==0 arm; the non-log arm drops the LOG, and this
+            // port's transformed scale IS the log, so trnfct serves both).
+            // ir is identically 0 here (:545-547), so the filter's own
+            // reconstruction is trend+sc+cycle.
+            for (int k = 1; k <= lf_full; ++k) {
+                double recon = f_trend_i[k - 1] + f_sc_i[k - 1] + f_cycle_i[k - 1];
+                ztram[k] = trnfct[k - 1];
+                d1[k] = ztram[k] - recon;
+            }
+            // :571 -- and note nz1 above is NOT recomputed, so the residual
+            // loop below still runs the FULL horizon while the fold runs the
+            // shrunk one. The last mq/2 points therefore get the replaced z
+            // with no d1 correction; that is the oracle's behaviour.
+            lf_fold = lf_full - mq / 2;
+            if (lf_fold < 0) lf_fold = 0;
+            // :572-653 -- d1 lands in exactly ONE component, and when nchi>1
+            // it goes through a centered seasonal moving average first.
+            auto fold_into = [&](std::vector<double>& comp_i) {
+                for (int k = 1; k <= lf_fold; ++k) {
+                    double add;
+                    if (cd.nchi > 1) {
+                        if (mq != 3) {
+                            add = d1[k] - (D1AT(k + mq / 2) + D1AT(k - mq / 2))
+                                              / static_cast<double>(2 * mq);
+                            for (int j = 1 - mq / 2; j <= mq / 2 - 1; ++j)
+                                add -= D1AT(k + j) / static_cast<double>(mq);
+                        } else {
+                            add = d1[k] - (D1AT(k - 1) + D1AT(k) + D1AT(k + 1))
+                                              / 3.0;
+                        }
+                    } else {
+                        add = d1[k];
+                    }
+                    comp_i[k - 1] += add;
+                }
+            };
+            if (cd.npsi > 1) {
+                fold_into(f_sc_i);
+            } else if (have_cycle_fcst) {
+                fold_into(f_cycle_i);
+            }
+            // else: the third arm writes `ir`, which is not saved and which
+            // :660 subtracts back out of the trend -- transcribed as a no-op.
+        }
+
         // ansub3.f:651-672. ir is identically 0 over the forecast span
         // (:518-520), so the trend is the RESIDUAL of the other two -- which
         // is what discards the trend block above. The floor is relative to the
@@ -835,7 +920,7 @@ void estbur_historical(X13Context& ctx, const SeatsModelOrders& mo,
         double maxz = 0.0;
         for (int i = 0; i < nz; ++i) maxz = std::max(maxz, std::fabs(z[i]));
         for (int i = 1; i <= lf; ++i) {
-            double zk = FCX(nz + i);
+            double zk = have_tram ? ztram[i] : FCX(nz + i);
             double t = zk - f_sc_i[i - 1] - f_cycle_i[i - 1];
             if (std::fabs(t) < 1.0e-15 * maxz) t = 0.0;
             f_trend_i[i - 1] = t;

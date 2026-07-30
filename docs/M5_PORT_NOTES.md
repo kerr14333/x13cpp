@@ -2243,6 +2243,16 @@ block (`:750-870`).
 
 ## 53. The SEATS FORECAST decomposition (`ansub3.f:353-678`) -- the `tfd`/`sfd`/ `afd`/`yfd` tables -- PORTED, 13 of 52 specs bit-exact, 39 measurably wrong and asserted as such.
 
+> **SUPERSEDED 2026-07-30 — 46 of 52 now gate.** The "two independent
+> families (APPROX / MEAN)" reading below was wrong, and so was the open
+> puzzle it describes. Instrumenting the oracle showed `ansub3.f`'s Tramo
+> block (`:552-653`) is REACHABLE and rewrites `z` over the forecast span with
+> `LOG(TramLin)`; the port conflated that with `extZ`, which the filter
+> recursions read. Porting it closed 33 of the 39. The dead ends below are
+> still valid and still worth not re-walking — they are now explained rather
+> than merely listed. Current state and the two remaining sub-causes:
+> `tools/seats_forecast_scouting.md` §3.
+
  Map: **`tools/seats_forecast_scouting.md`**. The
 Burman recursions are continued past Nz, `sigsub.f:1586-1605`'s antilog
 applied, and the tables punched; **zero new goldens** (every SEATS spec
