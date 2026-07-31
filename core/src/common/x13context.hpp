@@ -407,6 +407,16 @@ struct X13Context {
     // picks the `easter`/`sceaster` label half of x11aic.f's 1042 FORMAT.
     bool x11reg_xe_accepted = false;
     int x11reg_xe_easidx = 0;
+    // x11regression{ aictest=(td|tdstock|td1coef|tdstock1coef) } (x11aic.f
+    // trading-day branch, :148-295): the two AICCs it compares, the mktdlb
+    // label of the group under test, and x11mdl.f:256-267's verdict -- again
+    // read off the MODEL (strinx for "Trading Day" / "Stock Trading Day")
+    // rather than inferred from the AICC comparison.
+    double x11reg_aicc_xtd_notd = 0.0;
+    double x11reg_aicc_xtd_td = 0.0;
+    std::string x11reg_xtd_reg;
+    bool x11reg_xtd_ran = false;
+    bool x11reg_xtd_accepted = false;
     // x11regression{} user prior trading-day factor (a4 save): the Kswv=1 pritd
     // factor over the observed span [Pos1ob,Posfob]. Bit-exact vs the oracle a4.
     std::vector<double> x11_a4_prior;

@@ -4,8 +4,9 @@ Six routines over two harnesses. On the regARIMA side (`x13run_m3`):
 `tdaic.f` / `easaic.f` / `lomaic.f` each emit a per-candidate AICC table from
 inside the test, and `svaict.f` then reports which group the final model kept,
 the AICC difference that decided it, and the threshold when a non-default one
-was in force. On the X-11 side (`x13run_x11`): `x11aic.f`'s Easter table and
-`x11mdl.f`'s verdict, the `xe` family. Both harnesses emit through the port's
+was in force. On the X-11 side (`x13run_x11`): `x11aic.f`'s trading-day and
+Easter tables and `x11mdl.f`'s verdicts -- the `xtd` and `xe` families. Both
+harnesses emit through the port's
 Fortran-format facility with the oracle's own FORMATs, so this gate diffs the
 golden `.udg` lines directly rather than parsing numbers -- the same approach
 `test_check_diagnostics.py` takes, and for the same reason: the formatting is
@@ -19,6 +20,14 @@ Three places where only a TEXT comparison catches the difference:
     corpus covers both arms (`-aictest` accepts, `-aicdiff` rejects); with only
     one of them the reject-side spacing would never have been checked.
 
+Both x11aic.f verdicts are covered on BOTH arms, each reject arm reached by an
+`aicdiff=` tuned past the AICC gap the accept-arm spec measures. And
+`-aictest-tdeas` runs the two tests together, which is the only configuration
+that shows their coupling: with trading day accepted, `estend` goes false and
+the Easter loop's first candidate reuses the trading-day AICC instead of
+re-estimating, so `aictest.xe.aicc.noeaster` has to equal `aictest.xtd.aicc.td`
+to the last digit.
+
 The AICC tables appear ONLY on the explicit-aictest path: every
 tdaic/easaic/lomaic call outside `arima.f` passes `Lsumm = 0`, which is why an
 automdl or pickmdl golden carries `aictest.td` but never `aictest.td.num`.
@@ -29,7 +38,10 @@ intersection -- the missing-key blind spot. Adding the emitter without this
 file would have been a check that cannot fail; it found a real defect on its
 first run (see the automx.f:308 note in core/src/automdl/automx.cpp), and the
 `xe` half then found a second one: `x11regression{aicdiff=}` was being parsed
-and discarded, so the reject arm was unreachable from the corpus.
+and discarded, so the reject arm was unreachable from the corpus. The `xtd`
+half then found a third: `x11regression{aictest=(td)}` was itself being parsed
+and dropped, so a spec asking for the test ran the plain fixed-TD path and
+returned `OUTCOME: OK`.
 
 WHAT THIS GATE OWNS is spelled out below rather than left implicit. An unowned
 key is listed with the routine that writes it, and a key matching NEITHER list
@@ -72,40 +84,45 @@ OWNED = re.compile(
     # same block -- an unprefixed key is exactly the kind that goes unnoticed.
     r"|^testalleaster$")
 
-# The x11regression Easter AIC test (x11aic.f's table + x11mdl.f's verdict).
-# Owned too, but by a DIFFERENT harness: it runs on the X-11 path, which
-# `x13run_m3` never reaches, so it gets its own parametrisation below.
-OWNED_XE = re.compile(r"^aictest\.xe(?:\.aicc\.\w+|\.window)?$")
+# The x11regression AIC tests (x11aic.f's tables + x11mdl.f's verdicts): the
+# TRADING-DAY family `xtd` and the EASTER family `xe`. Owned too, but by a
+# DIFFERENT harness: they run on the X-11 path, which `x13run_m3` never
+# reaches, so they get their own parametrisation below.
+OWNED_X11 = re.compile(r"^aictest\.(?:"
+                       r"xe(?:\.aicc\.\w+|\.window)?"
+                       r"|xtd(?:\.aicc\.\w+|\.reg)?"
+                       r")$")
 
 # Everything else sharing the prefix, and the routine that writes it. NOT
 # ported; each is separate work.
 #
 #   aictest.trans.aicc.{log,nolog}  trnaic.f  -- ported, emitted by run_m2 and
 #                                   gated elsewhere, not part of this block
-#   aictest.xtd*, aictest.xu*       x11aic.f  -- the x11regression TRADING-DAY
-#                                   and USER tests; the engine ports only the
-#                                   Easter branch, and no corpus golden carries
-#                                   these keys yet
+#   aictest.xu*                     x11aic.f:462-591 -- the x11regression
+#                                   USER-defined test. Unported: the parser
+#                                   REFUSES `x11regression{aictest=(user)}`
+#                                   rather than drop the token, so no spec can
+#                                   produce these keys by accident
 #   aictest.pv                      arima.f:463, svaict's CALLER, not svaict;
 #                                   needs regression{pvaictest=}, which no
 #                                   corpus spec sets, so it has no golden
-UNOWNED = re.compile(r"^aictest\.(?:trans\.|xtd|xu|pv$)")
+UNOWNED = re.compile(r"^aictest\.(?:trans\.|xu|pv$)")
 
 
 def _golden_keys(udg: pathlib.Path):
     """The aictest lines of a golden .udg, key -> the raw text after the colon.
 
     Split by HARNESS, not just by ownership: the svaict/AICC keys come out of
-    `x13run_m3` and the `xe` family out of `x13run_x11`."""
-    owned, owned_xe, unowned = {}, {}, []
+    `x13run_m3` and the x11regression families out of `x13run_x11`."""
+    owned, owned_x11, unowned = {}, {}, []
     for line in udg.read_text(errors="replace").splitlines():
         if not (line.startswith("aictest.") or line.startswith("testalleaster")):
             continue
         key = line.split(":", 1)[0]
         if UNOWNED.match(key):
             unowned.append(key)
-        elif OWNED_XE.match(key):
-            owned_xe[key] = line.split(":", 1)[1].rstrip()
+        elif OWNED_X11.match(key):
+            owned_x11[key] = line.split(":", 1)[1].rstrip()
         elif OWNED.match(key):
             owned[key] = line.split(":", 1)[1].rstrip()
         else:
@@ -113,7 +130,7 @@ def _golden_keys(udg: pathlib.Path):
             # key nobody has classified. Fail loudly rather than skip it.
             pytest.fail(f"{udg.name}: unclassified aictest key {key!r} -- add it "
                         "to OWNED or to the UNOWNED table with its routine")
-    return owned, owned_xe, unowned
+    return owned, owned_x11, unowned
 
 
 def _cases(which):
@@ -134,7 +151,7 @@ def _cases(which):
 
 
 CASES = _cases(0)
-CASES_XE = _cases(1)
+CASES_X11 = _cases(1)
 
 
 def _compare(binary, base, spec, golden):
@@ -168,10 +185,10 @@ def test_aictest_savelog(base, spec, golden):
     _compare(BIN, base, spec, golden)
 
 
-@pytest.mark.parametrize("base,spec,golden", CASES_XE,
-                         ids=[c[0] for c in CASES_XE])
-def test_aictest_xe_savelog(base, spec, golden):
-    """x11aic.f's Easter AICC table + x11mdl.f's verdict, off the X-11 harness.
+@pytest.mark.parametrize("base,spec,golden", CASES_X11,
+                         ids=[c[0] for c in CASES_X11])
+def test_aictest_x11_savelog(base, spec, golden):
+    """x11aic.f's two AICC tables + x11mdl.f's verdicts, off the X-11 harness.
 
     Split from the test above only because `x13run_m3` stops before X-11 --
     the comparison is identical, and both directions of the key set are
@@ -184,4 +201,4 @@ def test_at_least_one_case():
     """The corpus must actually reach this block -- an empty parametrisation
     passes silently and would hide the emitter being dead."""
     assert len(CASES) >= 15, f"only {len(CASES)} aictest specs discovered"
-    assert CASES_XE, "no x11regression aictest spec discovered"
+    assert CASES_X11, "no x11regression aictest spec discovered"

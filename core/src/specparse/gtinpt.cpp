@@ -210,6 +210,14 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     // to be distinguishable from it.
     ctx.x11reg.sigxrg = prm::DNOTST;
     ctx.x11reg.critxr = prm::DNOTST;
+    // gtinpt.f:468-469 -- the AIC-tested trading-day CHANGE DATE and the stock
+    // day-of-month. Same class as critical= above and it is not cosmetic: the
+    // struct's zero-init makes Xaicrg(1)==0, and addtd.f/mktdlb.f both test
+    // `Aicrgm(1).ne.NOTSET` to decide whether a change-of-regime date was
+    // given, so a zero would build the two-regime TD group and a label reading
+    // "(after <date>)" for a spec that asked for plain `aictest=(td)`.
+    setint(prm::NOTSET, 2, ctx.x11reg.xaicrg.data());
+    ctx.x11reg.xaicst = 31;
     ctx.xrgmdl.cvxalf = 0.05;          // PT5
     ctx.picktd.tdzero = 0;
     ctx.picktd.lnzero = 0;

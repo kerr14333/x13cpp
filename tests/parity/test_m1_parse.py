@@ -125,6 +125,20 @@ def _err_error_lines(text: str):
 
 
 def _oracle_ok(spc: str):
+    """Did the oracle ACCEPT this spec? -- which is what a parser gate can mean.
+
+    Two signals, and the second needs its exception spelled out. A rejected
+    spec puts ERROR lines in the `.err`. A nonzero exit is the coarser signal:
+    it also fires for a run that finished but wrote a NOTE, and a NOTE is not a
+    parse verdict. `extra/airline_x11regression-aictest-tdrej` is the case that
+    separated them -- the oracle exits 2 there because x11mdl.f:315-381 notes
+    that the AIC test removed every irregular-regression regressor, having
+    already parsed the spec, run the model and written a complete `.udg`.
+
+    So the exit code only counts as a rejection when the run produced NO
+    `.udg`, i.e. it did not get far enough to report. That still catches the
+    real one: `census-examples/composite/total` exits 3 on a SIGFPE with an
+    empty `.err` and no `.udg` at all."""
     gdir = _golden_dir(spc)
     man = json.load(open(os.path.join(gdir, "manifest.json")))
     base = os.path.basename(spc)[:-4]
@@ -133,7 +147,9 @@ def _oracle_ok(spc: str):
     if os.path.exists(errf):
         errtxt = open(errf, encoding="utf-8", errors="replace").read()
     has_error = len(_err_error_lines(errtxt)) > 0
-    return (man.get("exit_code") == 0) and not has_error, errtxt
+    completed = (man.get("exit_code") == 0 or
+                 os.path.exists(os.path.join(gdir, base + ".udg")))
+    return completed and not has_error, errtxt
 
 
 def _run(spc: str):

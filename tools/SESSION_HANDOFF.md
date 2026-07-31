@@ -408,7 +408,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5899<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5932<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -520,6 +520,60 @@ comment above it claimed deferral, and nothing distinguished "runs and does
 nothing" from "never runs" until the oracle was instrumented. Full record in
 `docs/M5_PORT_NOTES.md` entry 55.
 
+## This session, part 7: `x11aic.f`'s TRADING-DAY branch -- CLOSED
+
+`x11regression{aictest=(td)}` and its three siblings run, emit
+`aictest.xtd.{aicc.notd,aicc.td,reg}` + `aictest.xtd`, and gate on BOTH verdict
+arms plus the two-test configuration. **12 keys over 3 specs, byte-identical.**
+Full record in `docs/M5_PORT_NOTES.md` entry 56; the durable pieces:
+
+**Four silent defects, none of which announced itself.** The `aictest=` token
+was parsed and DISCARDED (`Xtdtst`/`Xuser` were written NOWHERE in the engine,
+so the spec ran the plain fixed-TD path and returned `OUTCOME: OK`);
+`gtinpt.f:468-469`'s `Xaicrg = NOTSET` / `Xaicst = 31` defaults were missing,
+which would have made `addtd`/`mktdlb` build a two-regime TD group for a plain
+`aictest=(td)`; `xrgtrn_td` had `xrgtrn.f`'s `Tdgrp>0` arm HARDCODED, so the
+no-TD candidate rescaled by the day counts instead of just centring (+150.85
+against the oracle's -771.73); and `x11mdl.f:308-381`'s no-regressors-left early
+return was absent entirely, so on a TD REJECT the engine fitted the empty design
+and produced a c16 carrying the length-of-month prior where the oracle punches
+identity factors and returns.
+
+`editor.f:1618-1627`'s `Tdgrp`/`Stdgrp`/`Holgrp` derivation is now transcribed
+into `x11mdl_td` -- the port had never needed it because every x11regression
+spec until now carried a fixed `variables=(td)`.
+
+**The mutation that PASSED is the one to remember.** Deleting the x11mdl early
+return left the WHOLE SUITE green, because `test_x11regression_tables.py`'s
+`AIC_CASES` was a hand-written one-element tuple naming only the Easter spec.
+None of the three new specs' b16/c16/xrm were compared. Now auto-discovered with
+a floor assertion, and the same mutation fails with the 2.655e-02
+leap-February signature. *A hand-maintained case list is an allowlist that
+silently stops growing.*
+
+**One gate NARROWED, deliberately.** `test_m1_parse.py::_oracle_ok` treated
+"oracle exit code != 0" as "the oracle rejected this spec". The reject spec is
+the first case where those differ -- the oracle exits 2 having parsed, run and
+written a complete `.udg`, purely because x11mdl wrote a NOTE. A nonzero exit
+now counts as a rejection only when NO `.udg` was produced, which still catches
+the one genuine case (`census-examples/composite/total`, exit 3 on a SIGFPE,
+no `.udg`).
+
+**New specs, all hand-authored and saying so in their headers:**
+`extra/airline_x11regression-aictest-{td,tdrej,tdeas}`.
+
+**Census bug measured, NOT claimed.** `x11mdl.f:378`/`:883` write
+`'finalxreg01: none'` through FORMAT 1060, which in that scope is the
+weekday-column header and has no data descriptor -- the string is dropped and
+the `.udg` gets a stray column header. Visible in this spec's own golden. Not a
+CB entry because the engine emits the `nfinalxreg`/`finalxreg01` family on NO
+path, so there is nothing to reproduce it against yet.
+
+**Noticed, not fixed:** a parse-time refusal issued through `inpter` (this
+increment's `aictest=(user)`, and e.g. the older `transform mode=diff`) is NOT
+inventoried in `docs/WALLS.md` -- walls.py scans only the `*_not_ported`/`fatal`
+helpers. Pre-existing blind spot in the wall inventory, not in the engine.
+
 ## Open, in the order I would take them
 
 1. **Move `Setpri` (and the span pointers it derives from) ahead of the model
@@ -532,12 +586,13 @@ nothing" from "never runs" until the oracle was instrumented. Full record in
    The probe spec is reproducible in three lines: take
    `extra/airline_pickmdl-aictest-td.spc` and add `aicdiff = 19.0` to its
    `regression{}`.
-2. **`x11aic.f`'s TRADING-DAY and USER branches** (`aictest.xtd*` /
-   `aictest.xu*`). The engine ports only the Easter branch of that routine;
-   the other two are unported AND ungated, because no corpus spec sets
-   `x11regression{aictest=(td)}` or `(user)`. Add a spec first — that is what
-   turned the `xe` family from prose into a gate, and what exposed the
-   `aicdiff=` discard.
+2. **`x11aic.f`'s USER branch** (`aictest.xu*`, `:462-591`) -- the last piece
+   of that routine. It strips the `Ncusrx` user-defined columns, scores the
+   model without them, then restores them through seven `adrgef` arms keyed
+   on `Rgvrtp`. The parser now REFUSES `x11regression{aictest=(user)}`
+   rather than dropping the token, so this is walled rather than silent; it
+   needs a spec with `x11regression{user=}` before anything else. (The
+   TRADING-DAY branch that shared this item closed this session -- part 7.)
 3. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
    → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
    Latent everywhere a spec supplies a decimal. **Check whether the Fortran

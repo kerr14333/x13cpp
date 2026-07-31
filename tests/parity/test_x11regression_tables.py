@@ -184,11 +184,26 @@ RTOL_AICC = 1e-9
 # golden .udg tag -> harness "aicc_xe <window>" key (window 0 == noeaster).
 _AICC_WIN = {"noeaster": 0, "easter01": 1, "easter08": 8, "easter15": 15}
 
-AIC_CASES = [
-    b for b in ("airline_x11regression-aictest",)
-    if os.path.exists(os.path.join(_CORPUS, b + ".spc"))
+# AUTO-DISCOVERED, and it used to be a one-element literal. Three
+# `x11regression{aictest=}` specs were added on 2026-07-31 for the TRADING-DAY
+# branch and none of them were compared here, because the list named only the
+# Easter spec by hand. Proved by mutation: deleting x11mdl.f:308-381's
+# no-regressors-left early return -- which makes the reject spec's c16 come out
+# carrying the length-of-month prior instead of all ones -- left the whole
+# suite green. A hand-maintained case list is an allowlist that silently stops
+# growing; the floor assertion below is what keeps this one honest.
+AIC_CASES = sorted(
+    b for b in (
+        os.path.splitext(f)[0] for f in os.listdir(_CORPUS) if f.endswith(".spc")
+    )
+    if "x11regression" in b and "aictest" in b
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".udg"))
-]
+)
+
+
+def test_aictest_cases_discovered() -> None:
+    """An empty (or shrunken) parametrisation passes silently."""
+    assert len(AIC_CASES) >= 4, f"only {len(AIC_CASES)} aictest specs found"
 
 _UDG_AICC = re.compile(r"^aictest\.xe\.aicc\.(\w+):\s+([+\-][0-9.EeDd+\-]+)")
 _UDG_WIN = re.compile(r"^aictest\.xe\.window:\s+(\d+)")
@@ -214,7 +229,11 @@ def _read_golden_aicc(udgpath: str) -> tuple[dict[int, float], int]:
 def test_x11regression_aictest_easter(base: str) -> None:
     gold_aicc, gold_win = _read_golden_aicc(
         os.path.join(_GOLDEN, base, base + ".udg"))
-    assert gold_aicc, f"{base}.udg: no aictest.xe.aicc.* rows"
+    if not gold_aicc:
+        # A td-only aictest spec has no Easter table at all. The `xtd` half is
+        # gated as text in test_aictest_savelog.py; this test owns the Easter
+        # AICC canaries only.
+        pytest.skip(f"{base}: no aictest.xe.aicc.* rows (not an Easter test)")
 
     stdout = _run(base)
     prod_aicc: dict[int, float] = {}

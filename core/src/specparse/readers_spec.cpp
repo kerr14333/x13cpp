@@ -3623,9 +3623,38 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                     ctx.x11reg.xeasvc(3) = 8;
                     ctx.x11reg.xeasvc(4) = 15;
                     ctx.x11reg.neasvx = 4;
+                } else if (s == "user") {
+                    // gtxreg.f:398-399 Xuser=T. x11aic.f:462-591's user-defined
+                    // branch is NOT ported: it strips the Ncusrx user columns,
+                    // scores the model without them, restores them by Rgvrtp
+                    // through seven adrgef arms, and re-tests. Refuse rather
+                    // than accept the token and run the Easter-only path, which
+                    // is what this parser did for `td` as well until 2026-07-31
+                    // and is the parsed-but-unread shape.
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "x11regression aictest=(user) is not ported.");
+                    inptok = false;
+                } else {
+                    // gtxreg.f:400-408 -- everything else in XAICDC is a
+                    // trading-day flavour, and only ONE may be given:
+                    // td=1, tdstock=2, td1coef=3, tdstock1coef=4.
+                    int id = 0;
+                    if (s == "td") id = 1;
+                    else if (s == "tdstock") id = 2;
+                    else if (s == "td1coef") id = 3;
+                    else if (s == "tdstock1coef") id = 4;
+                    if (id > 0) {
+                        if (ctx.x11reg.xtdtst == 0) {
+                            ctx.x11reg.xtdtst = id;
+                            ctx.x11log.havxtd = true;
+                        } else {
+                            inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                                   "Can only specify one type of trading day "
+                                   "in aictest.");
+                            inptok = false;
+                        }
+                    }
                 }
-                // td / tdstock / user aictest tokens: deferred (follow-on
-                // increment; this gate is aictest=(easter)).
             }
         } else {
             consume_value(ctx, nullptr);

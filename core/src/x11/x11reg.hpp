@@ -29,7 +29,7 @@ void tdset_td(X13Context& ctx, const int* begdat, int lfda, int llda, int sp);
 
 // xrgtrn.f (mult, Tdgrp>0, Kswv=0): transform the copied irregular in place over
 // the 1-based absolute span [l1,l2] (repacked to x[1..]): x = Xnstar*x - Xn.
-void xrgtrn_td(X13Context& ctx, double* x, int l1, int l2);
+void xrgtrn_td(X13Context& ctx, double* x, int l1, int l2, int tdgrp);
 
 // tdxtrm.f: two-pass sigma test on the RAW irregular Sti over [irridx,irrend];
 // flags extreme rows into ctx.xclude.rgxcld (1-based, i-irridx+1) and Nxcld.

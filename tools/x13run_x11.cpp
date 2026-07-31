@@ -117,9 +117,25 @@ static void dump_d8bd9a(const x13::X13Context& ctx) {
 }
 
 
-// The `aictest.xe*` savelog block -- the x11regression Easter AIC test, and
-// the last family behind the `aictest.` prefix. TWO routines write it, in this
-// order, which is why the table precedes the verdict in the .udg:
+// x11aic.f 1013/1012 + x11mdl.f:263/266 -- the x11regression TRADING-DAY AIC
+// test. Two AICCs, the mktdlb label of the group under test, and the verdict.
+// Unlike the Easter half below there is no window key and no second FORMAT:
+// both verdict arms are literal strings.
+static void dump_aictest_xtd(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    if (!ctx.x11reg_xtd_ran) return;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    line(fwrite_fmt("('aictest.xtd.aicc.',a,': ',e29.15)", "notd",
+                    ctx.x11reg_aicc_xtd_notd));
+    line(fwrite_fmt("('aictest.xtd.aicc.',a,': ',e29.15)", "td",
+                    ctx.x11reg_aicc_xtd_td));
+    line(fwrite_fmt("('aictest.xtd.reg: ',a)", ctx.x11reg_xtd_reg));
+    line(ctx.x11reg_xtd_accepted ? "aictest.xtd: yes" : "aictest.xtd: no");
+}
+
+// The `aictest.xe*` savelog block -- the x11regression Easter AIC test. TWO
+// routines write it, in this order, which is why the table precedes the
+// verdict in the .udg:
 //
 //   x11aic.f 1032: ('aictest.xe.aicc.',a,': ',e29.15)        the no-Easter row
 //   x11aic.f 1042: ('aictest.xe.aicc.',a,i2.2,': ',e29.15)   one row per window
@@ -506,6 +522,7 @@ int main(int argc, char** argv) {
                 std::printf("aicc_xe %d %.15E\n", wa.first, wa.second);
             std::printf("aicc_xe_window %d\n", ctx.x11reg_xe_window);
         }
+        dump_aictest_xtd(ctx);
         dump_aictest_xe(ctx);
     }
     dump_d8bd9a(ctx);

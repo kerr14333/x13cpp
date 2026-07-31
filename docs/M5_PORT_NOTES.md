@@ -2431,3 +2431,109 @@ precondition is never satisfied looks exactly like a ported branch.* The
 deferred, and nothing distinguished "this runs and does nothing" from "this
 never runs" until the oracle was instrumented. Same family as the saturated
 mutations recorded in entry 52.
+
+## 56. x11aic.f's TRADING-DAY branch -- and the four silent failures found getting to it.
+
+`x11regression{aictest=(td|tdstock|td1coef|tdstock1coef)}` now runs, emits
+`aictest.xtd.{aicc.notd,aicc.td,reg}` + `aictest.xtd`, and is gated on both
+verdict arms plus the two-test configuration. **12 keys over 3 specs, all
+byte-identical.** The Easter branch had been ported alone since the
+x11regression increment; this closes the routine bar its USER branch.
+
+**Start with what was wrong, because none of it announced itself.**
+
+1. **The `aictest=` token was parsed and DISCARDED.** `readers_spec.cpp`'s
+   argidx-19 branch handled only `easter` and carried a comment saying td/user
+   were "deferred". `Xtdtst` and `Xuser` are declared in the generated COMMON
+   headers and were **written nowhere in the engine**. A spec asking for the
+   trading-day test therefore ran the plain fixed-TD path and returned
+   `OUTCOME: OK`. Third instance of the parsed-but-unread shape in this block
+   after `regression{aicdiff=}` and `x11regression{aicdiff=}`.
+
+2. **`gtinpt.f:468-469`'s two defaults were missing** -- `Xaicrg = NOTSET` and
+   `Xaicst = 31`. Not cosmetic: both `addtd.f` and `mktdlb.f` test
+   `Aicrgm(1).ne.NOTSET` to decide whether a change-of-regime date was given,
+   and the struct's zero-init makes that test TRUE. A plain `aictest=(td)`
+   would have built the two-regime TD group and labelled it `td/<date>/`.
+   Found by reading the callee, not by a failure -- the same class as the
+   `Pvaic`/`DNOTST` default from the pickmdl increment.
+
+3. **`xrgtrn_td` had the `Tdgrp>0` arm hardcoded.** `xrgtrn.f:36-44` takes a
+   DIFFERENT arm with no trading-day group in the model: the irregular is only
+   centred (`X-1`), not rescaled by the day counts (`Xnstar*X - Xn`). Every
+   x11regression spec until now carried a fixed `variables=(td)`, so the
+   assumption held and nothing had ever needed `Tdgrp` -- which is also why
+   the port had never derived it. `editor.f:1618-1627`'s group-pointer block
+   (`Tdgrp`/`Stdgrp`/`Holgrp`) is now transcribed into `x11mdl_td`. This one
+   DID show up as a number: the no-TD AICC came out +150.85 against the
+   oracle's -771.73.
+
+4. **`x11mdl.f:308-381`'s no-regressors-left early return was absent**, and
+   this is the real find. If the AIC tests leave NO trading-day, stock-TD or
+   holiday group in the irregular-regression model, the oracle prints a NOTE,
+   punches IDENTITY factors for the requested factor tables, clears
+   `Axrgtd`/`Axrghl`/`Axruhl` and **RETURNS** -- skipping the OLS, the factor
+   build and the divsub. This port ran on and fitted the empty design,
+   producing a c16 carrying the length-of-month prior where the oracle writes
+   1.0. Only the TD reject arm can reach it, which is why it survived the
+   whole x11regression front.
+
+**And the mutation that PASSED, which is how the gate got fixed.** With that
+early return deleted the ENTIRE suite stayed green. Cause:
+`test_x11regression_tables.py`'s `AIC_CASES` was a hand-written one-element
+tuple naming the Easter spec, so none of the three new specs' b16/c16/xrm were
+ever compared. Now auto-discovered from the corpus with a floor assertion; the
+same mutation then fails with the familiar 2.655e-02 leap-February signature.
+*A hand-maintained case list is an allowlist that silently stops growing* --
+the list-shaped twin of the missing-key blind spot from entry 54.
+
+**A gate-semantics correction, and it is a narrowing not a loosening.**
+`test_m1_parse.py::_oracle_ok` read "oracle exit code != 0" as "the oracle
+rejected this spec". The reject spec is the first case where those differ: the
+oracle exits 2 having parsed the spec, run the model and written a complete
+`.udg`, purely because x11mdl wrote a NOTE. `_oracle_ok` now treats a nonzero
+exit as a rejection only when NO `.udg` was produced. The one genuine case,
+`census-examples/composite/total` (exit 3, SIGFPE), has no `.udg` and still
+classifies as a rejection.
+
+**A Census bug, measured but NOT claimed as a CB entry.** `x11mdl.f:378` and
+`:883` write `'finalxreg01: none'` through FORMAT 1060, which in that scope is
+the WEEKDAY-COLUMN HEADER `('         Mon      Tue ...')` and carries no data
+descriptor -- so the string is dropped and the `.udg` gets a stray column
+header where the key should be. Visible in this spec's own blessed golden. Not
+claimed, because the engine emits the whole `nfinalxreg`/`finalxreg01` family
+on NO path -- accept arm included -- so there is nothing yet to reproduce it
+against. That family is a pre-existing missing-key gap, recorded here so the
+next person porting it starts from the answer.
+
+**Two structural notes worth not re-deriving.**
+
+`Xtdtst` is the XAICDC TOKEN index (td/tdstock/td1coef/tdstock1coef = 1/2/3/4)
+and `addtd`/`mktdlb` take the WIDER regressor index, which also numbers the two
+`nolpyear` variants -- x11aic.f:79-82 remaps 4->6, 3->4, 2->3 with three
+sequential IFs. `x11mdl.f:153-155` does the SAME remap with only two of them,
+having no `tdstock1coef` case to handle.
+
+The two tests are COUPLED. When trading day is accepted, `x11aic.f:242` sets
+`estend=F` and `:244` copies `aictd` into `aichol`, so the Easter loop's first
+iteration skips its own estimation and reuses that value. The observable is
+that `aictest.xe.aicc.noeaster` is bit-identical to `aictest.xtd.aicc.td` on a
+two-test spec -- confirmed in the oracle's own golden, and the reason
+`extra/airline_x11regression-aictest-tdeas` exists rather than relying on the
+two single-test specs. x11aic.f:243-247 has a dead `ELSE IF(Xeastr)` where the
+surrounding code plainly wanted `ELSE IF(Xuser)`; transcribed as written, and
+not claimed as a CB entry because the user branch is unported and the port
+cannot measure the difference.
+
+**Still unported here:** the USER branch (`x11aic.f:462-591`), which strips the
+`Ncusrx` user columns, scores without them and restores them through seven
+`adrgef` arms by `Rgvrtp`. The parser now REFUSES `aictest=(user)` rather than
+dropping the token -- the mistake this entry opens with. Note that a parse-time
+refusal via `inpter` is NOT inventoried in `docs/WALLS.md`, which scans only the
+`*_not_ported`/`fatal` helpers; that is a pre-existing blind spot in walls.py,
+shared with e.g. the `transform mode=diff` refusal.
+
+**Mutations, four, each failing a DIFFERENT set:** drop the `Xtdtst` parse
+**4**; hardcode `xrgtrn_td` back to the TD arm **4**; swap the two emitted AICC
+values **3**; delete the x11mdl early return **1** (and **0** before the gate
+was widened -- that is the entry above).
