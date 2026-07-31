@@ -21,7 +21,7 @@ stale figure is a build error instead of something a reader finds first.
 | Unit tests (ctest) | **11/11** |
 | Corpus spec files | **404** |
 | Parity test modules | **31** |
-| C++ non-blank lines (excl. generated) | **45908** |
+| C++ non-blank lines (excl. generated) | **46013** |
 | C++ files (excl. generated) | **182** |
 | Fortran reference, non-blank lines | **166076** |
 | Fortran reference, files | **712** |
@@ -29,8 +29,8 @@ stale figure is a build error instead of something a reader finds first.
 | Fortran routines in scope (excl. n-a) | **690** |
 | Percent of routines ported | **58.8** |
 | Census bugs catalogued | **34** |
-| Commits | **376** |
-| Active development time | **58h 20m** |
+| Commits | **377** |
+| Active development time | **58h 52m** |
 | Calendar days worked | **13** |
 | Last commit | **2026-07-30** |
 

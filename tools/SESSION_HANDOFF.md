@@ -306,6 +306,32 @@ threshold — while writing `Rgaicd(PLAIC)`. Every other group gates on its own
 index. Not reachable on this corpus (no golden carries `aictest.cvaic.lom`), so
 it is a CB candidate, not a claimed one.
 
+**The AICC tables landed too, in the same shape.** `tdaic.f`'s
+`aictest.td.{num,reg,reg2}` + `td.aicc.*`, `easaic.f`'s `easter.num` +
+`e.aicc.*` (and its unprefixed `testalleaster`), and `lomaic.f`'s
+`lom.aicc.*`. **86 lines now compared across 15 specs, 0 differing, and every
+one is byte-identical including ORDER** -- the tables are written from inside
+each test, so they precede svaict's verdicts in the `.udg`.
+
+What made that tractable: all three take an `lsumm` parameter now, mirroring
+the oracle's `Lsumm`, and it is true only from `explicit_aictest`. Every
+tdaic/easaic/lomaic call outside `arima.f` passes a literal 0 (automd.f x3,
+automx.f x2), which is exactly why an automdl or pickmdl golden carries
+`aictest.td` but never `aictest.td.num`. Threading the flag through all nine
+call sites is what makes that suppression visible at each one rather than
+hidden in a context flag.
+
+Two formatting details that are load-bearing and would have been silently
+wrong under a numeric comparison: `easaic.f`'s 1020 is `(a,':',i5)` with NO
+space before the colon where `tdaic.f`'s 1020 is `(a,1x,i6)` with one; and
+`testalleaster` has no `aictest.` prefix at all, so a prefix-scoped sweep
+misses it -- it is carried in the struct and owned by the gate for that reason.
+
+**Still unemitted behind the prefix, and now the only two:** `aictest.xe*`
+(`x11aic.f`, the x11regression Easter test, which runs on the X-11 path and so
+needs a different harness) and `aictest.pv` (`arima.f:463`, needs
+`regression{pvaictest=}`, which no corpus spec sets, so it has no golden).
+
 **Standing rule this adds to the pile:** a golden key nothing emits is not a
 passing test, it is an unmeasured one. When porting a savelog block, sweep the
 goldens for the whole key PREFIX and classify every member — ported, or named
@@ -402,12 +428,11 @@ duplicated ownership.
    Smallest well-characterized gap on the board: the model is proven right and
    the suspect list is down to three flags. Needs a spec with
    `regression{aicdiff=}` tuned between two candidates' AICC gaps.
-2. **The rest of the `aictest.*` savelog surface**, now that svaict is done
-   and its gate names every unowned key with its routine:
-   `aictest.td.{num,reg,reg2}` + `td.aicc.*` (`tdaic.f`), `easter.num` +
-   `e.aicc.*` (`easaic.f`), `lom.aicc.*` (`lomaic.f`), `xe*` (`x11aic.f`).
-   Same shape as svaict — report surface over arithmetic already proven right,
-   and the goldens carry the keys.
+2. **`aictest.xe*`** (`x11aic.f`, the x11regression Easter AIC test) — the
+   last unemitted family behind the `aictest.` prefix, and the only one that
+   needs an X-11 harness rather than `x13run_m3`. Six keys on one spec
+   (`airline_x11regression-aictest`), already in its golden and already named
+   as unowned by `tests/parity/test_aictest_savelog.py`.
 3. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
    → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
    Latent everywhere a spec supplies a decimal. **Check whether the Fortran

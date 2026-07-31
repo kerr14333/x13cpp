@@ -244,17 +244,46 @@ static void dump_aictest(const x13::X13Context& ctx) {
     };
 
     if (s.td.tested) {
+        // tdaic.f's own table comes FIRST -- the oracle writes it inside the
+        // test, before svaict runs. 1020: (a,1x,i6); 1030: (a,1x,a);
+        // 1050: ('aictest.td.aicc.',a,': ',e29.15).
+        if (s.td_num >= 0) {
+            line(fwrite_fmt("(a,1x,i6)", "aictest.td.num:", s.td_num));
+            line(fwrite_fmt("(a,1x,a)", "aictest.td.reg:", s.td_reg));
+            if (!s.td_reg2.empty())
+                line(fwrite_fmt("(a,1x,a)", "aictest.td.reg2:", s.td_reg2));
+        }
+        for (const auto& r : s.td_aicc)
+            line(fwrite_fmt("(a,a,': ',e29.15)", "aictest.td.aicc.", r.label,
+                            r.aicc));
         // The trading-day key carries the LABEL when accepted, where every
         // other group carries a bare `yes` (svaict.f:38 vs :71).
         verdict(s.td, "aictest.td", /*label_when_yes=*/true);
         diffs(s.td, "td");
     }
     if (s.lom.tested) {
+        // lomaic.f 1012: ('aictest.',a,'.aicc.',a,': ',e29.15) -- both halves
+        // keyed off the same stem.
+        for (const auto& r : s.lom_aicc)
+            line(fwrite_fmt("(a,a,a,a,': ',e29.15)", "aictest.", s.lom_abbrev,
+                            ".aicc.", r.label, r.aicc));
         line(fwrite_fmt("(a:,a)", "aictest." + s.lom_abbrev + ".reg: ", s.lom.label));
         verdict(s.lom, "aictest." + s.lom_abbrev, false);
         diffs(s.lom, s.lom_abbrev);
     }
     if (s.easter.tested) {
+        // easaic.f 900: (a,': ',a); 1020: (a,':',i5) -- note 1020 has NO space
+        // before the colon, unlike tdaic's 1020; 1050/1060 both render as
+        // ('aictest.e.aicc.',<label>,': ',e29.15), the 1060 form having the
+        // window folded into the label as i2.2.
+        if (s.have_testalleaster)
+            line(fwrite_fmt("(a,': ',a)", "testalleaster",
+                            std::string(s.testalleaster ? "yes" : "no")));
+        if (s.easter_num >= 0)
+            line(fwrite_fmt("(a,':',i5)", "aictest.easter.num", s.easter_num));
+        for (const auto& r : s.easter_aicc)
+            line(fwrite_fmt("(a,a,': ',e29.15)", "aictest.e.aicc.", r.label,
+                            r.aicc));
         line(fwrite_fmt("(a:,a)", "aictest.easter.reg: ", s.easter.label));
         verdict(s.easter, "aictest.e", false);
         if (s.easter_window.size() > 1) {

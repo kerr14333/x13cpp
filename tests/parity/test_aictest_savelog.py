@@ -1,12 +1,18 @@
-"""svaict.f savelog block -- the `aictest.*` keys, compared as TEXT.
+"""The `aictest.*` savelog block -- svaict.f plus the AICC tables, as TEXT.
 
-svaict.f reports which AIC-tested regressor group the final model kept, the
-AICC difference that decided it, and the threshold when a non-default one was
-in force. `x13run_m3` emits it through the port's Fortran-format facility with
-the oracle's own FORMATs (1010/1020/1025/1040), so this gate diffs the golden
-`.udg` lines directly rather than parsing numbers -- the same approach
-`test_check_diagnostics.py` takes, and for the same reason: the formatting is
-part of what is being reproduced.
+Two blocks, four routines. `tdaic.f` / `easaic.f` / `lomaic.f` each emit a
+per-candidate AICC table from inside the test; `svaict.f` then reports which
+group the final model kept, the AICC difference that decided it, and the
+threshold when a non-default one was in force. `x13run_m3` emits both through
+the port's Fortran-format facility with the oracle's own FORMATs, so this gate
+diffs the golden `.udg` lines directly rather than parsing numbers -- the same
+approach `test_check_diagnostics.py` takes, and for the same reason: the
+formatting is part of what is reproduced, down to `easaic.f`'s 1020 having no
+space before its colon where `tdaic.f`'s 1020 has one.
+
+The AICC tables appear ONLY on the explicit-aictest path: every
+tdaic/easaic/lomaic call outside `arima.f` passes `Lsumm = 0`, which is why an
+automdl or pickmdl golden carries `aictest.td` but never `aictest.td.num`.
 
 Every one of these keys was previously UNCOMPARED. The `.udg` goldens have
 carried them all along, the engine emitted none, and no gate looked at the
@@ -14,10 +20,10 @@ intersection -- the missing-key blind spot. Adding the emitter without this
 file would have been a check that cannot fail; it found a real defect on its
 first run (see the automx.f:308 note in core/src/automdl/automx.cpp).
 
-WHAT THIS GATE OWNS is spelled out below rather than left implicit, because
-the `aictest.` prefix is shared by four different Fortran routines and only
-one of them is ported. An unowned key is listed with the routine that writes
-it, so the set cannot quietly become an allowlist for a regression.
+WHAT THIS GATE OWNS is spelled out below rather than left implicit. An unowned
+key is listed with the routine that writes it, and a key matching NEITHER list
+fails the run -- so a new oracle key cannot slip in unclassified and the set
+cannot quietly become an allowlist for a regression.
 """
 import os
 import pathlib
@@ -31,41 +37,47 @@ CORPUS = ROOT / "tests" / "corpus"
 GOLDEN = ROOT / "tests" / "golden"
 BIN = ROOT / "build" / ("x13run_m3.exe" if os.name == "nt" else "x13run_m3")
 
-# The keys svaict.f writes, as regexes over the part after `aictest.`. The
-# length-of-month family names its own keys from the stem (lom / loq / lpyear),
-# hence the alternation.
+# The keys this block writes, as regexes over the whole line's key. Three
+# routines' worth: svaict.f's verdicts, and the per-candidate AICC tables that
+# tdaic.f / easaic.f / lomaic.f write from inside the tests themselves. The
+# length-of-month family names its keys from the stem it chose, hence _LN.
 _LN = r"(?:lom|loq|lpyear)"
 OWNED = re.compile(
+    # -- svaict.f
     r"^aictest\.(?:"
     r"td|diff\.td|cvaic\.td"
     r"|" + _LN + r"|" + _LN + r"\.reg|diff\." + _LN + r"|cvaic\." + _LN +
     r"|easter\.reg|e|e\.window|diff\.e|cvaic\.e"
     r"|u|diff\.u|cvaic\.u"
-    r")$")
+    # -- tdaic.f's own table
+    r"|td\.num|td\.reg|td\.reg2|td\.aicc\.\w+"
+    # -- easaic.f's
+    r"|easter\.num|e\.aicc\.\w+"
+    # -- lomaic.f's
+    r"|" + _LN + r"\.aicc\.\w+"
+    r")$"
+    # easaic.f:69-73 writes this one WITHOUT the prefix, and it is part of the
+    # same block -- an unprefixed key is exactly the kind that goes unnoticed.
+    r"|^testalleaster$")
 
-# Everything else sharing the prefix, and the routine that writes it. These are
-# NOT svaict's and are NOT ported; each is a separate piece of work.
+# Everything else sharing the prefix, and the routine that writes it. NOT
+# ported; each is separate work.
 #
-#   aictest.trans.aicc.{log,nolog}  trnaic.f  -- ported, but emitted by run_m2
-#                                   and gated elsewhere, not part of this block
-#   aictest.td.{num,reg,reg2}       tdaic.f   -- the per-candidate TD table
-#   aictest.td.aicc.*               tdaic.f
-#   aictest.easter.num              easaic.f
-#   aictest.e.aicc.*                easaic.f
-#   aictest.lom.aicc.*              lomaic.f
-#   aictest.xe*                     x11aic.f  -- the x11regression Easter test
-#   aictest.pv                      arima.f:463, its CALLER, not svaict; needs
-#                                   regression{pvaictest=}, which no spec sets
-UNOWNED = re.compile(
-    r"^aictest\.(?:trans\.|td\.(?:num|reg|reg2|aicc\.)|easter\.num"
-    r"|e\.aicc\.|" + _LN + r"\.aicc\.|xe|pv$)")
+#   aictest.trans.aicc.{log,nolog}  trnaic.f  -- ported, emitted by run_m2 and
+#                                   gated elsewhere, not part of this block
+#   aictest.xe*                     x11aic.f  -- the x11regression Easter test,
+#                                   which runs on the X-11 path
+#   aictest.pv                      arima.f:463, svaict's CALLER, not svaict;
+#                                   needs regression{pvaictest=}, which no
+#                                   corpus spec sets, so it has no golden
+UNOWNED = re.compile(r"^aictest\.(?:trans\.|xe|pv$)")
 
 
 def _golden_keys(udg: pathlib.Path):
     """The svaict lines of a golden .udg, key -> the raw text after the colon."""
     owned, unowned = {}, []
     for line in udg.read_text(errors="replace").splitlines():
-        if not line.startswith("aictest."):
+        if not (line.startswith("aictest.") or line.startswith("testalleaster")):
             continue
         key = line.split(":", 1)[0]
         if UNOWNED.match(key):
@@ -110,7 +122,7 @@ def test_aictest_savelog(base, spec, golden):
 
     got = {}
     for line in proc.stdout.splitlines():
-        if line.startswith("aictest."):
+        if line.startswith("aictest.") or line.startswith("testalleaster"):
             k, v = line.split(":", 1)
             got[k] = v.rstrip()
 
@@ -130,4 +142,4 @@ def test_aictest_savelog(base, spec, golden):
 def test_at_least_one_case():
     """The corpus must actually reach this block -- an empty parametrisation
     passes silently and would hide the emitter being dead."""
-    assert len(CASES) >= 8, f"only {len(CASES)} aictest specs discovered"
+    assert len(CASES) >= 15, f"only {len(CASES)} aictest specs discovered"

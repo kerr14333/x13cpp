@@ -65,6 +65,28 @@ struct AictestSavelog {
         double cvaic = 0.0;     // Rgaicd(...), written only when > 0
     };
 
+    // The per-candidate AICC tables the AIC TESTS themselves write -- tdaic.f
+    // :99-103 and :393/:399, easaic.f and lomaic.f likewise. They are a
+    // different block from svaict's verdicts above and are emitted ONLY on the
+    // explicit-aictest path: every tdaic/easaic/lomaic call outside arima.f
+    // passes `Lsumm = 0` (automd.f x3 sites, automx.f x2), which is why a
+    // pickmdl or automdl golden carries `aictest.td` but never `aictest.td.num`.
+    struct AiccRow {
+        std::string label;   // "notd" / "td" / "td1coef" / "noeaster" / ...
+        double aicc = 0.0;
+    };
+    std::vector<AiccRow> td_aicc;
+    int td_num = -1;                // Ntdvec-1; -1 == the block did not run
+    std::string td_reg, td_reg2;    // aictest.td.reg / .reg2 (reg2 iff Ntdvec==3)
+    std::vector<AiccRow> easter_aicc;
+    int easter_num = -1;
+    // easaic.f:69-73's `testalleaster: yes|no`. Not under the `aictest.`
+    // prefix but part of the same block, so it is carried here rather than
+    // left as an unowned key nothing emits.
+    bool have_testalleaster = false;
+    bool testalleaster = false;
+    std::vector<AiccRow> lom_aicc;
+
     Group td;
     Group lom;                     // key stem is lom.abbrev, not "lom"
     std::string lom_abbrev;        // "lom" / "loq" / "lpyear"

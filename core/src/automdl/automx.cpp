@@ -383,15 +383,16 @@ void amx_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
         // arima.f:125 -- `ltdlom = Kfulsm.eq.2`, i.e. the pseudo-additive mode
         // takes the length-of-month regressor where the others take Leap Year.
         const bool ltdlom = ctx.x11opt.kfulsm == 2;
-        tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdauto, ltdlom, lester);
+        tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdauto, ltdlom, lester,
+              /*lsumm=*/false);
         if (ctx.error.lfatal) return;
     }
     if (!lester && ar.lomtst > 0) {
-        lomaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        lomaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return;
     }
     if (!lester && ar.leastr) {
-        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return;
     }
 }

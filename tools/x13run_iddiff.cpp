@@ -227,7 +227,8 @@ int main(int argc, char** argv) {
             ar.eastst = 1; ar.neasvc = 4;
             ar.easvec(1) = -1; ar.easvec(2) = 1; ar.easvec(3) = 8; ar.easvec(4) = 15;
             ctx.x11adj.neas = 0;
-            x13::easaic(ctx, trn.data(), at.data(), nefobs, na, frstry, lester);
+            x13::easaic(ctx, trn.data(), at.data(), nefobs, na, frstry, lester,
+                        /*lsumm=*/false);
             if (ctx.error.lfatal) { std::printf("OUTCOME: FATAL (pre-easaic)\n"); return 1; }
         }
 
@@ -241,7 +242,7 @@ int main(int argc, char** argv) {
             ar.tdayvc(3) = 4;
             int tdmdl1 = 0;
             x13::tdaic(ctx, trn.data(), at.data(), nefobs, na, frstry, tdmdl1,
-                       /*ltdlom=*/false, lester);
+                       /*ltdlom=*/false, lester, /*lsumm=*/false);
             if (ctx.error.lfatal) { std::printf("OUTCOME: FATAL (tdaic)\n"); return 1; }
         }
 
@@ -255,7 +256,8 @@ int main(int argc, char** argv) {
             ar.easvec(3) = 8;
             ar.easvec(4) = 15;
             ctx.x11adj.neas = 0;
-            x13::easaic(ctx, trn.data(), at.data(), nefobs, na, frstry, lester);
+            x13::easaic(ctx, trn.data(), at.data(), nefobs, na, frstry, lester,
+                        /*lsumm=*/false);
             if (ctx.error.lfatal) { std::printf("OUTCOME: FATAL (easaic)\n"); return 1; }
         }
 

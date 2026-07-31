@@ -53,22 +53,27 @@ void addeas(X13Context& ctx, int keastr, int easidx, int eastst);
 // Aicint, and stores the no-TD-vs-best AICC gap in ctx.arima.dfaict. Leaves the
 // model rebuilt to the chosen candidate. Prints deferred (lprt is honoured only
 // to skip the deferred output; pass false).
+// `lsumm` is the oracle's Lsumm at the call site, and it gates the
+// per-candidate AICC savelog table (aictest.td.num / .reg / .reg2 / .aicc.*)
+// into ctx.aictest_log. Only arima.f's EXPLICIT aictest path passes it true:
+// all five automd.f / automx.f call sites pass a literal 0, which is why a
+// pickmdl or automdl golden carries `aictest.td` but never `aictest.td.num`.
 void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
-           int& frstry, int& tdmdl1, bool ltdlom, bool& lester);
+           int& frstry, int& tdmdl1, bool ltdlom, bool& lester, bool lsumm);
 
 // easaic.f: Easter AIC test. Estimates the model over the Easvec(1..Neasvc)
 // windows (no Easter, then windows 1/8/15 in the default case), keeps the
 // lowest-AICC choice in Aicind, and stores the gap in ctx.arima.dfaice. Leaves
 // the model rebuilt to the chosen candidate. Prints deferred.
 void easaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
-            int& frstry, bool& lester);
+            int& frstry, bool& lester, bool lsumm);
 
 // lomaic.f: length-of-month / -quarter / leap-year AIC test. Estimates the
 // model with and without the lom/loq/lpyear regressor (per ctx.arima.lomtst =
 // 1/2/3), keeps the lower-AICC choice, stores the gap in ctx.arima.dfaicl.
 // Leaves the model rebuilt to the chosen form. Prints deferred.
 void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
-            int& frstry, bool& lester);
+            int& frstry, bool& lester, bool lsumm);
 
 // addlom.f: add a lom/loq/lpyear regressor group (used by lomaic). aicrgm is the
 // change-of-regime date (aicrgm[0]==NOTSET for a plain effect); aicln0 the

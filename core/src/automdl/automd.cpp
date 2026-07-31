@@ -107,7 +107,8 @@ static bool automd_aictest_block1(X13Context& ctx, double* trnsrs, double* a,
         ar.tdayvc(2) = 1;
         ar.tdayvc(3) = 4;
         int tdmdl1 = 0;
-        tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, /*ltdlom=*/false, lester);
+        tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, /*ltdlom=*/false,
+              lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return false;
     }
     if (!lester && want_easter) {
@@ -127,7 +128,7 @@ static bool automd_aictest_block1(X13Context& ctx, double* trnsrs, double* a,
         // Easter effect never leaves the final SA series/irregular even though
         // B1 (the regARIMA-adjusted series) is already Easter-clean.
         if (!ctx.x11adj.finhol) ctx.x11adj.finhol = true;
-        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return false;
     }
     return true;
@@ -145,11 +146,11 @@ static bool automd_aic_round(X13Context& ctx, double* trnsrs, double* a,
     if (ar.itdtst > 0) {
         int tdmdl1 = 0;
         tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, /*ltdlom=*/false,
-              lester);
+              lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return false;
     }
     if (!lester && ar.leastr) {
-        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return false;
     }
     if (lester) {

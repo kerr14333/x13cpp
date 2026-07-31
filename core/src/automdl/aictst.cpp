@@ -191,7 +191,7 @@ void addeas(X13Context& ctx, int keastr, int easidx, int eastst) {
 // tdaic.f
 // ---------------------------------------------------------------------------
 void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
-           int& frstry, int& tdmdl1, bool ltdlom, bool& lester) {
+           int& frstry, int& tdmdl1, bool ltdlom, bool& lester, bool lsumm) {
     auto& m = ctx.model;
     auto& d = ctx.mdldat;
     auto& ar = ctx.arima;
@@ -234,6 +234,26 @@ void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
 
     double aicno = DNOTST;
     int nbno = 0, nbtd = 0;
+
+    // tdaic.f:88-103 -- the savelog header. `td.reg` is the label of the
+    // REQUESTED test (Itdtst) and `td.reg2` that of the LAST candidate, and the
+    // latter is written only for a three-entry vector -- the editor's
+    // "td plus its 1-coefficient sibling" pair.
+    if (lsumm) {
+        auto& sv = ctx.aictest_log;
+        sv.ran = true;
+        sv.td_aicc.clear();
+        sv.td_num = ar.ntdvec - 1;
+        sv.td_reg = mktdlb(ctx, ar.itdtst, ar.aicstk, pk.tddate.data(), pk.tdzero,
+                           m.sp);
+        if (ctx.error.lfatal) return;
+        sv.td_reg2.clear();
+        if (ar.ntdvec == 3) {
+            sv.td_reg2 = mktdlb(ctx, ar.tdayvc(ar.ntdvec), ar.aicstk,
+                                pk.tddate.data(), pk.tdzero, m.sp);
+            if (ctx.error.lfatal) return;
+        }
+    }
 
     // ---- loop through the TD model choices ----
     for (int i = 1; i <= ar.ntdvec; ++i) {
@@ -415,6 +435,18 @@ void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
                          "[tdaic] i=%d thisTD=%d nb=%d convrg=%d aicc=%.10f\n", i,
                          thisTD, m.nb, (int)d.convrg, aicc);
 
+        // tdaic.f:393/:399 -- one row per candidate, keyed by that candidate's
+        // OWN label (mktdlb is re-run per i at :328), with i==1 the no-TD fit.
+        if (lsumm) {
+            std::string lab = "notd";
+            if (i > 1) {
+                lab = mktdlb(ctx, thisTD, ar.aicstk, pk.tddate.data(), pk.tdzero,
+                             m.sp);
+                if (ctx.error.lfatal) return;
+            }
+            ctx.aictest_log.td_aicc.push_back({lab, aicc});
+        }
+
         if (i == 1) {
             aicno = aicc;
             nbno = m.nb;
@@ -566,7 +598,7 @@ void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
 // easaic.f
 // ---------------------------------------------------------------------------
 void easaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
-            int& frstry, bool& lester) {
+            int& frstry, bool& lester, bool lsumm) {
     auto& m = ctx.model;
     auto& d = ctx.mdldat;
     auto& ar = ctx.arima;
@@ -590,6 +622,17 @@ void easaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
     double aiceas = DNOTST;
     double aicno = DNOTST;
     bool lmanyE = false;
+    // easaic.f:68-75 -- the savelog header. `testalleaster` is NOT under the
+    // `aictest.` prefix but belongs to this block, and Easvec(Neasvc)==99 is
+    // the "test every window at once" sentinel.
+    if (lsumm) {
+        auto& sv = ctx.aictest_log;
+        sv.ran = true;
+        sv.easter_aicc.clear();
+        sv.testalleaster = (ar.easvec(ar.neasvc) == 99);
+        sv.have_testalleaster = true;
+        sv.easter_num = ar.neasvc - 1;
+    }
     int nbnoe = 0, nbe = 0;
     int easgrp = 0;
 
@@ -649,6 +692,22 @@ void easaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
                ar.lam);
         if (ctx.error.lfatal) return;
         double aicc = ctx.lkhd.aicc;
+
+        // easaic.f:188-196. Three label forms, not one: `noeaster` for i==1,
+        // `alleaster` for the 99 sentinel, else `easter` + the window written
+        // `i2.2` (format 1060), which is what makes the keys easter01/08/15.
+        if (lsumm) {
+            std::string lab;
+            if (i == 1) {
+                lab = "noeaster";
+            } else if (lmanyE) {
+                lab = "alleaster";
+            } else {
+                int w = ar.easvec(i);
+                lab = "easter" + std::string(w < 10 ? "0" : "") + std::to_string(w);
+            }
+            ctx.aictest_log.easter_aicc.push_back({lab, aicc});
+        }
 
         if (i == 1) {
             aicno = aicc;
@@ -775,7 +834,7 @@ static void remove_lom_cols(X13Context& ctx, int nrxy) {
 // lomaic.f -- length-of-month/-quarter/leap-year AIC test. Estimates the model
 // with and without the regressor, keeps the lower-AICC form (Rgaicd(PLAIC) gap).
 void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
-            int& frstry, bool& lester) {
+            int& frstry, bool& lester, bool lsumm) {
     using namespace prm;
     auto& m = ctx.model; auto& d = ctx.mdldat; auto& ar = ctx.arima;
     auto& pr = ctx.prior; auto& aj = ctx.adj; auto& ext = ctx.extend;
@@ -808,6 +867,21 @@ void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
     prlkhd(ctx, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), aj.adjmod, ar.fcntyp, ar.lam);
     if (ctx.error.lfatal) return;
     double aiclom = DNOTST, aicnol = DNOTST;
+    // lomaic.f:96-105 -- format 1012 keys BOTH halves off the same stem:
+    // `aictest.<stem>.aicc.<stem>` with the regressor in, `...aicc.no<stem>`
+    // without. The stem is mklnlb's abbreviation (lom / loq / lpyear).
+    std::string lom_abbr;
+    if (lsumm) {
+        auto& sv = ctx.aictest_log;
+        sv.ran = true;
+        sv.lom_aicc.clear();
+        mklnlb(ctx, ar.lomtst, ctx.picktd.lndate.data(), ctx.picktd.lnzero,
+               m.sp, lom_abbr);
+        if (ctx.error.lfatal) return;
+        sv.lom_abbrev = lom_abbr;
+        sv.lom_aicc.push_back({(klm > 0 ? lom_abbr : "no" + lom_abbr),
+                               ctx.lkhd.aicc});
+    }
     if (klm > 0) aiclom = ctx.lkhd.aicc; else aicnol = ctx.lkhd.aicc;
 
     // Toggle the regressor: add it if absent, else remove it.
@@ -829,6 +903,11 @@ void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
     if (d.armaer != 0) d.armaer = 0;
     prlkhd(ctx, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), aj.adjmod, ar.fcntyp, ar.lam);
     if (ctx.error.lfatal) return;
+    // lomaic.f:171-180 -- the second fit, with the regressor toggled, so the
+    // label flips too.
+    if (lsumm)
+        ctx.aictest_log.lom_aicc.push_back(
+            {(klm > 0 ? lom_abbr : "no" + lom_abbr), ctx.lkhd.aicc});
     if (klm > 0) aiclom = ctx.lkhd.aicc; else aicnol = ctx.lkhd.aicc;
 
     // Keep whichever AICC is lower (lomaic.f:186-263). Pvaic path deferred.
@@ -950,18 +1029,19 @@ void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
     if (ar.itdtst > 0) {
         aictest_td_vectors(ctx);
         int tdmdl1 = 0;
-        tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, false, lester);
+        tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, false, lester,
+              /*lsumm=*/true);
         if (ctx.error.lfatal) return;
         ssprep_save(ctx);   // arima.f:599
     }
     if (!lester && ar.lomtst > 0) {
-        lomaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        lomaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/true);
         if (ctx.error.lfatal) return;
         ssprep_save(ctx);   // arima.f:619
     }
     if (!lester && ar.leastr) {
         aictest_eas_vectors(ctx);
-        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester);
+        easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/true);
         if (ctx.error.lfatal) return;
     }
     // usraic (user) + chkchi (chi-square holiday) deferred.

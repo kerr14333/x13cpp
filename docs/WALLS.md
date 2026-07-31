@@ -28,11 +28,11 @@ reproduce.
 
 ## Automatic model selection
 
-- **`core/src/automdl/automx.cpp:458`**
+- **`core/src/automdl/automx.cpp:459`**
   pickmdl{} with regression{aictest=(user)} or user-defined holiday chi-square testing is not yet ported (usraic.f / chkchi.f have no C++; automx.f:463-500 runs them inside the candidate loop).
   *Fortran:* `automx.f:463-500`
 
-- **`core/src/automdl/automx.cpp:555`**
+- **`core/src/automdl/automx.cpp:556`**
   pickmdl{}: a trading-day AIC verdict that DIFFERS between candidates (automx.f:259-296's Picktd restore) is not yet bit-exact -- d11/d13 land 0.885%/2.655% off on Februaries.
   *Fortran:* `automx.f:259-296`
 
@@ -110,16 +110,16 @@ inventory.
 
 ## Automatic model selection
 
-- **`core/src/automdl/automx.cpp:480`**
+- **`core/src/automdl/automx.cpp:481`**
   Must have user supplied models stored in
 
-- **`core/src/automdl/automx.cpp:514`**
+- **`core/src/automdl/automx.cpp:515`**
   No ARIMA models stored in
 
-- **`core/src/automdl/automx.cpp:523`**
+- **`core/src/automdl/automx.cpp:524`**
   Every pickmdl candidate model failed to estimate.
 
-- **`core/src/automdl/automx.cpp:806`**
+- **`core/src/automdl/automx.cpp:807`**
   pickmdl{}: the selected model failed to re-estimate.
 
 
