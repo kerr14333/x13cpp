@@ -570,14 +570,36 @@ void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
     if (!pr.lpradj && pr.kfmt == 1) pr.lpradj = true;
     if (ar.aicint == 0) {
         if (pktd && !pk.picktd) {
-            if (aj.setpri >= 1)  // deferred prior-series bookkeeping
+            // tdaic.f:603/611 -- Sprior takes the prior the Picktd
+            // transition just put in Adj. DEAD IN THIS PORT: setpri is
+            // assigned only in x11_prestage, which runs AFTER the model
+            // stage, so it is still 0 here and the guard always fails.
+            // The oracle sets Setpri at editor time, before arima. The
+            // post-model `Adj -> Sprior` copy in x11int currently covers
+            // for it, and does so correctly whenever Adj == Sprior at
+            // that point -- true for every gated spec, and NOT true on
+            // the Picktd-flip corner walled in automx.cpp, where it is
+            // the whole cause. Do not delete this block: it becomes live
+            // the moment Setpri moves ahead of the model stage.
+            if (aj.setpri >= 1)
                 copy(aj.adj.data(), aj.nadj, -1, &ip.sprior(aj.setpri));
             if ((pu.nustad == 0 || pu.nuspad == 0) && pr.kfmt > 0) pr.kfmt = 0;
         }
         if (tdmdl1 > 0) tdmdl1 = 1;
     } else {
         if (!pktd && pk.picktd) {
-            if (aj.setpri >= 1)  // deferred prior-series bookkeeping
+            // tdaic.f:603/611 -- Sprior takes the prior the Picktd
+            // transition just put in Adj. DEAD IN THIS PORT: setpri is
+            // assigned only in x11_prestage, which runs AFTER the model
+            // stage, so it is still 0 here and the guard always fails.
+            // The oracle sets Setpri at editor time, before arima. The
+            // post-model `Adj -> Sprior` copy in x11int currently covers
+            // for it, and does so correctly whenever Adj == Sprior at
+            // that point -- true for every gated spec, and NOT true on
+            // the Picktd-flip corner walled in automx.cpp, where it is
+            // the whole cause. Do not delete this block: it becomes live
+            // the moment Setpri moves ahead of the model stage.
+            if (aj.setpri >= 1)
                 copy(aj.adj.data(), aj.nadj, -1, &ip.sprior(aj.setpri));
             if (pr.kfmt == 0) pr.kfmt = 1;
             if (pu.nuspad == 0 || pu.npser == 0) {

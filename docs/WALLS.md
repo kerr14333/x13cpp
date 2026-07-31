@@ -32,7 +32,7 @@ reproduce.
   pickmdl{} with regression{aictest=(user)} or user-defined holiday chi-square testing is not yet ported (usraic.f / chkchi.f have no C++; automx.f:463-500 runs them inside the candidate loop).
   *Fortran:* `automx.f:463-500`
 
-- **`core/src/automdl/automx.cpp:556`**
+- **`core/src/automdl/automx.cpp:591`**
   pickmdl{}: a trading-day AIC verdict that DIFFERS between candidates (automx.f:259-296's Picktd restore) is not yet bit-exact -- d11/d13 land 0.885%/2.655% off on Februaries.
   *Fortran:* `automx.f:259-296`
 
@@ -119,7 +119,7 @@ inventory.
 - **`core/src/automdl/automx.cpp:524`**
   Every pickmdl candidate model failed to estimate.
 
-- **`core/src/automdl/automx.cpp:807`**
+- **`core/src/automdl/automx.cpp:842`**
   pickmdl{}: the selected model failed to re-estimate.
 
 

@@ -2364,3 +2364,70 @@ Gated by `tests/parity/test_aictest_savelog.py`, which now runs two harnesses:
 `x13run_m3` for the svaict/AICC keys and `x13run_x11` for `xe`. Mutation-
 tested both ways -- perturbing one AICC digit fails, and collapsing the accept
 arm's two spaces to one fails.
+
+## 55. The Picktd-flip corner -- ROOT-CAUSED (not fixed), and the recorded suspect list was wrong.
+
+Still walled, but no longer a mystery. The gap: a `pickmdl{}` run whose
+candidates DISAGREE about trading day comes back with d11/d13 wrong on
+Februaries only -- `engine = oracle * (days-in-Feb / 28.25)`, i.e. 0.885% low
+on non-leap and 2.655% high on leap -- while d10, d12 and d16 stay bit-exact
+and all 52 shared `.udg` model keys agree.
+
+**Reaching it at all** needs `regression{aicdiff=}` tuned between two
+candidates' AICC gaps. On `airline_pickmdl-aictest-td` those gaps are 18.33
+18.82 18.85 18.49 20.20, so `aicdiff=19.0` splits them: candidate 5 accepts
+trading day, the winner (candidate 2) rejects it, and `automx.f:259-296`'s
+Picktd restore fires. Without a tuned aicdiff every candidate agrees and the
+branch is unreachable.
+
+**The old suspect list was wrong.** The previous note named `Kfmt` / `Lpradj` /
+`Priadj` as the remaining candidates. Probing both engine and oracle at
+x11pt1/x11pt3 shows all three IDENTICAL on this spec (`kfmt=1 priadj=4
+lpradj=1 setpri=1`). The value that disagrees is **`Sprior`**: the oracle
+reaches x11pt3 with `Sprior=0.99115` and `Adj=1.0`; this port has both at 1.0.
+The `Sprior`/`Setpri` deferral had actually been recorded as RULED OUT, and it
+is the whole cause.
+
+**The chain**, traced with an instrumented build of the oracle Fortran -- a
+scratchpad copy, since the vendored tree is never edited:
+
+1. The oracle sets `Setpri` at editor time and issues x11int.f:53's
+   `Adj -> Sprior` copy from **x12run.f:174**, before `arima`/`automx`.
+2. `tdaic.f:600-623` then writes `Sprior` DIRECTLY when Picktd transitions
+   during model selection. Nothing afterwards refreshes it from `Adj`.
+3. This port assigns `ctx.adj.setpri` only in `x11_prestage`, AFTER the model
+   stage -- so tdaic's write is skipped by its own `setpri >= 1` guard. The
+   "deferred prior-series bookkeeping" comment in `aictst.cpp` was describing
+   code that never executes.
+4. The port compensates by copying `Adj -> Sprior` in the POST-model `x11int`.
+   That agrees with the oracle exactly when `Adj == Sprior` at that point --
+   true on every gated spec.
+5. Here it stops holding. The Picktd restore puts `Adj` back to its entry value
+   (all-1) while `Sprior` must keep the prior tdaic wrote.
+
+**Confirmed from the other side**, which is what makes the diagnosis complete
+rather than plausible: on the automdl baseline the oracle reaches x11pt3 with
+`Sprior=1.0`, `Adj=0.99115` and `Priadj=-4`. Trading day survived into the
+final model there, so x11pt2's `tdlom` CONSUMED the prior into `Factd`, negated
+`Priadj` and reset `Sprior` to identity. On the flip spec TD does not survive,
+`tdlom` never runs, and `Sprior` is applied directly. Two specs, opposite
+routes, one explanation.
+
+**Attempted and reverted.** Suppressing the post-model copy alone moves the
+same 2.655% error onto the automdl baseline, because tdaic's write is still
+dead -- the compensation was load-bearing. The real fix is to establish
+`Setpri` (and the span pointers it derives from) BEFORE the model stage, as the
+oracle does, after which tdaic's write runs and the copy must be suppressed.
+That is a driver-ordering change, not a local one, and it is not worth risking
+the spine for one walled corner; the wall in `automx.cpp` now carries the whole
+chain so the next attempt starts from the answer.
+
+**Two standing rules this earns.** First, the port's post-model `x11int` is a
+COMPENSATION for an ordering difference, not a transcription -- anything that
+makes `Adj` and `Sprior` diverge across the model stage will surface as wrong
+Februaries with an `OUTCOME: OK`. Second, and more general: *a guard whose
+precondition is never satisfied looks exactly like a ported branch.* The
+`setpri >= 1` test reads as faithful, the comment above it claimed the work was
+deferred, and nothing distinguished "this runs and does nothing" from "this
+never runs" until the oracle was instrumented. Same family as the saturated
+mutations recorded in entry 52.

@@ -469,12 +469,69 @@ branches, which the engine does not port — the Easter branch only) and
 `aictest.pv` (`arima.f:463`, needs `regression{pvaictest=}`, which no corpus
 spec sets). All three are named in the gate's UNOWNED table with their routine.
 
+## This session, part 6: the Picktd-flip corner — ROOT-CAUSED, still walled
+
+No engine change, and that is the honest result. The wall in `automx.cpp` now
+carries the whole chain instead of a suspect list, and the suspect list it
+replaces was **wrong**.
+
+**The measurement.** Reaching the branch needs `regression{aicdiff=}` tuned
+between two candidates' AICC gaps — 18.33 18.82 18.85 18.49 20.20 on
+`airline_pickmdl-aictest-td`, so `aicdiff=19.0` splits them: candidate 5
+accepts trading day, the winner (candidate 2) rejects it. The error is exactly
+`engine = oracle * (days-in-Feb / 28.25)`, Februaries only, with d10/d12/d16
+bit-exact.
+
+**The old note named `Kfmt` / `Lpradj` / `Priadj`. All three are IDENTICAL to
+the oracle's on this spec.** The value that disagrees is `Sprior` — and the
+`Sprior`/`Setpri` deferral had been recorded as *ruled out*.
+
+Traced with an INSTRUMENTED build of the oracle Fortran (scratchpad copy; the
+vendored tree is never edited). The chain:
+
+1. The oracle sets `Setpri` at editor time and issues x11int.f:53's
+   `Adj -> Sprior` copy from **x12run.f:174**, before `arima`/`automx`.
+2. `tdaic.f:600-623` then writes `Sprior` directly on a Picktd transition, and
+   nothing afterwards refreshes it from `Adj`.
+3. This port assigns `ctx.adj.setpri` only in `x11_prestage`, AFTER the model
+   stage — so tdaic's write is skipped by its own `setpri >= 1` guard. The
+   "deferred prior-series bookkeeping" comment in `aictst.cpp` was describing
+   **code that never executes**.
+4. The port compensates with a post-model `Adj -> Sprior` copy in `x11int`,
+   correct exactly when `Adj == Sprior` there — true on every gated spec.
+5. Here it stops holding: the Picktd restore puts `Adj` back to all-1 while
+   `Sprior` must keep the prior tdaic wrote.
+
+**Confirmed from the other side.** On the automdl baseline the oracle reaches
+x11pt3 with `Sprior=1.0`, `Adj=0.99115`, `Priadj=-4`: TD survived, so x11pt2's
+`tdlom` consumed the prior into `Factd` and reset `Sprior`. On the flip spec TD
+does not survive, `tdlom` never runs, `Sprior` applies directly. Two specs,
+opposite routes, one explanation.
+
+**Attempted and reverted.** Suppressing the post-model copy alone moves the same
+2.655% onto the automdl baseline, because tdaic's write is still dead — the
+compensation is load-bearing. The real fix is to establish `Setpri` and the span
+pointers it derives from BEFORE the model stage, which is a driver-ordering
+change, not a local one. Not worth risking the spine for one walled corner.
+
+**Standing rule this earns:** *a guard whose precondition is never satisfied
+looks exactly like a ported branch.* `setpri >= 1` reads as faithful, the
+comment above it claimed deferral, and nothing distinguished "runs and does
+nothing" from "never runs" until the oracle was instrumented. Full record in
+`docs/M5_PORT_NOTES.md` entry 55.
+
 ## Open, in the order I would take them
 
-1. **The Picktd-flip corner above** — d11/d13, Februaries only, 0.885%/2.655%.
-   Smallest well-characterized gap on the board: the model is proven right and
-   the suspect list is down to three flags. Needs a spec with
-   `regression{aicdiff=}` tuned between two candidates' AICC gaps.
+1. **Move `Setpri` (and the span pointers it derives from) ahead of the model
+   stage**, so `tdaic.f:600-623`'s `Sprior` write stops being dead and the
+   post-model `Adj -> Sprior` compensation in `x11int` can be dropped. This is
+   the fix for the Picktd-flip corner — fully root-caused this session, see the
+   section above and `docs/M5_PORT_NOTES.md` entry 55 — and it is a
+   driver-ordering change touching `run_pre_model` / `x11_prestage`, so it
+   wants a session with the suite in front of it rather than a quick patch.
+   The probe spec is reproducible in three lines: take
+   `extra/airline_pickmdl-aictest-td.spc` and add `aicdiff = 19.0` to its
+   `regression{}`.
 2. **`x11aic.f`'s TRADING-DAY and USER branches** (`aictest.xtd*` /
    `aictest.xu*`). The engine ports only the Easter branch of that routine;
    the other two are unported AND ungated, because no corpus spec sets
