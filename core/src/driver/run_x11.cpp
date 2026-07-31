@@ -189,6 +189,14 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // span's d9a on every row. Same class as /x11srs/ and ctx.x11_f2tests
     // above; the oracle punches its .udg before sspdrv/revdrv run.
     const auto d8bd9a_main = ctx.d8bd9a;
+    // Same class again: x11aic's Easter AICC table is written from inside
+    // x11pt2, so a span replay re-runs the test and the reported table would
+    // be the LAST SPAN's. (The oracle is immune by a different route --
+    // x11mdl.f:291 clears Xeastr after the first test, so the replay skips it
+    // outright; see the note in x11reg.cpp's x11aic_easter.)
+    const auto aicc_xe_main = ctx.x11reg_aicc_xe;
+    const int xe_window_main = ctx.x11reg_xe_window;
+    const bool xe_accepted_main = ctx.x11reg_xe_accepted;
     const double d11f_main[4] = {ctx.x11_d11f, ctx.x11_d11f_prob,
                                  ctx.x11_d11f3y, ctx.x11_d11f3y_prob};
     const bool d11f_set_main[2] = {ctx.x11_d11f_set, ctx.x11_d11f3y_set};
@@ -215,6 +223,9 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.hiddn.ixreg = ixreg_main;
     ctx.x11_faccal_prior = faccal_main;
     ctx.d8bd9a = d8bd9a_main;
+    ctx.x11reg_aicc_xe = aicc_xe_main;
+    ctx.x11reg_xe_window = xe_window_main;
+    ctx.x11reg_xe_accepted = xe_accepted_main;
     ctx.x11_d11f = d11f_main[0];
     ctx.x11_d11f_prob = d11f_main[1];
     ctx.x11_d11f3y = d11f_main[2];

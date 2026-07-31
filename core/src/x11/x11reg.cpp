@@ -386,7 +386,20 @@ void x11aic_easter(X13Context& ctx, double* trnsrs, int nobspf, int nfcst,
     };
 
     double aicbst = prm::DNOTST;
+    // x11aic.f:55 `aicind=-1`. `aicind` is NOT in that routine's declaration
+    // list, so Fortran case-insensitivity resolves it to the COMMON `Aicind`
+    // of arima.cmn -- the same slot easaic.f writes for the regARIMA Easter
+    // test. Entering x11aic therefore CLOBBERS the regARIMA window, and
+    // x11mdl.f:280 reads that same slot back for `aictest.xe.window`. Both
+    // halves are reproduced: ar.aicind is written below, and the -1 is what an
+    // x11aic call that skips the easter branch would leave behind.
     int aicind = 0;
+    // A span/history replay is a full x11pt1->x11pt3 pass and re-enters here,
+    // so the table must be rebuilt, not appended to. (The oracle cannot hit
+    // this: x11mdl.f:291 sets Xeastr=F after the first test. The port keeps
+    // that flag live because its editor.f:1734-1757 re-derivation of Otlxrg
+    // below reads it, so the guard belongs here instead.)
+    ctx.x11reg_aicc_xe.clear();
     for (int i = 1; i <= neasvx; ++i) {
         if (i > 2) { del_easter(); if (ctx.error.lfatal) return; }
         if (i > 1) {
@@ -424,6 +437,12 @@ void x11aic_easter(X13Context& ctx, double* trnsrs, int nobspf, int nfcst,
     }
     ar.aicind = aicind;
     ctx.x11reg_xe_window = aicind;
+    ctx.x11reg_xe_easidx = easidx;
+    // x11mdl.f:271-292 -- the accept/reject verdict is taken off the MODEL,
+    // not off aicind: x11aic has already left the winning design in place, so
+    // the caller just asks whether an Easter group survived. Same two-step
+    // lookup as find_easter above.
+    ctx.x11reg_xe_accepted = find_easter() > 0;
     ctx.x11reg_xe_ran = true;
 }
 

@@ -117,6 +117,48 @@ static void dump_d8bd9a(const x13::X13Context& ctx) {
 }
 
 
+// The `aictest.xe*` savelog block -- the x11regression Easter AIC test, and
+// the last family behind the `aictest.` prefix. TWO routines write it, in this
+// order, which is why the table precedes the verdict in the .udg:
+//
+//   x11aic.f 1032: ('aictest.xe.aicc.',a,': ',e29.15)        the no-Easter row
+//   x11aic.f 1042: ('aictest.xe.aicc.',a,i2.2,': ',e29.15)   one row per window
+//   x11mdl.f 1025: (a)      'aictest.xe: yes' / 'no', and the REJECTED window
+//   x11mdl.f 2025: (a,i3)   the ACCEPTED window
+//
+// The two window lines are deliberately not one call: on accept the oracle
+// formats Aicind with i3 ('aictest.xe.window:  15'), on reject it writes a
+// literal string through 1025 ('aictest.xe.window: 0'). Same key, different
+// spacing, and only a text comparison sees the difference.
+//
+// The `a` in 1042 is 'easter' or 'sceaster' by Easidx -- x11aic.f:377-381.
+static void dump_aictest_xe(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    if (!ctx.x11reg_xe_ran) return;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    const char* stem = ctx.x11reg_xe_easidx == 0 ? "easter" : "sceaster";
+    // x11aic.f branches on `i.eq.1`, NOT on the window being zero -- the first
+    // candidate is the no-Easter baseline by position. Key off the index so a
+    // Xeasvc whose first entry is not 0 still labels the way the oracle does.
+    for (std::size_t k = 0; k < ctx.x11reg_aicc_xe.size(); ++k) {
+        const auto& wa = ctx.x11reg_aicc_xe[k];
+        if (k == 0)
+            line(fwrite_fmt("('aictest.xe.aicc.',a,': ',e29.15)", "noeaster",
+                            wa.second));
+        else
+            line(fwrite_fmt("('aictest.xe.aicc.',a,i2.2,': ',e29.15)", stem,
+                            wa.first, wa.second));
+    }
+    if (ctx.x11reg_xe_accepted) {
+        line("aictest.xe: yes");
+        line(fwrite_fmt("(a,i3)", "aictest.xe.window: ", ctx.x11reg_xe_window));
+    } else {
+        line("aictest.xe: no");
+        line("aictest.xe.window: 0");
+    }
+}
+
+
 // ftest.f:188/221 -- the D11 stable-seasonality F-test rows:
 //   ftest 1140: (a,f10.4,f10.2)     d11.f / d11.3y.f (and their `i` twins)
 static void dump_d11f(const x13::X13Context& ctx) {
@@ -464,6 +506,7 @@ int main(int argc, char** argv) {
                 std::printf("aicc_xe %d %.15E\n", wa.first, wa.second);
             std::printf("aicc_xe_window %d\n", ctx.x11reg_xe_window);
         }
+        dump_aictest_xe(ctx);
     }
     dump_d8bd9a(ctx);
     dump_d11f(ctx);

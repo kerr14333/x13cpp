@@ -402,6 +402,11 @@ struct X13Context {
     std::vector<std::pair<int, double>> x11reg_aicc_xe;
     int x11reg_xe_window = -1;
     bool x11reg_xe_ran = false;
+    // x11mdl.f:271-292's verdict, read back off the MODEL (strinx for the
+    // Easter group) rather than inferred from the window -- and Easidx, which
+    // picks the `easter`/`sceaster` label half of x11aic.f's 1042 FORMAT.
+    bool x11reg_xe_accepted = false;
+    int x11reg_xe_easidx = 0;
     // x11regression{} user prior trading-day factor (a4 save): the Kswv=1 pritd
     // factor over the observed span [Pos1ob,Posfob]. Bit-exact vs the oracle a4.
     std::vector<double> x11_a4_prior;

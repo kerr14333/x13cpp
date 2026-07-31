@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; `svaict.f` ported and gated)
+# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5887 passed / 0 failed / 466 skipped** (~84s) |
+| `python -m pytest tests/parity -q -n 8` | **5899 passed / 0 failed / 466 skipped** (~86s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -408,7 +408,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5887<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5899<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -422,17 +422,65 @@ own *how something works and what was measured* and must not keep status lists;
 a code comment describes *its own file*. Every cross-file staleness finding was
 duplicated ownership.
 
+## This session, part 5: `aictest.xe*` — the last family behind the prefix
+
+`x11aic.f`'s Easter AICC table plus `x11mdl.f`'s verdict, six keys on two
+specs. **The arithmetic was already bit-exact** — `x11reg.cpp`'s
+`x11aic_easter` has matched the oracle since the x11regression increment and
+its `aicc_xe` canaries proved it. Only emission was missing, which is the same
+missing-key blind spot the svaict gate was built to expose. This family needs
+`x13run_x11` rather than `x13run_m3`, so the gate now drives two harnesses.
+
+**Two durable findings, both in `docs/M5_PORT_NOTES.md` entry 54.**
+
+`aicind` in `x11aic.f` is NOT a local — it is absent from the declaration
+list, so Fortran case-insensitivity resolves it to COMMON `Aicind` in
+`arima.cmn`, the slot `easaic.f` writes for the *regARIMA* Easter test.
+Entering x11aic clobbers that window (`x11aic.f:55`), and `x11mdl.f:280` reads
+the same slot back. Both halves reproduced.
+
+`aictest.xe.window` is written through TWO FORMATs on the same key: `(a,i3)`
+on accept (`window:  15`), a literal string on reject (`window: 0`). One space
+versus three, invisible to any numeric comparison. Third instance of that
+shape in this block after `easaic.f`'s colon and the unprefixed
+`testalleaster`.
+
+**And the real bug, found by insisting the reject arm be reachable.** The
+corpus covered only the accept arm. Rejecting means raising the threshold —
+and `x11regression{aicdiff=}` was token-consumed and written nowhere, while
+`gtxreg.f:513-518` sets `Xraicd`. Default is `ZERO` on both sides
+(`gtinpt.f:477`), so every existing spec agreed and nothing failed: the
+parsed-but-unread shape, invisible until something needed a non-default value.
+Now wired, and proved READ rather than parsed — two specs differing *only* in
+`aicdiff=5.0` give different engine verdicts (`xe: yes` vs `xe: no`).
+
+Also joined `run_x11.cpp`'s span-replay save/restore set (fifth time that seam
+has bitten): the table is appended to from inside x11pt2, so a
+`slidingspans{}`/`history{}` replay would report the last span's. The oracle is
+immune by a route the port cannot copy — `x11mdl.f:291` clears `Xeastr`, but
+the port's `editor.f:1734-1757` re-derivation of `Otlxrg` still reads it.
+
+New spec `tests/corpus/extra/airline_x11regression-aicdiff.spc`, hand-authored
+— **not** produced by `genextra.py`, and its header says so.
+
+**Nothing is left behind the `aictest.` prefix that has a golden.** What
+remains is `aictest.xtd*` / `aictest.xu*` (x11aic.f's trading-day and user
+branches, which the engine does not port — the Easter branch only) and
+`aictest.pv` (`arima.f:463`, needs `regression{pvaictest=}`, which no corpus
+spec sets). All three are named in the gate's UNOWNED table with their routine.
+
 ## Open, in the order I would take them
 
 1. **The Picktd-flip corner above** — d11/d13, Februaries only, 0.885%/2.655%.
    Smallest well-characterized gap on the board: the model is proven right and
    the suspect list is down to three flags. Needs a spec with
    `regression{aicdiff=}` tuned between two candidates' AICC gaps.
-2. **`aictest.xe*`** (`x11aic.f`, the x11regression Easter AIC test) — the
-   last unemitted family behind the `aictest.` prefix, and the only one that
-   needs an X-11 harness rather than `x13run_m3`. Six keys on one spec
-   (`airline_x11regression-aictest`), already in its golden and already named
-   as unowned by `tests/parity/test_aictest_savelog.py`.
+2. **`x11aic.f`'s TRADING-DAY and USER branches** (`aictest.xtd*` /
+   `aictest.xu*`). The engine ports only the Easter branch of that routine;
+   the other two are unported AND ungated, because no corpus spec sets
+   `x11regression{aictest=(td)}` or `(user)`. Add a spec first — that is what
+   turned the `xe` family from prose into a gate, and what exposed the
+   `aicdiff=` discard.
 3. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
    → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
    Latent everywhere a spec supplies a decimal. **Check whether the Fortran

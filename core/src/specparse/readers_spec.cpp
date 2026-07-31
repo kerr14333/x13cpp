@@ -3549,6 +3549,21 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                        "Must have seven prior trading day weights.");
                 inptok = false;
             }
+        } else if (argidx == 28) {
+            // gtxreg.f:513-518 aicdiff= -> Xraicd, the threshold the x11aic
+            // tests must clear to switch AWAY from the no-regressor model
+            // (x11aic.f:239/392/559). Default ZERO (gtinpt.f:477), which is
+            // what the struct already carries -- so this was accepted and
+            // silently discarded, and only a NON-default value diverged. No
+            // validation in the oracle: any value, including negative, is
+            // taken as given.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            double dvec[1] = {0.0};
+            int nelt = 0;
+            bool argok = true;
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt > 0 && argok) ctx.xrgmdl.xraicd = dvec[0];
         } else if (argidx == 11 || argidx == 12) {
             // gtxreg.f:288-322 -- sigma= (Sigxrg, the trading-day extreme-value
             // sigma limit) and critical= (Critxr, the AO critical value, which

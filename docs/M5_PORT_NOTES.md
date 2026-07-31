@@ -2311,3 +2311,56 @@ open with its measurements rather than a tolerance.
   silent allowlist. `ofd` (LSEFCD+2) has no golden anywhere in the corpus and
   is deliberately not produced.
 
+
+## 54. `aictest.xe*` -- `x11aic.f`'s Easter table + `x11mdl.f`'s verdict -- CLOSED (byte-identical, both arms), and it found `x11regression{aicdiff=}` being discarded.
+
+The last family behind the `aictest.` prefix, and the only one on the X-11
+path. The arithmetic was already right -- `x11reg.cpp`'s `x11aic_easter` had
+been bit-exact since the x11regression increment, and its `aicc_xe` canaries
+matched the golden to the last digit before any of this. **All that was
+missing was emission**, which is exactly the missing-key blind spot entry 52's
+gate exists to make visible: six keys the oracle wrote, the engine wrote none,
+and no gate compared the intersection.
+
+**`aicind` in x11aic.f is not a local.** It does not appear in that routine's
+declaration list, so Fortran case-insensitivity resolves it to the COMMON
+`Aicind` of `arima.cmn` -- the same slot `easaic.f` writes for the regARIMA
+Easter test. Two consequences, both reproduced:
+- `x11aic.f:55`'s `aicind=-1` CLOBBERS the regARIMA Easter window on entry,
+  including when the easter branch is skipped entirely.
+- `x11mdl.f:280` reads that same slot back for `aictest.xe.window`, which is
+  why the key is consistent despite being written by a different routine than
+  the one that computed it.
+
+**One key, two FORMATs.** `aictest.xe.window` goes through `(a,i3)` when the
+Easter is accepted (`aictest.xe.window:  15`) and through a literal string
+when it is rejected (`aictest.xe.window: 0`). Same key, one space instead of
+three. A numeric comparison sees nothing; only the text diff does. This is the
+third instance of the same shape in this block, after `easaic.f`'s colon and
+the unprefixed `testalleaster`.
+
+**The reject arm was unreachable, and that is how the real bug surfaced.**
+The corpus covered only the accept arm, so the literal-string format had no
+golden. Building a spec to reject meant raising the threshold -- and
+`x11regression{aicdiff=}` turned out to be token-consumed and written nowhere
+(`gtxreg.f:513-518` sets `Xraicd`; the port's `gt_x11regression` had it in the
+"deferred" bucket). The default is `ZERO` on both sides (`gtinpt.f:477`), so
+every existing spec agreed and nothing failed: the classic parsed-but-unread
+shape, invisible until something needed a non-default value. Wiring it is four
+lines. Proof it is now READ rather than merely parsed: two specs differing
+*only* in `aicdiff=5.0` produce different engine verdicts (`xe: yes` vs
+`xe: no`).
+
+**Span-replay seam, again.** `x11aic_easter` runs from inside x11pt2 and
+appends to `ctx.x11reg_aicc_xe`, so a `slidingspans{}`/`history{}` replay
+would have reported the LAST SPAN's table. The oracle is immune by a route the
+port cannot copy: `x11mdl.f:291` sets `Xeastr=F` after the first test, but the
+port's `editor.f:1734-1757` re-derivation of `Otlxrg` reads that same flag
+later, so clearing it would break a different thing. Handled at both ends
+instead -- the table is cleared at the top of the test, and the three fields
+joined `run_x11.cpp`'s save/restore set. Fifth time this seam has bitten.
+
+Gated by `tests/parity/test_aictest_savelog.py`, which now runs two harnesses:
+`x13run_m3` for the svaict/AICC keys and `x13run_x11` for `xe`. Mutation-
+tested both ways -- perturbing one AICC digit fails, and collapsing the accept
+arm's two spaces to one fails.
