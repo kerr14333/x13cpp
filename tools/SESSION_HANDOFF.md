@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5864 passed / 0 failed / 469 skipped** (~83s) |
+| `python -m pytest tests/parity -q -n 8` | **5871 passed / 0 failed / 466 skipped** (~80s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -219,6 +219,46 @@ they cancelled into a 46/52 pass rate that read as a nearly-finished port.
 tail, and the `hpcycle` filter (`tools/seats_hp_scouting.md`, whose step 1 was
 exactly this).
 
+## This session, part 3: both automdl BASELINE gaps were already closed
+
+`usdeaths_automdl` and `ces_amuse_automdl` **both match the oracle on every
+shared `.udg` key**, and had since the UPDATE-2026-07-28c wiring. They were
+carried as open for two more sessions because the record was prose, not a gate.
+
+- **usdeaths** — `(0 1 1)(0 1 1)`, `nefobs` 59, 48/48 keys. Recorded as
+  `(1 0 1)(0 1 1)` / `nefobs` 60 / `nreg` 1-vs-0. Removed from
+  `test_check_diagnostics._WRONG_MODEL` and from `_AUTOMD_IDDIFF_GAP` in
+  `test_qs_diagnostics` and `test_spectrum_peaks`; those three gates had been
+  SKIPPING and now compare and pass.
+- **ces_amuse** — oracle final `(3 1 1)(0 1 1)`, 105/105 keys. It had no
+  corpus spec at all: the disagreement was only ever seen through
+  `option_sweep.py`. Added `generated/ces_amuse_automdl.spc` (hand-authored,
+  header says so) and blessed it.
+
+That lifts the exclusion which made every `ces_amuse` row in
+`tools/dropped_options_scouting.md` "baseline noise" — those option rows are
+now **unmeasured rather than false**, and worth re-running.
+
+**The mutation record is mostly negative and is written down so it is not
+re-walked.** Removing the `amidot` call, removing `automd_finalize_tail`, and
+perturbing `iddiff`'s `ids` all leave ces_amuse's baseline model unchanged;
+only the `lds` mutation at `automd.cpp`'s call site moves usdeaths (3 gates
+fail). `amidot` is a no-op because the BIGCV AO scan finds nothing on this
+corpus and the finalize tail is a no-op on both series, so those two test
+nothing — saturated preconditions, the same shape as the `critical=3.5` case.
+The real datum is that ces_amuse's `(3 1 1)(0 1 1)` survives both an `iddiff`
+and a BIC perturbation: it comes out of the adequacy stage restoring from
+`bkdfmd`'s backup, not out of the search.
+
+The new spec's gates were proven live the other way — corrupting three keys of
+its blessed `.udg` fails all three blocks, so it is compared and not silently
+skipped. Model-sensitivity on this series is carried by the `-noautooutlier`
+sibling, which fails under two independent mutations.
+
+**Standing rule this reinforces:** an exclusion recorded in prose is not a
+gate, and it does not re-measure itself. Both of these were true-when-written
+and wrong for two sessions.
+
 ## Previous session (2026-07-29b): composite under SEATS + all of `amdfct.f`
 
 Three increments, all closed. Details in `docs/M5_PORT_NOTES.md` (entries
@@ -290,7 +330,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5864<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5871<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -310,27 +350,21 @@ duplicated ownership.
    Smallest well-characterized gap on the board: the model is proven right and
    the suspect list is down to three flags. Needs a spec with
    `regression{aicdiff=}` tuned between two candidates' AICC gaps.
-2. **Two automdl BASELINE disagreements**, both isolated, neither gated:
-   `generated/usdeaths_automdl` (17 keys; the known iddiff d=0/d=1 split, and
-   `nreg` 1 vs 0 — the engine is missing the Constant) and `ces_amuse`
-   (75 keys, model 5 vs 4 ARMA terms; localised to label 40's `amidot` arm,
-   since `noautooutlier=tramo` makes it bit-exact). Both make every option
-   verdict on those series uninterpretable.
-3. **`svaict.f`** — the `aictest.*` savelog block, absent for every aictest
+2. **`svaict.f`** — the `aictest.*` savelog block, absent for every aictest
    spec. Pure report surface over arithmetic that is now proven correct, so it
    should be cheap; the goldens already carry the keys.
-4. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
+3. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
    → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
    Latent everywhere a spec supplies a decimal. **Check whether the Fortran
    reader does the same before changing anything** — if it does, the port is
    faithful and this is documentation, not a fix.
-5. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-6. **A composite whose components carry a residual peak**, to gate savpk's real
+5. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+6. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`

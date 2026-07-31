@@ -338,10 +338,19 @@ it has not been isolated.
 
 **A probe-validity check that should have come first:** the engine's BASELINE
 model must match the oracle's before any option verdict on that series means
-anything. It does on `ces_leis` / `ces_accfood` / `ukgas` / `nottem` — and does
-**not** on `ces_amuse`, where the engine picks a 4-term model against the
-oracle's 5. Every `ces_amuse` row in the tables above is therefore baseline
-noise, not an option finding, and was discarded.
+anything. It did on `ces_leis` / `ces_accfood` / `ukgas` / `nottem` and did
+**not** on `ces_amuse`, where the engine picked a 4-term model against the
+oracle's 5, so every `ces_amuse` row in the tables above was discarded as
+baseline noise rather than read as an option finding.
+
+> **Lifted 2026-07-30.** `ces_amuse`'s baseline now matches the oracle on all
+> 105 shared `.udg` keys (final model `(3 1 1)(0 1 1)`), and it has been a
+> corpus spec since — `generated/ces_amuse_automdl`, gated. It matched from
+> the UPDATE-2026-07-28c wiring onward and was carried as open for two
+> sessions because the exclusion lived in prose instead of in a gate. **The
+> discarded `ces_amuse` rows above are worth re-measuring**; treat them as
+> unmeasured, not as findings. See `tools/automdl_scouting.md` §3c,
+> UPDATE 2026-07-30.
 
 ## A tooling fix that came with it
 

@@ -121,7 +121,7 @@ _RTOL = 5e-5
 
 # Spec families whose disagreement is upstream of this gate skip with the
 # measurement written at the skip rather than being filtered out of discovery.
-_AUTOMD_IDDIFF_GAP = {"generated/usdeaths_automdl"}
+_AUTOMD_IDDIFF_GAP = set()
 
 
 def _close(key: str, want: str, got: str) -> bool:

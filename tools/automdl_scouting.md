@@ -226,6 +226,52 @@ rather than declaring the group closed.
 
 Both usdeaths and region remain gated on identification only until it lands.
 
+### UPDATE 2026-07-30 — both baselines MATCH, and had for two sessions
+
+`usdeaths_automdl` and `ces_amuse_automdl` **both agree with the oracle** on
+every shared `.udg` key. Not fixed this session: fixed by the
+UPDATE-2026-07-28c wiring below, and then carried as open for two more
+sessions because nobody re-measured. The exclusions were prose and stale
+allowlists, not gates.
+
+- **usdeaths** — final model `(0 1 1)(0 1 1)`, `nefobs` 59, all 48 shared keys
+  equal. It had been recorded as `(1 0 1)(0 1 1)` with `nefobs` 60 and
+  `nreg` 1 vs 0. Removed from `test_check_diagnostics._WRONG_MODEL` and from
+  `_AUTOMD_IDDIFF_GAP` in `test_qs_diagnostics` / `test_spectrum_peaks`; those
+  three gates were SKIPPING and now compare and pass.
+- **ces_amuse** — oracle final `(3 1 1)(0 1 1)` (amdid picks `(1 1 1)(1 1 1)`
+  and the adequacy stage rewrites it), 105 shared keys equal. It had no corpus
+  spec at all; the disagreement was only ever seen through `option_sweep.py`.
+  `generated/ces_amuse_automdl.spc` now exists and is blessed, so the
+  exclusion that made every `ces_amuse` option row "baseline noise"
+  (`tools/dropped_options_scouting.md`) is **lifted** — those rows are worth
+  re-measuring.
+
+**Mutation record, and it is mostly negative.** Three mutations that should
+have moved the ces_amuse baseline model did not, and each is a saturated
+precondition rather than a weak gate:
+
+| mutation | usdeaths | ces_amuse baseline |
+|---|---|---|
+| `amidot` call removed | no change | no change |
+| `automd_finalize_tail` call removed | no change | no change |
+| `lds -= 1` after `automd.cpp`'s `iddiff` | **fails 3 gates** | no change |
+| `ids -= 1` inside `iddiff.cpp` itself | — | no change |
+| +1e-3 ARMA-order penalty in `bestmd`'s BIC | — | no change (moves the `-noautooutlier` sibling) |
+
+`amidot` is a no-op because the BIGCV AO scan finds nothing on this corpus,
+and the finalize tail is a no-op on both series — so neither mutation tests
+anything. The interesting one is that ces_amuse's FINAL differencing survives
+both an `iddiff` perturbation and a BIC perturbation: its `(3 1 1)(0 1 1)`
+comes out of the adequacy stage, which restores from `bkdfmd`'s backup, not
+out of the search. **Do not re-walk these.**
+
+The new spec's gates were instead proven live by corrupting three keys of its
+blessed `.udg` (`qsrsd`, `spcrsd.median`, `nsigacf`): all three blocks fail,
+so the spec is compared rather than silently skipped. Model-sensitivity on
+this series is carried by the `-noautooutlier` sibling, which fails under two
+independent mutations.
+
 ### UPDATE 2026-07-28b — the blocker was a BRANCH, not a missing port
 
 The hypothesis above was **half right, and the framing was wrong**. There was no

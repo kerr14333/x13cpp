@@ -114,7 +114,7 @@ _KEY_RE = re.compile(r"^([A-Za-z][A-Za-z0-9._$]*):(.*)$")
 
 # Specs whose disagreement is upstream of this gate skip with the measurement
 # written at the skip rather than being filtered out of discovery.
-_AUTOMD_IDDIFF_GAP = {"generated/usdeaths_automdl"}
+_AUTOMD_IDDIFF_GAP = set()
 
 # The ONLY numeric fallback, and it is deliberately narrow -- see the tolerance
 # note in the module docstring.

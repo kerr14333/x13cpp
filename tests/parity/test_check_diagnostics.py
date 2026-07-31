@@ -133,12 +133,7 @@ _RTOL = 5e-5
 #   test_m4_iddiff.py's _AUTOMD_EST_CASES and in tools/automdl_scouting.md.
 #   Visible here as nefobs 60 vs 59 -- which is why the ACF standard errors
 #   differ (se = 1/sqrt(nefobs), 0.1291 vs 0.1302) before any statistic does.
-_WRONG_MODEL = {
-    "generated/usdeaths_automdl":
-        "automd selects (1 0 1)(0 1 1) vs the oracle's (0 1 1)(0 1 1) "
-        "(iddiff d=0 vs d=1); residuals are a different series. "
-        "See tools/automdl_scouting.md.",
-}
+_WRONG_MODEL = {}
 
 
 def _close(want: str, got: str) -> bool:
