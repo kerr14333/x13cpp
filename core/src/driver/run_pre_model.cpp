@@ -24,6 +24,7 @@
 #include "automdl/automd.hpp"       // automd (automatic model selection)
 #include "automdl/automx.hpp"       // automx (pickmdl candidate search)
 #include "automdl/aictst.hpp"       // explicit_aictest (arima.f:569 aictest)
+#include "automdl/svaict.hpp"       // svaict (arima.f:465 aictest.* savelog)
 #include "automdl/automd_finalize.hpp"  // rmfix, addfix (arima.f:283/910)
 #include "numeric/numeric.hpp"      // dpeq
 #include "gen/srslen.hpp"           // prm::PLEN (residual work-vector sizing)
@@ -512,6 +513,16 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // finalization stays unported (tools/automdl_scouting.md), but the specs
             // that would need it now gate bit-exact via the ismd0 snapshot revert.
             // The suite has 0 xfails.
+            // arima.f:459-471 -- svaict reports which AIC-tested regressor
+            // group survived, and it runs AFTER the model is selected but
+            // BEFORE :469-471 clear the flags. Snapshot them here because the
+            // selection routines below consume them: automd zeroes Itdtst on
+            // its way out, and tdaic rewrites Aicint to the winning form.
+            const bool svaic_td = ctx.arima.itdtst > 0;
+            const bool svaic_lom = ctx.arima.lomtst > 0;
+            const bool svaic_eas = ctx.arima.leastr;
+            const bool svaic_usr = ctx.arima.luser;
+
             if (ctx.arima.lautom) {
                 automd(ctx, trnsrs.data(), frstry, nefobs, a.data(), na,
                        /*do_aictest=*/true);
@@ -635,6 +646,19 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 if (ctx.error.lfatal) return false;
                 ctx.arima.nrxy = nrxya;
                 if (out_trnsrs) *out_trnsrs = trnsrs;
+            }
+
+            // arima.f:465 / :583 / :607 / :630 / :649. The oracle calls svaict
+            // once per group inside the explicit-aictest block and once for
+            // the whole set on the model-selection path; either way each key is
+            // written exactly once, and no corpus golden carries a duplicated
+            // `aictest.*` line. One call with the snapshot above covers both.
+            // `Hvmdl` is true here because every branch that reaches this point
+            // has a fitted model -- pickmdl's no-model case returns above.
+            if (svaic_td || svaic_lom || svaic_eas || svaic_usr) {
+                svaict(ctx, svaic_td, svaic_lom, svaic_eas, svaic_usr,
+                       /*hvmdl=*/true);
+                if (ctx.error.lfatal) return false;
             }
 
             // nefobs == Nspobs-Nintvl; the estimates live in mdldat. Record it

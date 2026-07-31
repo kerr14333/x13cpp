@@ -210,6 +210,69 @@ static void dump_aape(const x13::X13Context& ctx) {
 }
 
 
+// svaict.f savelog block -- the `aictest.*` keys. The oracle's own FORMATs, so
+// the gate compares the golden `.udg` text directly:
+//   1010: (a:,a)          the label / yes / no / nomodel lines
+//   1020: (a,i6)          aictest.e.window, single value
+//   1025: (a,5i6)         aictest.e.window, the Aicind==99 multi-window form
+//   1040: (a,': ',e20.10) aictest.diff.* and aictest.cvaic.*
+// Note 1040 supplies its own ': ' where 1010/1020/1025 carry it in the string.
+static void dump_aictest(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    const auto& s = ctx.aictest_log;
+    if (!s.ran) return;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+
+    auto verdict = [&](const x13::AictestSavelog::Group& g, const std::string& key,
+                       bool label_when_yes) {
+        if (g.nomodel) {
+            line(fwrite_fmt("(a:,a)", key + ": ", std::string("nomodel")));
+            return;
+        }
+        if (!g.accepted)
+            line(fwrite_fmt("(a:,a)", key + ": ", std::string("no")));
+        else if (label_when_yes)
+            line(fwrite_fmt("(a:,a)", key + ": ", g.label));
+        else
+            line(fwrite_fmt("(a:,a)", key + ": ", std::string("yes")));
+    };
+    auto diffs = [&](const x13::AictestSavelog::Group& g, const std::string& stem) {
+        if (g.nomodel) return;
+        line(fwrite_fmt("(a,': ',e20.10)", "aictest.diff." + stem, g.diff));
+        if (g.have_cvaic)
+            line(fwrite_fmt("(a,': ',e20.10)", "aictest.cvaic." + stem, g.cvaic));
+    };
+
+    if (s.td.tested) {
+        // The trading-day key carries the LABEL when accepted, where every
+        // other group carries a bare `yes` (svaict.f:38 vs :71).
+        verdict(s.td, "aictest.td", /*label_when_yes=*/true);
+        diffs(s.td, "td");
+    }
+    if (s.lom.tested) {
+        line(fwrite_fmt("(a:,a)", "aictest." + s.lom_abbrev + ".reg: ", s.lom.label));
+        verdict(s.lom, "aictest." + s.lom_abbrev, false);
+        diffs(s.lom, s.lom_abbrev);
+    }
+    if (s.easter.tested) {
+        line(fwrite_fmt("(a:,a)", "aictest.easter.reg: ", s.easter.label));
+        verdict(s.easter, "aictest.e", false);
+        if (s.easter_window.size() > 1) {
+            std::string t = "aictest.e.window: ";
+            for (int w : s.easter_window) t += fwrite_fmt("(i6)", w);
+            line(t);
+        } else if (!s.easter_window.empty()) {
+            line(fwrite_fmt("(a,i6)", "aictest.e.window: ", s.easter_window[0]));
+        }
+        diffs(s.easter, "e");
+    }
+    if (s.user.tested) {
+        verdict(s.user, "aictest.u", false);
+        diffs(s.user, "u");
+    }
+}
+
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::fprintf(stderr, "usage: x13run_m3 <specfile.spc>\n");
@@ -277,6 +340,7 @@ int main(int argc, char** argv) {
     dump_estdgn(ctx);
     dump_estmdl(ctx);
     dump_aape(ctx);
+    dump_aictest(ctx);
 
     // ARMA coefficients in operator/lag order (AR then MA), skipping the fixed
     // differencing slots; label each free coef by type + lag.

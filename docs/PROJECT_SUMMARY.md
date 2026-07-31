@@ -78,8 +78,8 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 ## 5. Testing
 
-- **Parity suite result:** **<!--x13:parity_pass-->5871<!--/x13--> passed · <!--x13:parity_fail-->0<!--/x13--> failed · <!--x13:parity_xfail-->0<!--/x13--> xfailed · <!--x13:parity_skip-->466<!--/x13--> skipped** (as of <!--x13:last_commit-->2026-07-30<!--/x13-->), plus <!--x13:ctest-->11/11<!--/x13--> unit tests and 165/165 R-binding tests. Runs in ~85s on 8 workers.
-- **Corpus:** <!--x13:corpus_specs-->404<!--/x13--> spec files across <!--x13:parity_modules-->30<!--/x13--> parity test modules, spanning the airline model, Census example series, real economic series (unemployment, payroll employment, exports), and unedited production specs from the BLS Current Employment Statistics program.
+- **Parity suite result:** **<!--x13:parity_pass-->5887<!--/x13--> passed · <!--x13:parity_fail-->0<!--/x13--> failed · <!--x13:parity_xfail-->0<!--/x13--> xfailed · <!--x13:parity_skip-->466<!--/x13--> skipped** (as of <!--x13:last_commit-->2026-07-30<!--/x13-->), plus <!--x13:ctest-->11/11<!--/x13--> unit tests and 165/165 R-binding tests. Runs in ~85s on 8 workers.
+- **Corpus:** <!--x13:corpus_specs-->404<!--/x13--> spec files across <!--x13:parity_modules-->31<!--/x13--> parity test modules, spanning the airline model, Census example series, real economic series (unemployment, payroll employment, exports), and unedited production specs from the BLS Current Employment Statistics program.
 - **0 open xfails.** Every front listed in §4 gates bit-exact. The skips are legitimate — a spec whose oracle run ships no golden for that table, or one that exercises a still-unported branch and says so with a reason.
 - **Census bugs catalogued:** <!--x13:census_bugs-->34<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->34<!--/x13-->), each either reproduced bug-for-bug against the oracle or recorded with the reason it cannot be (unreachable, or a save-file artefact this port does not write).
 - **Mutation testing.** A green run on an auto-discovering gate is not evidence that a newly added spec is compared at all, so each increment ends by deliberately perturbing the code it just added and confirming the gate fails — **per half of a routine, not per routine**, because the two halves often turn out to be covered by disjoint specs. Gaps this finds are recorded at the code and at the gate rather than absorbed.
@@ -107,14 +107,14 @@ number here is a build failure. Full table: [`docs/METRICS.md`](METRICS.md).
 
 | Metric | Value | Notes |
 |---|---|---|
-| C++ written | **<!--x13:cpp_lines-->45577<!--/x13--> non-blank lines**, <!--x13:cpp_files-->180<!--/x13--> files | excludes generated COMMON headers |
+| C++ written | **<!--x13:cpp_lines-->45908<!--/x13--> non-blank lines**, <!--x13:cpp_files-->182<!--/x13--> files | excludes generated COMMON headers |
 | Fortran reference | <!--x13:fortran_lines-->166076<!--/x13--> lines, <!--x13:fortran_files-->712<!--/x13--> files | not all on the port's critical path |
-| Fortran routines ported | **<!--x13:routines_done-->401<!--/x13--> of <!--x13:routines_total-->690<!--/x13-->** (<!--x13:routines_pct-->58.1<!--/x13-->%) | `tools/ported.yaml`; excludes 22 not-applicable files, and counts 3 `partial` as neither |
-| Parity result | <!--x13:parity_pass-->5871<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->466<!--/x13--> skip | plus ctest 11/11, R bindings 165/165 |
-| Corpus | <!--x13:corpus_specs-->404<!--/x13--> spec files, <!--x13:parity_modules-->30<!--/x13--> test modules | real + synthetic series |
+| Fortran routines ported | **<!--x13:routines_done-->406<!--/x13--> of <!--x13:routines_total-->690<!--/x13-->** (<!--x13:routines_pct-->58.8<!--/x13-->%) | `tools/ported.yaml`; excludes 22 not-applicable files, and counts 3 `partial` as neither |
+| Parity result | <!--x13:parity_pass-->5887<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->466<!--/x13--> skip | plus ctest 11/11, R bindings 165/165 |
+| Corpus | <!--x13:corpus_specs-->404<!--/x13--> spec files, <!--x13:parity_modules-->31<!--/x13--> test modules | real + synthetic series |
 | Census bugs catalogued | <!--x13:census_bugs-->34<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->34<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
-| Active development time | **<!--x13:active_time-->57h 49m<!--/x13-->** over <!--x13:calendar_days-->13<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
-| Commits | <!--x13:commits-->375<!--/x13--> | 2026-07-18 → 2026-07-29 |
+| Active development time | **<!--x13:active_time-->58h 20m<!--/x13-->** over <!--x13:calendar_days-->13<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
+| Commits | <!--x13:commits-->376<!--/x13--> | 2026-07-18 → 2026-07-29 |
 | Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
 *Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*

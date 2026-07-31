@@ -42,7 +42,7 @@ agr: ported
 agr1: ported
 agr2: ported
 agr3: ported
-agr3s: pending
+agr3s: ported
 agrxpt: ported
 altundovrtst: pending
 amdest: ported
@@ -379,9 +379,9 @@ medabs: ported
 mflag: ported
 minim2: pending
 mkback: ported
-mkealb: pending
+mkealb: ported
 mkfreq: ported
-mklnlb: pending
+mklnlb: ported
 mkmdsn: ported
 mkmdsx: ported
 mkmetahtmlfile: n-a
@@ -394,7 +394,7 @@ mksplb: pending
 mkspst: pending
 mkssky: pending
 mkstlb: pending
-mktdlb: pending
+mktdlb: ported
 mlist: pending
 mltpos: ported
 month: pending
@@ -634,7 +634,7 @@ subset: pending
 sumf: ported
 sumry: ported
 sumsqr: pending
-svaict: pending
+svaict: ported
 svamcm: pending
 svchsd: pending
 svdttm: pending

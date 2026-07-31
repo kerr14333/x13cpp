@@ -583,7 +583,20 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             if (ctx.error.lfatal) return;
             // automx.f:302-324 -- with per-candidate identification the design
             // has to go back to the original columns first.
-            if (!ar.id1st && lidotl && nummdl > 0) {
+            //
+            // `Itdtst.gt.0` is part of the guard and was DROPPED here once. A
+            // spec with `aictest=` but no `outlier{}` has lidotl false, so the
+            // restore was skipped and every regressor the previous candidate's
+            // tdaic/easaic had selected stayed in the design. Invisible while
+            // only `aictest=(td)` was gated -- tdaic replaces the TD group
+            // itself each round -- and it surfaced the moment svaict started
+            // reporting `aictest.diff.td`: on extra/airline_pickmdl-aictest-tdeas
+            // the leaked EASTER column moved the last candidate's TD test to
+            // 22.3677 against the oracle's 20.1970, which is the value the
+            // easter-free sibling also has. Note the Fortran's guard here is
+            // (Lidotl .or. Itdtst.gt.0) with no Leastr -- unlike label 20's,
+            // which carries all three; transcribed as written.
+            if (!ar.id1st && (lidotl || ar.itdtst > 0) && nummdl > 0) {
                 reg_restore(ctx, reg0);
                 // automx.f:326-331 -- and the series with it, if the previous
                 // candidate's AIC test moved Picktd.

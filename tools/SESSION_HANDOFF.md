@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED, all 52 specs gate)
+# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; `svaict.f` ported and gated)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5871 passed / 0 failed / 466 skipped** (~80s) |
+| `python -m pytest tests/parity -q -n 8` | **5887 passed / 0 failed / 466 skipped** (~84s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -259,6 +259,58 @@ sibling, which fails under two independent mutations.
 gate, and it does not re-measure itself. Both of these were true-when-written
 and wrong for two sessions.
 
+## This session, part 4: `svaict.f` — and the missing-key blind spot it lit up
+
+The `aictest.*` savelog block is ported (`core/src/automdl/svaict.cpp`, with
+`mktdlb.f` / `mklnlb.f` / `mkealb.f`), emitted by `x13run_m3` through the
+oracle's own FORMATs, and gated by a new
+`tests/parity/test_aictest_savelog.py` — **16 specs, 54 keys, all bit-exact**.
+
+**Every one of those keys was previously uncompared.** The goldens have carried
+them since the corpus was blessed, the engine emitted none, and no gate looked
+at the intersection. That is the missing-key shape of the parsed-but-unread
+class: not a wrong value, an ABSENT one, and absence is invisible to a gate
+that only diffs what both sides produce.
+
+**It found a real defect on its first run.** `automx.f:308` guards the
+per-candidate design restore with `(Lidotl .or. Itdtst.gt.0)`; the port had
+only `lidotl`. So a spec with `aictest=` but no `outlier{}` never restored, and
+whatever regressor the previous candidate's tdaic/easaic had selected stayed in
+the design. Invisible while only `aictest=(td)` was exercised — tdaic replaces
+the TD group itself each round — and it surfaced the moment `aictest.diff.td`
+became comparable: on `extra/airline_pickmdl-aictest-tdeas` the leaked EASTER
+column moved the last candidate's TD test to 22.3677 against the oracle's
+20.1970, which is exactly the value its easter-free sibling reports. One
+clause. Note the Fortran's guard here has no `Leastr`, unlike label 20's, which
+carries all three; transcribed as written.
+
+**A second bug, mine, caught by sweeping rather than by the suite.** `itoc` is
+transcribed from a Fortran `CHARACTER*(N)` and writes INTO a fixed-length
+buffer, abending when it is too short. Passing it an empty `std::string`
+abended, so five easter-carrying specs went `OUTCOME: FATAL`. Pre-size any
+buffer handed to `itoc` — `mkealb.f` uses `CHARACTER cwin*2`, `mktdlb.f` a
+30-char `tdstr`, and both are now reproduced literally.
+
+**What is still NOT ported behind the same `aictest.` prefix** — the gate names
+each with its routine so the set cannot rot into an allowlist:
+`aictest.td.{num,reg,reg2}` and `aictest.td.aicc.*` (`tdaic.f`),
+`aictest.easter.num` / `aictest.e.aicc.*` (`easaic.f`),
+`aictest.lom.aicc.*` (`lomaic.f`), `aictest.xe*` (`x11aic.f`, the
+x11regression Easter test). `aictest.pv` is written by svaict's CALLER
+(`arima.f:463`) and needs `regression{pvaictest=}`, which no corpus spec sets,
+so it has no golden to gate against.
+
+Also transcribed as written rather than "fixed": `svaict.f:79-81` gates the
+length-of-month group's `cvaic` line on `Rgaicd(PTDAIC)` — the TRADING-DAY
+threshold — while writing `Rgaicd(PLAIC)`. Every other group gates on its own
+index. Not reachable on this corpus (no golden carries `aictest.cvaic.lom`), so
+it is a CB candidate, not a claimed one.
+
+**Standing rule this adds to the pile:** a golden key nothing emits is not a
+passing test, it is an unmeasured one. When porting a savelog block, sweep the
+goldens for the whole key PREFIX and classify every member — ported, or named
+with the routine that owns it.
+
 ## Previous session (2026-07-29b): composite under SEATS + all of `amdfct.f`
 
 Three increments, all closed. Details in `docs/M5_PORT_NOTES.md` (entries
@@ -330,7 +382,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5871<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5887<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -350,9 +402,12 @@ duplicated ownership.
    Smallest well-characterized gap on the board: the model is proven right and
    the suspect list is down to three flags. Needs a spec with
    `regression{aicdiff=}` tuned between two candidates' AICC gaps.
-2. **`svaict.f`** — the `aictest.*` savelog block, absent for every aictest
-   spec. Pure report surface over arithmetic that is now proven correct, so it
-   should be cheap; the goldens already carry the keys.
+2. **The rest of the `aictest.*` savelog surface**, now that svaict is done
+   and its gate names every unowned key with its routine:
+   `aictest.td.{num,reg,reg2}` + `td.aicc.*` (`tdaic.f`), `easter.num` +
+   `e.aicc.*` (`easaic.f`), `lom.aicc.*` (`lomaic.f`), `xe*` (`x11aic.f`).
+   Same shape as svaict — report surface over arithmetic already proven right,
+   and the goldens carry the keys.
 3. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
    → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
    Latent everywhere a spec supplies a decimal. **Check whether the Fortran

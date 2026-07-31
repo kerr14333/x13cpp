@@ -9,6 +9,7 @@
 #include "diag/amdfct.hpp"     // AapeDiagnostics (average absolute forecast error)
 #include "x11/d8bd9a.hpp"      // D8bD9aOutput (the D8B/D9A savelog blocks)
 #include "diag/genqs.hpp"      // QsStats (the QS seasonality statistics)
+#include "automdl/svaict.hpp"  // AictestSavelog (the aictest.* savelog block)
 #include "common/gen/adj_cmn.hpp"
 #include "common/gen/adxser_cmn.hpp"
 #include "common/gen/agr_cmn.hpp"
@@ -450,6 +451,11 @@ struct X13Context {
         double aiclog = 0.0;   // AICC, log-transformed model
         bool selected_log = false;
     } trnaic_result;
+    // svaict.f's `aictest.*` savelog block -- which AIC-tested regressor group
+    // the final model kept, the AICC difference that decided it, and the
+    // threshold when a non-default one was in force. Filled by
+    // core/src/automdl/svaict.cpp; no auto file output, the caller renders.
+    AictestSavelog aictest_log;
     // slidingspans{} sfs/chs result (core/src/x11/slidingspans.hpp) -- the
     // Max_%_DIFF column + the derived month-to-month SA-change array; the raw
     // per-span S/Sa/Td arrays live on the real COMMON mirror, sspdat below.

@@ -119,7 +119,7 @@ inventory.
 - **`core/src/automdl/automx.cpp:523`**
   Every pickmdl candidate model failed to estimate.
 
-- **`core/src/automdl/automx.cpp:793`**
+- **`core/src/automdl/automx.cpp:806`**
   pickmdl{}: the selected model failed to re-estimate.
 
 
