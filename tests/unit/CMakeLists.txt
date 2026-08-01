@@ -95,6 +95,17 @@ if(WIN32)
             $<TARGET_FILE:x13c> $<TARGET_FILE_DIR:test_capi>)
 endif()
 
+# test_ctod pins the spec-file decimal reader (core/src/specparse/util.cpp)
+# against reference values taken from the vendored oracle Fortran; needs
+# core/src on the include path for specparse/specparse.hpp.
+add_executable(test_ctod test_ctod.cpp)
+target_include_directories(test_ctod PRIVATE
+  "${CMAKE_SOURCE_DIR}/core/include"
+  "${CMAKE_SOURCE_DIR}/core/src"
+  "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(test_ctod PRIVATE x13core x13_fp_flags)
+add_test(NAME test_ctod COMMAND test_ctod)
+
 # The fformat test validates against gfortran when available. Point it at the
 # gfortran the build already knows about (Fortran optional), and give it a
 # writable scratch directory. If gfortran cannot be found the test self-skips.

@@ -2596,3 +2596,66 @@ saturated precondition, not a proof" and left it. The cost of leaving it was
 that four correctly-transcribed Fortran writes sat inert behind guards that
 read as faithful. *When the fix for a saturated precondition is known, the
 saturation is the bug -- the walled corner is only how it was noticed.*
+
+## 58. `ctod` is 1 ulp off on purpose -- the port was already faithful, and now it is pinned.
+
+Board item: "`gtdpvc` parses decimal literals 1 ulp off the nearest double
+(`"0.95"` -> 0.95000000000000007 vs 0.94999999999999996). Latent everywhere a
+spec supplies a decimal. Check whether the Fortran reader does the same before
+changing anything." **It does.** No engine change; a unit test instead.
+
+**The answer is in `ctod.f`, not `gtdpvc.f`.** `gtdpvc` only dispatches;
+`getdbl` calls `ctod`, and `ctod` is a hand-rolled digit accumulator. The
+fraction loop is
+
+    scl = scl * 10D0
+    ctod = ctod + dble(digit)/scl
+
+-- each digit's OWN quotient, added in. Not `strtod`, and not "accumulate a
+mantissa, divide once": the result carries the rounding error of every
+intermediate division. `0.95` becomes `0.9 + 0.05`, whose exact sum
+0.95000000000000002498... sits 4.16e-17 above the upper neighbouring double and
+6.94e-17 below the lower, so it rounds UP -- to exactly the value this port
+produces. `core/src/specparse/util.cpp`'s `ctod` is a verbatim transcription,
+so the port has been right all along.
+
+**Scope, measured over the corpus rather than asserted.** Of the 286 distinct
+decimal literals in `tests/corpus`, **52 differ from the correctly-rounded
+double, always by exactly 1 ulp, in BOTH directions** (34 up, 18 down). The
+heavy users are `regression{b=}` coefficient lists (the -0.0045/-0.0135/...
+family) and user-regressor data, which flow straight into arithmetic. Literals
+that are dyadic rationals -- `3.5`, `19.0`, `1.96`, `0.25` -- are untouched,
+which is why this never showed up as a parity failure.
+
+**It IS gated, and that is the uncomfortable part.** Swapping the accumulator
+for a correctly-rounded conversion breaks **exactly one** parity gate:
+`generated/airline_user-reg-x11.d9a.05`, at the 10th significant digit
+(`0.2373205748E+00` vs `...47E+00`). One key, one row, one spec, out of 5944
+tests. A single accidental canary is not a guardrail -- it is a coincidence that
+happens to be load-bearing, and the next person to "clean up" a hand-rolled
+parser would get a green suite on the first try and a red one on the second.
+
+So: `tests/unit/test_ctod.cpp` (ctest 11/11 -> 12/12). Four tests -- the oracle
+bit patterns, the 1-ulp property stated directly, the dyadic literals that must
+NOT move, and `havdbl`'s no-digits-consumed contract, which is what stops a
+non-numeric token from silently reading as 0.0.
+
+**Two methodological notes worth keeping.**
+
+*The expected values come from the ORACLE, not from a re-transcription.*
+`tools/ref_ctod.f` compiles against the vendored `oracle/fortran/ctod.f` (the
+vendored tree is read, never edited) and prints each double in Z16 hex. Deriving
+them from a second reading of the same Fortran -- which is what the Python probe
+that found the 52 literals was -- would have proved only that I read it the same
+way twice. The probe and the driver agree on all 12 literals, which is the
+check, not the source.
+
+*The test compares BIT PATTERNS, and has to.* Writing `CHECK_EQ(got, 0.95)` in
+C++ compares against the compiler's own correctly-rounded parse -- i.e. against
+the very value the oracle does NOT produce. The test would have failed for the
+right reason and been "fixed" by loosening it.
+
+**And the mutation was re-run against the new test**, per the standing rule that
+a guardrail must be shown able to fail: 11 of its 24 checks fail, naming the
+literals. Before it existed the same mutation cost one 10th-digit assertion in
+a d9a row.

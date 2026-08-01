@@ -89,6 +89,12 @@ double ctod(std::string_view str, int& ipos) {
 after_int:
     if (ipos <= nchr && at(ipos) == '.') {
         ++ipos;
+        // NOT strtod, and NOT a mantissa accumulated then divided once: the
+        // oracle adds each digit's own quotient, so the result carries the
+        // rounding error of every intermediate division. 52 of the 286 distinct
+        // decimal literals in this corpus land 1 ulp off the correctly-rounded
+        // double because of it. Faithful, load-bearing, and pinned by
+        // tests/unit/test_ctod.cpp -- see the note there before "fixing" this.
         double scl = 1.0;
         for (; ipos <= nchr; ++ipos) {
             scl = scl * 10.0;

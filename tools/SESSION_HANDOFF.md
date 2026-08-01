@@ -15,7 +15,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 | check | result |
 |---|---|
 | `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->5944<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->470<!--/x13--> skipped** (~86s) |
-| `cd build && ctest` | 11/11 |
+| `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
 **Run the suite with `-n 8`** (pytest-xdist, installed). 262s serial → ~86s,
@@ -612,6 +612,38 @@ does not notice: `run_parity.py --update` reported `PASS` and wrote a bundle
 from the rejected run. Only `test_m1_parse`'s outcome gate caught it. **Bless,
 then read the `.err` in the bundle.**
 
+## This session, part 9: the `ctod` 1-ulp question -- ANSWERED, no engine change
+
+The board item asked whether the Fortran reader is also 1 ulp off the nearest
+double before changing anything. **It is**, so the port was already faithful and
+the item closes as a test rather than a fix. `docs/M5_PORT_NOTES.md` entry 58;
+the durable pieces:
+
+**The cause is `ctod.f`, not `gtdpvc.f`** -- a hand-rolled accumulator that adds
+each fractional digit's own quotient (`val = val + digit/scl`), so the result
+carries every intermediate division's rounding error. Not `strtod`, and not
+"accumulate a mantissa then divide once" either; both alternatives give
+different doubles. `core/src/specparse/util.cpp` transcribes it verbatim.
+
+**Scope: 52 of the 286 distinct decimal literals in `tests/corpus`** differ from
+the correctly-rounded double, always by exactly 1 ulp, in both directions. The
+heavy users are `regression{b=}` coefficient lists and user-regressor data.
+Dyadic literals (`3.5`, `19.0`, `1.96`) are untouched -- which is why this was
+never a parity failure.
+
+**It was gated by one accidental canary.** Swapping in a correctly-rounded
+conversion breaks exactly ONE gate out of 5944:
+`generated/airline_user-reg-x11.d9a.05`, at the 10th significant digit. Now
+pinned directly by `tests/unit/test_ctod.cpp` (ctest **11/11 -> 12/12**), whose
+expected values come from `tools/ref_ctod.f` compiled against the vendored
+`oracle/fortran/ctod.f` -- **not** from re-transcribing the algorithm, which
+would only prove I read it the same way twice. It compares BIT PATTERNS: writing
+`CHECK_EQ(got, 0.95)` would compare against the C++ compiler's own correctly-
+rounded parse, i.e. against the value the oracle does not produce.
+
+Mutation re-run against the new test: 11 of its 24 checks fail, naming the
+literals.
+
 ## Open, in the order I would take them
 
 1. **`x11aic.f`'s USER branch** (`aictest.xu*`, `:462-591`) -- the last piece
@@ -621,18 +653,13 @@ then read the `.err` in the bundle.**
    rather than dropping the token, so this is walled rather than silent; it
    needs a spec with `x11regression{user=}` before anything else. (The
    TRADING-DAY branch that shared this item closed this session -- part 7.)
-2. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
-   → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
-   Latent everywhere a spec supplies a decimal. **Check whether the Fortran
-   reader does the same before changing anything** — if it does, the port is
-   faithful and this is documentation, not a fix.
-3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-4. **A composite whose components carry a residual peak**, to gate savpk's real
+3. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-5. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+4. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`
