@@ -3521,6 +3521,28 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     bool havtd = false, havhol = false, havln = false, havlp = false;
     int arglog[2 * PARG];
     for (auto& v : arglog) v = -32767;
+    // gtxreg.f's user-defined irregular-component regressor state. Every one of
+    // these arguments used to fall through to the bare consume_value() below --
+    // parsed and DISCARDED -- so a spec with `x11regression{user= data=}` ran to
+    // `OUTCOME: OK` with the user column simply absent from the irregular
+    // regression (measured on extra/airline_x11regression-user: the oracle's xrm
+    // carries 7 columns, this engine's carried 6, and d11 was ~3e-4 out).
+    // Pre-sized, NOT default-constructed: putstr/insptr bound the write against
+    // chrvec.size(), so an empty string abends rather than growing.
+    std::string usrxtt(static_cast<std::size_t>(prm::PUREG * prm::PCOLCR), ' ');
+    bool hvuttl = false, haveux = false, hvstrt = false;
+    bool hvfile = false, havfmt = false;
+    bool lumean = false, luseas = false;   // gtxreg.f:154-155
+    int neltux = 0, nusxrg = 0;
+    std::string xrfile(static_cast<std::size_t>(stdio::PFILCR), ' ');
+    std::string xrfmt(static_cast<std::size_t>(stdio::PFILCR), ' ');
+    int nflchr = 0, nfmtch = 0;
+    int nbvec = prm::NOTSET;             // gtxreg.f: b= scratch
+    bool fixvec_x[prm::PB] = {false};
+    double bvec_x[prm::PB] = {0.0};
+    // gtxreg.f:97 -- Usxtyp starts all-zero, which the adrgef dispatch reads as
+    // the plain 'User-defined' default.
+    for (int i = 1; i <= prm::PUREG; ++i) ctx.usrxrg.usxtyp(i) = 0;
     // gtinpt.f:804-816 ssprep+dlrgef: clear the regARIMA regressors so gtxreg
     // parses the x11reg variables into a bare model. On the bare-ARIMA corpus
     // path the model has no regressors, so the clear is exact; a regARIMA model
@@ -3537,6 +3559,114 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                    ctx.arima.nobs, havsrs, havesp, /*x11reg=*/true, havtd, havhol,
                    havln, havlp, locok, inptok);
             if (ctx.error.lfatal) return;
+        } else if (argidx == 2) {    // user -- names/# columns (gtxreg.f:198)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            gtnmvc(ctx, LPAREN, true, prm::PUREG, usrxtt,
+                   ctx.usrxrg.usrxpt.data(), ctx.usrxrg.ncxusx, prm::PCOLCR,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            hvuttl = argok && ctx.usrxrg.ncxusx > 0;
+        } else if (argidx == 3) {    // data -- the X matrix (gtxreg.f:206-210)
+            if (hvfile)
+                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                       "Getting data from a file");
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            gtdpvc(ctx, LPAREN, true, prm::PUSERX, ctx.xrgmdl.xuserx.data(),
+                   neltux, argok, inptok);
+            if (ctx.error.lfatal) return;
+            haveux = argok && neltux > 0;
+        } else if (argidx == 4) {    // start -- X matrix begin date (gtxreg.f:215)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int nelt = 0;
+            // Bgusrx, NOT a separate x11reg date: the oracle shares the one
+            // regARIMA slot between the two specs (gtxreg.f:215 writes the same
+            // Bgusrx getreg.f:182 does), which is why a spec may not carry both
+            // a regression{} and an x11regression{} user matrix with different
+            // start dates. Transcribed as written.
+            gtdtvc(ctx, havesp, ctx.model.sp, LPAREN, false, 1,
+                   ctx.arima.bgusrx.data(), nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            hvstrt = argok && nelt > 0;
+        } else if (argidx == 5) {    // file -- X matrix from disk
+            if (haveux)
+                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                       "Already have user regression");
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int nelt = 0; int tmpptr[2];
+            gtnmvc(ctx, LPAREN, true, 1, xrfile, tmpptr, nelt, stdio::PFILCR,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                eltlen(ctx, 1, tmpptr, nelt, nflchr);
+                if (ctx.error.lfatal) return;
+                hvfile = true;
+            }
+        } else if (argidx == 6) {    // format
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int nelt = 0; int tmpptr[2];
+            gtnmvc(ctx, LPAREN, true, 1, xrfmt, tmpptr, nelt, stdio::PFILCR,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok) {
+                eltlen(ctx, 1, tmpptr, nelt, nfmtch);
+                if (ctx.error.lfatal) return;
+                havfmt = true;
+            }
+        } else if (argidx == 7) {    // b -> gtrgvl.f
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            gtrgvl(ctx, nbvec, fixvec_x, bvec_x, inptok);
+            if (ctx.error.lfatal) return;
+        } else if (argidx == 10) {   // usertype (gtxreg.f:264-284)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            int usxidx[prm::PUREG];
+            // USXDIC = 'tdaoholidayuser' -- FOUR choices, not getreg.f's
+            // sixteen; the irregular-component regression has no seasonal /
+            // constant / LOM / LS / SO / transitory user types.
+            static const char USXDIC[] = "tdaoholidayuser";
+            static const int usxptr[5] = {1, 3, 5, 12, 16};
+            gtdcvc(ctx, LPAREN, false, prm::PUREG, USXDIC, usxptr, 4,
+                   "Improper entry for usertype.", usxidx, nusxrg, argok,
+                   inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nusxrg > 0) {
+                for (int i = 1; i <= nusxrg; ++i) {
+                    const int u = usxidx[i - 1];
+                    int& ut = ctx.usrxrg.usxtyp(i);
+                    if (u == 1) { ut = prm::PRGUTD; havtd = true; }
+                    else if (u == 2) {
+                        // PORTED VERBATIM, and note what it does: `ao` writes
+                        // PRGTAO (13), the plain regARIMA AO type -- NOT the
+                        // PRGUAO (61) that the adrgef dispatch in the tail below
+                        // tests for, and not what getreg.f's `ao` writes. So an
+                        // `ao` column falls through to the default arm and is
+                        // titled 'User-defined' with type PRGTUD. It also sets
+                        // Havxtd, i.e. an AO column marks the run as carrying
+                        // trading day. Both look like defects; neither is
+                        // claimed as a CB entry, because nothing in this port
+                        // yet exercises `x11regression{usertype=ao}` and the
+                        // rule here is to measure before naming one.
+                        ut = prm::PRGTAO; havtd = true;
+                    }
+                    else if (u == 3) { ut = prm::PRGTUH; havhol = true; }
+                    else ut = prm::PRGTUD;   // 4/user, or NOTSET
+                }
+            }
+        } else if (argidx == 30) {   // centeruser (gtxreg.f:537-543)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int ivec[1] = {0}; int nelt = 0;
+            static const char URRDIC[] = "meanseasonal";
+            static const int urrptr[3] = {1, 5, 13};
+            gtdcvc(ctx, LPAREN, false, 1, URRDIC, urrptr, 2,
+                   "Choices for centeruser are mean or seasonal.", ivec, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                lumean = (ivec[0] == 1);
+                luseas = (ivec[0] == 2);
+            }
         } else if (argidx == 20) {   // tdprior -> Dwt (gtxreg.f:416-423)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             int neltdw = 0;
@@ -3661,6 +3791,145 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
             if (ctx.error.lfatal) return;
         }
     }
+    // ---- gtxreg.f:607-800 -- the user-defined irregular regressors ----------
+    // gtxreg.f:607-620 -- the b= writeback, over Nb + Ncxusx so a b= list may
+    // carry initial values for the user columns too. Runs before the adrgef
+    // loop, which reads B(idisp)/Regfx(idisp) out of the slots past Nb.
+    if (nbvec != prm::NOTSET) {
+        const int ntot = ctx.model.nb + ctx.usrxrg.ncxusx;
+        if (nbvec > 0 && nbvec != ntot) {
+            // gtxreg.f:609-613 writes the count-mismatch message with a plain
+            // WRITE, not through inpter, so Inptok is untouched and the run
+            // continues with NO coefficients applied. Print surface; the
+            // skipped writeback is the behaviour. Same shape as getreg.f:543.
+        } else {
+            for (int i = 1; i <= ntot && i <= prm::PB; ++i) {
+                ctx.model.regfx(i) = fixvec_x[i - 1];
+                ctx.mdldat.b(i) = bvec_x[i - 1];
+            }
+        }
+    }
+    // gtxreg.f:622-626 -- data from a file.
+    if (inptok && hvfile && !haveux) {
+        if (havfmt) {
+            inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                   "formatted x11regression user-regressor files (format=) are "
+                   "not yet supported; use free-format data.");
+            inptok = false;
+        } else {
+            bool hvfreq = false; int freq = 0; bool argok = true;
+            gtfldt_free(ctx, prm::PUSERX, xrfile, nflchr,
+                        ctx.xrgmdl.xuserx.data(), neltux, hvfreq, freq, hvstrt,
+                        argok, inptok);
+            if (ctx.error.lfatal) return;
+            haveux = argok && neltux > 0;
+        }
+    }
+    (void)nfmtch;
+    ctx.usrxrg.usrxtt = usrxtt;    // persist the packed column names
+    // gtxreg.f:698-800.
+    if (inptok && (hvuttl || haveux)) {
+        const int* ep = ctx.lex.errpos.data() + 1;
+        const int ncxusx = ctx.usrxrg.ncxusx;
+        if (hvuttl != haveux) {
+            inpter(ctx, PERROR, ep,
+                   "Need to specify both user-defined irregular component "
+                   "regression variables and X-matrix.");
+            inptok = false;
+        } else if (ncxusx > 0 && (neltux % ncxusx) != 0) {
+            inpter(ctx, PERROR, ep,
+                   "Number of user-defined X elements not equal to a multiple "
+                   "of the number of columns.");
+            inptok = false;
+        } else {
+            // gtxreg.f:719 -- note the default start is BEGSRS (the series
+            // start), not Begspn.
+            if (!hvstrt) {
+                ctx.arima.bgusrx(1) = ctx.arima.begsrs(1);
+                ctx.arima.bgusrx(2) = ctx.arima.begsrs(2);
+            }
+            ctx.usrxrg.nrxusx = neltux / ncxusx;
+            if (!chkcvr(ctx.arima.bgusrx.data(), ctx.usrxrg.nrxusx,
+                        ctx.mdldat.begspn.data(), ctx.mdldat.nspobs,
+                        ctx.model.sp)) {
+                inpter(ctx, PERROR, ep,
+                       "user-defined regression variables do not cover the span "
+                       "of the data.");
+                inptok = false;
+            } else {
+                int idisp = ctx.model.grp(ctx.model.ngrp) - 1;
+                for (int i = 1; i <= ncxusx; ++i) {
+                    ++idisp;
+                    std::string effttl; int nchr = 0;
+                    getstr(ctx, ctx.usrxrg.usrxtt.data(),
+                           ctx.usrxrg.usrxpt.data(), ncxusx, i, effttl, nchr);
+                    if (ctx.error.lfatal) return;
+                    std::string_view et = std::string_view(effttl).substr(
+                        0, static_cast<std::size_t>(nchr));
+                    // gtxreg.f:728-747 -- only FOUR arms, and the type passed
+                    // to adrgef is Usxtyp(i) itself on the first three and the
+                    // literal PRGTUD on the default. (getreg.f's equivalent has
+                    // sixteen; the irregular regression has no seasonal /
+                    // constant / LOM / LS / SO / transitory user types.)
+                    const int ut = ctx.usrxrg.usxtyp(i);
+                    const char* gt; int vt;
+                    if (ut == prm::PRGTUH) {
+                        gt = "User-defined Holiday";      vt = ut;
+                    } else if (ut == prm::PRGUTD) {
+                        gt = "User-defined Trading Day";  vt = ut;
+                    } else if (ut == prm::PRGUAO) {
+                        gt = "User-defined AO";           vt = ut;
+                    } else {
+                        gt = "User-defined";              vt = prm::PRGTUD;
+                    }
+                    const double initvl = (idisp >= 1 && idisp <= prm::PB)
+                                              ? ctx.mdldat.b(idisp) : 0.0;
+                    const bool varfix = (idisp >= 1 && idisp <= prm::PB)
+                                            ? ctx.model.regfx(idisp) : false;
+                    adrgef(ctx, initvl, et, gt, vt, varfix, true);
+                    if (ctx.error.lfatal) return;
+                }
+                // gtxreg.f:751-800 -- remove the regressor mean or the seasonal
+                // means from the user columns.
+                double* ux = ctx.xrgmdl.xuserx.data();
+                if (lumean) {
+                    std::vector<double> urmean(static_cast<std::size_t>(ncxusx), 0.0);
+                    for (int i = 1; i <= neltux; ++i) {
+                        int i2 = i % ncxusx; if (i2 == 0) i2 = ncxusx;
+                        urmean[i2 - 1] += ux[i - 1];
+                    }
+                    for (int c = 0; c < ncxusx; ++c)
+                        urmean[c] /= static_cast<double>(ctx.usrxrg.nrxusx);
+                    for (int i = 1; i <= neltux; ++i) {
+                        int i2 = i % ncxusx; if (i2 == 0) i2 = ncxusx;
+                        ux[i - 1] -= urmean[i2 - 1];
+                    }
+                } else if (luseas) {
+                    const int sp = ctx.model.sp;
+                    const int n2 = sp * ncxusx;
+                    for (int i = 1; i <= sp; ++i) {
+                        std::vector<double> urmean(static_cast<std::size_t>(ncxusx), 0.0);
+                        std::vector<double> urnum(static_cast<std::size_t>(ncxusx), 0.0);
+                        const int i2 = (i - 1) * ncxusx + 1;
+                        for (int j = i2; j <= neltux; j += n2)
+                            for (int k = j; k <= ncxusx + j - 1; ++k) {
+                                int k2 = k % ncxusx; if (k2 == 0) k2 = ncxusx;
+                                urmean[k2 - 1] += ux[k - 1];
+                                urnum[k2 - 1] += 1.0;
+                            }
+                        for (int c = 0; c < ncxusx; ++c)
+                            if (urnum[c] > 0.0) urmean[c] /= urnum[c];
+                        for (int j = i2; j <= neltux; j += n2)
+                            for (int k = j; k <= ncxusx + j - 1; ++k) {
+                                int k2 = k % ncxusx; if (k2 == 0) k2 = ncxusx;
+                                ux[k - 1] -= urmean[k2 - 1];
+                            }
+                    }
+                }
+            }
+        }
+    }
+
     // gtinpt.f:830 loadxr(T): move the parsed x11reg model into ctx.xrgmdl so
     // the regARIMA estimate stays the bare ARIMA model (the oracle fits np=3, no
     // TD -- the x11reg estimates are not ML). gtinpt.f:832 restor: restore the

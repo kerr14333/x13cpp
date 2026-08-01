@@ -110,6 +110,23 @@ bool xrgdrv(X13Context& ctx, bool span_mode) {
     const int sv_lterm = ctx.x11opt.lterm;
     const int sv_ksdev = ctx.xtrm.ksdev;
 
+    // The regARIMA USER-regressor state. loadxr(F) below copies the x11reg
+    // store's columns into these slots, and loadxr(T) does NOT put them back --
+    // it only saves the working MODEL. In the oracle that is harmless because
+    // xrgdrv.f:207's restor() reloads the whole regARIMA model store; this
+    // port's restor_span only resets the x11 filter state, so without an
+    // explicit save the x11regression user columns stay visible to the regARIMA
+    // side for the rest of the run. Measured: with
+    // `x11regression{user=}`, savotl's `Ncusrx.gt.0` guard then fired and the
+    // engine emitted an `outlier.user` key the oracle does not. Same class as
+    // the Lterm/Ksdev leak above -- a transparent pass that writes state its
+    // own restore does not cover.
+    const int sv_ncusrx = ctx.usrreg.ncusrx;
+    const auto sv_usrtyp = ctx.usrreg.usrtyp;
+    const auto sv_usrptr = ctx.usrreg.usrptr;
+    const auto sv_usrttl = ctx.usrreg.usrttl;
+    const int sv_nrusrx = ctx.arima.nrusrx;
+
     // --- xrgdrv.f:129: load the x11regression TD design into the working model.
     loadxr(ctx, /*toxreg=*/false);
 
@@ -217,6 +234,12 @@ bool xrgdrv(X13Context& ctx, bool span_mode) {
     loadxr(ctx, /*toxreg=*/true);
     xrg_clear_working(ctx);
     restor_span(ctx);
+    // ...and the user-regressor slots loadxr(F) overwrote (see the save above).
+    ctx.usrreg.ncusrx = sv_ncusrx;
+    ctx.usrreg.usrtyp = sv_usrtyp;
+    ctx.usrreg.usrptr = sv_usrptr;
+    ctx.usrreg.usrttl = sv_usrttl;
+    ctx.arima.nrusrx = sv_nrusrx;
     if (pktd) {
         ctx.picktd.picktd = true;
         ctx.prior.priadj = sv_priadj;

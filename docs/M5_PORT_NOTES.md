@@ -2659,3 +2659,87 @@ right reason and been "fixed" by loosening it.
 a guardrail must be shown able to fail: 11 of its 24 checks fail, naming the
 literals. Before it existed the same mutation cost one 10th-digit assertion in
 a d9a row.
+
+## 59. `x11regression{user=}` -- seven arguments parsed and discarded, found while scouting the aictest USER branch.
+
+Board item 1 was "port `x11aic.f`'s USER branch (`aictest.xu*`)", whose stated
+precondition was "needs a spec with `x11regression{user=}` first". Writing that
+spec is what found this: **`user=`, `data=`, `start=`, `file=`, `format=`,
+`b=` and `usertype=` all fell through `gt_x11regression`'s
+`else { consume_value(ctx, nullptr); }`** -- accepted and thrown away.
+
+**The measurement, on `extra/airline_x11regression-user` (new, hand-authored).**
+One user column, a 0.05*cos(9k degrees) 40-month cycle deliberately NOT
+commensurate with the 12-month seasonal so the seasonal factors cannot absorb
+it, alongside `variables=(td)`:
+
+| | oracle | engine (before) |
+|---|---|---|
+| `xrm` columns | **7** (Mon..Sat + u1) | **6** |
+| d11 1949.01 | 123.152974066993 | 123.113261 |
+| d11 1949.02 | 124.368456029538 | 124.712176 |
+
+`OUTCOME: OK` throughout. The user column was simply absent from the irregular
+regression. Textbook parsed-but-unread -- the fourth instance in this block
+after `regression{aicdiff=}`, `x11regression{aicdiff=}` and
+`x11regression{aictest=}`.
+
+**What was actually missing was only the PARSE.** The downstream plumbing was
+already there: `loadxr` moves `Ncxusx`/`Nrxusx`/`Usxtyp`/`Usrxtt`/`Xuserx` into
+the working regression slots, and `regvar` builds the columns from them. So the
+port is `gtxreg.f`'s argument arms plus its :607-800 tail -- the `b=` writeback
+over `Nb + Ncxusx`, the `hvuttl`/`haveux` and coverage checks, the `adrgef`
+loop, and the `centeruser=` mean/seasonal-mean removal.
+
+**Three things worth not re-deriving.**
+
+*`gtxreg.f`'s adrgef dispatch has FOUR arms, not `getreg.f`'s sixteen* --
+Holiday / Trading Day / AO / default. The irregular-component regression has no
+seasonal, constant, LOM, LOQ, leap-year, LS, SO or transitory user types.
+
+*`start=` writes `Bgusrx`* -- the SAME slot `regression{start=}` writes. The
+oracle shares one begin-date between the two specs' user matrices, so a spec
+cannot give them different start dates. Transcribed as written.
+
+*A pre-sized string is load-bearing.* `gtnmvc` writes through `putstr`/`insptr`,
+which bound the write against `chrvec.size()`; a default-constructed
+`std::string` therefore ABENDS rather than growing. The symptom was a bare
+`OUTCOME: FATAL` with no message -- the parse fatals before anything can print
+one. `usrxtt` is now sized `PUREG * PCOLCR`, matching `usrttl`.
+
+**The second bug, and it is the more interesting one: a state leak from a
+transparent pass.** With the parse fixed, the engine emitted an `outlier.user`
+savelog key the oracle does not. Cause: `xrgdrv`'s transparent prior-TD pass
+calls `loadxr(F)`, which copies the x11reg store's user columns into the
+regARIMA slots (`Ncusrx`, `Usrtyp`, `Usrptr`, `Usrttl`, `Nrusrx`), and
+`loadxr(T)` does **not** put them back -- it saves only the working MODEL. The
+oracle is immune because `xrgdrv.f:207`'s `restor()` reloads the whole regARIMA
+store; this port's `restor_span` resets only the x11 filter state. So `Ncusrx`
+stayed at the x11reg value for the rest of the run and `savotl.f:150`'s
+`IF(Ncusrx.gt.0)` guard fired.
+
+Exactly the class already recorded for `Lterm`/`Ksdev` in this same routine:
+*a transparent pass that writes state its own restore does not cover.* Third
+time in `xrgdrv` alone. The user-regressor slots now join its save/restore set.
+
+**Mutations, both halves, failing at very different volumes:** suppress the
+user-column build (i.e. restore the old discard) **9 gates**; drop the `Ncusrx`
+restore **1 gate** -- and that one gate is `test_check_diagnostics`, which
+compares the .udg key SET, not values. Without a savelog key-set comparison the
+leak would have been invisible; it is the same missing-key discipline entry 54
+bought.
+
+**Still open, and this entry does not touch it:** `x11aic.f:462-591`'s
+`aictest=(user)` branch, which strips the `Ncusrx` columns, scores without them
+and restores them through seven `adrgef` arms by `Rgvrtp`. The parser still
+refuses that token. What this entry delivers is its precondition.
+
+**Measured but NOT claimed as a CB entry.** `gtxreg.f:274` maps
+`usertype=ao` to `PRGTAO` (13, the plain regARIMA AO type) where `getreg.f`
+maps its `ao` to `PRGUAO` (61) -- and the adrgef dispatch at :740 tests for
+`PRGUAO`, so an `ao` column falls through to the default arm and is titled
+'User-defined' with type `PRGTUD`. The same line also sets `Havxtd`, marking the
+run as carrying trading day because of an AO column. Both read as defects.
+Neither is claimed, because no spec here exercises
+`x11regression{usertype=ao}` yet and the rule is to measure before naming one.
+Transcribed verbatim, with the reasoning in the code.

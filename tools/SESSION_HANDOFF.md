@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->5944<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->470<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->5955<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->470<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -408,7 +408,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5944<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5955<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -644,15 +644,61 @@ rounded parse, i.e. against the value the oracle does not produce.
 Mutation re-run against the new test: 11 of its 24 checks fail, naming the
 literals.
 
+## This session, part 10: `x11regression{user=}` -- seven arguments parsed and DISCARDED
+
+Board item 1 said the aictest USER branch "needs a spec with
+`x11regression{user=}` before anything else". Writing that spec is what found
+this. `docs/M5_PORT_NOTES.md` entry 59; the durable pieces:
+
+**`user=`, `data=`, `start=`, `file=`, `format=`, `b=` and `usertype=` all fell
+through `gt_x11regression`'s `else { consume_value(ctx, nullptr); }`.** Measured
+on `extra/airline_x11regression-user` (new, hand-authored): the oracle's `xrm`
+carries **7** columns, this engine's carried **6** -- the user column simply
+absent -- and d11 was ~3e-4 out, at `OUTCOME: OK`. Fourth parsed-but-unread in
+this block after `regression{aicdiff=}`, `x11regression{aicdiff=}` and
+`x11regression{aictest=}`.
+
+**Only the PARSE was missing.** `loadxr` already moves the x11reg user store
+into the working slots and `regvar` already builds the columns; the port is
+`gtxreg.f`'s argument arms plus its :607-800 tail. Note its adrgef dispatch has
+**four** arms, not `getreg.f`'s sixteen, and `start=` writes the SAME `Bgusrx`
+that `regression{start=}` does.
+
+**A pre-sized `std::string` is load-bearing.** `gtnmvc` writes through
+`putstr`/`insptr`, which bound against `chrvec.size()`, so a default-constructed
+string ABENDS instead of growing -- and the symptom is a bare `OUTCOME: FATAL`
+with NO message, because the parse dies before it can print one. Size these
+buffers like `usrttl` (`PUREG * PCOLCR`) or lose an hour.
+
+**Second bug: another state leak from `xrgdrv`'s transparent pass.** With the
+parse fixed the engine emitted an `outlier.user` key the oracle does not.
+`loadxr(F)` copies the x11reg user columns into the regARIMA slots (`Ncusrx`,
+`Usrtyp`, `Usrptr`, `Usrttl`, `Nrusrx`) and `loadxr(T)` does NOT put them back;
+the oracle is covered by `xrgdrv.f:207`'s `restor()`, this port's `restor_span`
+is not. **Third leak of this exact shape in `xrgdrv` alone** (after `Lterm` and
+`Ksdev`) -- when adding anything to that routine, assume the restore is
+incomplete until checked.
+
+**Mutations, both halves:** suppress the user-column build **9 gates**; drop the
+`Ncusrx` restore **1** -- and that one is `test_check_diagnostics`, which
+compares the .udg key SET rather than values. Without a key-set gate the leak
+was invisible.
+
+**Not claimed as a CB entry, deliberately:** `gtxreg.f:274` maps `usertype=ao`
+to `PRGTAO` (13) where the :740 dispatch tests `PRGUAO` (61), so an `ao` column
+is titled 'User-defined' -- and the same line sets `Havxtd`. Both read as
+defects; no spec exercises `x11regression{usertype=ao}` yet, and the rule is to
+measure before naming one.
+
 ## Open, in the order I would take them
 
 1. **`x11aic.f`'s USER branch** (`aictest.xu*`, `:462-591`) -- the last piece
-   of that routine. It strips the `Ncusrx` user-defined columns, scores the
-   model without them, then restores them through seven `adrgef` arms keyed
-   on `Rgvrtp`. The parser now REFUSES `x11regression{aictest=(user)}`
-   rather than dropping the token, so this is walled rather than silent; it
-   needs a spec with `x11regression{user=}` before anything else. (The
-   TRADING-DAY branch that shared this item closed this session -- part 7.)
+   of that routine, and its precondition is now MET: `x11regression{user=}`
+   parses, builds and gates (part 10). The branch strips the `Ncusrx`
+   user-defined columns, scores the model without them, then restores them
+   through seven `adrgef` arms keyed on `Rgvrtp`. The parser still REFUSES
+   `x11regression{aictest=(user)}`, so this is walled rather than silent.
+   Start from `extra/airline_x11regression-user` + `aictest = (user)`.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
