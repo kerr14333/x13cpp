@@ -81,8 +81,7 @@ static void x11_easter_prepass(X13Context& ctx) {
     restor_span(ctx);
 }
 
-bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
-                  bool lseats, bool lx11) {
+void x11_editor_geometry(X13Context& ctx, bool lsadj, bool set_setpri) {
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
     const int* begspn = ctx.mdldat.begspn.data();
@@ -91,9 +90,8 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     // Span offset within the full input series (getsrs guarantees coverage).
     int offset = 0;
     dfdate(begspn, begsrs, sp, offset);
-    const double* aptr = ctx.arima.y.data() + offset;   // 1-based over the span
 
-    // editor.f 224-233: forecast/backcast pointer bookkeeping. No model here, so
+    // editor.f 224-233: forecast/backcast pointer bookkeeping. With no model
     // Nfcst = Nbcst = 0 and the padded buffer collapses to the observed span.
     const int frstsy = offset + 1;
     ctx.arima.frstsy = frstsy;
@@ -120,7 +118,6 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
         ctx.extend.begbk2(2) = ctx.extend.begbak(2);
     }
     ctx.extend.begbk2(1) = ctx.extend.begbak(1);
-    const bool lsadj = true;                             // x11ari.f:76 Lx11.or.Lseats
     const int fctdrp = ctx.arima.fctdrp;
     int nfdrp = nfcst;
     if (!lsadj && fctdrp > 0) nfdrp = std::max(0, nfcst - fctdrp);
@@ -129,6 +126,47 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     ctx.extend.nofpob = nspobs + nfdrp;
     ctx.extend.nbfpob = nspobs + nfdrp + nbcst;
     ctx.lzero.lsp = 1;
+
+    // editor.f:233 -- span pointers. Base no-model: Pos1bk = Pos1ob = 1,
+    // Posfob = Posffc = Nspobs.
+    setxpt(ctx, nfdrp, lsadj, fctdrp);
+
+    // editor.f:851 Setpri=Pos1bk -- the 1-based start of the prior-adjustment
+    // span in the padded buffer, which is what x11int's Adj -> Sprior copy and
+    // the x11pt2 makadj/tdlom Sprior copies index by.
+    //
+    // It is written ONCE per run, at editor time, and never refreshed -- not
+    // even by x11ari.f:149's second setxpt, which can move Pos1bk when the
+    // model stage zeroes Nfcst/Nbcst. `set_setpri` is how the two callers say
+    // which of them is standing in for the editor: on the MODEL path that is
+    // the pre-model stage (run_pre_model), which runs before automd/automx and
+    // so keeps tdaic.f:600-623's direct Sprior write alive; on the no-model
+    // path nothing runs earlier and x11_prestage is the editor.
+    if (set_setpri) ctx.adj.setpri = ctx.x11ptr.pos1bk;
+}
+
+bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
+                  bool lseats, bool lx11) {
+    const int sp = ctx.model.sp;
+    const int* begsrs = ctx.arima.begsrs.data();
+    const int* begspn = ctx.mdldat.begspn.data();
+    const int nspobs = ctx.mdldat.nspobs;
+
+    // Span offset within the full input series (getsrs guarantees coverage).
+    int offset = 0;
+    dfdate(begspn, begsrs, sp, offset);
+    const double* aptr = ctx.arima.y.data() + offset;   // 1-based over the span
+
+    // editor.f 206-233 + :851. On the model path this is the SECOND pass over
+    // the geometry -- the pre-model stage already ran it, and this one is
+    // x11ari.f:149's re-derivation, which picks up any Nfcst/Nbcst the model
+    // stage zeroed. Setpri does NOT move with it (see x11_editor_geometry).
+    x11_editor_geometry(ctx, /*lsadj=*/true,   // x11ari.f:76 Lx11.or.Lseats
+                        /*set_setpri=*/!has_model);
+    const int nfcst = ctx.extend.nfcst;
+    const int nbcst = ctx.extend.nbcst;
+    const int nfdrp = ctx.extend.nfdrp;
+    const int fctdrp = ctx.arima.fctdrp;
 
     // editor.f:150 Ny=Sp ; editor.f:235 Lyr=Begspn(1) ; editor.f:1486 Kersa=0
     // (set under IF(Lx11)). Lyr (the calendar year of the analyzed span's
@@ -181,9 +219,7 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
         if (ktc >= 7 && sp == 4) ctx.x11opt.tic = 4.5;
     }
 
-    // Span pointers (setxpt.f). Base no-model: Pos1bk = Pos1ob = 1,
-    // Posfob = Posffc = Nspobs.
-    setxpt(ctx, nfdrp, lsadj, fctdrp);
+    // (setxpt already ran, inside x11_editor_geometry above.)
     // editor.f:234 -- on the composite total's run, reconcile the direct and
     // indirect buffer geometries before anything reads the pointers.
     if (ctx.agr.iagr == 3) agrxpt(ctx, begspn, sp);
@@ -216,11 +252,6 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     }
 
     const int pos1ob = ctx.x11ptr.pos1ob;
-    // editor.f:851 Setpri=Pos1bk -- the 1-based start of the prior-adjustment span
-    // in the padded buffer. Never set in the base port (no gated prior-adj spec);
-    // required now that the aictest leap-year prior gives Nadj>0, so x11int and the
-    // x11pt2 makadj/tdlom Sprior copies index correctly.
-    ctx.adj.setpri = ctx.x11ptr.pos1bk;
 
     // (tdprior weight resolution / Kswv now happens at parse -- gtinpt.f:1484-1536
     // editor slice -- so both the pre-model estimation input and x11pt1 see the
@@ -305,7 +336,17 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     // X-11 array initialization (x11int.f) -- once, before both the (optional)
     // Easter transparent pre-pass and the main spine, so X11hol/Faccal set by
     // the Easter estimation survive into the main pass's prior fold.
-    x11int(ctx);
+    //
+    // x11int.f:53's `Adj -> Sprior` copy is issued only on the NO-MODEL path.
+    // The oracle calls x11int from x12run.f:174, i.e. BEFORE x11ari and so
+    // before the model stage; this port reaches it after. On the model path the
+    // copy has therefore already been made, at the oracle's own point in time,
+    // by run_pre_model -- and repeating it here would overwrite the Sprior that
+    // tdaic.f:600-623 / rmlpyr.f:59 / pass2.f:101 write DURING model selection,
+    // which is precisely the Picktd-flip corner (M5_PORT_NOTES entry 55). Those
+    // three writes are the reason the copy cannot simply be moved: whichever of
+    // them fired last is the value X-11 must see.
+    x11int(ctx, /*copy_sprior=*/!has_model);
 
     // Editor step (editor.f:1909-1920 / gtinpt.f:1239): x11easter=yes (Keastr>=1)
     // with no user-mean irregular regression enables the classic X-11 Easter

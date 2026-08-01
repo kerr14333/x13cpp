@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**17 walls.**
+**16 walls.**
 
 
 ## Automatic model selection
@@ -31,10 +31,6 @@ reproduce.
 - **`core/src/automdl/automx.cpp:459`**
   pickmdl{} with regression{aictest=(user)} or user-defined holiday chi-square testing is not yet ported (usraic.f / chkchi.f have no C++; automx.f:463-500 runs them inside the candidate loop).
   *Fortran:* `automx.f:463-500`
-
-- **`core/src/automdl/automx.cpp:591`**
-  pickmdl{}: a trading-day AIC verdict that DIFFERS between candidates (automx.f:259-296's Picktd restore) is not yet bit-exact -- d11/d13 land 0.885%/2.655% off on Februaries.
-  *Fortran:* `automx.f:259-296`
 
 
 ## Diagnostics
@@ -119,7 +115,7 @@ inventory.
 - **`core/src/automdl/automx.cpp:524`**
   Every pickmdl candidate model failed to estimate.
 
-- **`core/src/automdl/automx.cpp:842`**
+- **`core/src/automdl/automx.cpp:803`**
   pickmdl{}: the selected model failed to re-estimate.
 
 

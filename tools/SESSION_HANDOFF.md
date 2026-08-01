@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **5899 passed / 0 failed / 466 skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->5944<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->470<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | 11/11 |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -408,7 +408,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5932<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5944<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -469,7 +469,7 @@ branches, which the engine does not port — the Easter branch only) and
 `aictest.pv` (`arima.f:463`, needs `regression{pvaictest=}`, which no corpus
 spec sets). All three are named in the gate's UNOWNED table with their routine.
 
-## This session, part 6: the Picktd-flip corner — ROOT-CAUSED, still walled
+## This session, part 6: the Picktd-flip corner — ROOT-CAUSED (fixed in part 8)
 
 No engine change, and that is the honest result. The wall in `automx.cpp` now
 carries the whole chain instead of a suspect list, and the suspect list it
@@ -574,37 +574,65 @@ increment's `aictest=(user)`, and e.g. the older `transform mode=diff`) is NOT
 inventoried in `docs/WALLS.md` -- walls.py scans only the `*_not_ported`/`fatal`
 helpers. Pre-existing blind spot in the wall inventory, not in the engine.
 
+## This session, part 8: `Setpri` moved ahead of the model stage -- CLOSED
+
+The change part 6 root-caused and declined to make. It is small, and across the
+whole corpus **exactly neutral**: the only deltas are the twelve gates the new
+probe spec adds. `docs/M5_PORT_NOTES.md` entry 57 has the record; the durable
+pieces:
+
+**The wall in `automx.cpp` is gone** (17 gaps -> 16). `extra/airline_pickmdl-
+aictest-tdflip` -- the probe spec part 6 described, now committed -- gates the
+Picktd restore on twelve tests, d10-d13/d16 through the binding included.
+
+**What actually moved.** The editor geometry is factored into
+`x11_editor_geometry` (`driver/x11_prestage.cpp`). `run_pre_model` calls it just
+ahead of the model stage and issues x11int.f:53's `Adj -> Sprior` copy there;
+`x11_prestage` calls it again -- that second call IS `x11ari.f:149`'s second
+`setxpt` -- but does NOT re-assign `Setpri`, because the oracle never refreshes
+it after editor.f:851. The post-model copy is suppressed on the model path
+(`x11int(ctx, copy_sprior=false)`). Three model-stage Sprior writes go live with
+it: `tdaic.f:600-623`, `rmlpyr.f:59`, `pass2.f:101`.
+
+**Placement inside the pre-model stage is load-bearing, and NOT where part 6
+implied.** The copy cannot sit beside the `/adjcmn/` record: `trnaic`
+(x11ari.f:81) rewrites `Adj` wholesale afterwards and the oracle re-issues the
+copy after it at `trnaic.f:278`, a line this port does not have. Issuing it
+after trnaic covers both.
+
+**Both mutations fail, and DIFFERENTLY.** Restoring the post-model copy and
+suppressing the pre-model `Setpri` each break the same five parity gates -- but
+the second also breaks a ctest unit test. The two halves are not one switch
+described twice.
+
+**Spec-authoring trap.** `x11{save=(b1 ...)}` is REJECTED by the oracle, so a
+spec like this cannot ship the b1 golden `test_x11_tables` discovery requires;
+it gates through `test_bindings` (discovery keyed on d11) instead. And blessing
+does not notice: `run_parity.py --update` reported `PASS` and wrote a bundle
+from the rejected run. Only `test_m1_parse`'s outcome gate caught it. **Bless,
+then read the `.err` in the bundle.**
+
 ## Open, in the order I would take them
 
-1. **Move `Setpri` (and the span pointers it derives from) ahead of the model
-   stage**, so `tdaic.f:600-623`'s `Sprior` write stops being dead and the
-   post-model `Adj -> Sprior` compensation in `x11int` can be dropped. This is
-   the fix for the Picktd-flip corner — fully root-caused this session, see the
-   section above and `docs/M5_PORT_NOTES.md` entry 55 — and it is a
-   driver-ordering change touching `run_pre_model` / `x11_prestage`, so it
-   wants a session with the suite in front of it rather than a quick patch.
-   The probe spec is reproducible in three lines: take
-   `extra/airline_pickmdl-aictest-td.spc` and add `aicdiff = 19.0` to its
-   `regression{}`.
-2. **`x11aic.f`'s USER branch** (`aictest.xu*`, `:462-591`) -- the last piece
+1. **`x11aic.f`'s USER branch** (`aictest.xu*`, `:462-591`) -- the last piece
    of that routine. It strips the `Ncusrx` user-defined columns, scores the
    model without them, then restores them through seven `adrgef` arms keyed
    on `Rgvrtp`. The parser now REFUSES `x11regression{aictest=(user)}`
    rather than dropping the token, so this is walled rather than silent; it
    needs a spec with `x11regression{user=}` before anything else. (The
    TRADING-DAY branch that shared this item closed this session -- part 7.)
-3. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
+2. **`gtdpvc` parses decimal literals 1 ulp off the nearest double**: `"0.95"`
    → `0.95000000000000007` vs the correctly-rounded `0.94999999999999996`.
    Latent everywhere a spec supplies a decimal. **Check whether the Fortran
    reader does the same before changing anything** — if it does, the port is
    faithful and this is documentation, not a fix.
-4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-5. **A composite whose components carry a residual peak**, to gate savpk's real
+4. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-6. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+5. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`

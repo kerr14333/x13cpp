@@ -18,6 +18,7 @@
 #include "regarima/regvar.hpp"
 #include "x11/x11reg.hpp"            // pritd, tdset_td (x11regression tdprior)
 #include "x11/xrgdrv.hpp"            // xrgdrv (x11regression OLS prior TD, Ixreg>=2)
+#include "driver/x11_prestage.hpp"   // x11_editor_geometry (editor.f:206-233 + :851)
 #include "regarima/estimate.hpp"
 #include "regarima/forecast.hpp"
 #include "regarima/outlier.hpp"     // idotlr, setcv
@@ -434,6 +435,33 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
         savtbl(ctx, LTRNDT, begspn, 1, nspobs, sp, trnsrs.data(), base, serlbl, nser);
         if (ctx.error.lfatal) return false;
     }
+
+    // ---- the editor's span pointers + Setpri, and x11int.f:53's Sprior copy --
+    // Both belong BEFORE the model stage, which is where the oracle puts them:
+    // editor.f:233/851 set the pointers and Setpri, and x12run.f:174 calls
+    // x11int -- all of it ahead of x11ari, hence ahead of arima/automd/automx.
+    //
+    // This port used to assign Setpri only in x11_prestage, i.e. AFTER model
+    // selection, which left it 0 for the whole model stage and so silently
+    // disabled the three Sprior writes that stage makes (tdaic.f:600-623,
+    // rmlpyr.f:59, pass2.f:101) -- each guarded on `Setpri >= 1` and therefore
+    // indistinguishable from ported-and-inert. The post-model x11int copy
+    // compensated, and agreed with the oracle exactly while Adj == Sprior at
+    // that point, which is every spec whose model stage does not move the prior.
+    // A pickmdl{} run whose candidates DISAGREE about trading day does move it:
+    // the Picktd restore puts Adj back to its entry value while Sprior must keep
+    // what tdaic wrote, and the compensation overwrote it -- Februaries out by
+    // the leap ratio behind an OUTCOME: OK. See M5_PORT_NOTES entry 55.
+    //
+    // Placement here rather than beside the /adjcmn/ record above is load-
+    // bearing: trnaic (the automatic transform selection, x11ari.f:81) rewrites
+    // Adj wholesale, and the oracle re-issues the copy after it at
+    // trnaic.f:278. Copying here covers both -- the geometry is a pure function
+    // of the span and the forecast/backcast counts, so it does not care.
+    x11_editor_geometry(ctx, lsadj, /*set_setpri=*/true);
+    if (ctx.adj.nadj > 0)
+        copy(ctx.adj.adj.data(), prm::PLEN - ctx.adj.setpri + 1, -1,
+             ctx.inpt.sprior.data() + (ctx.adj.setpri - 1));
 
     // The regression design matrix (arima.f:280): regvar builds [X:y] from the
     // parsed regression groups and the transformed series. Pre-model this is

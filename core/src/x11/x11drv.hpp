@@ -25,7 +25,13 @@ void extend(X13Context& ctx, double* trnsrs, int* begxy, double* orix,
 // mode identity (1 mult / 0 additive), the trend/weight buffers (Stc/Stci/Stwt/
 // Stdev) to 0, and copies any prior adjustment (Adj) into Sprior. Touches
 // ctx.x11opt/x11srs/x11fac/xtrm/adj/inpt.
-void x11int(X13Context& ctx);
+//
+// `copy_sprior=false` suppresses ONLY the Adj -> Sprior copy. It exists because
+// the oracle calls x11int from x12run.f:174, ahead of the model stage, while
+// this port reaches it afterwards: on the model path the copy is issued at the
+// oracle's own point in time by run_pre_model, and re-issuing it here would
+// clobber the Sprior that tdaic/rmlpyr/pass2 write during model selection.
+void x11int(X13Context& ctx, bool copy_sprior = true);
 
 // setxpt.f: set the X-11 span pointers Pos1bk/Pos1ob/Posfob/Posffc (in
 // ctx.x11ptr) that mark where backcasts / observed data / forecasts begin and

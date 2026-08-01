@@ -93,7 +93,7 @@ void extend(X13Context& ctx, double* trnsrs, int* begxy, double* orix,
 // x11int.f -- initialize the X-11 factor/series/weight arrays before a run:
 // unit-value (or 0 additive) for the multiplicative factors, 0 for trend/weight
 // buffers, and copy any prior adjustment into Sprior.
-void x11int(X13Context& ctx) {
+void x11int(X13Context& ctx, bool copy_sprior) {
     x11opt_cmn& opt = ctx.x11opt;
     x11srs_cmn& srs = ctx.x11srs;
     x11fac_cmn& fac = ctx.x11fac;
@@ -131,8 +131,12 @@ void x11int(X13Context& ctx) {
     setdp(0.0, PLEN, srs.stci.data());
     setdp(0.0, PY1, xt.stdev.data());
 
-    // Copy adjustment factors into Sprior (reverse copy, inc=-1).
-    if (adj.nadj > 0)
+    // Copy adjustment factors into Sprior (reverse copy, inc=-1). `copy_sprior`
+    // is a PORT-ORDER switch, not an oracle condition: x12run.f:174 calls x11int
+    // before the model stage, this port calls it after, so on the model path the
+    // copy is issued from run_pre_model instead and suppressed here. See the
+    // call site in x11_prestage.cpp.
+    if (copy_sprior && adj.nadj > 0)
         copy(adj.adj.data(), PLEN - adj.setpri + 1, -1,
              ctx.inpt.sprior.data() + (adj.setpri - 1));
 }

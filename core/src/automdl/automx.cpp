@@ -533,69 +533,30 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             // put the series and the prior factors back the way that model saw
             // them before re-estimating it.
             if (bstptd != ctx.picktd.picktd) {
-                // WALLED. The restore below is transcribed correctly and is
-                // NOT the defect; the cause is upstream and structural, and
-                // was traced with an INSTRUMENTED build of the oracle Fortran
-                // (a scratchpad copy -- the vendored tree is never edited).
+                // This branch was WALLED for two increments, and the wall was
+                // never about the transcription below -- it is verbatim
+                // automx.f:259-296. The cause was structural and upstream, and
+                // it is worth keeping the shape of it here because the branch
+                // has no other gate: reaching it at all needs the AIC
+                // trading-day verdict to DIFFER between candidates, which on
+                // this corpus takes `regression{aicdiff=}` tuned between two
+                // candidates' AICC gaps (18.33 18.82 18.85 18.49 20.20 on
+                // airline, so 19.0 splits them).
                 //
-                // Reachable only when the AIC trading-day verdict DIFFERS
-                // between candidates, which on this corpus needs
-                // `regression{aicdiff=}` tuned between two candidates' AICC
-                // gaps (18.33 18.82 18.85 18.49 20.20 on airline, so 19.0
-                // splits them). Measured against the oracle on that spec: d10,
-                // d12 and d16 are BIT-EXACT and only d11/d13 move, on
-                // FEBRUARIES ONLY, by exactly engine = oracle * (days-in-Feb /
-                // 28.25) -- 0.885% low on non-leap, 2.655% high on leap. All 52
-                // shared `.udg` model keys agree, nreg and every ARMA
-                // coefficient included.
-                //
-                // THE CAUSE, measured rather than guessed. The note here used
-                // to name Kfmt / Lpradj / Priadj as the suspects; all three are
-                // IDENTICAL to the oracle's on this spec. The value that
-                // disagrees is Sprior, and the chain is:
-                //
-                //   1. The oracle sets Setpri at editor time and issues
-                //      x11int.f:53's `Adj -> Sprior` copy from x12run.f:174,
-                //      i.e. BEFORE arima/automx runs.
-                //   2. tdaic.f:600-623 then writes Sprior DIRECTLY when Picktd
-                //      transitions during model selection, and nothing
-                //      afterwards refreshes it from Adj.
-                //   3. This port assigns ctx.adj.setpri only in x11_prestage,
-                //      AFTER the model stage -- so tdaic's write is skipped by
-                //      its own `setpri >= 1` guard. The "deferred prior-series
-                //      bookkeeping" comment in aictst.cpp describes code that
-                //      never executes.
-                //   4. The port compensates by copying Adj -> Sprior in the
-                //      POST-model x11int, which agrees with the oracle exactly
-                //      when Adj == Sprior at that point. That holds on every
-                //      gated spec -- a saturated precondition, not a proof.
-                //   5. Here it stops holding: the restore below puts Adj back
-                //      to its entry value (all-1) while Sprior must keep the
-                //      prior tdaic wrote. At x11pt3 the oracle has
-                //      Sprior=0.99115 with Adj=1.0; this port has both at 1.0.
-                //
-                // Confirmed from the other side: on the automdl baseline the
-                // oracle reaches x11pt3 with Sprior=1.0, Adj=0.99115 and
-                // Priadj=-4, because TD survived into the final model and
-                // x11pt2's tdlom CONSUMED the prior into Factd. Here TD does
-                // not survive, tdlom never runs, and Sprior is applied direct.
-                //
-                // So the fix is not local to this branch: Setpri -- and the
-                // span pointers it derives from -- must be established BEFORE
-                // the model stage as in the oracle, after which tdaic's write
-                // runs and the post-model copy must be suppressed. Attempted
-                // and reverted: suppressing the copy alone just moves the same
-                // 2.655% error onto the automdl baseline, because tdaic's
-                // write is still dead. Fatal rather than silent: the
-                // alternative is an `OUTCOME: OK` whose Februaries are wrong.
-                fatal(ctx, "pickmdl{}: a trading-day AIC verdict that DIFFERS "
-                           "between candidates (automx.f:259-296's Picktd "
-                           "restore) is not yet bit-exact -- d11/d13 land "
-                           "0.885%/2.655% off on Februaries.");
-                return;
-                // The transcription below is kept because it is the whole of
-                // automx.f:259-296 and is what the fix will build on; it is
-                // unreachable until the note above is resolved.
+                // The failure was: d10, d12 and d16 BIT-EXACT and only d11/d13
+                // moving, on FEBRUARIES ONLY, by exactly engine = oracle *
+                // (days-in-Feb / 28.25). The restore below puts Adj back to its
+                // entry value (all-1) while Sprior must keep the prior
+                // tdaic.f:600-623 wrote during model selection -- and that
+                // write was DEAD, because Setpri was assigned only in
+                // x11_prestage, after the model stage, so its `Setpri >= 1`
+                // guard never fired. The post-model x11int copy compensated,
+                // correctly whenever Adj == Sprior at that point, which is
+                // every other spec in the corpus: a saturated precondition, not
+                // a proof. Setpri now comes from run_pre_model, ahead of the
+                // model stage as in the oracle, and the compensating copy is
+                // suppressed on the model path. See M5_PORT_NOTES entry 55 for
+                // the instrumented-oracle trace, and entry 57 for the fix.
                 ctx.picktd.picktd = bstptd;
                 if (bstptd == pktd) {
                     copy(tsrs0.data(), PLEN, 1, trnsrs);

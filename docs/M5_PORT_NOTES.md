@@ -2537,3 +2537,62 @@ shared with e.g. the `transform mode=diff` refusal.
 **4**; hardcode `xrgtrn_td` back to the TD arm **4**; swap the two emitted AICC
 values **3**; delete the x11mdl early return **1** (and **0** before the gate
 was widened -- that is the entry above).
+
+## 57. Setpri moved ahead of the model stage -- the Picktd-flip corner CLOSED.
+
+Entry 55 root-caused this and stopped there, on the grounds that a driver-
+ordering change was not worth risking the spine for one walled corner. The
+change turned out to be small and, across the whole gated corpus, exactly
+neutral: **5932 -> 5944 passed with the only deltas being the twelve gates the
+new spec adds.** The wall in `automx.cpp` is gone (17 gaps -> 16).
+
+**What moved.** `editor.f` sets `Setpri=Pos1bk` at :851 and `x12run.f:174`
+issues `x11int.f:53`'s `Adj -> Sprior` copy -- both BEFORE `x11ari`, hence
+before `arima`/`automd`/`automx`. This port assigned `Setpri` only in
+`x11_prestage`, which runs AFTER the model stage. Three Sprior writes that the
+model stage makes (`tdaic.f:600-623`, `rmlpyr.f:59`, `pass2.f:101`) are
+therefore skipped by their own `Setpri >= 1` guards, and a post-model copy in
+`x11int` stood in for all of them. Now: the editor geometry is factored into
+`x11_editor_geometry` (`driver/x11_prestage.cpp`), `run_pre_model` calls it
+just ahead of the model stage and issues the Sprior copy there, and
+`x11_prestage` calls it again -- which is `x11ari.f:149`'s second `setxpt` --
+but does NOT re-assign `Setpri`, because the oracle never refreshes it. The
+post-model copy is suppressed on the model path via `x11int(ctx,
+copy_sprior=false)`.
+
+**Placement inside the pre-model stage is load-bearing, and not where entry 55
+implied.** The copy cannot go beside the `/adjcmn/` record where `Adj` is
+built: `trnaic` (the automatic transform selection, `x11ari.f:81`) REWRITES
+`Adj` wholesale afterwards, and the oracle re-issues the copy after it at
+`trnaic.f:278` -- a line this port does not have. Issuing it after trnaic
+instead covers both. The geometry does not care where it goes: it is a pure
+function of the span and the forecast/backcast counts.
+
+**The corner itself.** `extra/airline_pickmdl-aictest-tdflip` -- the probe spec
+entry 55 described, now committed: `airline_pickmdl-aictest-td` plus
+`regression{aicdiff = 19.0}`, which splits the five candidates' AICC gaps
+(18.33 18.82 18.85 18.49 20.20) so candidate 5 accepts trading day and the
+winner, candidate 2, rejects it. `automx.f:259-296`'s Picktd restore then fires:
+`Adj` goes back to all-1 while `Sprior` must keep what tdaic wrote. Twelve
+gates, all byte-identical, including d10-d13/d16 through the binding.
+
+**Both mutations fail, and they fail DIFFERENTLY** -- which is the point of
+running both halves. Restoring the post-model copy (`copy_sprior=true`) and
+suppressing the pre-model `Setpri` (`set_setpri=false`) each break the same
+five parity gates, but the second ALSO breaks a ctest unit test. So the two
+halves are not interchangeable descriptions of one switch: the port needs
+`Setpri` correct during the model stage for reasons beyond this one Sprior copy.
+
+**A spec-authoring trap worth not re-learning.** `x11{save=(b1 ...)}` is
+rejected by the oracle ("Save argument is not defined"), so the b1 golden the
+`test_x11_tables` discovery requires cannot be produced for a spec like this
+one -- it gates through `test_bindings` (discovery keyed on d11) instead. Worse,
+blessing does not notice: `run_parity.py --update` reported `PASS` and wrote a
+golden bundle from the REJECTED run, and only `test_m1_parse`'s outcome gate
+caught it. Bless, then look at the `.err` in the bundle.
+
+**Standing rule this sharpens.** Entry 55 called the old arrangement "a
+saturated precondition, not a proof" and left it. The cost of leaving it was
+that four correctly-transcribed Fortran writes sat inert behind guards that
+read as faithful. *When the fix for a saturated precondition is known, the
+saturation is the bug -- the walled corner is only how it was noticed.*

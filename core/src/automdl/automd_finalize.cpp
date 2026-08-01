@@ -423,11 +423,12 @@ void rmlpyr(X13Context& ctx, double* trnsrs, int nobspf) {
     eltfcn(ELT_DIV, &aj.adj(aj.adj1st), lomeff + (aj.adj1st - 1), nobspf,
            &aj.adj(aj.adj1st));
 
-    // Sprior/Setpri prior-series bookkeeping (read only by sliding-spans/
-    // revision-history reporting, not the main estimation/X-11 pipeline) is
-    // deferred elsewhere in this port (automd_aictest_block1's Begadj/Nadj/
-    // Adj1st note) and Setpri is never initialized -- guard as the sibling
-    // deferred copy in aictst.cpp's tdaic prior-factor bookkeeping does.
+    // rmlpyr.f:59 -- Sprior follows Adj when the leap-year prior is removed.
+    // One of the three Sprior writes the MODEL stage makes (with tdaic.f:603/611
+    // and pass2.f:101); all three were inert until Setpri moved ahead of the
+    // model stage, and the post-model `Adj -> Sprior` copy in x11int stood in
+    // for them. See M5_PORT_NOTES entry 57. The guard is a bounds check on
+    // sprior(0), not a deferral -- the oracle has none.
     if (aj.setpri >= 1) copy(aj.adj.data(), aj.nadj, -1, &ip.sprior(aj.setpri));
 
     pr.priadj = 0;

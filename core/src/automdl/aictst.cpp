@@ -571,16 +571,19 @@ void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
     if (ar.aicint == 0) {
         if (pktd && !pk.picktd) {
             // tdaic.f:603/611 -- Sprior takes the prior the Picktd
-            // transition just put in Adj. DEAD IN THIS PORT: setpri is
-            // assigned only in x11_prestage, which runs AFTER the model
-            // stage, so it is still 0 here and the guard always fails.
-            // The oracle sets Setpri at editor time, before arima. The
-            // post-model `Adj -> Sprior` copy in x11int currently covers
-            // for it, and does so correctly whenever Adj == Sprior at
-            // that point -- true for every gated spec, and NOT true on
-            // the Picktd-flip corner walled in automx.cpp, where it is
-            // the whole cause. Do not delete this block: it becomes live
-            // the moment Setpri moves ahead of the model stage.
+            // transition just put in Adj, and NOTHING refreshes it from
+            // Adj afterwards. This write is the one the Picktd-flip
+            // corner turns on (M5_PORT_NOTES 55/57): it was inert for
+            // two increments because Setpri was assigned only in
+            // x11_prestage, i.e. after the model stage, so the guard
+            // below never fired and a post-model `Adj -> Sprior` copy
+            // stood in for it. Setpri now comes from run_pre_model,
+            // ahead of automd/automx, exactly as editor.f:851 does.
+            //
+            // The guard is retained as a BOUNDS check, not a deferral --
+            // sprior(0) would be a write one before the array -- and
+            // covers the harnesses that drive tdaic directly without
+            // going through the pre-model stage. The oracle has no guard.
             if (aj.setpri >= 1)
                 copy(aj.adj.data(), aj.nadj, -1, &ip.sprior(aj.setpri));
             if ((pu.nustad == 0 || pu.nuspad == 0) && pr.kfmt > 0) pr.kfmt = 0;
@@ -588,17 +591,11 @@ void tdaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
         if (tdmdl1 > 0) tdmdl1 = 1;
     } else {
         if (!pktd && pk.picktd) {
-            // tdaic.f:603/611 -- Sprior takes the prior the Picktd
-            // transition just put in Adj. DEAD IN THIS PORT: setpri is
-            // assigned only in x11_prestage, which runs AFTER the model
-            // stage, so it is still 0 here and the guard always fails.
-            // The oracle sets Setpri at editor time, before arima. The
-            // post-model `Adj -> Sprior` copy in x11int currently covers
-            // for it, and does so correctly whenever Adj == Sprior at
-            // that point -- true for every gated spec, and NOT true on
-            // the Picktd-flip corner walled in automx.cpp, where it is
-            // the whole cause. Do not delete this block: it becomes live
-            // the moment Setpri moves ahead of the model stage.
+            // tdaic.f:603/611 -- the mirror of the arm above: Sprior takes
+            // the prior the Picktd transition just put in Adj, and nothing
+            // refreshes it afterwards. Live since Setpri moved ahead of the
+            // model stage; the `setpri >= 1` guard is a bounds check for the
+            // harnesses that call tdaic directly (see the arm above).
             if (aj.setpri >= 1)
                 copy(aj.adj.data(), aj.nadj, -1, &ip.sprior(aj.setpri));
             if (pr.kfmt == 0) pr.kfmt = 1;

@@ -38,6 +38,16 @@ struct X13Context;
 bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
                   bool lseats, bool lx11);
 
+// editor.f:206-233 + :851 -- the padded X-11 buffer geometry (Begbak/Nbcst2/
+// Begbk2, Nfdrp/Nobspf/Nofpob/Nbfpob/Lsp), the setxpt span pointers derived
+// from it, and Setpri. Split out of x11_prestage because the MODEL path needs
+// it twice: the oracle runs it in the editor, BEFORE arima, which is what keeps
+// tdaic.f:600-623's direct Sprior write alive, and then re-derives the pointers
+// alone at x11ari.f:149. `lsadj` is Lx11.or.Lseats (it only reaches Nfdrp and
+// setxpt's forecast-drop clause). `set_setpri` must be true in exactly one
+// caller per run -- whichever one is standing in for the editor.
+void x11_editor_geometry(X13Context& ctx, bool lsadj, bool set_setpri);
+
 }  // namespace x13
 
 #endif  // X13_DRIVER_X11_PRESTAGE_HPP
