@@ -210,6 +210,13 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     // to be distinguishable from it.
     ctx.x11reg.sigxrg = prm::DNOTST;
     ctx.x11reg.critxr = prm::DNOTST;
+    // gtinpt.f:447-448 -- APPLY the irregular-regression trading-day and
+    // holiday factors unless x11regression{noapply=} says otherwise. These
+    // default to 1, not to the struct's zero-init: gtxreg.f:886-889 turns them
+    // into Axrgtd/Axrghl, and x11aic.f's TD-accept arm (x11reg.cpp) reads
+    // `Ixrgtd.gt.0` directly, which a stuck 0 makes permanently false.
+    ctx.x11reg.ixrgtd = 1;
+    ctx.x11reg.ixrghl = 1;
     // gtinpt.f:468-469 -- the AIC-tested trading-day CHANGE DATE and the stock
     // day-of-month. Same class as critical= above and it is not cosmetic: the
     // struct's zero-init makes Xaicrg(1)==0, and addtd.f/mktdlb.f both test

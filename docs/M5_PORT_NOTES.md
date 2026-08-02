@@ -3045,3 +3045,38 @@ The rebuild now asserts `== testing ==` appears in the build output before
 pytest is allowed to run. A mutation harness that cannot tell "built and
 passed" from "did not build" measures nothing -- the same class as the
 `metrics.py` failure that CLAUDE.md's guardrail rule came from.
+
+## 63. `x11regression{}` with no trading day and no holiday: the oracle refuses, this engine did not.
+
+Small, and the shape is the port's most dangerous one -- a documented option
+consumed, a number returned anyway. `gtxreg.f:891-897` refuses an irregular
+regression that adjusts for NEITHER trading day NOR holiday NOR a prior-TD
+weight set. `x11regression{ user= data= }` alone is exactly that, and this
+engine ran it to `OUTCOME: OK`.
+
+The check is `.not.(Axrgtd .or. Axrghl .or. neltdw.gt.0)`, and porting it
+dragged in two more never-set fields:
+
+- **`Ixrgtd`/`Ixrghl` had no initializer.** `gtinpt.f:447-448` sets both to 1;
+  this port left them at the struct's zero, and `gtxreg.f:886-889` turns them
+  into Axrgtd/Axrghl. `x11reg.cpp`'s x11aic TD-accept arm reads `Ixrgtd.gt.0`
+  directly, so that clause was permanently false -- saturated rather than
+  visible, because `Havxtd` had already set Axrgtd at parse for every corpus
+  spec.
+- **`noapply=` was consumed and discarded** (argidx 21). It is the ONLY writer
+  of the zero into Ixrgtd/Ixrghl, so a `noapply=(td holiday)` spec the oracle
+  refuses would have run here. Wired; no corpus spec uses it, so it is
+  unmeasured -- stated, not implied.
+
+**One deliberate divergence, in a flag.** `gtxreg.f:889` would set `Axrghl`
+from `Ixrghl`. Not taken: this port reaches every holiday-carrying
+x11regression spec bit-exact with `Axrghl` FALSE, and turning it on switches
+x11pt2/x11pt3 folds nobody has measured on that path. The requirement check
+reads `Ixrghl` instead, which is what Axrghl would have been. Flagged in the
+code, and it belongs with the CB-36 item.
+
+`extra/airline_x11regression-user-notd` gates it through
+`test_m1_parse.py::test_outcome_matches_oracle` -- both sides now print
+`Must adjust for either trading day or holiday in the x11regression spec.` and
+stop. Mutating the check to `if (false)` loses that gate; the noapply wiring
+and the Ixrgtd default lose none, both saturated.

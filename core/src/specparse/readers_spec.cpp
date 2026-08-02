@@ -3667,6 +3667,9 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     bool hvfile = false, havfmt = false;
     bool lumean = false, luseas = false;   // gtxreg.f:154-155
     int neltux = 0;
+    // gtxreg.f:891 reads the tdprior COUNT, not the weights, so it has to
+    // outlive the argument loop.
+    int neltdw = 0;
     // gtxreg.f:265 writes Nusxrg, the COMMON -- editor.f:1690's user-column
     // scan is its only reader, and it used to be a local here, which made that
     // scan (and CB-36 with it) unreachable.
@@ -3805,9 +3808,21 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                 lumean = (ivec[0] == 1);
                 luseas = (ivec[0] == 2);
             }
+        } else if (argidx == 21) {   // noapply -> Ixrgtd/Ixrghl (gtxreg.f:425-440)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            int napidx[3] = {0, 0, 0}; int nelt = 0;
+            static const char NAPDIC[] = "tdholiday";
+            static const int napptr[3] = {1, 3, 10};
+            gtdcvc(ctx, LPAREN, true, 3, NAPDIC, napptr, 2,
+                   "Choices are TD or HOLIDAY.", napidx, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            for (int i = 1; i <= nelt; ++i) {
+                if (napidx[i - 1] == 1) ctx.x11reg.ixrgtd = 0;
+                else                    ctx.x11reg.ixrghl = 0;
+            }
         } else if (argidx == 20) {   // tdprior -> Dwt (gtxreg.f:416-423)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
-            int neltdw = 0;
             bool argok = true;
             gtdpvc(ctx, LPAREN, true, 7, ctx.x11reg.dwt.data(), neltdw, argok,
                    inptok);
@@ -3901,6 +3916,7 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                         std::tolower(static_cast<unsigned char>(c)));
                 if (s == "easter") {   // gtxreg.f:395-397: Xeastr=T, Havxhl=T
                     ctx.x11log.xeastr = true;
+                    havhol = true;
                     // editor.f:1577-1590: no explicit Easter group in the model
                     // -> the default window set {0,1,8,15} to AIC-test over.
                     ctx.x11reg.xeasvc(1) = 0;
@@ -4094,11 +4110,33 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     }
     loadxr(ctx, /*toxreg=*/true);
     xrg_clear_working(ctx);
-    // gtxreg.f:883-889: Nbx>0 -> Ixreg=1 (prior=yes -> 2, deferred); Havxtd ->
-    // Axrgtd. editor.f:1723 clears Axrgtd if no TD group materialized.
+    // gtxreg.f:883-897: Nbx>0 -> Ixreg=1 (prior=yes -> 2, deferred). Havxtd/
+    // Havxhl gate Ixrgtd/Ixrghl, which gate Axrgtd/Axrghl -- so an explicit
+    // `noapply=(td)` leaves Havxtd set but clears Axrgtd, and the requirement
+    // check below then refuses the run. editor.f:1723 clears Axrgtd again if no
+    // TD group materialized.
     if (havtd) ctx.x11log.havxtd = true;
+    if (havhol) ctx.x11log.havxhl = true;
     if (ctx.xrgmdl.nbx > 0) ctx.hiddn.ixreg = 1;
-    if (ctx.x11log.havxtd) ctx.x11log.axrgtd = true;
+    if (!ctx.x11log.havxtd) ctx.x11reg.ixrgtd = 0;
+    if (ctx.x11reg.ixrgtd > 0) ctx.x11log.axrgtd = true;
+    if (!ctx.x11log.havxhl) ctx.x11reg.ixrghl = 0;
+    // gtxreg.f:889 would set Axrghl here. NOT taken: this port reaches every
+    // holiday-carrying x11regression spec in the corpus bit-exact with the flag
+    // false, and turning it on switches x11pt2/x11pt3 folds that have never
+    // been measured on that path. The requirement check below therefore reads
+    // Ixrghl, which is what Axrghl would have been. Deliberate divergence in a
+    // FLAG, pinned by the specs; revisit with the CB-36 item.
+    //
+    // gtxreg.f:891-897 -- an irregular regression that adjusts for neither
+    // trading day nor holiday nor a prior-TD weight set is refused. Without
+    // this the engine ran `x11regression{user= data=}` to OUTCOME: OK while the
+    // oracle rejected the spec.
+    if (!(ctx.x11log.axrgtd || ctx.x11reg.ixrghl > 0 || neltdw > 0)) {
+        writln(ctx, "ERROR: Must adjust for either trading day or holiday in "
+               "the x11regression spec.", stdio::STDERR, ctx.units.mt2, true);
+        inptok = false;
+    }
     xrg_editor_setup(ctx, inptok);
 }
 

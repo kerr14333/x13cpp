@@ -854,6 +854,22 @@ previous binary and reported 0-1. The harness now asserts `== testing ==`
 appears in the build output before pytest runs. Same class as the `metrics.py`
 failure CLAUDE.md's guardrail rule came from.
 
+## This session, part 14: the x11regression td-or-holiday requirement
+
+`gtxreg.f:891-897` refuses an irregular regression that adjusts for neither
+trading day nor holiday nor a prior-TD weight set; this engine ran
+`x11regression{ user= data= }` to `OUTCOME: OK`. Ported, and it dragged in two
+never-set fields: **`Ixrgtd`/`Ixrghl` had no initializer** (gtinpt.f:447-448
+sets both to 1, and `x11aic`'s TD-accept arm reads `Ixrgtd.gt.0` directly), and
+**`noapply=` was consumed and discarded** -- the only writer of the zero into
+them. `extra/airline_x11regression-user-notd` gates it; mutating the check off
+loses that gate, the other two are saturated. `docs/M5_PORT_NOTES.md` entry 63.
+
+**Still divergent in a FLAG:** `gtxreg.f:889` would set `Axrghl` from `Ixrghl`.
+Not taken -- every holiday-carrying x11regression spec is bit-exact with it
+false, and turning it on switches unmeasured x11pt2/x11pt3 folds. Belongs with
+the CB-36 item.
+
 ## Open, in the order I would take them
 
 1. **CB-36's stale-rtype arm is WALLED, and the wall hides a measured 1.1e-3.**
