@@ -72,8 +72,11 @@ improvise:
 ## Layout
 
 - `core/` — the engine. `src/` by subsystem: `regarima/ automdl/ x11/ seats/
-  outlier/ transform/ specparse/ diag/ force/ numeric/ tables/ driver/ common/`.
-  `driver/run_*.cpp` are the phase harnesses (`x13run_m2/m3/x11/iddiff`).
+  composite/ transform/ specparse/ diag/ numeric/ tables/ driver/ api/
+  common/`. `driver/run_*.cpp` are the phase harnesses
+  (`x13run_m2/m3/x11/iddiff`). No `outlier/` or `force/` directory: outlier
+  identification is `regarima/outlier.*` (+ `driver/rev_outlier.*`) and forcing
+  is `x11/x11force.*`.
 - `oracle/fortran/` — the Census Fortran **oracle** (the source of truth) + its
   prebuilt `_O2`/`_O0` binaries.
 - `tests/` — `corpus/` (specs), `golden/` (blessed oracle output), `parity/`
