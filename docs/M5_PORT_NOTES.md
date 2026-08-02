@@ -2743,3 +2743,104 @@ run as carrying trading day because of an AO column. Both read as defects.
 Neither is claimed, because no spec here exercises
 `x11regression{usertype=ao}` yet and the rule is to measure before naming one.
 Transcribed verbatim, with the reasoning in the code.
+
+## 60. `Kswv==3` -- the tdprior + x11regression-TD route, absent from the port entirely.
+
+`x11pt1.f:235` is one line: **`IF(Axrgtd)Kswv=Kswv+2`**. It was not ported, so
+`Kswv` could never leave 1 and the four things keyed on 3 were all dead. Found
+by writing the spec the scouting for entry 59 had said was needed
+(`extra/airline_x11regression-tdprior-td` -- prior weights AND
+`variables=(td)`); the four existing tdprior specs all omit the TD model, so
+none of them reaches the bump.
+
+**Measured, at `OUTCOME: OK`:**
+
+| d11 | oracle | engine (before) |
+|---|---|---|
+| 1949.01 | 123.163850659787 | 123.516344 |
+| 1949.02 | 124.849918528751 | 126.768974 (**1.5e-2**) |
+
+**The only route to Kswv==3** is user prior weights (Kswv==1, set at
+`editor.f:1502` when any `tdprior` weight is nonzero) TOGETHER WITH `Axrgtd`,
+which `gtxreg.f` sets from `x11regression{variables=(td)}` or `aictest=(td)`.
+Four consumers, and the port had none of them:
+
+- `xrgtrn.f:36-40` -- the irregular transform becomes `Xnstar*X - Xnstar`, i.e.
+  centred against the STANDARD month length rather than the actual one.
+- `x11ref.f:117-119` -- the factor finish adds `1` instead of `Xn/Xnstar`.
+- `x11mdl.f:541-572 + :786-830` -- the estimated coefficients become X-11 style
+  daily weights `Dx11`, are ADDED to the user's prior weights
+  (`Dx11 = Dx11 + Dwt - 1`), and Faccal/Factd are REBUILT from the sum. Note the
+  rebuild passes `Kswv=4`, not 3, so `x11ref` deliberately takes its ordinary
+  arm for the combined factor.
+- `x11pt2.f:408-412` -- multiplies the raw Series FORECAST region by Stptd once
+  per iteration. Left unported on purpose: it touches only
+  `[Posfob+1, Posfob+Ny]`, never the published span, which is why it has never
+  shown up. Recorded here so the next reader does not re-derive it.
+
+**Kswv is deliberately NOT restored after `xrgdrv`.** `xrgdrv.f:57/207` call
+`ssprep`/`restor` with `Lx11rg=F`, so the bump that xrgdrv's own transparent
+x11pt1 makes SURVIVES into the main run -- which is precisely why the main
+x11pt1 then finds `Kswv/=1`, skips the prior-TD block, and takes the `Ixreg==3`
+Faccal restore instead. The span drivers DO restore it (`x12run.f:166`'s
+`ssprep(...,T)` -> `ssx11a.f:160` / `revdrv.f:528`), which is why the parsed
+value is snapshotted as `ctx.saved.kswv0` and reset per span in run_x11_span.
+Snapshotting it in `ssprep_snapshot` would have been wrong: that runs AFTER
+run_pre_model, and xrgdrv has already bumped it by then.
+
+**The bump alone was not enough, and the second half is the more instructive
+one.** With Kswv==3 live, `a4` and `b16` came back bit-exact but `c16` was 5e-3
+out: the C-iteration daily weights were visibly different (Tue -0.276 vs the
+oracle's -0.326). The cause was a SHORTCUT this port had taken in x11pt2 and
+verified -- correctly, at the time:
+
+```
+// x11pt2.f:846-894 rebuilds Stcsi from the RAW Series; on the TD-only corpus
+// path that is exactly Sto/Faccal, so the STCSI=STO shortcut is bit-equivalent
+```
+
+It stops being bit-equivalent the moment a tdprior exists. x11pt1 divides `Sto`
+by the prior-TD factor **and** folds the same factor into `Faccal`, so
+`Sto/Faccal` removes the prior TD TWICE. The oracle never has that problem
+because it rebuilds from `Series`. The shortcut is now the real transcription
+(with the six unported per-factor divsubs walled), and the equivalence argument
+is recorded in the code as the thing that failed.
+
+*The general shape, and it is worth naming:* **an equivalence that holds over
+the corpus is an equivalence over the corpus, not a proof.** This one was
+explicitly verified when written; what invalidated it was a feature that did not
+exist yet. Same class as entry 25's unreachability proof, which was invalidated
+by an option the parser was silently discarding.
+
+**A third half: ordering in run_pre_model.** `x11ari.f` calls `xrgdrv` (:99)
+before `x11pt1` (:133), so by the time the oracle's x11pt1 looks at `Kswv` it is
+already 3 and the bare prior-TD divide never happens. This port had the two
+blocks in the opposite order and divided the estimation input by the prior TD
+AND by the combined Faccal. Swapped; the `kswv == 1` guard then does the work by
+itself.
+
+**Mutations -- every piece is load-bearing, and the volumes are informative:**
+
+| removed | gates lost |
+|---|---|
+| the `Kswv+=2` bump | 10 |
+| the `Dx11 + Dwt - 1` combine | 10 |
+| `xrgtrn`'s Kswv==3 arm | 10 |
+| `x11ref`'s Kswv==3 arm | 10 |
+| the Stcsi rebuild (falls back to Sto with no Faccal divide) | **193** |
+| the run_pre_model reorder | 10 |
+
+The 193 is the interesting one: the Stcsi branch is load-bearing for every
+x11regression spec in the corpus, not just this one -- it had simply never been
+exercised in a configuration where the shortcut and the transcription disagree.
+
+**Two more parsed-but-unread arguments, found on the way.** `gtxreg.f`'s
+`forcecal` (argidx 24 -> `Calfrc`) and `reweight` (argidx 32 -> `Lxrneg`) both
+fell through `gt_x11regression`'s discard arm. `forcecal` is now honoured,
+because leaving it unread would have made the two `Calfrc` walls this entry adds
+unreachable -- a wall that cannot fire is not a wall. **`reweight` is still
+unread and is left open**: `Lxrneg` is READ in two ported places
+(`gtinpt.cpp`'s negative-weight clamp, `run_history.cpp`'s fixreg check), both
+of which therefore see a permanently-false flag, and honouring it also needs
+`x11mdl.f:575-626`'s daily-weight reweighting, which is unported. That is a
+separate increment, not a line.

@@ -614,6 +614,13 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                     for (int i = 1; i <= 7; ++i) xr.dwt(i) = 1.0;
                 }
             }
+            // x12run.f:166's `ssprep(lmodel,T,T)` -- taken before x11ari, so it
+            // records Kswv as PARSED, ahead of x11pt1.f:235's 1->3 bump. Each
+            // sliding-span / history span restores from it (ssx11a.f:160,
+            // revdrv.f:528). Captured here rather than in ssprep_snapshot
+            // because that runs after run_pre_model, and xrgdrv's transparent
+            // x11pt1 has bumped Kswv by then.
+            ctx.saved.kswv0 = ctx.x11opt.kswv;
         }
 
         // --- gtinpt.f ~989-1067: td/lom prior-adjustment setup (Picktd) ---

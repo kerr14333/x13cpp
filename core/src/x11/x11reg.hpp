@@ -52,11 +52,14 @@ bool regx11(X13Context& ctx, double* aout = nullptr, int* naout = nullptr,
 
 // x11ref.f (mult, TD-only): build the TD factor series ftd (and combined fcal)
 // from the fitted coeffs b x design xy over Nrxy rows, mean-normalized by Xnstar
-// (mulref) then finished with Xn/Xnstar. xdev = Pos1bk. rtype[icol] is the
-// per-column regressor type. Both ftd/fcal are 1-based length-Nrxy outputs.
+// (mulref) then finished with Xn/Xnstar -- or with 1 when kswv==3, the prior-TD
+// route (x11ref.f:117). xdev = Pos1bk. rtype[icol] is the per-column regressor
+// type. Both ftd/fcal are 1-based length-Nrxy outputs. kswv is a PARAMETER, not
+// read off ctx: x11mdl.f:813's combined-weight recompute passes 4 while the
+// COMMON holds 3.
 void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
                int ncxy, const double* b, const double* xy, int nb,
-               const int* rtype);
+               const int* rtype, int kswv);
 
 // pritd.f (Kswv=1 user-weight prior trading day): build the prior-TD factors from
 // the seven tdprior weights (ctx.x11reg.dwt) via td6var + x11ref_td. begdat is the

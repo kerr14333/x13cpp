@@ -232,15 +232,6 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // tdprior+mode=logadd spec came back OUTCOME: OK with the prior TD missing
     // from B1 and d10-d13 entirely, ~2e-2 to 3.8e-2. Additive and pseudo-additive
     // are rejected at parse instead -- pritd.f:34-40.)
-    if (ctx.x11opt.kswv == 1) {
-        std::vector<double> stptd(static_cast<std::size_t>(prm::PLEN), 0.0);
-        tdset_td(ctx, begspn, 1, nobspf, sp);
-        pritd(ctx, stptd.data(), nobspf, sp, begspn, 1);
-        if (ctx.error.lfatal) return false;
-        for (int t = 0; t < nobspf; ++t)
-            padj[static_cast<std::size_t>(t)] /= stptd[static_cast<std::size_t>(t)];
-    }
-
     // x11regression OLS-estimated prior trading day (Ixreg>=2, xrgdrv): estimate
     // the TD via a transparent pre-model seasonal adjustment, then divide the
     // estimation input by the resulting Faccal -- the oracle fits arima on the
@@ -255,6 +246,21 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
         const int nfac = static_cast<int>(xrgfac.size());
         for (int t = 0; t < nobspf && t < nfac; ++t)
             padj[static_cast<std::size_t>(t)] /= xrgfac[static_cast<std::size_t>(t)];
+    }
+
+    // ...and THEN the tdprior divide, because x11ari.f runs xrgdrv (:99) before
+    // x11pt1 (:133) and xrgdrv's own x11pt1 has already bumped Kswv past 1
+    // (x11pt1.f:235) whenever an x11regression TD model is present -- so with
+    // BOTH a tdprior and x11regression{variables=(td)} the oracle divides by the
+    // combined Faccal only, never by the bare prior-TD factor as well. This block
+    // used to sit ahead of the xrgdrv one and removed the prior TD twice.
+    if (ctx.x11opt.kswv == 1) {
+        std::vector<double> stptd(static_cast<std::size_t>(prm::PLEN), 0.0);
+        tdset_td(ctx, begspn, 1, nobspf, sp);
+        pritd(ctx, stptd.data(), nobspf, sp, begspn, 1);
+        if (ctx.error.lfatal) return false;
+        for (int t = 0; t < nobspf; ++t)
+            padj[static_cast<std::size_t>(t)] /= stptd[static_cast<std::size_t>(t)];
     }
 
     // adjsrs.f also records the prior-factor series in the /adjcmn/ Adj array and

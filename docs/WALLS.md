@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**16 walls.**
+**20 walls.**
 
 
 ## Automatic model selection
@@ -73,23 +73,35 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:225`**
   x11pt1 prior trading-day adjustment (pritd/ssrit)
 
-- **`core/src/x11/x11parts.cpp:261`**
+- **`core/src/x11/x11parts.cpp:276`**
   x11pt1 additive/pseudo-additive prior trading-day
 
-- **`core/src/x11/x11parts.cpp:527`**
+- **`core/src/x11/x11parts.cpp:542`**
   x11pt2 user/seasonal/cycle/x11reg factor combine+emit
 
-- **`core/src/x11/x11parts.cpp:944`**
+- **`core/src/x11/x11parts.cpp:729`**
+  x11pt2 x11reg Stcsi rebuild with outlier/seasonal/user prior factors
+
+- **`core/src/x11/x11parts.cpp:986`**
   x11pt3 revisions seasonal store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1160`**
+- **`core/src/x11/x11parts.cpp:1202`**
   x11pt3 revisions SA store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1270`**
+- **`core/src/x11/x11parts.cpp:1312`**
   x11pt3 revisions forced-SA store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1358`**
+- **`core/src/x11/x11parts.cpp:1400`**
   x11pt3 revisions trend store (getrev)
+
+- **`core/src/x11/x11reg.cpp:328`**
+  x11ref forcecal= combined calendar factor
+
+- **`core/src/x11/x11reg.cpp:1026`**
+  x11mdl Kswv=3 with no Trading Day group
+
+- **`core/src/x11/x11reg.cpp:1065`**
+  x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:44`**
   xrgdrv OLS prior trading-day (Ixreg>=2): only the TD-only multiplicative path is ported

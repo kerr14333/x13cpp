@@ -3679,6 +3679,23 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                        "Must have seven prior trading day weights.");
                 inptok = false;
             }
+        } else if (argidx == 24) {   // forcecal -> Calfrc (gtxreg.f:463-468)
+            // Was falling through to the discard arm below -- parsed and thrown
+            // away, the port's most common defect shape. Every CONSUMER of
+            // Calfrc is unported (x11ref.f:126-128's Fcal=Ftd*Fhol and
+            // x11mdl.f:798-800's Stptd fold), so wiring it here is what makes
+            // those two walls reachable instead of the option silently doing
+            // nothing.
+            static const char YSNDIC[] = "yesno";
+            static const int ysnptr[3] = {1, 4, 6};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
+                   "Choices for forcecal are yes or no.", ivec, nelt, argok,
+                   inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.x11log.calfrc = (ivec[0] == 1);
         } else if (argidx == 28) {
             // gtxreg.f:513-518 aicdiff= -> Xraicd, the threshold the x11aic
             // tests must clear to switch AWAY from the no-regressor model

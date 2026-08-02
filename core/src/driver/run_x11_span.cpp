@@ -53,6 +53,11 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // extreme-value sigma mode -> wrong extreme weights -> wrong seasonal MA
     // and Henderson-length choice (the ~3.45% span-1 sfs error).
     ctx.xtrm.ksdev = ctx.saved.ksdev0;
+    // restor.f:44 `Kswv=Ksw2`, reached with Lx11rg=T from ssx11a.f:160 and
+    // revdrv.f:528. Each span re-runs x11pt1, which bumps Kswv 1->3 again
+    // (x11pt1.f:235); without the reset the SECOND span would find Kswv==3, skip
+    // the prior-TD block outright, and adjust with no prior trading day.
+    ctx.x11opt.kswv = ctx.saved.kswv0;
     // (Cnstnt is a COMMON in the oracle and survives every span replay, so it is
     // deliberately NOT reset here.)
 

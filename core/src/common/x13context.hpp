@@ -152,6 +152,14 @@ struct X13Context {
         // ssprep_snapshot.
         int lterm0 = 0;
         int nterm0 = 0;
+        // x11opt.Kswv (prior trading-day indicator) as PARSED. x11pt1.f:235
+        // bumps it 1 -> 3 when an x11regression TD model is present, and the
+        // bump is deliberately not undone by xrgdrv (Lx11rg=F there). The span
+        // drivers ARE covered in the oracle -- x12run.f:166 snapshots it before
+        // x11ari and ssx11a.f:160 / revdrv.f:528 restore it per span -- which is
+        // this field. Captured at parse rather than in ssprep_snapshot because
+        // that runs AFTER run_pre_model's xrgdrv has already bumped it.
+        int kswv0 = 0;
     } saved;
     // work3.cmn's Stsie (D8 "unmodified SI ratio" buffer). x11pt2/x11pt3 treat
     // most of their COMMON scratch (Temp/Stex/Stime/Ckhs/Ststd/Biasfc/Sp2) as
@@ -389,6 +397,13 @@ struct X13Context {
     // (Kpart=3) iterations of x11pt2.
     std::vector<double> x11reg_b16;
     std::vector<double> x11reg_c16;
+    // x11mdl.f's /x11reg/ Dx11 -- the seven "X-11 style" daily weights derived
+    // from the irregular-regression TD coefficients (`x11tdwt:` savelog), and
+    // the same vector after the Kswv==3 combine with the tdprior weights
+    // (`x11combtdwt:`). Written at both the B and C iterations; the C one wins,
+    // which is what the oracle reports.
+    std::vector<double> x11reg_tdwt;
+    std::vector<double> x11reg_combtdwt;
     // x11regression{} design matrix (xrm save): the Nb TD-contrast columns over
     // the Nspobs data rows, row-major (row r, col c) at index r*x11reg_xrm_ncol+c.
     // Snapshotted from md.xy at x11mdl_td (the design is iteration-independent).

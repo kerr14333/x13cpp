@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}` and the `Kswv==3` prior-TD route ported)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->5955<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->470<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->5966<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->470<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -408,7 +408,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5955<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->5966<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -690,6 +690,55 @@ is titled 'User-defined' -- and the same line sets `Havxtd`. Both read as
 defects; no spec exercises `x11regression{usertype=ao}` yet, and the rule is to
 measure before naming one.
 
+## This session, part 11: `Kswv==3` -- one unported line, four dead consumers
+
+`x11pt1.f:235` is `IF(Axrgtd)Kswv=Kswv+2`, and it was not ported -- so `Kswv`
+could never leave 1 and everything keyed on 3 was dead. `docs/M5_PORT_NOTES.md`
+entry 60; the durable pieces:
+
+**It is a live wrong-numbers bug, not a theoretical one.** New spec
+`extra/airline_x11regression-tdprior-td` (prior weights AND `variables=(td)` --
+the four existing tdprior specs all omit the TD model, which is why nothing
+caught it): d11 1949.02 came back **126.769 against the oracle's 124.850**, at
+`OUTCOME: OK`.
+
+**Four consumers, all now ported:** `xrgtrn.f:36`'s `Xnstar*X - Xnstar`,
+`x11ref.f:117`'s `+1` instead of `Xn/Xnstar`, and `x11mdl.f:541-572 + :786-830`
+-- the estimated coefficients become X-11 daily weights `Dx11`, get ADDED to the
+user's priors, and Faccal/Factd are rebuilt from the sum through a second
+`x11ref` that is passed **Kswv=4, not 3**, so it takes the ordinary arm.
+
+**`Kswv` is deliberately NOT restored after `xrgdrv`** -- `xrgdrv.f:57/207` pass
+`Lx11rg=F`, so the bump its own transparent x11pt1 makes survives into the main
+run, which is exactly why the main x11pt1 then skips the prior-TD block and
+takes the `Ixreg==3` Faccal restore instead. The SPAN drivers do restore it
+(`x12run.f:166` -> `ssx11a.f:160`/`revdrv.f:528`) = `ctx.saved.kswv0`, captured
+at PARSE because `ssprep_snapshot` runs after xrgdrv has already bumped it.
+
+**The half worth remembering is the other one.** With the bump in, `a4`/`b16`
+were bit-exact but `c16` was 5e-3 out. Cause: x11pt2 had a SHORTCUT --
+`Stcsi = Sto/Faccal` instead of `x11pt2.f:846-894`'s rebuild from the raw
+`Series` -- which had been explicitly verified equivalent when written, and IS
+equivalent until a tdprior exists. Then x11pt1 divides `Sto` by the prior-TD
+factor *and* folds the same factor into `Faccal`, so the shortcut removes it
+twice. **An equivalence that holds over the corpus is an equivalence over the
+corpus, not a proof** -- same class as entry 25's unreachability proof.
+Mutating that branch costs **193** gates; every other piece here costs 10.
+
+**Third half: ordering.** `x11ari.f` runs `xrgdrv` (:99) BEFORE `x11pt1` (:133),
+so the oracle's `Kswv` is already 3 by the time x11pt1 could divide by the bare
+prior TD. run_pre_model had the two blocks the other way round and divided
+twice. Swapped; the `kswv == 1` guard then does the work by itself.
+
+**`x11pt2.f:408-412` is left unported ON PURPOSE** (`Series *= Stptd` over the
+forecast region, once per iteration): it touches only `[Posfob+1, Posfob+Ny]`,
+never a published span. Recorded so it is not re-derived.
+
+**Two more parsed-but-unread arguments.** `forcecal` (argidx 24 -> `Calfrc`) is
+now honoured -- leaving it unread would have made this increment's two `Calfrc`
+walls unreachable. **`reweight` (argidx 32 -> `Lxrneg`) is STILL unread** -- see
+the open board.
+
 ## Open, in the order I would take them
 
 1. **`x11aic.f`'s USER branch** (`aictest.xu*`, `:462-591`) -- the last piece
@@ -701,14 +750,11 @@ measure before naming one.
      in `core/prm/gen/model.hpp`**. Direct transcription, nothing missing. Note
      the asymmetry: the PARSE-side dispatch in `gt_x11regression` is 4-arm
      (`gtxreg.f:728-744`), this RESTORE is 7-arm. Both correct.
-   - **`xrgtrn_td` is not enough, and by more than the arm count.**
-     `xrgtrn.f:19-51` has FOUR arms -- `Haveum` -> `Psuadd` -> mult
-     (`Muladd==0`) -> log-add (`Muladd==2`); the C++ helper implements only the
-     mult arm. **And inside that arm the Fortran has a `Kswv.eq.3` sub-case**
-     (`Xnstar(i)*X - Xnstar(i)` instead of `- Xn(i)`) **that the C++ does not
-     have at all.** `Kswv` is the tdprior weight indicator, so a `tdprior` +
-     x11regression spec may be hitting it TODAY -- measure that on its own,
-     before porting anything here. It is independent of the USER branch.
+   - **`xrgtrn_td` is still only the mult arm.** `xrgtrn.f:19-51` has FOUR --
+     `Haveum` -> `Psuadd` -> mult (`Muladd==0`) -> log-add (`Muladd==2`). The
+     other three are walled upstream, so this is a gap and not a silent one.
+     (The `Kswv.eq.3` sub-case that used to be listed here was MEASURED and
+     PORTED -- part 11. It was live: 1.5e-2 on d11 at `OUTCOME: OK`.)
    - **The `aicnus` seeding is a real reachability question.** `estend` starts
      true (`:56-57`); when false the `:463-479` scoring block is SKIPPED and
      `aicnus` must already be seeded. Easter seeds it at `:457`. The TD arm
@@ -732,9 +778,17 @@ measure before naming one.
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-3. **A composite whose components carry a residual peak**, to gate savpk's real
+3. **`x11regression{reweight=}` (argidx 32 -> `Lxrneg`) is parsed and
+   DISCARDED** -- found while porting Kswv==3, deliberately not fixed there
+   because it is not a one-liner. `Lxrneg` is READ in two ported places
+   (`gtinpt.cpp`'s negative-tdprior-weight clamp, `run_history.cpp:591`'s
+   fixreg check), so both see a permanently-false flag; honouring it also needs
+   `editor.f:1640-1667`'s fixed-coefficient check and `x11mdl.f:575-626`'s
+   daily-weight reweighting, neither ported. Wire the parse, port or wall both
+   readers, and gate a spec with a NEGATIVE tdprior weight.
+4. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-4. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+5. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`

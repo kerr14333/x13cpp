@@ -32,6 +32,14 @@ namespace {
 constexpr int PLEN = 1020;
 constexpr int PXPX = 3403;  // Chlxpx packed size (mdldat.cmn)
 
+// Local clean-fatal (x11parts.cpp's x11_not_ported is TU-local).
+void x11reg_not_ported(X13Context& ctx, const char* what) {
+    errhdr(ctx);
+    writln(ctx, std::string("ERROR: ") + what + " not yet ported (M5 X-11 spine).",
+           stdio::STDERR, ctx.units.mt2, true);
+    abend(ctx);
+}
+
 // x11aic.f:115-123 / :260-268 -- the trading-day regressor families the AIC
 // test strips out of the irregular-regression design (both lists are the same
 // 24 types). Note this is is_td_rgvr()'s list from aictst.cpp with the
@@ -139,17 +147,28 @@ void tdset_td(X13Context& ctx, const int* begdat, int lfda, int llda, int sp) {
     x.daybar = (sp == 12) ? 30.4375 : 91.25;
 }
 
-// ---- xrgtrn.f (mult, Kswv=0) ---------------------------------------------
+// ---- xrgtrn.f (mult arm) -------------------------------------------------
 // The Tdgrp arm matters: with no trading-day group in the model the irregular
 // is only centred (`X-1`), NOT rescaled by the day counts. Every fixed-TD
 // x11regression spec takes the first arm, which is why this used to assume it;
 // x11aic's no-TD candidate is what reaches the second.
+//
+// xrgtrn.f:36-40 -- inside the Tdgrp>0 arm, Kswv==3 (a tdprior prior TD has
+// ALREADY divided the day-count effect out of the irregular, see x11pt1.f:235)
+// subtracts Xnstar rather than Xn, i.e. the centring is against the STANDARD
+// month length, not the actual one. Only the Kswv==3 route reaches it.
+//
+// The Haveum / Psuadd / log-additive arms of xrgtrn.f:22-49 are still unported;
+// Haveum (x11regression umdata=) is never set on this port and the other two are
+// walled upstream in x11parts/x11mdl.
 void xrgtrn_td(X13Context& ctx, double* x, int l1, int l2, int tdgrp) {
     const auto& xt = ctx.xtdtyp;
+    const bool kswv3 = (ctx.x11opt.kswv == 3);
     for (int i = l1; i <= l2; ++i) {
         const int i2 = i - l1 + 1;
         if (tdgrp > 0)
-            x[i2 - 1] = xt.xnstar(i) * x[i2 - 1] - xt.xn(i);
+            x[i2 - 1] = xt.xnstar(i) * x[i2 - 1] -
+                        (kswv3 ? xt.xnstar(i) : xt.xn(i));
         else
             x[i2 - 1] = x[i2 - 1] - 1.0;
     }
@@ -295,9 +314,22 @@ bool regx11(X13Context& ctx, double* aout, int* naout, int* nefout) {
 // x11regression easter regressor is linear, Xhlnln=F).
 void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
                int ncxy, const double* b, const double* xy, int nb,
-               const int* rtype) {
+               const int* rtype, int kswv) {
     for (int i = 0; i < nrxy; ++i) { fcal[i] = 0.0; ftd[i] = 0.0; }
     std::vector<double> fhol(nrxy > 0 ? nrxy : 1, 0.0);
+    // x11ref.f:123-129 -- with a holiday group AND forcecal=yes the combined
+    // factor is the PRODUCT Ftd*Fhol rather than the mulref accumulation below.
+    // (The other arm, the Bell-Hilmer nonlinear-Easter Kvec divide, needs
+    // Xhlnln, which no x11regression holiday regressor sets.) Reachable only
+    // since forcecal= started being honoured.
+    if (ctx.x11log.calfrc) {
+        for (int icol = 1; icol <= nb; ++icol) {
+            if (is_hol_type(rtype[icol - 1])) {
+                x11reg_not_ported(ctx, "x11ref forcecal= combined calendar factor");
+                return;
+            }
+        }
+    }
     const double* xn = ctx.xtdtyp.xn.data();
     const double* xnstar = ctx.xtdtyp.xnstar.data();
     // Raw factors: Ftd/Fhol += B(icol) * Xy(:,icol) (column icol, stride Ncxy).
@@ -313,10 +345,15 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
     // Fold the holiday factor into Fcal the same way (no-op when Fhol is all 0).
     mulref(nrxy, fcal, fhol.data(), xdev, xnstar, prm::DNOTST, false);
     mulref(nrxy, fhol.data(), fhol.data(), xdev, xnstar, prm::DNOTST, true);
+    // x11ref.f:116-122 -- Kswv==3 (a tdprior prior TD has already removed the
+    // day-count effect) adds ONE instead of the Xn/Xnstar month-length ratio.
+    // Note the Kswv=4 recompute at x11mdl.f:813 deliberately does NOT: it passes
+    // 4 precisely so the combined-weight factor is built the ordinary way.
     for (int irow = 1; irow <= nrxy; ++irow) {
         const int ir2 = irow + xdev - 1;
-        ftd[irow - 1] += xn[ir2 - 1] / xnstar[ir2 - 1];
-        fcal[irow - 1] += xn[ir2 - 1] / xnstar[ir2 - 1];
+        const double add = (kswv == 3) ? 1.0 : xn[ir2 - 1] / xnstar[ir2 - 1];
+        ftd[irow - 1] += add;
+        fcal[irow - 1] += add;
     }
 }
 
@@ -353,7 +390,7 @@ void pritd(X13Context& ctx, double* ptdfac, int nrxy, int sp, const int* begdat,
     std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);
     std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
     x11ref_td(ctx, fcal.data(), ftd.data(), frstob, nrxy, ncxy, btd, tdxy.data(),
-              6, rtype);
+              6, rtype, ctx.x11opt.kswv);
     // pritd.f:47-51 -- shift the [1,Nrxy] factors up to absolute [Frstob, ...].
     for (int i = 0; i < nrxy; ++i) ptdfac[frstob - 1 + i] = ftd[i];
 }
@@ -937,7 +974,7 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);
     std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
     x11ref_td(ctx, fcal.data(), ftd.data(), pos1bk, nrxy, m.ncxy, md.b.data(),
-              md.xy.data(), m.nb, m.rgvrtp.data());
+              md.xy.data(), m.nb, m.rgvrtp.data(), ctx.x11opt.kswv);
     const int nfac = posffc - pos1bk + 1;
     for (int i = 0; i < nfac; ++i) {
         ctx.x11fac.faccal(pos1bk + i) = fcal[i];
@@ -966,6 +1003,91 @@ void x11mdl_td(X13Context& ctx, int kpart) {
 
     // Divide the TD effect out of the irregular (x11pt2 re-iterates without it).
     divsub(sti, sti, ctx.x11fac.faccal.data(), pos1ob, posfob, muladd);
+
+    // ---- x11mdl.f:541-572 + :786-830 -- the COMBINED daily weights ----------
+    // Only on the Kswv==3 route (tdprior weights AND an x11regression TD model,
+    // see x11pt1.f:235). The estimated irregular-regression coefficients are
+    // converted to X-11 style daily weights Dx11, ADDED to the user's prior
+    // weights, and the calendar/TD factors rebuilt from the sum -- so the
+    // published Faccal/Factd carry BOTH effects, not just the estimated one.
+    //
+    // The oracle builds Dx11 unconditionally at :541 (it is also the print
+    // vector for the B16/C16 table header); it is only READ here, so the build
+    // and the combine live together. The Lxrneg reweighting at :575-626 is out
+    // of scope: Lxrneg defaults false (gtinpt.f:465) and x11regression{reweight=}
+    // is not honoured by this parser.
+    if (ctx.x11opt.kswv == 3 && ctx.x11log.havxtd) {
+        const int igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
+                                m.ngrptl, "Trading Day");
+        if (igrp <= 0) {
+            // Kswv==3 requires Axrgtd, and Axrgtd without a Trading Day group in
+            // the loaded x11reg model would leave Dx11 at DNOTST -- the oracle
+            // would combine sentinels. Refuse rather than reproduce garbage.
+            x11reg_not_ported(ctx, "x11mdl Kswv=3 with no Trading Day group");
+            return;
+        }
+        const int begcol = m.grp(igrp - 1);
+        const int endcol = m.grp(igrp) - 1;
+        double dx11[7];
+        setdp(prm::DNOTST, 7, dx11);
+        dx11[6] = 0.0;
+        if (begcol == endcol) {
+            // td1coef: one contrast coefficient -> five weekday weights and the
+            // -5/2 weekend split.
+            for (int icol = 1; icol <= 5; ++icol) {
+                dx11[icol - 1] = md.b(begcol);
+                if (muladd != 1) dx11[icol - 1] += 1.0;
+            }
+            for (int icol = 6; icol <= 7; ++icol) {
+                dx11[icol - 1] = (-5.0 * md.b(begcol)) / 2.0;
+                if (muladd != 1) dx11[icol - 1] += 1.0;
+            }
+        } else {
+            for (int icol = begcol; icol <= endcol; ++icol) {
+                dx11[icol - begcol] =
+                    (muladd == 1) ? md.b(icol) : 1.0 + md.b(icol);
+                dx11[6] -= md.b(icol);
+            }
+            if (muladd != 1) dx11[6] += 1.0;
+        }
+        ctx.x11reg_tdwt.assign(dx11, dx11 + 7);
+
+        // x11mdl.f:787-789 -- the combine itself.
+        for (int icol = 1; icol <= 7; ++icol)
+            dx11[icol - 1] += ctx.x11reg.dwt(icol) - 1.0;
+        ctx.x11reg_combtdwt.assign(dx11, dx11 + 7);
+
+        if (ctx.x11log.calfrc) {
+            // x11mdl.f:798-800 -- forcecal=yes folds the prior-TD factor Stptd
+            // straight into Faccal/Factd instead of rebuilding. Unported, and
+            // x11regression{forcecal=} is not honoured by this parser either, so
+            // Calfrc can only be true if that changes.
+            x11reg_not_ported(ctx, "x11mdl Kswv=3 forcecal= combine");
+            return;
+        }
+        // x11mdl.f:803-820 -- rebuild Faccal/Factd from the COMBINED weights.
+        // bb2 replaces the TD block of B with Dx11-1 and keeps every other
+        // coefficient; Kswv is passed as 4, NOT 3, so x11ref finishes with the
+        // ordinary Xn/Xnstar ratio (see x11ref_td).
+        std::vector<double> bb2(static_cast<std::size_t>(m.nb > 0 ? m.nb : 1),
+                                0.0);
+        for (int icol = 1; icol <= m.nb; ++icol)
+            bb2[icol - 1] = (icol >= begcol && icol <= endcol)
+                                ? dx11[icol - begcol] - 1.0
+                                : md.b(icol);
+        std::vector<double> fcal2(nrxy > 0 ? nrxy : 1, 0.0);
+        std::vector<double> ftd2(nrxy > 0 ? nrxy : 1, 0.0);
+        x11ref_td(ctx, fcal2.data(), ftd2.data(), pos1bk, nrxy, m.ncxy,
+                  bb2.data(), md.xy.data(), m.nb, m.rgvrtp.data(), /*kswv=*/4);
+        for (int i = 0; i < nfac; ++i) {
+            ctx.x11fac.faccal(pos1bk + i) = fcal2[i];
+            ctx.x11fac.factd(pos1bk + i) = ftd2[i];
+        }
+        // x11mdl.f:825-826 -- and Kswv itself moves on: back to 3 after the B
+        // iteration, to 4 after the C one (which stops xrgtrn/x11ref taking the
+        // Kswv==3 arm for the rest of the run).
+        ctx.x11opt.kswv = (kpart == 3) ? 4 : 3;
+    }
 }
 
 }  // namespace x13

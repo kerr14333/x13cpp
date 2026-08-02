@@ -240,6 +240,21 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
         tdset_td(ctx, ctx.mdldat.begspn.data(), pos1bk, posffc, ny);
         pritd(ctx, stptd, n2, ny, begd1, pos1bk);
         if (ctx.error.lfatal) return;
+        // x11pt1.f:235 -- `IF(Axrgtd)Kswv=Kswv+2`. The ONLY route to Kswv==3:
+        // user prior TD weights (Kswv==1) TOGETHER WITH an x11regression trading-
+        // day model. It changes three downstream things -- xrgtrn.f:36's irregular
+        // transform, x11ref.f:117's factor finish, and x11mdl.f:786's combined
+        // daily weights -- and its absence was a live wrong-numbers bug at
+        // OUTCOME: OK (d11 1.5e-2 relative on airline; see the tdprior-td spec).
+        //
+        // Deliberately NOT undone by xrgdrv's transparent pass: xrgdrv.f:57/207
+        // call ssprep/restor with Lx11rg=F, so the bump this same line makes
+        // INSIDE that pass survives into the main run -- which is exactly why the
+        // main x11pt1 then finds Kswv==3 and skips this block, taking the Ixreg==3
+        // Faccal restore above instead. The span drivers DO restore it
+        // (x12run.f:166's ssprep(...,T) -> ssx11a.f:160 / revdrv.f:528), which is
+        // ctx.saved.kswv0 in run_x11_span.
+        if (ctx.x11log.axrgtd) opt.kswv += 2;
         // Stash the prior-TD factor (A4) over the observed span for the harness
         // dump / result object (bit-exact vs the oracle a4 table).
         ctx.x11_a4_prior.assign(stptd + (pos1ob - 1),
@@ -689,17 +704,44 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
             for (int i = pos1bk; i <= posffc; ++i)
                 STEX(i) = STI(i) / (1.0 + STWT(i) * (STI(i) - 1.0));
         }
-        // Stcsi for the next iteration. The oracle x11regression feedback
-        // (x11pt2.f:846-894, Axrgtd/Ixreg==1) rebuilds Stcsi from the raw forecast-
-        // extended Series, re-applies the outlier/user/Sprior priors, then divides
-        // out the combined calendar factors. On the TD-only corpus path that is
-        // exactly Sto/Faccal -- Sto is already Orig/Sprior (x11pt1) and there are
-        // no outlier/user factors -- so the STCSI=STO shortcut is bit-equivalent
-        // here (verified: rebuilding from Series gave identical results). Outlier/
-        // user x11reg specs would need the full :851-859 prior divsubs.
-        for (int i = pos1bk; i <= posffc; ++i) STCSI(i) = STO(i);
-        if ((ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2) && ctx.x11log.axrgtd)
-            divsub(stcsi, stcsi, ctx.x11fac.faccal.data(), pos1bk, posffc, muladd);
+        // Stcsi for the next iteration (x11pt2.f:846-905). The x11regression
+        // feedback arm rebuilds it from the RAW forecast-extended Series and
+        // re-applies the priors; everything else just copies Sto.
+        //
+        // This used to take the STCSI=STO/Faccal shortcut for the feedback arm
+        // too, on the argument that Sto is already Orig/Sprior. That argument
+        // fails the moment a tdprior is present: x11pt1 divides Sto by the
+        // prior-TD factor AND folds the same factor into Faccal, so Sto/Faccal
+        // removes the prior TD TWICE. Measured on the tdprior-td spec -- the C
+        // iteration's regression saw a doubly-adjusted irregular and came back
+        // with visibly different daily weights (Tue -0.276 vs the oracle's
+        // -0.326), which then moved every D table by ~2.6e-2.
+        const bool xrg_feedback_stcsi =
+            (ctx.x11log.axrgtd || ctx.x11log.axrghl) &&
+            (ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2);
+        if (xrg_feedback_stcsi) {
+            const x11adj_cmn& adjs = ctx.x11adj;
+            // x11pt2.f:851-859's per-factor divsubs (Facls/Facao/Factc/Facso/
+            // Facsea/Facusr) are unported; none of those adjustment flags can be
+            // set on the x11regression path this arm serves.
+            if (adjs.adjls == 1 || adjs.adjao == 1 || adjs.adjtc == 1 ||
+                adjs.adjso == 1 || adjs.adjsea == 1 || adjs.adjusr == 1) {
+                x11_not_ported(ctx, "x11pt2 x11reg Stcsi rebuild with "
+                                    "outlier/seasonal/user prior factors");
+                return;
+            }
+            copy(ctx.inpt.series.data() + (pos1bk - 1), posffc - pos1bk + 1, 1,
+                 stcsi + (pos1bk - 1));
+            if (ctx.prior.kfmt > 0)
+                divsub(stcsi, stcsi, ctx.inpt.sprior.data(), pos1ob, posfob,
+                       muladd);
+            if (adjs.adjtd == 1 || ctx.x11log.axrgtd || adjs.adjhol == 1 ||
+                opt.khol > 1 || ctx.x11log.axrghl || opt.kswv > 0)
+                divsub(stcsi, stcsi, ctx.x11fac.faccal.data(), pos1bk, posffc,
+                       muladd);
+        } else {
+            for (int i = pos1bk; i <= posffc; ++i) STCSI(i) = STO(i);
+        }
 
         // Modify the (calendar-adjusted) original to remove the extremes.
         if (psuadd) {
