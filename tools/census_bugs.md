@@ -1270,16 +1270,14 @@ column's type.
 - **It also silently rewrites the aictest.** In the same loop, a user TD column
   taken as `Tdgrp` when no real trading-day group exists sets `Xtdtst=0` and
   `Xuser=T` -- an `aictest=(td)` becomes an `aictest=(user)`.
-- **Port:** NOT reproduced. `xrg_editor_setup` in
-  `core/src/specparse/readers_spec.cpp` ports the rest of the block -- the
-  group pointers, the Tdgrp/Stdgrp promotion, the Xtdtst->Xuser rewrite and the
-  whole extreme-value rule -- but WALLS the stale-rtype arm. Taking it puts the
-  run on the oracle's branch and then diverges downstream: the B iteration's
-  irregular regression matches the oracle coefficient for coefficient and the C
-  iteration does not (u2 0.330 against the oracle's 0.744), leaving c16 1.1e-3
-  out. Refusing loudly is the honest state; see `docs/M5_PORT_NOTES.md` entry 62
-  and the open board.
-- **Pinned by:** the OTHER arm of the same rule is gated --
-  `tests/corpus/extra/airline_x11regression-easter` reaches `Holgrp>0` through a
-  real `easter[8]` regressor and gates the AO branch bit-exact. The stale-rtype
-  arm itself is pinned only by the wall, which is proved to fire.
+- **Port:** reproduced, in `xrg_editor_setup`
+  (`core/src/specparse/readers_spec.cpp`) along with the rest of the block --
+  the group pointers, the Tdgrp/Stdgrp promotion, the Xtdtst->Xuser rewrite and
+  the extreme-value rule. It was WALLED at first because taking the arm left
+  c16 1.1e-3 out; that turned out to be an unrelated hole (x11mdl.f:531-540's
+  effective-type remap, `docs/M5_PORT_NOTES.md` entry 64), not this defect.
+- **Pinned by:** `tests/corpus/extra/airline_x11regression-aictest-user2swap`,
+  which reaches the arm, against `-aictest-user2`, which is the same spec with
+  the `usertype=` order reversed and does not. Removing the arm costs 14 gates.
+  `-easter` gates the other route into the same rule (`Holgrp>0` through a real
+  `easter[8]` regressor).

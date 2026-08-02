@@ -1107,7 +1107,6 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     std::vector<double> aotl(PLEN, 0.0);
     int naotl = 0, nefotl = 0;
     if (!regx11(ctx, aotl.data(), &naotl, &nefotl)) return;
-
     // x11mdl.f:424 -- Otlxrg is the automatic AO outlier identification arm of
     // the extreme-value method; editor.f:1727-1747 chose it at spec-read (see
     // xrg_editor_setup). AO-only, add-one, over the full model span, with the
@@ -1163,11 +1162,36 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         ar.nrxy = nrxy;
     }
 
+    // x11mdl.f:531-540 -- the EFFECTIVE regressor type x11ref classifies by is
+    // not Rgvrtp. A column carrying the generic PRGTUD ('User-defined') takes
+    // its type from the declared `usertype=` list instead, which loadxr.f:76
+    // has copied Usxtyp -> Usrtyp. So `usertype=(td)` on a user column puts it
+    // in the TRADING-DAY factor even though its Rgvrtp says User-defined, and
+    // dropping this remap loses exactly that column's contribution to Ftd
+    // (measured: b16 out by b_u2*u2/Xnstar, up to 7.6e-4 relative).
+    //
+    // `iusr` advances only on PRGTUD columns while Usrtyp is indexed by USER
+    // column number, so a PRGUTD column ahead of a PRGTUD one shifts the read
+    // -- the same off-by-one shape as CB-36 and reproduced for the same reason.
+    std::vector<int> rtype(static_cast<std::size_t>(m.nb > 0 ? m.nb : 1), 0);
+    {
+        int iusr = 1;
+        for (int icol = 1; icol <= m.nb; ++icol) {
+            if (m.rgvrtp(icol) == prm::PRGTUD && ctx.usrreg.ncusrx > 0) {
+                rtype[icol - 1] = (iusr <= prm::PUREG)
+                                      ? ctx.usrreg.usrtyp(iusr) : 0;
+                ++iusr;
+            } else {
+                rtype[icol - 1] = m.rgvrtp(icol);
+            }
+        }
+    }
+
     // Build the TD factor series and copy into Factd/Faccal.
     std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);
     std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
     x11ref_td(ctx, fcal.data(), ftd.data(), pos1bk, nrxy, m.ncxy, md.b.data(),
-              md.xy.data(), m.nb, m.rgvrtp.data(), ctx.x11opt.kswv);
+              md.xy.data(), m.nb, rtype.data(), ctx.x11opt.kswv);
     const int nfac = posffc - pos1bk + 1;
     for (int i = 0; i < nfac; ++i) {
         ctx.x11fac.faccal(pos1bk + i) = fcal[i];
@@ -1271,7 +1295,7 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         std::vector<double> fcal2(nrxy > 0 ? nrxy : 1, 0.0);
         std::vector<double> ftd2(nrxy > 0 ? nrxy : 1, 0.0);
         x11ref_td(ctx, fcal2.data(), ftd2.data(), pos1bk, nrxy, m.ncxy,
-                  bb2.data(), md.xy.data(), m.nb, m.rgvrtp.data(), /*kswv=*/4);
+                  bb2.data(), md.xy.data(), m.nb, rtype.data(), /*kswv=*/4);
         for (int i = 0; i < nfac; ++i) {
             ctx.x11fac.faccal(pos1bk + i) = fcal2[i];
             ctx.x11fac.factd(pos1bk + i) = ftd2[i];

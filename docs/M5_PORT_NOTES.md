@@ -3003,7 +3003,11 @@ Three separate things, all of the parsed-but-unread family:
 
 ### What is NOT shipped
 
-CB-36's stale-rtype arm is **walled, not reproduced.** Taking it puts the run on
+**Superseded by entry 64 -- the wall is gone and CB-36 is reproduced and
+gated.** The measurement below is kept because it is what located the cause:
+the B/C split said the divergence was in the FACTOR build, not the fit.
+
+CB-36's stale-rtype arm was **walled, not reproduced.** Taking it puts the run on
 the oracle's branch and then diverges: on the `usertype=(td user)` spec the B
 iteration's irregular regression matches the oracle coefficient for coefficient
 (u1 -0.911968 / -0.9120, u2 0.536851 / 0.5369, AO1960.Mar -2.272510 / -2.2725)
@@ -3080,3 +3084,80 @@ code, and it belongs with the CB-36 item.
 `Must adjust for either trading day or holiday in the x11regression spec.` and
 stop. Mutating the check to `if (false)` loses that gate; the noapply wiring
 and the Ixrgtd default lose none, both saturated.
+
+## 64. CB-36 closed -- and the effective regressor type x11ref classifies by is NOT Rgvrtp.
+
+Entry 62 walled CB-36's stale-rtype arm because taking it left c16 1.1e-3 out,
+with the B iteration matching the oracle coefficient for coefficient and the C
+iteration not. The wall is gone: the cause was in neither editor nor x11aic.
+
+**Bisection, and what each step ruled out.** Dropping the wall and switching
+the two flags editor sets (`Axruhl`, `Axrghl`) independently changed nothing --
+all four combinations gave the same 1.084e-3. So the divergence was not the
+flags but the branch, and three probes then ruled out everything the CB-36
+spec has in common with specs that pass:
+
+| probe | result |
+|---|---|
+| `variables=(td easter[8])` -- Otlxrg via a real holiday group | 4.7e-15 |
+| `... + user=(u1)` -- user column under Otlxrg | 5.0e-15 |
+| `... + aictest=(td)` -- and the aictest on top | 5.0e-15 |
+| `... + user=(u1 u2) usertype=(user td)` -- a PRGUTD user column too | 5.1e-15 |
+
+Everything passed. What was left was the CB-36 spelling itself, so the
+divergence had to be in something only it does.
+
+**The shape of the error named the cause.** b16 was out by up to 7.6e-4, and
+the per-row difference divided by u2 was not noise -- it took exactly three
+values, -0.019004 / -0.017318 / -0.017895, which are `-b_u2 / 28.25`,
+`-b_u2 / 31` and `-b_u2 / 30`. The engine's Ftd was short by
+`b_u2 * u2 / Xnstar`: the oracle puts the SECOND user column into the
+trading-day factor and this port did not.
+
+**x11mdl.f:531-540.** x11ref does not classify by `Rgvrtp`. x11mdl builds a
+local `rtype` first:
+
+```fortran
+      iusr=1
+      DO icol=1,Nb
+       IF(Rgvrtp(icol).eq.PRGTUD.and.Ncusrx.gt.0)THEN
+        rtype(icol)=Usrtyp(iusr)
+        iusr=iusr+1
+       ELSE
+        rtype(icol)=Rgvrtp(icol)
+       END IF
+      END DO
+```
+
+A column carrying the generic PRGTUD ('User-defined') takes its EFFECTIVE type
+from the declared `usertype=` list, which `loadxr.f:76` has already copied
+`Usxtyp -> Usrtyp`. So `usertype=(td user)` gives u1 Rgvrtp PRGUTD and u2
+Rgvrtp PRGTUD -- and u2's rtype is then read as `Usrtyp(1)`, which is u1's
+declared `td`. Both columns end up in the trading-day factor. `iusr` advances
+only on PRGTUD columns while Usrtyp is indexed by USER column number, so that
+read is off by one exactly the way CB-36's is; reproduced, and mutating the
+`++iusr` out costs a gate.
+
+This is the third member of the family this spec pair has now turned up
+(editor.f:1710's stale rtype, x11aic.f's descending bu2/typ2 fill, and this
+one). All three are the same mistake: **an index that tracks one kind of
+column being used to read an array indexed by another.**
+
+`extra/airline_x11regression-aictest-user2swap` is back in the corpus and
+bit-exact, so CB-36 is now pinned by a gate rather than by a wall. WALLS 22 ->
+21 gaps.
+
+**Mutations:**
+
+| removed | gates lost |
+|---|---|
+| CB-36's stale-rtype arm (the walled behaviour) | 14 |
+| the x11mdl.f:531-540 rtype remap | 11 |
+| the remap's `++iusr` (its off-by-one) | 1 |
+
+**Measured and still open:** `x11regression{ user=(u1) usertype=(td) }` -- a
+single user column typed `td` and nothing else -- makes the ORACLE refuse
+(`gtxreg.f:833-840`: `usertype=` requires a group titled 'User-defined' or
+'User-defined Holiday' to exist, and a lone `td` column produces neither), and
+this engine runs it. Same class as the td-or-holiday requirement in entry 63,
+and cheap.

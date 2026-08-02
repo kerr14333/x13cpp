@@ -3597,11 +3597,9 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                 }
             } else if (!(holgrp > 0 || ctx.x11log.axruhl) &&
                        rtype >= prm::PRGTUH) {
-                xrg_not_ported(ctx,
-                               "editor.f:1710's stale-rtype holiday group "
-                               "(CB-36) -- an x11regression usertype=td column "
-                               "ahead of another column -- is not yet ported");
-                return;
+                holgrp = icol;
+                ctx.x11log.axruhl = true;
+                ctx.x11log.axrghl = true;
             }
         }
     }

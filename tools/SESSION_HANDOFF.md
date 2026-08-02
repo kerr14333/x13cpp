@@ -870,24 +870,55 @@ Not taken -- every holiday-carrying x11regression spec is bit-exact with it
 false, and turning it on switches unmeasured x11pt2/x11pt3 folds. Belongs with
 the CB-36 item.
 
+## This session, part 15: CB-36 CLOSED -- and x11ref does not classify by Rgvrtp
+
+Part 13 walled CB-36's stale-rtype arm because taking it left c16 1.1e-3 out.
+The wall is gone; the cause was in neither editor nor x11aic.
+`docs/M5_PORT_NOTES.md` entry 64. The durable pieces:
+
+**Bisection first.** Switching the two flags editor sets (`Axruhl`/`Axrghl`)
+independently changed nothing -- all four combinations gave the same 1.084e-3 --
+so it was the BRANCH, not the flags. Four probes then ruled out everything the
+CB-36 spec shares with specs that pass: a real holiday group under Otlxrg
+(4.7e-15), plus a user column (5.0e-15), plus an aictest (5.0e-15), plus a
+PRGUTD user column (5.1e-15). All green.
+
+**The shape of the error named the cause.** b16's per-row difference divided by
+u2 took exactly three values -- `-b_u2/28.25`, `-b_u2/31`, `-b_u2/30`. The
+engine's Ftd was short by `b_u2 * u2 / Xnstar`: the oracle puts the SECOND user
+column into the trading-day factor and this port did not.
+
+**x11mdl.f:531-540 -- x11ref does NOT classify by `Rgvrtp`.** x11mdl builds a
+local `rtype` first: a column carrying the generic PRGTUD takes its effective
+type from the declared `usertype=` list (`loadxr.f:76` copies
+`Usxtyp -> Usrtyp`). So `usertype=(td user)` puts BOTH user columns in the TD
+factor -- u1 because its Rgvrtp is PRGUTD, u2 because its rtype is read as
+`Usrtyp(1)`, u1's declared type. `iusr` advances only on PRGTUD columns while
+Usrtyp is indexed by user-column number: off by one, same as CB-36, reproduced.
+
+**Third member of one family.** editor.f:1710's stale rtype, x11aic.f's
+descending `bu2/typ2` fill, and this remap are all *an index that tracks one
+kind of column used to read an array indexed by another*. When something in
+x11regression looks off by a column, look for that.
+
+`extra/airline_x11regression-aictest-user2swap` is back and bit-exact, so CB-36
+is pinned by a gate rather than a wall. Mutations: the CB-36 arm 14, the rtype
+remap 11, the remap's `++iusr` 1. WALLS 22 -> 21 gaps.
+
 ## Open, in the order I would take them
 
-1. **CB-36's stale-rtype arm is WALLED, and the wall hides a measured 1.1e-3.**
-   Taking the arm -- setting Holgrp from the stale local, as the oracle does --
-   puts the run on the right branch and then diverges: on a two-column
-   `usertype=(td user)` spec the B iteration's irregular regression matches the
-   oracle **coefficient for coefficient** (u1 -0.911968/-0.9120, u2
-   0.536851/0.5369, AO1960.Mar -2.272510/-2.2725) and the C iteration does NOT
-   (u2 0.330213 against 0.7441). Same design, same seven AO dates, TD
-   coefficients agreeing to 4 dp -- so whatever moves is **between the B punch
-   and the C fit inside the transparent xrgdrv pass**, not in x11aic. Rebuild
-   the spec (`extra/airline_x11regression-aictest-user2` with `usertype` order
-   reversed), drop the wall, and chase the B->C step. Entry 62 has the numbers.
-   - Also measured there and NOT fixed: `x11regression{ user=... }` with no
-     trading-day or holiday variable makes the ORACLE refuse (`Must adjust for
-     either trading day or holiday in the x11regression spec`) and this engine
-     returns `OUTCOME: OK`. One `inpter` in `xrg_editor_setup`, once someone
-     checks the exact Fortran guard.
+1. **The three remaining x11regression parse refusals**, all the same shape as
+   entry 63 -- the ORACLE rejects the spec and this engine runs it:
+   - `x11regression{ user=(u1) usertype=(td) }` -- `gtxreg.f:833-840` requires
+     a group titled 'User-defined' or 'User-defined Holiday' to exist, and a
+     lone `td`-typed user column produces neither. MEASURED this session.
+   - `x11regression{ variables=(td) aictest=(user) }` -- the oracle abends
+     singular at the C iteration (`singular because of Mon`, printed design
+     with six headers and zero rows); this engine returns `OUTCOME: OK`.
+     Hypothesis, unmeasured: the B iteration's `adrgef` restore and the
+     following `regvar` each add a copy of the user column (entry 61).
+   - `gtxreg.f:898-905`'s `noapply`-with-`umdata` check, transcribed but
+     unreachable while Haveum is never set.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a

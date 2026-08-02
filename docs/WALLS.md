@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**22 walls.**
+**21 walls.**
 
 
 ## Automatic model selection
@@ -67,10 +67,6 @@ reproduce.
 - **`core/src/specparse/getreg_vars.cpp:1121`**
   AOS/LSS outlier regressors (rdotls.f)
 
-- **`core/src/specparse/readers_spec.cpp:3600`**
-  editor.f:1710's stale-rtype holiday group (CB-36) -- an x11regression usertype=td column ahead of another column -- is not yet ported
-  *Fortran:* `editor.f:1710`
-
 
 ## X-11
 
@@ -104,10 +100,10 @@ reproduce.
 - **`core/src/x11/x11reg.cpp:855`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1219`**
+- **`core/src/x11/x11reg.cpp:1243`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1258`**
+- **`core/src/x11/x11reg.cpp:1282`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:44`**
