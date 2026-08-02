@@ -29,9 +29,9 @@ stale figure is a build error instead of something a reader finds first.
 | Fortran routines in scope (excl. n-a) | **690** |
 | Percent of routines ported | **58.8** |
 | Census bugs catalogued | **35** |
-| Commits | **386** |
-| Active development time | **60h 04m** |
-| Calendar days worked | **15** |
-| Last commit | **2026-08-01** |
+| Commits | **390** |
+| Active development time | **60h 33m** |
+| Calendar days worked | **16** |
+| Last commit | **2026-08-02** |
 
 Metric names for markers: `parity_pass`, `parity_fail`, `parity_skip`, `parity_xfail`, `ctest`, `corpus_specs`, `parity_modules`, `cpp_lines`, `cpp_files`, `fortran_lines`, `fortran_files`, `routines_done`, `routines_total`, `routines_pct`, `census_bugs`, `commits`, `active_time`, `calendar_days`, `last_commit`.
