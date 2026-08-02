@@ -23,8 +23,15 @@ same counts. Safe because every gate compares stdout from a read-only
 subprocess and no harness writes side files — re-verify that if a harness ever
 changes. Build is ~25s; use `-k "<name>"` (~3s) while iterating.
 
-Standing constraints, unchanged: **never merge this branch to `main`, never
-push**; **never run `tests/corpus/generated/genspecs.py` or
+Standing constraints: **never merge this branch to `main`.** Pushing THIS
+BRANCH is authorised as of 2026-08-02 (the repo is PUBLIC —
+`github.com/kerr14333/x13cpp` — and `origin/main` is still at M1, so the branch
+push publishes the whole port on a new remote branch and leaves the default
+branch alone). The assistant's `git push` is blocked by the permission system;
+the user runs `git push -u origin checkpoint/m5-seats-slidingspans` themselves.
+`main` is an ancestor of this branch (`HEAD..main` == 0), so one branch push
+carries every local commit and `main` can fast-forward later with no merge.
+Also: **never run `tests/corpus/generated/genspecs.py` or
 `tests/corpus/extra/genextra.py`** (both wipe committed specs they cannot
 regenerate — the six pickmdl specs, the four new `*-aictest-*` ones, both
 `composite-seats*` corpora and the three `*outofsample*` and three `*-backcast*`
