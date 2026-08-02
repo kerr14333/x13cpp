@@ -57,6 +57,14 @@ bool is_x11aic_td_type(int t) {
            t == prm::PRATSL || t == prm::PRATLQ || t == prm::PRATLY;
 }
 
+// x11aic.f:126-128 / :131-133 -- the user-defined regressor families the USER
+// AICC test strips out (and restores through the seven adrgef arms at :496-521).
+bool is_x11aic_user_type(int t) {
+    return t == prm::PRGTUD || t == prm::PRGTUH || t == prm::PRGUAO ||
+           t == prm::PRGUTD || t == prm::PRGULM || t == prm::PRGULQ ||
+           t == prm::PRGULY;
+}
+
 // A holiday-family regressor column (x11ref.f:47-50 daxpy-into-Fhol predicate):
 // Easter, labor day, Thanksgiving, StatCan easter, user holiday.
 bool is_hol_type(int t) {
@@ -449,6 +457,23 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         if (xr.holgrp > 0) xr.holgrp = 0;
         if (xr.easgrp > 0) xr.easgrp = 0;
     }
+    // x11aic.f:66-75 -- the user test only exists if there ARE user columns;
+    // with none, Xuser is switched off for the rest of the routine. Ncusrx/
+    // Haveum are dropped for the duration so the no-user regvar cannot rebuild
+    // the columns, and put back at :493-494.
+    bool xuser = ctx.x11log.xuser;
+    int ncx2 = 0;
+    bool lhum2 = false;
+    if (xuser) {
+        if (ctx.usrreg.ncusrx > 0) {
+            ncx2 = ctx.usrreg.ncusrx;
+            ctx.usrreg.ncusrx = 0;
+            lhum2 = ctx.xrgum.haveum;
+            ctx.xrgum.haveum = false;
+        } else {
+            xuser = false;
+        }
+    }
 
     // x11aic.f:79-82 -- Xtdtst is the XAICDC token index (td / tdstock /
     // td1coef / tdstock1coef = 1/2/3/4); addtd.f and mktdlb.f take the WIDER
@@ -509,17 +534,45 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
 
     // x11aic.f:112-143 -- strip the regressors the requested tests are about to
     // re-derive. `icol` starts at the ENTRY Nb and counts down independently of
-    // the deletions, so the bound is captured once. (The Xuser arm, which also
-    // stashes B/Regfx/Rgvrtp for the restore at :496-521, is unported.)
+    // the deletions, so the bound is captured once.
+    //
+    // The Xuser arm stashes B/Regfx/Rgvrtp per stripped column for the restore
+    // at :496-521. TWO transcription hazards here, both reproduced:
+    //
+    //  - THE READ IS AFTER THE DELETE. x11aic.f:129 calls dlrgef and only then
+    //    reads `B(icol)` -- but dlrgef.f:75-77 shifts B/Rgvrtp/Regfx DOWN over
+    //    the hole, so `B(icol)` is now the FOLLOWING column's coefficient. It
+    //    happens to be harmless when the user column is the last one (the
+    //    shift copies zero elements and the slot keeps its old value), which is
+    //    the only case the corpus has. Keep the two statements in this order.
+    //  - INDEX ORDER. This loop counts DOWN, so bu2/fx2/typ2 fill in
+    //    descending-column order, while the restore reads them 1..Ncusrx
+    //    alongside `getstr(Usrttl, ..., i)` in ASCENDING title order. With two
+    //    or more user columns the two disagree and coefficients are paired with
+    //    the wrong titles.
+    //
+    // Neither is claimed as a Census defect: both need a MULTI-column user spec
+    // to show, no corpus spec has one, and the rule here is to measure first.
     const int nb0 = m.nb;
+    int iuser = 0;
+    double bu2[prm::PUREG] = {0.0};
+    bool fx2[prm::PUREG] = {false};
+    int typ2[prm::PUREG] = {0};
     for (int icol = nb0; icol >= 1; --icol) {
         const int rtype = m.rgvrtp(icol);
         const bool istd = xtdtst > 0 && is_x11aic_td_type(rtype);
         const bool iseas =
             (rtype == prm::PRGTEA || rtype == prm::PRGTEC) && xeastr;
-        if (istd || iseas) {
+        const bool isusr = xuser && is_x11aic_user_type(rtype);
+        if (istd || iseas || isusr) {
             dlrgef(ctx, icol, ar.nrxy, 1);
             if (ctx.error.lfatal) return;
+            if (isusr && iuser < prm::PUREG) {
+                bu2[iuser] = ctx.mdldat.b(icol);
+                fx2[iuser] = m.regfx(icol);
+                typ2[iuser] = rtype;
+                ++iuser;
+            }
         } else if (xeastr &&
                    (rtype == prm::PRGTLD || rtype == prm::PRGTTH)) {
             // A labor-day / Thanksgiving column survives the Easter test and
@@ -591,7 +644,9 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
             if (xeastr) {
                 aichol = aictd;
             } else if (xeastr) {
-                /* aicnus = aictd -- unreachable, and unported besides */
+                /* aicnus = aictd -- UNREACHABLE. This is what leaves aicnus
+                   uninitialized at :481 whenever TD is accepted with no
+                   Easter; see the comment on `aicnus` below. */
             }
         } else {
             if (ctx.x11log.axrgtd) ctx.x11log.axrgtd = false;
@@ -607,8 +662,10 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
                 }
             }
             // x11aic.f:278-293 -- only rebuild if something is left to test or
-            // to carry. (`.or.(Xuser.or.Ncusrx.gt.0)` dropped with that branch.)
-            if (xeastr || xr.holgrp > 0) {
+            // to carry. Note Ncusrx is 0 for the whole routine when Xuser is on
+            // (:68), so the `.or.Ncusrx.gt.0` half only fires for user columns
+            // present WITHOUT an aictest=(user) request.
+            if (xeastr || xr.holgrp > 0 || xuser || ctx.usrreg.ncusrx > 0) {
                 retransform();
                 rebuild_design();
                 if (ctx.error.lfatal) return;
@@ -635,7 +692,25 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
     };
 
     // ---- easter (x11aic.f:299-458) -----------------------------------------
-    if (!xeastr) return;
+    // aicnus -- the AICC of the model WITHOUT the user-defined regressors. The
+    // Fortran declares it and never initializes it, and there are exactly three
+    // ways it can hold a value at :481:
+    //   :470  computed, when estend is still true at :463;
+    //   :457  seeded from the winning Easter aichol, when the Easter test ran
+    //         and left its own design fitted;
+    //   never -- TD accepted with no Easter test. :245's `ELSE IF(Xeastr)` is
+    //         the arm that was meant to seed it and cannot fire.
+    // The third case is a live Census defect and it DECIDES the test: the
+    // vendored -O2 oracle reads 0.0 out of the uninitialized slot, so
+    // `aicusr + Xraicd < aicnus` holds for any negative AICC and the user
+    // regressors are accepted unconditionally. Measured on
+    // extra/airline_x11regression-aictest-tduser, and the 0.0 survives a
+    // changed ARIMA model. Reproduced by initializing to 0.0 -- with the
+    // caveat that this is one Fortran build's stack value, not a language
+    // guarantee; the gate is what pins it.
+    double aicnus = 0.0;
+
+    if (xeastr) {
 
     double aicbst = prm::DNOTST;
     int aicind = ar.aicind;   // set to -1 at entry; see the note there
@@ -713,6 +788,125 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
     // lookup as find_easter above.
     ctx.x11reg_xe_accepted = find_easter() > 0;
     ctx.x11reg_xe_ran = true;
+
+    // x11aic.f:457 -- the LAST line of the Xeastr block, and the second of the
+    // three aicnus provenances above.
+    if (!estend && xuser) aicnus = aichol;
+
+    }   // end of the Xeastr block (x11aic.f:298-458)
+
+    // ---- user-defined (x11aic.f:462-591) -----------------------------------
+    if (!xuser) return;
+
+    // x11aic.f:463-479 -- the no-user AICC, only when nothing upstream has
+    // already left a fitted design behind.
+    if (estend) {
+        if (!regx11(ctx)) return;
+        // (:466's rgtdhl is the same Xhlnln no-op as in the TD branch.)
+        xrlkhd(ctx, aicnus, xc.nxcld);
+        if (ctx.error.lfatal) return;
+        if (xr.tdgrp > 0 && jac) {
+            aicnus -= 2.0 * jadj;
+            if (muladd == 2) aicnus += 2.0 * jadj2;
+        } else if (xr.holgrp > 0 && muladd == 2) {
+            aicnus += 2.0 * jadj2;
+        }
+    }
+    ctx.x11reg_aicc_xu_nouser = aicnus;
+
+    // x11aic.f:493-521 -- put the user columns back. Ncusrx/Haveum first (the
+    // titles are read out of Usrttl, which needs the count), then one adrgef per
+    // column dispatched on the SAVED Rgvrtp. Seven arms; the parse-side dispatch
+    // in gt_x11regression is four, which is not a discrepancy -- the parser maps
+    // four usertype= tokens, this restores whatever types ended up in the model.
+    ctx.usrreg.ncusrx = ncx2;
+    ctx.xrgum.haveum = lhum2;
+    for (int i = 1; i <= ctx.usrreg.ncusrx; ++i) {
+        std::string effttl;
+        int nchr = 0;
+        getstr(ctx, ctx.usrreg.usrttl.data(), ctx.usrreg.usrptr.data(),
+               ctx.usrreg.ncusrx, i, effttl, nchr);
+        if (ctx.error.lfatal) return;
+        const std::string ttl = effttl.substr(0, static_cast<std::size_t>(nchr));
+        const int t = typ2[i - 1];
+        const char* grp = nullptr;
+        if (t == prm::PRGTUD)      grp = "User-defined";
+        else if (t == prm::PRGUTD) grp = "User-defined Trading Day";
+        else if (t == prm::PRGULY) grp = "User-defined Leap Year";
+        else if (t == prm::PRGULM) grp = "User-defined LOM";
+        else if (t == prm::PRGULQ) grp = "User-defined LOQ";
+        else if (t == prm::PRGUAO) grp = "User-defined AO";
+        else if (t == prm::PRGTUH) grp = "User-defined Holiday";
+        // No ELSE in the Fortran either: an unrecognised saved type restores
+        // nothing, silently dropping the column.
+        if (grp != nullptr)
+            adrgef(ctx, bu2[i - 1], ttl, grp, t, fx2[i - 1], false);
+        if (ctx.error.lfatal) return;
+    }
+
+    // x11aic.f:526-533 -- the Haveum retransform. Haveum is the user-MEAN flag
+    // (x11regression umdata=), which this port never sets, so xrgtrn's Haveum
+    // arm stays unported; guard it rather than pretend.
+    if (ctx.xrgum.haveum) {
+        x11reg_not_ported(ctx, "x11aic user branch with umdata= (Haveum)");
+        return;
+    }
+
+    // x11aic.f:537-552 -- refit WITH the user columns and score.
+    rebuild_design();
+    if (ctx.error.lfatal) return;
+    if (!regx11(ctx)) return;
+    double aicusr = prm::DNOTST;
+    xrlkhd(ctx, aicusr, xc.nxcld);
+    if (ctx.error.lfatal) return;
+    if (xr.tdgrp > 0 && jac) {
+        aicusr -= 2.0 * jadj;
+        if (muladd == 2) aicusr += 2.0 * jadj2;
+    } else if (xr.holgrp > 0 && muladd == 2) {
+        aicusr += 2.0 * jadj2;
+    }
+    ctx.x11reg_aicc_xu_user = aicusr;
+
+    // x11aic.f:557-591 -- the verdict.
+    if (aicusr + xraicd < aicnus) {
+        estend = false;
+    } else {
+        estend = true;
+        // Haveum retransform (:566-572) -- walled above.
+        // :573-579 deletes ONLY the literal group 'User-defined', though the
+        // restore above can have created six other titles. Whether that strands
+        // columns depends on adrgef's grouping, which no corpus spec exercises
+        // (every user column here is the default PRGTUD). Transcribed as
+        // written; flagged, not claimed.
+        const int igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
+                                m.ngrptl, "User-defined");
+        // NB the Fortran indexes Grp(igrp-1) with NO igrp>0 guard, so a model
+        // whose restored columns carry only the other six titles would read
+        // Grp(-1). Guarded here: reproducing an out-of-bounds read is not
+        // reproducing a behaviour.
+        if (igrp > 0) {
+            const int begcol = m.grp(igrp - 1);
+            const int ncol = m.grp(igrp) - begcol;
+            dlrgef(ctx, begcol, ar.nrxy, ncol);
+            if (ctx.error.lfatal) return;
+        }
+        ctx.usrreg.ncusrx = 0;
+        ctx.usrxrg.ncxusx = 0;
+        ctx.usrxrg.nrxusx = 0;
+        rebuild_design();
+        if (ctx.error.lfatal) return;
+    }
+    // (x11aic.f:594-598's `IF(estend) regx11` epilogue is subsumed: x11mdl_td
+    // rebuilds the design and re-fits unconditionally on return, exactly as
+    // x11mdl.f:308-420 does.)
+    (void)estend;
+
+    // x11mdl.f:293-305 -- the verdict is read back off the MODEL, not off a
+    // stored flag, the same way the Easter one is.
+    ctx.x11reg_xu_accepted =
+        strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl,
+               "User-defined") > 0;
+    ctx.x11reg_xu_ran = true;
 }
 
 // ---- x11mdl.f orchestration (TD-only mult path) --------------------------
@@ -801,10 +995,10 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     }
 
     // Automatic AICC tests on the irregular (x11mdl.f:251-252, B iteration
-    // only). Leaves the winning trading-day / Easter design in the model so the
-    // build below (and the C iteration) carries it. The `Xuser.and.Ncusrx.gt.0`
-    // arm of the guard is dropped with the unported user branch.
-    if (kpart == 2 && (ctx.x11reg.xtdtst > 0 || ctx.x11log.xeastr)) {
+    // only). Leaves the winning trading-day / Easter / user design in the model
+    // so the build below (and the C iteration) carries it.
+    if (kpart == 2 && (ctx.x11reg.xtdtst > 0 || ctx.x11log.xeastr ||
+                       (ctx.x11log.xuser && ctx.usrreg.ncusrx > 0))) {
         const bool trumlt = (muladd == 0);   // !Psuadd && Muladd==0 (mult path)
         x11aic(ctx, trnsrs.data(), sti, nobspf, nfcst, irridx, irrend, muladd,
                trumlt);

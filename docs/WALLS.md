@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**20 walls.**
+**21 walls.**
 
 
 ## Automatic model selection
@@ -94,13 +94,16 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:1400`**
   x11pt3 revisions trend store (getrev)
 
-- **`core/src/x11/x11reg.cpp:328`**
+- **`core/src/x11/x11reg.cpp:336`**
   x11ref forcecal= combined calendar factor
 
-- **`core/src/x11/x11reg.cpp:1026`**
+- **`core/src/x11/x11reg.cpp:851`**
+  x11aic user branch with umdata= (Haveum)
+
+- **`core/src/x11/x11reg.cpp:1220`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1065`**
+- **`core/src/x11/x11reg.cpp:1259`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:44`**

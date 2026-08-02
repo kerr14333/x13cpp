@@ -2844,3 +2844,89 @@ unread and is left open**: `Lxrneg` is READ in two ported places
 of which therefore see a permanently-false flag, and honouring it also needs
 `x11mdl.f:575-626`'s daily-weight reweighting, which is unported. That is a
 separate increment, not a line.
+
+## 61. `x11aic.f`'s USER branch -- the last of the three, and a Census defect that decides it.
+
+Board item 1 since the aictest front opened. Its stated precondition
+(`x11regression{user=}` parsing and gating, entry 59) and its measured
+prerequisite (`Kswv==3`, entry 60) were both closed first, so this was
+transcription plus measurement rather than discovery.
+
+**What it does.** `aictest=(user)` sets `Xuser`. x11aic then drops `Ncusrx` to 0
+and strips every user-defined column (`:66-75`, `:126-137`), scores the model
+without them, restores them through SEVEN `adrgef` arms keyed on the saved
+`Rgvrtp` (`:496-521`), scores again, and keeps whichever wins by `Xraicd`. The
+reject arm deletes the `User-defined` group and zeroes `Ncusrx`/`Ncxusx`/
+`Nrxusx`. Savelog: `aictest.xu.aicc.nouser` / `.user` from x11aic, the
+`aictest.xu` verdict from `x11mdl.f:293-305` -- read off the MODEL, not a flag,
+exactly like the Easter one.
+
+**CB-35, and it is `active`.** `aicnus` -- the no-user AICC -- is an
+uninitialized local with three routes to a value:
+
+| route | when |
+|---|---|
+| `:470` computes it | `estend` still true at `:463` |
+| `:457` seeds it from the winning Easter AICC | the Easter test ran |
+| **nothing** | TD accepted, no Easter test |
+
+The third exists because `:245` reads `ELSE IF(Xeastr)` after `:243` already
+tested `Xeastr` -- unreachable; the intent was plainly `ELSE IF(Xuser)`. The
+vendored -O2 oracle reads **exactly 0.0**, and the verdict is
+`aicusr + Xraicd < aicnus`, so **any negative AICC wins and the user regressors
+are accepted unconditionally**. Measured -785.9 accepted against a 0.0 that
+means nothing. The 0.0 survives a changed ARIMA model. Reproduced by
+initializing to 0.0, with the caveat in the code that this is one build's stack
+value; the gate is what pins it.
+
+Three specs, one per route, and that is the point of having three:
+`-aictest-tduser` (uninitialized), `-aictest-tduser-reject` (`:470`, and the
+reject half of the verdict), `-aictest-easuser` (`:457`). All three bit-exact.
+
+**Two transcription hazards in the strip loop, both reproduced, neither
+claimed.**
+
+*The read is after the delete.* `:129` calls `dlrgef` and only THEN reads
+`B(icol)` -- but `dlrgef.f:75-77` shifts `B`/`Rgvrtp`/`Regfx` down over the
+hole, so `B(icol)` is the FOLLOWING column's coefficient. It is harmless only
+when the user column is last (the shift copies zero elements and the slot keeps
+its old value), which is the only case the corpus has.
+
+*The index orders disagree.* The strip loop counts DOWN, filling `bu2`/`fx2`/
+`typ2` in descending-column order; the restore reads them `1..Ncusrx` alongside
+`getstr(Usrttl, ..., i)` in ASCENDING title order. With two or more user columns
+coefficients pair with the wrong titles.
+
+Both need a MULTI-column user spec to show. No corpus spec has one, and the rule
+is to measure before naming a Census bug, so both are comments rather than CB
+entries. A two-column spec would settle them and is cheap.
+
+**A divergence NOT shipped, deliberately.** `x11regression{ variables=(td)
+aictest=(user) }` -- a fixed trading day with only the USER test -- makes the
+ORACLE abend at the C iteration: `ERROR: Irregular regression matrix singular
+because of Mon`, with the printed design matrix carrying its six column headers
+and ZERO rows. This engine runs it to `OUTCOME: OK`. The likely mechanism is
+that the B iteration's `adrgef` restore and the following `regvar` each
+contribute a copy of the user column into the model `loadxr(T)` saves, so the C
+iteration fits a duplicated design -- but that is a hypothesis, not a
+measurement. The spec was written, measured, and then REMOVED rather than gated:
+a wall would have made the outcomes agree for a reason unrelated to the oracle's
+own, and would mask a genuine singularity if the port ever grew one. It is on
+the open board with the measurement attached.
+
+**Mutations:**
+
+| removed | gates lost |
+|---|---|
+| the strip of the user columns | 30 |
+| the whole USER branch | 15 |
+| `aicnus = 0.0` -> a sane sentinel (CB-35) | 13 |
+| `:457`'s Easter seed | 13 |
+| the seven-arm `adrgef` restore | 15 |
+| the reject arm's `dlrgef` | 16 |
+
+**The gate caught its own bookkeeping.** `test_aictest_savelog.py` classified
+`aictest.xu*` as UNOWNED -- correct while the parser refused the token. The
+moment the engine started emitting the keys, the both-directions key-set assert
+failed in the *extra-in-engine* direction, which is the half that usually looks
+redundant. Moved to `OWNED_X11`.

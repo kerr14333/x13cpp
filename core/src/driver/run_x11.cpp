@@ -206,6 +206,9 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     const std::string xtd_reg_main = ctx.x11reg_xtd_reg;
     const bool xtd_flags_main[2] = {ctx.x11reg_xtd_ran,
                                     ctx.x11reg_xtd_accepted};
+    const double aicc_xu_main[2] = {ctx.x11reg_aicc_xu_nouser,
+                                    ctx.x11reg_aicc_xu_user};
+    const bool xu_flags_main[2] = {ctx.x11reg_xu_ran, ctx.x11reg_xu_accepted};
     const double d11f_main[4] = {ctx.x11_d11f, ctx.x11_d11f_prob,
                                  ctx.x11_d11f3y, ctx.x11_d11f3y_prob};
     const bool d11f_set_main[2] = {ctx.x11_d11f_set, ctx.x11_d11f3y_set};
@@ -240,6 +243,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.x11reg_xtd_reg = xtd_reg_main;
     ctx.x11reg_xtd_ran = xtd_flags_main[0];
     ctx.x11reg_xtd_accepted = xtd_flags_main[1];
+    ctx.x11reg_aicc_xu_nouser = aicc_xu_main[0];
+    ctx.x11reg_aicc_xu_user = aicc_xu_main[1];
+    ctx.x11reg_xu_ran = xu_flags_main[0];
+    ctx.x11reg_xu_accepted = xu_flags_main[1];
     ctx.x11_d11f = d11f_main[0];
     ctx.x11_d11f_prob = d11f_main[1];
     ctx.x11_d11f3y = d11f_main[2];

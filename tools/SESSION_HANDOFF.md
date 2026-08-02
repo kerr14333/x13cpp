@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}` and the `Kswv==3` prior-TD route ported)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->5966<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->470<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6000<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->474<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -408,7 +408,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->5966<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6000<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -739,41 +739,72 @@ now honoured -- leaving it unread would have made this increment's two `Calfrc`
 walls unreachable. **`reweight` (argidx 32 -> `Lxrneg`) is STILL unread** -- see
 the open board.
 
+## This session, part 12: `x11aic.f`'s USER branch -- CLOSED, and CB-35
+
+The last of x11aic's three tests, and the oldest item on the board. Both of its
+prerequisites were closed first (`x11regression{user=}` in part 10, `Kswv==3` in
+part 11), so this was transcription plus measurement.
+`docs/M5_PORT_NOTES.md` entry 61; the durable pieces:
+
+**CB-35 is `active` and it DECIDES the test.** `aicnus` -- the AICC of the model
+WITHOUT the user regressors -- is an uninitialized local with three routes to a
+value: `:470` computes it (estend still true), `:457` seeds it from the winning
+Easter AICC, or NOTHING does, when the trading-day test is accepted with no
+Easter test alongside. The third exists because `:245` reads `ELSE IF(Xeastr)`
+after `:243` already tested `Xeastr`; the intent was plainly `ELSE IF(Xuser)`.
+The vendored -O2 oracle reads **exactly 0.0**, and the verdict is
+`aicusr + Xraicd < aicnus` -- so **any negative AICC wins and the user
+regressors are accepted unconditionally.** Reproduced by initializing to 0.0;
+the caveat that this is one build's stack value is in the code, and the gate is
+what pins it. Mutating it to a sentinel costs %(aicnus0)s gates.
+
+**Three specs, one per aicnus route**, which is the whole reason there are
+three: `-aictest-tduser` (uninitialized), `-aictest-tduser-reject`
+(`:470` computes it, and the reject half of the verdict), `-aictest-easuser`
+(`:457` seeds it). All bit-exact.
+
+**Two transcription hazards, reproduced, NOT claimed as CB entries.** (1) `:129`
+reads `B(icol)` AFTER `dlrgef` has shifted B down over the hole, so the saved
+coefficient is the FOLLOWING column's -- harmless only because the corpus's
+single user column is last. (2) The strip loop counts DOWN while the restore
+reads `bu2/fx2/typ2` ascending against `getstr(Usrttl, ..., i)`, so with two or
+more user columns coefficients pair with the wrong titles. **Both need a
+MULTI-COLUMN user spec to show, and that spec is cheap -- it is on the board.**
+
+**A divergence deliberately NOT shipped.** `x11regression{ variables=(td)
+aictest=(user) }` -- fixed TD, USER test only -- makes the ORACLE abend at the C
+iteration (`Irregular regression matrix singular because of Mon`, with the
+printed design carrying six headers and ZERO rows); this engine runs it to
+`OUTCOME: OK`. Hypothesis, unmeasured: the B iteration's `adrgef` restore and
+the following `regvar` each put a copy of the user column into the model
+`loadxr(T)` saves, so the C iteration fits a duplicated design. The spec was
+written, measured and then DELETED rather than walled -- a wall would have made
+the outcomes agree for a reason unrelated to the oracle's own, and would mask a
+real singularity if the port ever grew one. On the board with the measurement.
+
+**The gate caught its own bookkeeping.** `test_aictest_savelog.py` listed
+`aictest.xu*` as UNOWNED, correct while the parser refused the token. The moment
+the engine emitted the keys, the both-directions key-set assert failed in the
+*extra-in-engine* direction -- the half that usually looks redundant. Moved to
+`OWNED_X11`.
+
 ## Open, in the order I would take them
 
-1. **`x11aic.f`'s USER branch** (`aictest.xu*`, `:462-591`) -- the last piece
-   of that routine. **SCOUTED 2026-08-01; every claim below was verified
-   against the Fortran, not taken on report:**
-
-   - The SEVEN restore arms at `:496-521` map to `PRGTUD`/`PRGTUH`/`PRGUTD`/
-     `PRGULM`/`PRGULQ`/`PRGULY`/`PRGUAO` = 18/49/57/58/59/60/61, **all already
-     in `core/prm/gen/model.hpp`**. Direct transcription, nothing missing. Note
-     the asymmetry: the PARSE-side dispatch in `gt_x11regression` is 4-arm
-     (`gtxreg.f:728-744`), this RESTORE is 7-arm. Both correct.
-   - **`xrgtrn_td` is still only the mult arm.** `xrgtrn.f:19-51` has FOUR --
-     `Haveum` -> `Psuadd` -> mult (`Muladd==0`) -> log-add (`Muladd==2`). The
-     other three are walled upstream, so this is a gap and not a silent one.
-     (The `Kswv.eq.3` sub-case that used to be listed here was MEASURED and
-     PORTED -- part 11. It was live: 1.5e-2 on d11 at `OUTCOME: OK`.)
-   - **The `aicnus` seeding is a real reachability question.** `estend` starts
-     true (`:56-57`); when false the `:463-479` scoring block is SKIPPED and
-     `aicnus` must already be seeded. Easter seeds it at `:457`. The TD arm
-     that would seed it is `:243-247`'s dead `IF(Xeastr) ... ELSE IF(Xeastr)`
-     -- already transcribed and commented in `x11reg.cpp`. So TD-accepted +
-     no-Easter + USER-requested may reach `:462` with `aicnus` UNSEEDED.
-     Resolve this before writing the branch, not after.
-   - **Candidate Census defect, flagged not asserted** (verified to read this
-     way): `:576-579` deletes only the literal group `"User-defined"`, yet the
-     restore arms can create six other group titles. Whether columns are
-     actually stranded depends on `adrgef` grouping semantics, which is
-     UNCHECKED. Measure before claiming a CB entry.
-
-   Its precondition is MET: `x11regression{user=}`
-   parses, builds and gates (part 10). The branch strips the `Ncusrx`
-   user-defined columns, scores the model without them, then restores them
-   through seven `adrgef` arms keyed on `Rgvrtp`. The parser still REFUSES
-   `x11regression{aictest=(user)}`, so this is walled rather than silent.
-   Start from `extra/airline_x11regression-user` + `aictest = (user)`.
+1. **Two `x11aic` USER-branch hazards that need ONE two-column user spec**, and
+   a third finding that needs nothing but a decision:
+   - `x11aic.f:129` reads `B(icol)` AFTER `dlrgef` shifted B down, so the saved
+     coefficient is the following column's. Harmless while the single user
+     column is last.
+   - the strip loop fills `bu2/fx2/typ2` in DESCENDING column order; the restore
+     reads them ascending against `getstr(Usrttl, ..., i)`.
+   Write `extra/airline_x11regression-aictest-user2` with TWO user columns of
+   different `usertype=`, measure, and either claim two CB entries or record
+   that the oracle is fine. Both are transcribed and commented today, so this is
+   confirmation work, not a gap.
+   - **The unshipped divergence:** `x11regression{ variables=(td)
+     aictest=(user) }` abends in the ORACLE (`singular because of Mon`, C
+     iteration) and returns `OUTCOME: OK` here. Decide whether to chase the
+     duplicate-column hypothesis or wall it; do not gate it blind.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a

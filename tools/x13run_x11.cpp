@@ -133,6 +133,21 @@ static void dump_aictest_xtd(const x13::X13Context& ctx) {
     line(ctx.x11reg_xtd_accepted ? "aictest.xtd: yes" : "aictest.xtd: no");
 }
 
+// x11aic.f 1072 + x11mdl.f:1025 -- the x11regression USER-defined AIC test.
+// Same shape as the trading-day block: two AICCs and a literal verdict, no
+// window. `nouser` is the uninitialized-aicnus 0.0 whenever the trading-day
+// test was accepted with no Easter test alongside it.
+static void dump_aictest_xu(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    if (!ctx.x11reg_xu_ran) return;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    line(fwrite_fmt("('aictest.xu.aicc.',a,': ',e29.15)", "nouser",
+                    ctx.x11reg_aicc_xu_nouser));
+    line(fwrite_fmt("('aictest.xu.aicc.',a,': ',e29.15)", "user",
+                    ctx.x11reg_aicc_xu_user));
+    line(ctx.x11reg_xu_accepted ? "aictest.xu: yes" : "aictest.xu: no");
+}
+
 // The `aictest.xe*` savelog block -- the x11regression Easter AIC test. TWO
 // routines write it, in this order, which is why the table precedes the
 // verdict in the .udg:
@@ -524,6 +539,7 @@ int main(int argc, char** argv) {
         }
         dump_aictest_xtd(ctx);
         dump_aictest_xe(ctx);
+        dump_aictest_xu(ctx);
     }
     dump_d8bd9a(ctx);
     dump_d11f(ctx);

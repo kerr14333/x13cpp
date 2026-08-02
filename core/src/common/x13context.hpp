@@ -432,6 +432,13 @@ struct X13Context {
     std::string x11reg_xtd_reg;
     bool x11reg_xtd_ran = false;
     bool x11reg_xtd_accepted = false;
+    // x11aic.f:462-591's USER-defined test: the two AICCs (`aictest.xu.aicc.
+    // nouser` / `.user`) and the verdict (`aictest.xu`). nouser can be the
+    // UNINITIALIZED 0.0 -- see the note on aicnus in x11reg.cpp.
+    double x11reg_aicc_xu_nouser = 0.0;
+    double x11reg_aicc_xu_user = 0.0;
+    bool x11reg_xu_ran = false;
+    bool x11reg_xu_accepted = false;
     // x11regression{} user prior trading-day factor (a4 save): the Kswv=1 pritd
     // factor over the observed span [Pos1ob,Posfob]. Bit-exact vs the oracle a4.
     std::vector<double> x11_a4_prior;

@@ -1160,3 +1160,62 @@ this point, so the statement has no effect other than to skip the restore.
   assignment to what the siblings do: the walled spec's d11/d13 February gap is
   unchanged (identical 5 failures), so CB-34's direction and that gap are
   independent.
+
+---
+
+## CB-35
+
+**`x11aic.f` reads `aicnus` UNINITIALIZED whenever the x11regression trading-day
+test is accepted and no Easter test runs alongside it -- and the value it reads
+DECIDES the user-defined AIC test.**
+
+- **File:line:** `x11aic.f:245` (the arm that should have seeded it),
+  `x11aic.f:481` / `:557` (the reads).
+- **Severity:** `active`. It selects the wrong model, not merely the wrong
+  printout.
+
+`aicnus` is the AICC of the irregular-regression model WITHOUT the user-defined
+regressors. It is a plain local with no initializer, and there are exactly three
+routes to a value at `:481`:
+
+| route | when |
+|---|---|
+| `:470` computes it | `estend` still true at `:463` -- nothing upstream left a fitted design |
+| `:457` seeds it from the winning Easter AICC | the Easter test ran (`aictest` contains `easter`) |
+| **nothing** | the TRADING-DAY test was accepted and there is no Easter test |
+
+The third case exists because of a copy-paste slip:
+
+```
+       IF(Xeastr)THEN
+        aichol=aictd
+       ELSE IF(Xeastr)THEN
+        aicnus=aictd
+       END IF
+```
+
+`:243` has already tested `Xeastr`, so `:245`'s `ELSE IF(Xeastr)` can never be
+true. From the shape of the surrounding code the intent was plainly
+`ELSE IF(Xuser)` -- the two arms hand `aictd` to whichever of the two remaining
+tests is going to run next.
+
+- **What it does to the result.** The vendored `x13as_ascii_O2.exe` reads
+  **exactly 0.0** out of the uninitialized slot. The verdict at `:557` is
+  `aicusr + Xraicd < aicnus`, so with `aicnus == 0` any negative AICC wins:
+  **the user-defined regressors are accepted unconditionally on this path**, no
+  matter how badly they fit. On the gate spec the accepted AICC is -785.9.
+- **Reachability.** `x11regression{ variables=(td) aictest=(td user) }` with the
+  trading day accepted, i.e. the common configuration. Add `easter` to the
+  aictest list, or make the TD test reject, and the defect disappears.
+- **Not a compiler artefact of one run.** The 0.0 reproduces across a changed
+  ARIMA model. It is still one Fortran build's stack value rather than a
+  language guarantee, which is exactly why it is pinned by a gate rather than
+  argued about.
+- **Port:** `core/src/x11/x11reg.cpp`, `x11aic`'s `double aicnus = 0.0;` with the
+  three-route analysis at the declaration, and the dead `ELSE IF(Xeastr)` arm
+  transcribed in the trading-day branch above it.
+- **Pinned by:** `tests/corpus/extra/airline_x11regression-aictest-tduser`
+  (uninitialized, `aictest.xu.aicc.nouser: 0.000000000000000E+00`), against
+  `-aictest-tduser-reject` (`:470` computes it) and `-aictest-easuser` (`:457`
+  seeds it) -- the three specs cover all three routes. Mutating the initializer
+  to `DNOTST` fails the first.

@@ -91,6 +91,7 @@ OWNED = re.compile(
 OWNED_X11 = re.compile(r"^aictest\.(?:"
                        r"xe(?:\.aicc\.\w+|\.window)?"
                        r"|xtd(?:\.aicc\.\w+|\.reg)?"
+                       r"|xu(?:\.aicc\.\w+)?"
                        r")$")
 
 # Everything else sharing the prefix, and the routine that writes it. NOT
@@ -98,15 +99,16 @@ OWNED_X11 = re.compile(r"^aictest\.(?:"
 #
 #   aictest.trans.aicc.{log,nolog}  trnaic.f  -- ported, emitted by run_m2 and
 #                                   gated elsewhere, not part of this block
-#   aictest.xu*                     x11aic.f:462-591 -- the x11regression
-#                                   USER-defined test. Unported: the parser
-#                                   REFUSES `x11regression{aictest=(user)}`
-#                                   rather than drop the token, so no spec can
-#                                   produce these keys by accident
 #   aictest.pv                      arima.f:463, svaict's CALLER, not svaict;
 #                                   needs regression{pvaictest=}, which no
 #                                   corpus spec sets, so it has no golden
-UNOWNED = re.compile(r"^aictest\.(?:trans\.|xu|pv$)")
+#
+# `aictest.xu*` (x11aic.f:462-591, the USER-defined test) MOVED from this table
+# to OWNED_X11 when the branch was ported. Note what caught the omission: the
+# engine started emitting the keys while the golden filter still classified
+# them as unowned, so the key-set comparison failed in the extra-in-engine
+# direction. That is the both-directions assert earning its keep.
+UNOWNED = re.compile(r"^aictest\.(?:trans\.|pv$)")
 
 
 def _golden_keys(udg: pathlib.Path):
