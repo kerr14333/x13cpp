@@ -3502,6 +3502,139 @@ void gt_pickmdl(X13Context& ctx, bool& inptok) {
     ar.outamd = outamd;
 }
 
+// ---- editor.f:1618-1747 ---------------------------------------------------
+// The irregular-regression group pointers, and off them the choice of extreme-
+// value method. The oracle makes this decision ONCE, in editor, from the
+// PARSED x11reg model -- before x11aic ever rewrites it -- so it is made here
+// rather than in x11mdl. Two outcomes are possible and they are very
+// different: `Sigxrg=2.5` (clip the irregular at 2.5 sigma, tdxtrm) or
+// `Otlxrg=T` (automatic AO outlier identification, idotlr). Which one you get
+// turns on whether a HOLIDAY group is present -- and editor decides that with
+// a stale local (CB-36 below).
+static void xrg_not_ported(X13Context& ctx, const char* what) {
+    errhdr(ctx);
+    writln(ctx, std::string("ERROR: ") + what + " (x11regression editor stage).",
+           stdio::STDERR, ctx.units.mt2, true);
+    abend(ctx);
+}
+
+static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
+    // editor.f:1485 `IF(Lx11)` / :1537 `IF(Ixreg.gt.0)`. Ixreg was just set
+    // from Nbx, so this is the same guard.
+    if (ctx.hiddn.ixreg <= 0) return;
+    const auto& xg = ctx.xrgmdl;
+    auto grp = [&](const char* t) {
+        return strinx(true, xg.grpttx.raw(), xg.gpxptr.data(), 1, xg.ngrptx, t);
+    };
+    // editor.f:1550-1552 / :1618-1627.
+    int easgrp = grp("Easter");
+    if (easgrp == 0) easgrp = grp("StatCanEaster");
+    int holgrp = easgrp;
+    if (holgrp == 0) holgrp = grp("Thanksgiving");
+    if (holgrp == 0) holgrp = grp("Labor");
+    int tdgrp = grp("Trading Day");
+    int stdgrp = 0;
+    if (tdgrp == 0) stdgrp = grp("Stock Trading Day");
+    // editor.f:1629-1634.
+    if (stdgrp > 0 && holgrp > 0) {
+        writln(ctx, "ERROR: Stock trading day and holiday irregular component "
+               "regression", stdio::STDERR, ctx.units.mt2, true);
+        writln(ctx, "       variables cannot be specified in the same run.",
+               stdio::STDERR, ctx.units.mt2, false);
+        inptok = false;
+    }
+
+    // editor.f:1690-1716 -- the USER columns can supply the trading-day or the
+    // holiday group. Two Census defects live in this loop; both are reproduced.
+    //
+    //  - CB-36. `rtype` is a local that is assigned ONLY on a PRGUTD column,
+    //    and read on every OTHER column. So it is either uninitialized (no
+    //    user-TD column has been seen yet) or STALE (it holds the usertype= of
+    //    the last user-TD column). The read is `rtype.ge.PRGTUH`, i.e. "is this
+    //    a user HOLIDAY type", and PRGUTD (57) is >= PRGTUH (49) while PRGTUD
+    //    (18) is not -- so a single `usertype=td` column declares the NEXT
+    //    column to be the holiday group, whatever that column actually is. That
+    //    flips the whole run from 2.5-sigma clipping to AO outlier
+    //    identification. Measured: extra/airline_x11regression-aictest-user2
+    //    vs -user2swap differ ONLY in the usertype= order, and the second picks
+    //    up seven AO regressors the first does not.
+    //  - The Usxtyp index. `iusr` advances only on PRGUTD columns, but Usxtyp
+    //    is indexed by USER column number, so with a non-TD user column ahead
+    //    of a user-TD one the types are read off by that many slots. Not
+    //    claimed separately -- it is the same stale-index shape and the same
+    //    spec pair shows it.
+    //
+    // The uninitialized read is reproduced as 0 (< PRGTUH, so it cannot set
+    // Holgrp). That is this build's value, not a guarantee; the alternative --
+    // seeding it with something >= PRGTUH -- would make EVERY x11regression
+    // spec with a user column take the AO branch, which the goldens rule out.
+    //
+    // WALLED rather than reproduced. Setting Holgrp here does put the run on
+    // the oracle's arm, but the run then diverges downstream: measured on a
+    // two-column `usertype=(td user)` spec, the B iteration's irregular
+    // regression matches the oracle coefficient for coefficient and the C
+    // iteration does not (u2 0.330 against the oracle's 0.744), leaving c16
+    // 1.1e-3 out. Refusing is the honest state until that is chased; the
+    // measurement is in docs/M5_PORT_NOTES.md.
+    if (xg.nusxrg > 0) {
+        int iusr = 1;
+        int rtype = 0;
+        for (int icol = 1; icol <= xg.nbx; ++icol) {
+            if (xg.rgxvtp(icol) == prm::PRGUTD) {
+                rtype = (iusr <= prm::PUREG) ? ctx.usrxrg.usxtyp(iusr) : 0;
+                ++iusr;
+                if (tdgrp == 0) {
+                    tdgrp = icol;
+                    // A user trading-day column IS the trading-day group, so an
+                    // aictest=(td) alongside it is silently converted into an
+                    // aictest=(user).
+                    if (ctx.x11reg.xtdtst > 0) {
+                        ctx.x11reg.xtdtst = 0;
+                        ctx.x11log.xuser = true;
+                    }
+                } else if (stdgrp == 0 && ctx.model.isrflw == 1) {
+                    stdgrp = icol;
+                }
+            } else if (!(holgrp > 0 || ctx.x11log.axruhl) &&
+                       rtype >= prm::PRGTUH) {
+                xrg_not_ported(ctx,
+                               "editor.f:1710's stale-rtype holiday group "
+                               "(CB-36) -- an x11regression usertype=td column "
+                               "ahead of another column -- is not yet ported");
+                return;
+            }
+        }
+    }
+    // editor.f:1722-1723.
+    if (ctx.x11log.axrgtd && tdgrp == 0 && stdgrp == 0)
+        ctx.x11log.axrgtd = false;
+    if (ctx.x11log.axrghl && holgrp == 0) ctx.x11log.axrghl = false;
+
+    // editor.f:1727-1747 -- the extreme-value method. `otlgrp` is an AO group
+    // the user put in the irregular regression by hand.
+    const int otlgrp = grp("AO");
+    if (dpeq(ctx.x11reg.sigxrg, prm::DNOTST)) {
+        if ((tdgrp > 0 || ctx.x11reg.xtdtst > 0) &&
+            (holgrp == 0 && !ctx.x11log.xeastr && otlgrp == 0) &&
+            dpeq(ctx.x11reg.critxr, prm::DNOTST)) {
+            ctx.x11reg.sigxrg = 2.5;
+        } else if (dpeq(ctx.x11reg.critxr, prm::DNOTST)) {
+            ctx.x11log.otlxrg = true;
+        }
+    } else if (tdgrp == 0 || holgrp > 0 || ctx.x11log.xeastr || otlgrp > 0) {
+        writln(ctx, "ERROR: The sigma argument of the x11regression spec can "
+               "only be", stdio::STDERR, ctx.units.mt2, true);
+        writln(ctx, "       specified when flow trading day variables are the "
+               "only", stdio::STDERR, ctx.units.mt2, false);
+        writln(ctx, "       regressors in the irregular regression.",
+               stdio::STDERR, ctx.units.mt2, false);
+        inptok = false;
+    }
+    // (editor.f:1748-1757's Critxr derivation from the outlier-span length is
+    // left where this port already does it, at the idotlr call in x11mdl_td --
+    // same inputs, same setcv, and Begxot/Endxot are not resolved here.)
+}
+
 // ---- x11regression{} (gtxreg.f) -------------------------------------------
 // Irregular-component regression. Builds the TD design via gtpdrg (x11reg=true)
 // and sets Ixreg=1 / Axrgtd so x11pt2's B/C iterations run x11mdl_td. TD-only
@@ -3533,7 +3666,12 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     bool hvuttl = false, haveux = false, hvstrt = false;
     bool hvfile = false, havfmt = false;
     bool lumean = false, luseas = false;   // gtxreg.f:154-155
-    int neltux = 0, nusxrg = 0;
+    int neltux = 0;
+    // gtxreg.f:265 writes Nusxrg, the COMMON -- editor.f:1690's user-column
+    // scan is its only reader, and it used to be a local here, which made that
+    // scan (and CB-36 with it) unreachable.
+    int& nusxrg = ctx.xrgmdl.nusxrg;
+    nusxrg = 0;
     std::string xrfile(static_cast<std::size_t>(stdio::PFILCR), ' ');
     std::string xrfmt(static_cast<std::size_t>(stdio::PFILCR), ' ');
     int nflchr = 0, nfmtch = 0;
@@ -3961,6 +4099,7 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     if (havtd) ctx.x11log.havxtd = true;
     if (ctx.xrgmdl.nbx > 0) ctx.hiddn.ixreg = 1;
     if (ctx.x11log.havxtd) ctx.x11log.axrgtd = true;
+    xrg_editor_setup(ctx, inptok);
 }
 
 } // namespace x13

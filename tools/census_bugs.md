@@ -1219,3 +1219,67 @@ tests is going to run next.
   `-aictest-tduser-reject` (`:470` computes it) and `-aictest-easuser` (`:457`
   seeds it) -- the three specs cover all three routes. Mutating the initializer
   to `DNOTST` fails the first.
+
+## CB-36
+
+**`editor.f:1710` decides whether the irregular regression has a HOLIDAY group
+by reading a local that is only ever ASSIGNED on a user trading-day column --
+so a `usertype=td` column declares the NEXT column to be the holiday group, and
+that flips the whole run from 2.5-sigma clipping to automatic AO outlier
+identification.**
+
+- **File:line:** `editor.f:1690-1716` (the loop), `:1710` (the stale read),
+  `:1727-1747` (what it decides).
+- **Severity:** `active`. It changes the extreme-value method, hence the fitted
+  irregular regression, hence D10-D13.
+
+```fortran
+        IF(Nusxrg.gt.0)THEN
+         iusr=1
+         DO icol=1,Nbx
+          IF(Rgxvtp(icol).eq.PRGUTD.and.Nusxrg.gt.0)THEN
+           rtype=Usxtyp(iusr)          <-- assigned ONLY here
+           iusr=iusr+1
+           ...
+          ELSE IF((.not.(Holgrp.gt.0.or.Axruhl)).and.
+     &            rtype.ge.PRGTUH)THEN <-- read on every OTHER column
+           Holgrp=icol
+```
+
+`rtype` is a plain local. On the columns the `ELSE IF` actually runs for it is
+either UNINITIALIZED (no user-TD column seen yet) or STALE -- it holds the
+`usertype=` of the last user trading-day column. The test `rtype.ge.PRGTUH`
+means "is this a user HOLIDAY type", and PRGUTD (57) is >= PRGTUH (49) while
+PRGTUD (18) is not. So:
+
+- a `usertype=td` column makes the very next column the holiday group, whatever
+  that column really is -- a plain user regressor, or a trading-day contrast;
+- a genuine `usertype=holiday` column, the case the arm was written for, never
+  triggers it, because its own type is never in `rtype` when its own column is
+  examined.
+
+Both halves are the same defect. The intent was plainly to test the CURRENT
+column's type.
+
+- **What it does to the result.** `Holgrp>0` disqualifies the 2.5-sigma
+  `tdxtrm` clip at `editor.f:1729-1736`, so the run takes the other arm and
+  runs automatic AO outlier identification instead. Measured on two specs that
+  differ ONLY in the order of `usertype = (user td)` vs `(td user)`: the second
+  picks up seven AO regressors the first does not, and every row of
+  b16/c16/d10/d11 differs between them.
+- **It also silently rewrites the aictest.** In the same loop, a user TD column
+  taken as `Tdgrp` when no real trading-day group exists sets `Xtdtst=0` and
+  `Xuser=T` -- an `aictest=(td)` becomes an `aictest=(user)`.
+- **Port:** NOT reproduced. `xrg_editor_setup` in
+  `core/src/specparse/readers_spec.cpp` ports the rest of the block -- the
+  group pointers, the Tdgrp/Stdgrp promotion, the Xtdtst->Xuser rewrite and the
+  whole extreme-value rule -- but WALLS the stale-rtype arm. Taking it puts the
+  run on the oracle's branch and then diverges downstream: the B iteration's
+  irregular regression matches the oracle coefficient for coefficient and the C
+  iteration does not (u2 0.330 against the oracle's 0.744), leaving c16 1.1e-3
+  out. Refusing loudly is the honest state; see `docs/M5_PORT_NOTES.md` entry 62
+  and the open board.
+- **Pinned by:** the OTHER arm of the same rule is gated --
+  `tests/corpus/extra/airline_x11regression-easter` reaches `Holgrp>0` through a
+  real `easter[8]` regressor and gates the AO branch bit-exact. The stale-rtype
+  arm itself is pinned only by the wall, which is proved to fire.

@@ -508,7 +508,13 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // by x11mdl_td (below), not in this setup combine: at setup Factd is not
         // yet built and adjtd==0 (the TD is X-11-regression, not a model factor),
         // so the adjtd fold at :358 is skipped and Faccal passes through until
-        // x11mdl_td overwrites it. Holiday (axrghl) is still unported.
+        // x11mdl_td overwrites it. Axrghl is NO LONGER fatal: its one piece of
+        // x11pt2 arithmetic is the Fachol+=Facxhl fold at x11pt2.f:299-308,
+        // ported below; everything else it turns on here is output (the LXRCLC
+        // calendar table at :805, the A18 print at :323), and the Stcsi
+        // feedback at :846 plus the x11pt3 folds already read the flag. This
+        // matters because CB-36 sets Axrghl with NO holiday column in the
+        // model at all.
         // Khol>=2 (x11-Easter prior) is NOT fatal here: the Easter factor was
         // already folded X11hol -> Faccal in Part A, and this block's khol==2
         // work (Fachol += X11hol at x11pt2.f:309, the Stocal A18 print) feeds
@@ -534,7 +540,7 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // factor exists. So keep them fatal on that path alone, not everywhere.
         const bool xreg_feedback =
             (ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2) && xl.axrgtd;
-        if (adj.adjcyc == 1 || xl.axrghl ||
+        if (adj.adjcyc == 1 ||
             (xreg_feedback && (adj.adjso == 1 || adj.adjsea == 1 ||
                                adj.adjusr == 1)) ||
             (xl.axrgtd && ctx.hiddn.ixreg != 1 && ctx.hiddn.ixreg != 2 &&
@@ -551,14 +557,33 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
             goodlm && lmodel && !xl.axrghl)
             addmul(fac.faccal.data(), fac.faccal.data(), fac.fachol.data(), pos1bk,
                    n2, muladd);
-        // Combined holiday effect (x11pt2.f:294-311): fold the X-11 Easter factor
-        // into Fachol so x11pt3's divsub(Faccal,Faccal,Fachol) removes it from the
-        // combined calendar factor Faccal (affects D16/D18, not D10-D13). lsthol
-        // per x11pt2.f:301-305. The Facxhl/Axrghl irregular-reg branch is unported.
-        if (!ctx.xrgum.noxfac && opt.khol == 2 && goodlm) {
-            const int lsthol = (nfcst == 0) ? posfob + ny : posffc;
-            addmul(fac.fachol.data(), fac.fachol.data(), fac.x11hol.data(), pos1bk,
-                   lsthol, muladd);
+        // Combined holiday effect (x11pt2.f:294-317): fold the irregular-
+        // regression holiday factor and the X-11 Easter factor into Fachol, so
+        // x11pt3's divsub(Faccal,Faccal,Fachol) removes them from the combined
+        // calendar factor Faccal (affects D16/D18, not D10-D13). lsthol per
+        // x11pt2.f:301-305; `indhol` gates only the print, but the Fortran puts
+        // the two addmuls inside it, so the count is transcribed.
+        //
+        // The Facxhl fold is reachable with NO holiday column in the model at
+        // all -- CB-36 sets Axrghl off a stale local. Facxhl is then still at
+        // its x11int.f:41 identity (1 mult / 0 add), so the fold is a no-op;
+        // x11mdl.f:707 is the only writer and it needs Holgrp>0. Porting it
+        // rather than walling it is what keeps that case honest.
+        if (!ctx.xrgum.noxfac) {
+            const bool xhol = ctx.hiddn.ixreg > 2 && xl.axrghl;
+            int indhol = 0;
+            if (opt.khol == 2) ++indhol;
+            if (xhol && !ctx.xrgum.haveum) ++indhol;
+            if (adj.adjhol == 1) ++indhol;
+            if (indhol > 0 && goodlm) {
+                const int lsthol = (nfcst == 0) ? posfob + ny : posffc;
+                if (xhol)
+                    addmul(fac.fachol.data(), fac.fachol.data(),
+                           fac.facxhl.data(), pos1bk, lsthol, muladd);
+                if (opt.khol == 2)
+                    addmul(fac.fachol.data(), fac.fachol.data(),
+                           fac.x11hol.data(), pos1bk, lsthol, muladd);
+            }
         }
     }
 

@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**21 walls.**
+**22 walls.**
 
 
 ## Automatic model selection
@@ -67,6 +67,10 @@ reproduce.
 - **`core/src/specparse/getreg_vars.cpp:1121`**
   AOS/LSS outlier regressors (rdotls.f)
 
+- **`core/src/specparse/readers_spec.cpp:3600`**
+  editor.f:1710's stale-rtype holiday group (CB-36) -- an x11regression usertype=td column ahead of another column -- is not yet ported
+  *Fortran:* `editor.f:1710`
+
 
 ## X-11
 
@@ -76,34 +80,34 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:276`**
   x11pt1 additive/pseudo-additive prior trading-day
 
-- **`core/src/x11/x11parts.cpp:542`**
+- **`core/src/x11/x11parts.cpp:548`**
   x11pt2 user/seasonal/cycle/x11reg factor combine+emit
 
-- **`core/src/x11/x11parts.cpp:729`**
+- **`core/src/x11/x11parts.cpp:754`**
   x11pt2 x11reg Stcsi rebuild with outlier/seasonal/user prior factors
 
-- **`core/src/x11/x11parts.cpp:986`**
+- **`core/src/x11/x11parts.cpp:1011`**
   x11pt3 revisions seasonal store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1202`**
+- **`core/src/x11/x11parts.cpp:1227`**
   x11pt3 revisions SA store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1312`**
+- **`core/src/x11/x11parts.cpp:1337`**
   x11pt3 revisions forced-SA store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1400`**
+- **`core/src/x11/x11parts.cpp:1425`**
   x11pt3 revisions trend store (getrev)
 
 - **`core/src/x11/x11reg.cpp:336`**
   x11ref forcecal= combined calendar factor
 
-- **`core/src/x11/x11reg.cpp:851`**
+- **`core/src/x11/x11reg.cpp:855`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1220`**
+- **`core/src/x11/x11reg.cpp:1219`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1259`**
+- **`core/src/x11/x11reg.cpp:1258`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:44`**

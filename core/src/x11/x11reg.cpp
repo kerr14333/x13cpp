@@ -539,20 +539,24 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
     // The Xuser arm stashes B/Regfx/Rgvrtp per stripped column for the restore
     // at :496-521. TWO transcription hazards here, both reproduced:
     //
-    //  - THE READ IS AFTER THE DELETE. x11aic.f:129 calls dlrgef and only then
-    //    reads `B(icol)` -- but dlrgef.f:75-77 shifts B/Rgvrtp/Regfx DOWN over
-    //    the hole, so `B(icol)` is now the FOLLOWING column's coefficient. It
-    //    happens to be harmless when the user column is the last one (the
-    //    shift copies zero elements and the slot keeps its old value), which is
-    //    the only case the corpus has. Keep the two statements in this order.
+    //  - THE READ IS AFTER THE DELETE, and it is UNREACHABLE -- measured, not
+    //    assumed (docs/M5_PORT_NOTES.md entry 62). x11aic.f:129 calls dlrgef
+    //    and only then reads `B(icol)`; dlrgef.f:75-77 would shift
+    //    B/Rgvrtp/Regfx DOWN over the hole and hand back the FOLLOWING
+    //    column's coefficient -- except that it copies `noldc-1-endcol`
+    //    elements, i.e. ZERO when the deleted column is the last one, leaving
+    //    the slot untouched. The user columns are always the TRAILING block
+    //    (gtxreg.f:183 adds `variables=` inside the argument loop, :733-743
+    //    appends the user columns after it, and :496-521 below re-appends them
+    //    last), and this loop counts DOWN, so each one IS the last column when
+    //    it is deleted. Keep the two statements in this order anyway.
     //  - INDEX ORDER. This loop counts DOWN, so bu2/fx2/typ2 fill in
     //    descending-column order, while the restore reads them 1..Ncusrx
     //    alongside `getstr(Usrttl, ..., i)` in ASCENDING title order. With two
-    //    or more user columns the two disagree and coefficients are paired with
-    //    the wrong titles.
-    //
-    // Neither is claimed as a Census defect: both need a MULTI-column user spec
-    // to show, no corpus spec has one, and the rule here is to measure first.
+    //    or more user columns the two disagree and coefficients are paired
+    //    with the wrong titles. Real, and reproduced -- but the two-column
+    //    spec that shows it also trips CB-36 one stage earlier, in editor, and
+    //    that route is walled, so this arm is not gated on its own.
     const int nb0 = m.nb;
     int iuser = 0;
     double bu2[prm::PUREG] = {0.0};
@@ -716,9 +720,9 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
     int aicind = ar.aicind;   // set to -1 at entry; see the note there
     // A span/history replay is a full x11pt1->x11pt3 pass and re-enters here,
     // so the table must be rebuilt, not appended to. (The oracle cannot hit
-    // this: x11mdl.f:291 sets Xeastr=F after the first test. The port keeps
-    // that flag live because its editor.f:1734-1757 re-derivation of Otlxrg
-    // below reads it, so the guard belongs here instead.)
+    // this: x11mdl.f:291 sets Xeastr=F after the first test. This port leaves
+    // the flag live -- the C iteration is fenced off by the kpart==2 gate in
+    // x11mdl_td instead -- so the rebuild guard belongs here.)
     ctx.x11reg_aicc_xe.clear();
     for (int i = 1; i <= neasvx; ++i) {
         if (i > 2) { del_easter(); if (ctx.error.lfatal) return; }
@@ -921,20 +925,16 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     const int muladd = ctx.x11opt.muladd;
     double* sti = ctx.x11srs.sti.data();
 
-    // editor.f:1729-1736: the 2.5-sigma tdxtrm exclusion is used only for a
-    // TD-only irregular regression with no easter/holiday/AO group AND no
-    // explicit critical value; when easter (etc.) or a critical= is present the
-    // extreme values are handled by automatic AO outlier identification instead
-    // (Otlxrg), so Sigxrg stays 0 and tdxtrm is skipped. An explicit
-    // x11regression{sigma=} overrides the whole rule.
-    double sigxrg;
-    if (!dpeq(ctx.x11reg.sigxrg, prm::DNOTST))
-        sigxrg = ctx.x11reg.sigxrg;
-    else if (!ctx.x11log.xeastr && dpeq(ctx.x11reg.critxr, prm::DNOTST) &&
-             !ctx.x11log.otlxrg)
-        sigxrg = 2.5;
-    else
-        sigxrg = 0.0;
+    // x11mdl.f:210 `IF(Sigxrg.gt.ZERO)`. The CHOICE between the 2.5-sigma
+    // tdxtrm clip and automatic AO identification is not made here: editor.f
+    // :1727-1747 makes it once at spec-read, off the parsed x11reg model,
+    // and leaves either Sigxrg=2.5 or Otlxrg=T behind (xrg_editor_setup in
+    // readers_spec.cpp). Deciding it here instead was wrong -- it could not see
+    // the user columns' contribution to Tdgrp/Holgrp, and the CB-36 stale-rtype
+    // route in particular.
+    const double sigxrg = dpeq(ctx.x11reg.sigxrg, prm::DNOTST)
+                              ? 0.0
+                              : ctx.x11reg.sigxrg;
     int nfcst = ctx.extend.nfcst;
     // x11mdl.f:120-134: on the final (C) iteration, restore the X-11-regression
     // forecast horizon (Nfcstx >= 1 seasonal year) so the design & TD factor span
@@ -1005,8 +1005,8 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         if (ctx.error.lfatal) return;
         // x11mdl.f:256-270 -- the verdict, then Xtdtst=0 so the C iteration
         // does not re-run the test. (Xeastr's matching :291 clear is NOT
-        // reproduced: this port's editor.f:1734-1757 re-derivation of Otlxrg
-        // below still reads that flag. See the note in x11aic.)
+        // reproduced; the kpart==2 gate above already fences the C iteration
+        // off. See the note in x11aic.)
         if (ctx.x11reg.xtdtst > 0) {
             int iaic = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
                               m.ngrptl, "Trading Day");
@@ -1108,11 +1108,10 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     int naotl = 0, nefotl = 0;
     if (!regx11(ctx, aotl.data(), &naotl, &nefotl)) return;
 
-    // editor.f:1734-1757 -- with a holiday group present (here: the AIC-tested
-    // Easter) the extreme-value method for the irregular regression is automatic
-    // AO outlier identification (Otlxrg), with the AO critical value set from the
-    // outlier-span length. AO-only, add-one, over the full model span.
-    if (ctx.x11log.xeastr) ctx.x11log.otlxrg = true;
+    // x11mdl.f:424 -- Otlxrg is the automatic AO outlier identification arm of
+    // the extreme-value method; editor.f:1727-1747 chose it at spec-read (see
+    // xrg_editor_setup). AO-only, add-one, over the full model span, with the
+    // critical value derived from the outlier-span length when none was given.
     if (ctx.x11log.otlxrg && ctx.xclude.nxcld == 0) {
         int begxot[2] = {md.begspn(1), md.begspn(2)};
         int endxot[2];

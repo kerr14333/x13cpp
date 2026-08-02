@@ -2930,3 +2930,118 @@ the open board with the measurement attached.
 moment the engine started emitting the keys, the both-directions key-set assert
 failed in the *extra-in-engine* direction, which is the half that usually looks
 redundant. Moved to `OWNED_X11`.
+
+## 62. The two-column user spec -- one hazard settled, one CENSUS DEFECT, and the extreme-value method was being chosen in the wrong place.
+
+Board item 1 was billed as confirmation work: write a spec with TWO
+`x11regression` user columns of different `usertype=`, decide whether entry
+61's two strip-loop hazards are Census bugs, and move on. It cost an increment,
+because the spec walked straight into a live wrong-numbers path that had
+nothing to do with x11aic.
+
+**Hazard 1 (`x11aic.f:129` reads `B(icol)` after `dlrgef`) is UNREACHABLE, not
+benign-by-luck.** `dlrgef.f:75-77` copies `noldc-1-endcol` elements, which is
+ZERO when the deleted column is the last one, and the slot then keeps its own
+value. The user columns are ALWAYS the trailing block: `gtxreg.f:183` adds the
+`variables=` regressors inside the argument loop and `:733-743` appends the
+user columns after it, and every x11aic path that puts them back (`:496-521`)
+appends them last again. The strip loop counts DOWN, so each user column is the
+last one at the moment it is deleted. Not a defect. The comment now says so.
+
+**Hazard 2 IS a Census defect, but not the one that was written down.** The
+`bu2/fx2/typ2` order really does disagree with the ascending title read -- but
+what that produces is CB-36's neighbour, and the mechanism that MATTERS is one
+line earlier, in editor.
+
+### CB-36, and what it cost
+
+`editor.f:1690-1716` walks the parsed x11reg columns to see whether a user
+column supplies the trading-day or the holiday group. `rtype` is assigned ONLY
+inside the `Rgxvtp(icol).eq.PRGUTD` arm and READ only in the `ELSE IF` -- so on
+the columns the read happens for, it is either uninitialized or holds the last
+user-TD column's `usertype=`. The test is `rtype.ge.PRGTUH`, and PRGUTD (57)
+clears that bar while PRGTUD (18) does not.
+
+So `usertype=(td user)` makes the SECOND column the holiday group, and
+`usertype=(user td)` makes nothing the holiday group. Two specs identical but
+for that one line:
+
+| declared | Holgrp | extreme-value method | AO columns |
+|---|---|---|---|
+| `(user td)` | 0 | Sigxrg=2.5, tdxtrm clip | 0 |
+| `(td user)` | 2 | Otlxrg, idotlr | 7 |
+
+Every row of b16/c16/d10/d11 differs between them. A genuine
+`usertype=holiday` column, the case the arm was written for, never fires it.
+
+### The port gap the probe exposed
+
+Three separate things, all of the parsed-but-unread family:
+
+1. **`Nusxrg` was a LOCAL.** `gtxreg.f:265` writes the COMMON; this port
+   declared `int nusxrg` in `gt_x11regression` and dropped it on return. Its
+   only reader is the editor loop above, so the loop could not have run even if
+   it had been ported.
+2. **The extreme-value choice was being made in x11mdl, from the wrong
+   inputs.** `editor.f:1727-1747` decides ONCE, at spec-read, off the PARSED
+   x11reg model: `Sigxrg=2.5` only when `(Tdgrp>0 or Xtdtst>0)` AND
+   `Holgrp==0 and .not.Xeastr and otlgrp==0` AND no `critical=`; otherwise
+   `Otlxrg=T`. This port re-derived it at every x11mdl call and tested only
+   `Xeastr` -- the AIC-TEST flag -- so an explicit `easter[8]` REGRESSOR in
+   `x11regression{variables=}` took the 2.5-sigma arm where the oracle takes
+   the AO arm. Wrong numbers at `OUTCOME: OK`: an 8-column design against the
+   oracle's 15, c16 100% out. **No corpus spec had an explicit x11reg holiday
+   regressor**, which is why five earlier x11regression increments never saw it.
+3. **The `Fachol += Facxhl` fold at `x11pt2.f:299-308` was walled** behind a
+   blanket `Axrghl` refusal. It is the only ARITHMETIC that flag turns on in
+   x11pt2 -- `:805` and `:323` are prints, `:846`'s Stcsi feedback and the
+   x11pt3 folds already read it -- and it is a no-op when no holiday column
+   exists, because `x11mdl.f:707` is Facxhl's only writer and needs `Holgrp>0`.
+   Ported; the wall is gone.
+
+`airline_x11regression-easter` gates all of that bit-exact (4.7e-15 on c16).
+
+### What is NOT shipped
+
+CB-36's stale-rtype arm is **walled, not reproduced.** Taking it puts the run on
+the oracle's branch and then diverges: on the `usertype=(td user)` spec the B
+iteration's irregular regression matches the oracle coefficient for coefficient
+(u1 -0.911968 / -0.9120, u2 0.536851 / 0.5369, AO1960.Mar -2.272510 / -2.2725)
+and the C iteration does NOT (u2 0.330213 against 0.7441), leaving c16 1.1e-3
+out. Same design, same seven AO dates, same TD coefficients to 4 dp -- so
+whatever moves is between the B punch and the C fit, in the transparent
+xrgdrv pass. That spec was written, measured and then removed rather than
+gated; the wall is what makes the state visible, and it is proved to fire.
+
+Also measured and NOT fixed: `x11regression{ user=... }` with no trading-day or
+holiday variable makes the oracle refuse (`Must adjust for either trading day
+or holiday in the x11regression spec`) and this engine returns `OUTCOME: OK`.
+
+**Mutations:**
+
+| removed | gates lost |
+|---|---|
+| the whole `xrg_editor_setup` block | 199 |
+| x11mdl deriving Sigxrg itself again | 101 |
+| the `Holgrp==0 && otlgrp==0` arm of the rule | 9 |
+| `Nusxrg` back to a local | **0 -- saturated** |
+| the `Fachol += Facxhl` fold | **0 -- saturated** |
+
+The two zeros are reported as zeros. `Nusxrg` is read only by the editor loop,
+and the only branch of that loop the corpus reaches is CB-36's, which is walled
+-- so what the wiring buys today is that the WALL can fire at all, which is
+proved by hand rather than by a gate. The Facxhl fold is arithmetically the
+identity in every corpus spec (no x11reg holiday column, so `x11mdl.f:707`
+never writes Facxhl); what it bought was the removal of a blanket `Axrghl`
+refusal, and `airline_x11regression-easter` is what proves the surrounding
+Axrghl path is now walked rather than refused.
+
+**And the harness lied first.** The first mutation run reported 0-1 gates lost
+for every piece, which would have meant the increment was untested. It was the
+HARNESS: its `powershell -Command` string put `\x` in the middle of
+`code_projects\x13new` (Python ate it as an escape) and the shell refused the
+script for execution policy, so every "mutated" run used the previous binary.
+The rebuild now asserts `== testing ==` appears in the build output before
+pytest is allowed to run. A mutation harness that cannot tell "built and
+passed" from "did not build" measures nothing -- the same class as the
+`metrics.py` failure that CLAUDE.md's guardrail rule came from.

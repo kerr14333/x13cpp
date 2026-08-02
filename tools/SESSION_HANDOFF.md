@@ -802,23 +802,76 @@ the engine emitted the keys, the both-directions key-set assert failed in the
 *extra-in-engine* direction -- the half that usually looks redundant. Moved to
 `OWNED_X11`.
 
+## This session, part 13: the two-column user spec -- and the extreme-value method was being chosen in the WRONG PLACE
+
+Board item 1 was billed as confirmation work. It cost an increment, because the
+spec walked into a live wrong-numbers path that had nothing to do with x11aic.
+`docs/M5_PORT_NOTES.md` entry 62; the durable pieces:
+
+**Entry 61's hazard 1 is UNREACHABLE, and now proved rather than assumed.**
+`dlrgef.f:75-77` copies `noldc-1-endcol` elements -- zero when the deleted
+column is the last -- and the user columns are ALWAYS the trailing block
+(`gtxreg.f:183` adds `variables=` inside the argument loop, `:733-743` appends
+the user columns after it, `x11aic.f:496-521` re-appends them last). The strip
+loop counts DOWN, so each user column IS last when deleted. Not a defect.
+
+**CB-36 is `active`.** `editor.f:1690-1716` assigns `rtype` ONLY on a
+`Rgxvtp==PRGUTD` column and READS it only in the `ELSE IF`, so on the columns
+that read it, it is uninitialized or holds the previous user-TD column's
+`usertype=`. The read is `rtype.ge.PRGTUH`; PRGUTD (57) clears it, PRGTUD (18)
+does not. So **`usertype=(td user)` declares the SECOND column the holiday
+group** -- and `Holgrp>0` disqualifies the 2.5-sigma clip, putting the whole run
+on automatic AO outlier identification. Two specs differing only in that one
+line: 0 AO columns vs 7, and every row of b16/c16/d10/d11 different. A genuine
+`usertype=holiday` column, the case the arm was written for, never fires it.
+
+**Three port gaps behind it, all parsed-but-unread:**
+1. **`Nusxrg` was a LOCAL** in `gt_x11regression` -- `gtxreg.f:265` writes the
+   COMMON, and the editor loop is its only reader, so that loop could not have
+   run even if it had been ported.
+2. **The extreme-value choice was made in x11mdl, from the wrong inputs.**
+   `editor.f:1727-1747` decides ONCE at spec-read off the PARSED x11reg model;
+   this port re-derived it every x11mdl call and tested only `Xeastr`, the
+   AIC-TEST flag. So an explicit `easter[8]` REGRESSOR in
+   `x11regression{variables=}` took the 2.5-sigma arm where the oracle takes the
+   AO arm -- 8 design columns against the oracle's 15, c16 100%% out, at
+   `OUTCOME: OK`. **No corpus spec had an explicit x11reg holiday regressor**,
+   which is why five earlier x11regression increments never saw it. Now
+   `xrg_editor_setup` in `readers_spec.cpp`, gated by
+   `extra/airline_x11regression-easter` at 4.7e-15.
+3. **The `Fachol += Facxhl` fold (`x11pt2.f:299-308`) was walled** behind a
+   blanket `Axrghl` refusal. It is the only arithmetic that flag turns on in
+   x11pt2; ported, wall gone.
+
+**Mutations: 199 / 101 / 9 for the block, the Sigxrg read and the Holgrp arm;
+0 for the `Nusxrg` wiring and the Facxhl fold, both saturated** -- reported as
+zeros, with why, in entry 62.
+
+**The mutation harness lied first.** Its `powershell -Command` string put `\x`
+in the middle of `code_projects\x13new` (Python ate the escape) and the shell
+refused the script for execution policy, so every "mutated" run reused the
+previous binary and reported 0-1. The harness now asserts `== testing ==`
+appears in the build output before pytest runs. Same class as the `metrics.py`
+failure CLAUDE.md's guardrail rule came from.
+
 ## Open, in the order I would take them
 
-1. **Two `x11aic` USER-branch hazards that need ONE two-column user spec**, and
-   a third finding that needs nothing but a decision:
-   - `x11aic.f:129` reads `B(icol)` AFTER `dlrgef` shifted B down, so the saved
-     coefficient is the following column's. Harmless while the single user
-     column is last.
-   - the strip loop fills `bu2/fx2/typ2` in DESCENDING column order; the restore
-     reads them ascending against `getstr(Usrttl, ..., i)`.
-   Write `extra/airline_x11regression-aictest-user2` with TWO user columns of
-   different `usertype=`, measure, and either claim two CB entries or record
-   that the oracle is fine. Both are transcribed and commented today, so this is
-   confirmation work, not a gap.
-   - **The unshipped divergence:** `x11regression{ variables=(td)
-     aictest=(user) }` abends in the ORACLE (`singular because of Mon`, C
-     iteration) and returns `OUTCOME: OK` here. Decide whether to chase the
-     duplicate-column hypothesis or wall it; do not gate it blind.
+1. **CB-36's stale-rtype arm is WALLED, and the wall hides a measured 1.1e-3.**
+   Taking the arm -- setting Holgrp from the stale local, as the oracle does --
+   puts the run on the right branch and then diverges: on a two-column
+   `usertype=(td user)` spec the B iteration's irregular regression matches the
+   oracle **coefficient for coefficient** (u1 -0.911968/-0.9120, u2
+   0.536851/0.5369, AO1960.Mar -2.272510/-2.2725) and the C iteration does NOT
+   (u2 0.330213 against 0.7441). Same design, same seven AO dates, TD
+   coefficients agreeing to 4 dp -- so whatever moves is **between the B punch
+   and the C fit inside the transparent xrgdrv pass**, not in x11aic. Rebuild
+   the spec (`extra/airline_x11regression-aictest-user2` with `usertype` order
+   reversed), drop the wall, and chase the B->C step. Entry 62 has the numbers.
+   - Also measured there and NOT fixed: `x11regression{ user=... }` with no
+     trading-day or holiday variable makes the ORACLE refuse (`Must adjust for
+     either trading day or holiday in the x11regression spec`) and this engine
+     returns `OUTCOME: OK`. One `inpter` in `xrg_editor_setup`, once someone
+     checks the exact Fortran guard.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
