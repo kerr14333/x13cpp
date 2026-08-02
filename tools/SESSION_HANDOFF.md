@@ -693,7 +693,36 @@ measure before naming one.
 ## Open, in the order I would take them
 
 1. **`x11aic.f`'s USER branch** (`aictest.xu*`, `:462-591`) -- the last piece
-   of that routine, and its precondition is now MET: `x11regression{user=}`
+   of that routine. **SCOUTED 2026-08-01; every claim below was verified
+   against the Fortran, not taken on report:**
+
+   - The SEVEN restore arms at `:496-521` map to `PRGTUD`/`PRGTUH`/`PRGUTD`/
+     `PRGULM`/`PRGULQ`/`PRGULY`/`PRGUAO` = 18/49/57/58/59/60/61, **all already
+     in `core/prm/gen/model.hpp`**. Direct transcription, nothing missing. Note
+     the asymmetry: the PARSE-side dispatch in `gt_x11regression` is 4-arm
+     (`gtxreg.f:728-744`), this RESTORE is 7-arm. Both correct.
+   - **`xrgtrn_td` is not enough, and by more than the arm count.**
+     `xrgtrn.f:19-51` has FOUR arms -- `Haveum` -> `Psuadd` -> mult
+     (`Muladd==0`) -> log-add (`Muladd==2`); the C++ helper implements only the
+     mult arm. **And inside that arm the Fortran has a `Kswv.eq.3` sub-case**
+     (`Xnstar(i)*X - Xnstar(i)` instead of `- Xn(i)`) **that the C++ does not
+     have at all.** `Kswv` is the tdprior weight indicator, so a `tdprior` +
+     x11regression spec may be hitting it TODAY -- measure that on its own,
+     before porting anything here. It is independent of the USER branch.
+   - **The `aicnus` seeding is a real reachability question.** `estend` starts
+     true (`:56-57`); when false the `:463-479` scoring block is SKIPPED and
+     `aicnus` must already be seeded. Easter seeds it at `:457`. The TD arm
+     that would seed it is `:243-247`'s dead `IF(Xeastr) ... ELSE IF(Xeastr)`
+     -- already transcribed and commented in `x11reg.cpp`. So TD-accepted +
+     no-Easter + USER-requested may reach `:462` with `aicnus` UNSEEDED.
+     Resolve this before writing the branch, not after.
+   - **Candidate Census defect, flagged not asserted** (verified to read this
+     way): `:576-579` deletes only the literal group `"User-defined"`, yet the
+     restore arms can create six other group titles. Whether columns are
+     actually stranded depends on `adrgef` grouping semantics, which is
+     UNCHECKED. Measure before claiming a CB entry.
+
+   Its precondition is MET: `x11regression{user=}`
    parses, builds and gates (part 10). The branch strips the `Ncusrx`
    user-defined columns, scores the model without them, then restores them
    through seven `adrgef` arms keyed on `Rgvrtp`. The parser still REFUSES
@@ -712,6 +741,17 @@ measure before naming one.
    no-model cleanup (`arima.f:476-527`).
 
 ## Environment notes
+
+**`codex:codex-rescue` cannot return findings to this conversation, structurally
+— stop dispatching it and waiting.** It is a ONE-SHOT FORWARDER: it launches a
+Codex background task, is prohibited from calling `status`/`result`/`cancel`, and
+returns only the launch handle. Resuming it with `SendMessage` does not help; it
+says so itself. The findings exist only under `/codex:status <handle>` +
+`/codex:result <handle>`, which **the user must run** — they are outside the
+subagent's command set and outside mine. Measured 2026-08-01: two agents
+dispatched, one returned a bare handle, the other returned real findings only
+because it answered inline instead of forwarding. Budget accordingly, or do the
+work directly.
 
 Unchanged (`/codex:cancel` broken; codex notifications carry no findings;
 Windows Python cannot read git-bash `/tmp` or `/d/` mounts; **no heredocs
