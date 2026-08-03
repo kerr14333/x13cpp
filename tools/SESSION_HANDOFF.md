@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6042<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->476<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6043<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->476<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -422,7 +422,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6042<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6043<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -905,25 +905,72 @@ x11regression looks off by a column, look for that.
 is pinned by a gate rather than a wall. Mutations: the CB-36 arm 14, the rtype
 remap 11, the remap's `++iusr` 1. WALLS 22 -> 21 gaps.
 
+## This session, part 16: the block gtxreg.f:828-878 never had, and what the Ixreg fix uncovered
+
+`docs/M5_PORT_NOTES.md` entry 65. Started as entry 64's leftover one-line
+refusal and turned into fifty lines of unported `gtxreg.f` plus two
+silent-wrongness cases behind them.
+
+**The missing block reads the WORKING regARIMA COMMON**, which is why it was
+easy to miss: gtxreg builds the irregular-regression model into
+`Grpttl`/`Grp`/`Nb` and only `loadxr` moves it into `Xrgmdl`. The port has to
+sit between this port's `rmlnvr` call and its `loadxr` call. Four pieces --
+the `usertype=`-needs-a-user-group refusal (:833-847), the single-`usertype=`
+broadcast (:849-855), `regfix`+`Userfx` (:858-877), and `otsort` (:880, still
+not ported).
+
+**`gtxreg.f:883` was `Nbx>0` here, not `Nb>0 .or. Xeastr .or. Xtdtst>0`.** An
+aictest carries no column of its own, so `x11regression{aictest=(easter)}` with
+no `variables=` left `Ixreg` at 0 -- and `x11parts.cpp:529` carried a comment
+asserting "Ixreg==0 with Axrgtd cannot occur". It occurred. That combination
+hit an unrelated x11pt2 wall, which is the ONLY reason it was not silent, and
+fixing Ixreg removed the wall and exposed both aictest-without-variables specs
+running to `OUTCOME: OK` with wrong numbers. Both are now refused; see board
+item 1 for the two open questions.
+
+**`Noxfac` had no writer at all** -- `x11parts.cpp:572` read a flag nothing
+set. `gtxreg.f:899` plus its `noapply`-with-`umdata` refusal are now ported,
+both inert while `umdata=` is unread.
+
+Standing shape worth carrying: **a comment asserting a state "cannot occur" is
+a claim about a port, not about the Fortran.** That one was true of the oracle
+and false here, and the thing that made it false was a dropped disjunct three
+files away.
+
 ## Open, in the order I would take them
 
-1. **The three remaining x11regression parse refusals**, all the same shape as
-   entry 63 -- the ORACLE rejects the spec and this engine runs it:
-   - `x11regression{ user=(u1) usertype=(td) }` -- `gtxreg.f:833-840` requires
-     a group titled 'User-defined' or 'User-defined Holiday' to exist, and a
-     lone `td`-typed user column produces neither. MEASURED this session.
-   - `x11regression{ variables=(td) aictest=(user) }` -- the oracle abends
-     singular at the C iteration (`singular because of Mon`, printed design
-     with six headers and zero rows); this engine returns `OUTCOME: OK`.
-     Hypothesis, unmeasured: the B iteration's `adrgef` restore and the
-     following `regvar` each add a copy of the user column (entry 61).
-   - `gtxreg.f:898-905`'s `noapply`-with-`umdata` check, transcribed but
-     unreachable while Haveum is never set.
-2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
+   block**, newly WALLED (entry 65), so this is a gap with a refusal in front
+   of it rather than a silent one. It holds three td/tdstock agreement
+   refusals, the `Xtdtst` 1 -> 3 rewrite for a single-column TD group,
+   `Xaicst`/`Xaicrg`, and the monthly-data / pre-1776 generatability refusals.
+   Inert for every gated aictest spec (all name their regressors in
+   `variables=`); the wall fires only for an aictest with none. Two things
+   have to be settled to lift it:
+   - `aictest=(td)` with no `variables=`: `editor.f:1786` reads `Grpx(-1)`
+     out of bounds when `Tdgrp==0`, the read compares equal to `endcol`, and
+     the oracle's `td` aictest silently becomes `td1coef` -- then rejects, and
+     lands in x11mdl.f:308's identity-factor NOTE branch. Decide whether an
+     OOB read gets reproduced (and on what evidence) or stays walled.
+   - `aictest=(easter)` with no `variables=`: AICC(no easter) -734.3172 against
+     this engine's -741.9217, d11 1.4e-2 out. Cause NOT located and NOT this
+     block. Measure that first -- it may be the more general defect.
+2. **`x11regression{ variables=(td) aictest=(user) }`** -- the oracle abends
+   singular at the C iteration (`singular because of Mon`, printed design with
+   six headers and zero rows); this engine returns `OUTCOME: OK`. Hypothesis,
+   unmeasured: the B iteration's `adrgef` restore and the following `regvar`
+   each add a copy of the user column (entry 61).
+3. **`editor.f:1972-1976`'s second `Ixreg` promotion is not ported.** The
+   oracle promotes Ixreg 1 -> 2 when `Khol>=1`, `Fxprxr>0` or the x11reg span
+   ends before the series span (`Xdsp>0`); this port promotes only on
+   `lmodel` (gtinpt.f:1201). UNMEASURED -- the cheap probe is
+   `x11regression{ variables=(td) span=(...) }` with no `arima{}`. Found while
+   porting entry 65 and deliberately not chased there.
+4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-3. **`x11regression{reweight=}` (argidx 32 -> `Lxrneg`) is parsed and
+5. **`x11regression{reweight=}` (argidx 32 -> `Lxrneg`) is parsed and
    DISCARDED** -- found while porting Kswv==3, deliberately not fixed there
    because it is not a one-liner. `Lxrneg` is READ in two ported places
    (`gtinpt.cpp`'s negative-tdprior-weight clamp, `run_history.cpp:591`'s
@@ -931,9 +978,9 @@ remap 11, the remap's `++iusr` 1. WALLS 22 -> 21 gaps.
    `editor.f:1640-1667`'s fixed-coefficient check and `x11mdl.f:575-626`'s
    daily-weight reweighting, neither ported. Wire the parse, port or wall both
    readers, and gate a spec with a NEGATIVE tdprior weight.
-4. **A composite whose components carry a residual peak**, to gate savpk's real
+6. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-5. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`

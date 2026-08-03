@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**21 walls.**
+**22 walls.**
 
 
 ## Automatic model selection
@@ -66,6 +66,10 @@ reproduce.
 
 - **`core/src/specparse/getreg_vars.cpp:1121`**
   AOS/LSS outlier regressors (rdotls.f)
+
+- **`core/src/specparse/readers_spec.cpp:3653`**
+  x11regression aictest with no regression variables (editor.f:1760-1846)
+  *Fortran:* `editor.f:1760-1846`
 
 
 ## X-11

@@ -3569,13 +3569,11 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     // seeding it with something >= PRGTUH -- would make EVERY x11regression
     // spec with a user column take the AO branch, which the goldens rule out.
     //
-    // WALLED rather than reproduced. Setting Holgrp here does put the run on
-    // the oracle's arm, but the run then diverges downstream: measured on a
-    // two-column `usertype=(td user)` spec, the B iteration's irregular
-    // regression matches the oracle coefficient for coefficient and the C
-    // iteration does not (u2 0.330 against the oracle's 0.744), leaving c16
-    // 1.1e-3 out. Refusing is the honest state until that is chased; the
-    // measurement is in docs/M5_PORT_NOTES.md.
+    // REPRODUCED, and gated by extra/airline_x11regression-aictest-user2swap
+    // against -user2 (the same spec with the usertype= order reversed, which
+    // does not reach the arm). It was walled at first because taking it left
+    // c16 1.1e-3 out; that turned out to be an unrelated hole -- x11mdl.f's
+    // effective-type remap, docs/M5_PORT_NOTES.md entry 64 -- not this defect.
     if (xg.nusxrg > 0) {
         int iusr = 1;
         int rtype = 0;
@@ -3631,6 +3629,29 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     // (editor.f:1748-1757's Critxr derivation from the outlier-span length is
     // left where this port already does it, at the idotlr call in x11mdl_td --
     // same inputs, same setcv, and Begxot/Endxot are not resolved here.)
+    //
+    // editor.f:1760-1846's "Check options for AIC trading day test" block is
+    // NOT ported: the td/tdstock agreement refusals, the Xtdtst 1->3 rewrite
+    // for a single-column TD group, Xaicst/Xaicrg, and the monthly-data /
+    // pre-1776 generatability refusals. Reachable only through an aictest, and
+    // every gated aictest spec names its regressors in `variables=`, which is
+    // what makes the whole block inert for them (Tdgrp>0, multi-column, no
+    // rewrite). With NO regression variables it is not inert and both arms
+    // diverge, measured on the airline series:
+    //   aictest=(td)     -- the oracle reports `aictest.xtd.reg: td1coef` and
+    //       rejects, landing in x11mdl.f:308's identity-factor NOTE branch
+    //       (c16 all 1.0); this engine tests plain `td`, accepts, and writes a
+    //       real TD factor. editor.f:1786 is why: with Tdgrp==0 it reads
+    //       Grpx(-1) out of bounds for begcol, that read compares equal to
+    //       endcol, and Xtdtst flips 1 -> 3. An OOB read is not something to
+    //       reproduce on one build's evidence.
+    //   aictest=(easter) -- AICC(no easter) -734.3172 against this engine's
+    //       -741.9217; both still choose easter[15], but d11 lands 1.4e-2 out.
+    //       Cause not yet located, and it is not this block.
+    // Refuse rather than return either number.
+    if (xg.nbx == 0 && (ctx.x11reg.xtdtst > 0 || ctx.x11log.xeastr))
+        xrg_not_ported(ctx, "x11regression aictest with no regression "
+                            "variables (editor.f:1760-1846)");
 }
 
 // ---- x11regression{} (gtxreg.f) -------------------------------------------
@@ -4106,6 +4127,67 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
         rmlnvr(ctx, tmppa, 0, ctx.mdldat.nspobs);
         if (ctx.error.lfatal) return;
     }
+    // gtxreg.f:828-878 -- reads the WORKING regARIMA COMMON, which still holds
+    // the x11regression model until loadxr moves it out below, so it must run
+    // here and not after. (Fortran calls rmlnvr much earlier, at :186; the
+    // relative order rmlnvr -> this block -> loadxr is what matters, because a
+    // stripped Leap Year column shifts every group index this block reads.)
+    if (ctx.model.nb > 0) {
+        model_cmn& M = ctx.model;
+        auto mgrp = [&](const char* t) {
+            return strinx(false, M.grpttl.raw(), M.grpptr.data(), 1, M.ngrptl, t);
+        };
+        if (nusxrg > 0) {
+            // gtxreg.f:833-847 -- `usertype=` is meaningless unless at least one
+            // column actually landed in a user group. A lone `usertype=(td)`
+            // column is titled 'User-defined Trading Day', so neither group
+            // exists and the spec is refused. Without this the engine ran that
+            // spec to OUTCOME: OK.
+            int igrp = mgrp("User-defined");
+            if (igrp == 0) igrp = mgrp("User-defined Holiday");
+            if (igrp == 0) {
+                errhdr(ctx);
+                writln(ctx, "ERROR: Cannot specify group types for user-defined "
+                       "irregular component", stdio::STDERR, ctx.units.mt2, true);
+                writln(ctx, "       regression variables if user-defined "
+                       "irregular component", stdio::STDERR, ctx.units.mt2, true);
+                writln(ctx, "       regression variables are not defined in the "
+                       " x11regression spec.", stdio::STDERR, ctx.units.mt2, true);
+                inptok = false;
+            }
+            // gtxreg.f:849-855 -- one type given, every user column takes it.
+            // This runs AFTER the adrgef loop above, so it changes no group
+            // title or Rgvrtp: only the Usxtyp list loadxr.f:76 copies into
+            // Usrtyp, which is what x11mdl.f:531-540's effective-type remap and
+            // editor.f:1710 read.
+            if (nusxrg == 1)
+                for (int i = 2; i <= ctx.usrxrg.ncxusx; ++i)
+                    ctx.usrxrg.usxtyp(i) = ctx.usrxrg.usxtyp(1);
+        }
+        // gtxreg.f:858-877 -- Iregfx from the b= fixings, then Userfx: does the
+        // irregular regression hold a FIXED user column? Unlike getreg.f's
+        // version this one tests a single group, and only 'User-defined'.
+        M.userfx = false;
+        if (nusxrg > 0 && M.iregfx >= 2) {
+            if (M.iregfx == 3) {
+                M.userfx = true;
+            } else {
+                const int igrp = mgrp("User-defined");
+                // gtxreg.f:870-873 indexes Grp(igrp-1) without testing igrp,
+                // so a spec that just took the refusal above (inptok=F, but
+                // execution continues) reads Grp(-1) out of bounds. Guarded:
+                // the run is already refused and the value is never printed.
+                if (igrp > 0) {
+                    const int begcol = M.grp(igrp - 1);
+                    const int endcol = M.grp(igrp) - 1;
+                    for (int i = begcol; i <= endcol; ++i)
+                        M.userfx = M.userfx || M.regfx(i);
+                }
+            }
+        }
+        // gtxreg.f:880 otsort() (date-sorting user-specified outlier
+        // regressors) is not ported; the corpus specifies outliers in order.
+    }
     loadxr(ctx, /*toxreg=*/true);
     xrg_clear_working(ctx);
     // gtxreg.f:883-897: Nbx>0 -> Ixreg=1 (prior=yes -> 2, deferred). Havxtd/
@@ -4115,7 +4197,12 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // TD group materialized.
     if (havtd) ctx.x11log.havxtd = true;
     if (havhol) ctx.x11log.havxhl = true;
-    if (ctx.xrgmdl.nbx > 0) ctx.hiddn.ixreg = 1;
+    // gtxreg.f:883 -- an AIC test alone turns the irregular regression ON, with
+    // no regression columns parsed at all: `x11regression{aictest=(easter)}`
+    // has Nbx==0 and Xeastr true, and x11aic adds the columns later. Testing
+    // only Nbx left that spec running to OUTCOME: OK with d11 1.4e-2 out.
+    if (ctx.xrgmdl.nbx > 0 || ctx.x11log.xeastr || ctx.x11reg.xtdtst > 0)
+        ctx.hiddn.ixreg = 1;
     if (!ctx.x11log.havxtd) ctx.x11reg.ixrgtd = 0;
     if (ctx.x11reg.ixrgtd > 0) ctx.x11log.axrgtd = true;
     if (!ctx.x11log.havxhl) ctx.x11reg.ixrghl = 0;
@@ -4133,6 +4220,19 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     if (!(ctx.x11log.axrgtd || ctx.x11reg.ixrghl > 0 || neltdw > 0)) {
         writln(ctx, "ERROR: Must adjust for either trading day or holiday in "
                "the x11regression spec.", stdio::STDERR, ctx.units.mt2, true);
+        inptok = false;
+    }
+    // gtxreg.f:899-905 -- Noxfac suppresses the x11pt2 holiday/TD factor
+    // combine when a user-defined MEAN accompanies both adjustments, and
+    // `noapply=` on top of that is refused. Both are inert until umdata= is
+    // read (Haveum is never set in this port), but Noxfac had no writer at all,
+    // so x11parts was reading a permanently-false flag with no source.
+    ctx.xrgum.noxfac =
+        ctx.xrgum.haveum && ctx.x11log.havxtd && ctx.x11log.havxhl;
+    if (ctx.xrgum.noxfac &&
+        (ctx.x11reg.ixrgtd == 0 || ctx.x11reg.ixrghl == 0)) {
+        writln(ctx, "ERROR: Cannot specify noapply when user-defined mean is "
+               "also present.", stdio::STDERR, ctx.units.mt2, true);
         inptok = false;
     }
     xrg_editor_setup(ctx, inptok);

@@ -3161,3 +3161,100 @@ single user column typed `td` and nothing else -- makes the ORACLE refuse
 'User-defined Holiday' to exist, and a lone `td` column produces neither), and
 this engine runs it. Same class as the td-or-holiday requirement in entry 63,
 and cheap.
+
+## 65. gtxreg.f's whole `IF(Nb.gt.0)` block was missing -- and an aictest with no `variables=` is two divergences deep.
+
+Entry 64 left one measured refusal open: `x11regression{ user=(u1)
+usertype=(td) }` runs here and is rejected by the oracle. Porting it turned up
+the block it lives in -- `gtxreg.f:828-878`, fifty lines that had no C++ at all
+-- and then, through the `Ixreg` line just past it, two silent-wrongness cases.
+
+**The block reads the WORKING regARIMA COMMON.** That is why it is easy to
+miss: `gtxreg` builds the irregular-regression model into `Grpttl`/`Grp`/`Nb`
+and only `loadxr` moves it into `Xrgmdl`. The port therefore has to sit between
+this port's `rmlnvr` call and its `loadxr` call, not after -- a stripped Leap
+Year column shifts every group index the block reads. Four pieces:
+
+| gtxreg.f | what | state before |
+|---|---|---|
+| :833-847 | `usertype=` refused unless a 'User-defined' or 'User-defined Holiday' group exists | absent |
+| :849-855 | one `usertype=` given -> broadcast it over all `Ncxusx` columns | absent |
+| :858-877 | `regfix` -> `Iregfx`, then `Userfx` from the 'User-defined' group | absent |
+| :880 | `otsort` | still not ported (the corpus specifies outliers in order) |
+
+The refusal is the measured one: a lone `td`-typed user column is titled 'User-
+defined Trading Day', so neither group exists. Note it is INDEPENDENT of entry
+63's td-or-holiday requirement -- the same column sets `Havxtd`, so `Axrgtd` is
+true and that check passes. Two refusals, two specs.
+
+The broadcast runs AFTER the `adrgef` loop, so it changes no group title and no
+`Rgvrtp`: it edits only the `Usxtyp` list that `loadxr.f:76` copies into
+`Usrtyp`, which is what entry 64's remap and `editor.f:1710` read. Combined
+with the off-by-one both of those have, `Usxtyp(2)` is read only when two
+`PRGTUD` columns precede it -- so the broadcast is invisible on every spec in
+the corpus. Ported because it is one line and the next spec will not be.
+
+**`gtxreg.f:883` -- `IF(Nb.gt.0.or.Xeastr.or.Xtdtst.gt.0)Ixreg=1`.** This port
+tested `Nbx>0` alone. An aictest carries no regression column of its own (x11aic
+adds them later), so `x11regression{aictest=(easter)}` with no `variables=` left
+`Ixreg` at 0 -- and `x11parts.cpp:529` carried a comment asserting "Ixreg==0
+with Axrgtd cannot occur", which is exactly what did occur. That combination hit
+an unrelated x11pt2 wall, which is the only reason it was not silent.
+
+**And what the fix exposed.** With `Ixreg` correct the wall no longer fires, and
+both aictest-without-variables specs then run to `OUTCOME: OK` with wrong
+numbers:
+
+| spec | oracle | engine |
+|---|---|---|
+| `aictest=(td)` | `aictest.xtd.reg: td1coef`, REJECTED, x11mdl.f:308's identity-factor NOTE branch, c16 all 1.0 | tests plain `td`, ACCEPTS, writes a real TD factor |
+| `aictest=(easter)` | AICC(no easter) -734.3172 | -741.9217; both still pick easter[15], d11 1.4e-2 out |
+
+The first one has a named cause: `editor.f:1782-1790` rewrites `Xtdtst` 1 -> 3
+when the TD group is a single column, and it computes that column count as
+`begcol=Grpx(Tdgrp-1)`, `endcol=Grpx(Tdgrp)-1` WITHOUT testing `Tdgrp`. With no
+TD group at all that reads `Grpx(-1)` out of bounds, the value compares equal to
+`endcol`, and a `td` aictest silently becomes a `td1coef` aictest. That is a
+Census defect, but an out-of-bounds read is not something to reproduce on one
+build's evidence, so it is not claimed as a CB entry and not ported. The second
+one is not yet located; it is not this block.
+
+Both are now REFUSED (`xrg_not_ported`, WALLS 21 -> 22 gaps) rather than
+answered. `editor.f:1760-1846`'s whole "Check options for AIC trading day test"
+block -- three td/tdstock agreement refusals, the 1->3 rewrite, `Xaicst`,
+`Xaicrg`, and the monthly-data / pre-1776 generatability refusals -- stays
+unported behind that wall. It is inert for every gated aictest spec, all of
+which name their regressors in `variables=` (so `Tdgrp>0`, multi-column, no
+rewrite); with no variables it is not inert.
+
+**`Noxfac` had no writer.** `x11parts.cpp:572` reads it; nothing set it.
+`gtxreg.f:899` (`Haveum.and.Havxtd.and.Havxhl`) and its `noapply`-with-`umdata`
+refusal are now both there. Inert while `umdata=` is unread and `Haveum` stays
+false -- but a read with no write is the shape that hides a defect, not a
+harmless one.
+
+**Also swept:** `editor.f:1690-1716`'s comment in `readers_spec.cpp` still said
+CB-36 was walled. Entry 64 unwalled it.
+
+**Mutations, and four honest zeros:**
+
+| removed | gates lost |
+|---|---|
+| the 'User-defined' group-existence refusal | 1 |
+| gtxreg.f:883's `Xeastr`/`Xtdtst` disjuncts | 0 |
+| the aictest-with-no-variables wall | 0 |
+| the single-`usertype=` broadcast | 0 |
+| `regfix` + `Userfx` for the irregular regression | 0 |
+
+The zeros are saturated preconditions, not evidence the code is right, and two
+of them cannot be un-saturated today. The `Ixreg` disjuncts and the wall are
+reachable ONLY from an aictest with no `variables=`, and every such spec is
+what the wall refuses -- so no passing gate can exist for them until the wall
+lifts. They are pinned by `docs/WALLS.md` (derived from the refusal itself, so
+deleting the wall deletes the entry) and by the measurements above, which is
+weaker than a gate and is stated here rather than left to be inferred from a
+green suite. The broadcast needs a spec with two-plus user columns and ONE
+`usertype=`; `Userfx` needs a `b=` fixing in an `x11regression{}`. Both are
+cheap specs and neither exists.
+
+**Gated:** `extra/airline_x11regression-usertype-tdonly`.
