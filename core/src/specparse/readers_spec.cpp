@@ -3529,6 +3529,54 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     // editor.f:1550-1552 / :1618-1627.
     int easgrp = grp("Easter");
     if (easgrp == 0) easgrp = grp("StatCanEaster");
+
+    // editor.f:1553-1591 -- the Easter AIC-test WINDOW SET. When the user named
+    // Easter regressors, the windows tested are THEIRS, read back out of the
+    // column titles ("Easter[8]" -> 8); only with no Easter group in the model
+    // does the default {0,1,8,15} sweep apply.
+    //
+    // The default half was already here, but in the `aictest=` parser
+    // (gt_x11regression, argidx 19) where it fired unconditionally -- and it
+    // cannot be decided there, because at aictest-parse time `variables=` may
+    // not have been read yet, so Easgrp is not knowable. That is why the oracle
+    // does this in the EDITOR, after the whole spec is in. Measured on
+    // `x11regression{ variables=(easter[8]) aictest=(easter) }`: the oracle
+    // tests {0,8} and reports two AICCs, this engine swept {0,1,8,15} and
+    // reported four -- OUTCOME: OK, wrong answer, and no wall in front of it
+    // (the wall below keys on Nbx==0, and this spec has Nbx==1).
+    if (ctx.x11log.xeastr) {
+        ctx.x11reg.xeasvc(1) = 0;
+        if (easgrp > 0) {
+            const int begcol = xg.grpx(easgrp - 1);
+            const int endcol = xg.grpx(easgrp) - 1;
+            // Xeasvc is DIMENSIONED 4 and Neasvx is endcol-begcol+2, so five or
+            // more Easter columns overrun it in the Fortran too. Clamp rather
+            // than reproduce an out-of-bounds write: the oracle's own overrun
+            // is undefined, not a defect with an observable to match.
+            const int nvx = std::min(endcol - begcol + 2, 4);
+            for (int icol = 2; icol <= nvx; ++icol) {
+                std::string ttl;
+                int nchr = 0;
+                getstr(ctx, xg.colttx.data(), xg.clxptr.data(), xg.nbx,
+                       begcol + icol - 2, ttl, nchr);
+                if (ctx.error.lfatal) return;
+                // editor.f:1559-1560: ipos = index(...,'[')+1, then ctoi.
+                ttl.resize(static_cast<std::size_t>(nchr));
+                const std::size_t br = ttl.find('[');
+                int ipos = (br == std::string::npos)
+                               ? 1 : static_cast<int>(br) + 2;
+                ctx.x11reg.xeasvc(icol) = ctoi(ttl, ipos);
+            }
+            ctx.x11reg.neasvx = nvx;
+        } else {
+            ctx.x11reg.xeasvc(2) = 1;
+            ctx.x11reg.xeasvc(3) = 8;
+            ctx.x11reg.xeasvc(4) = 15;
+            ctx.x11reg.neasvx = 4;
+            ctx.x11adj.finhol = true;   // editor.f:1589
+        }
+    }
+
     int holgrp = easgrp;
     if (holgrp == 0) holgrp = grp("Thanksgiving");
     if (holgrp == 0) holgrp = grp("Labor");
@@ -3646,12 +3694,34 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     //       endcol, and Xtdtst flips 1 -> 3. An OOB read is not something to
     //       reproduce on one build's evidence.
     //   aictest=(easter) -- AICC(no easter) -734.3172 against this engine's
-    //       -741.9217; both still choose easter[15], but d11 lands 1.4e-2 out.
-    //       Cause not yet located, and it is not this block.
-    // Refuse rather than return either number.
+    //       -741.9217. NOT this block, and NOT "no variables" either: see the
+    //       wall condition below, which is wider than it used to be.
+    //
+    // The easter arm's real trigger is NO TRADING-DAY GROUP, not Nbx==0.
+    // x11aic.f:112-143's strip loop removes the Easter columns whenever Xeastr
+    // is on, so `variables=(easter[8]) aictest=(easter)` arrives at the i==1
+    // baseline with exactly the design `variables=()` would have -- and the
+    // oracle returns the same -734.3172 for both, which is what identifies the
+    // condition. That spec has Nbx==1, so the old wall let it through:
+    // OUTCOME: OK with four AICCs where the oracle prints two. Everything with
+    // a surviving TD group agrees bit-exact, including the new
+    // `variables=(td easter[8])` gate.
+    //
+    // What is left unported is the AO half. `xeastr` suppresses editor.f:1727's
+    // `Sigxrg=2.5` default, so these runs take the `Otlxrg` branch and do
+    // AUTOMATIC AO IDENTIFICATION on the irregular -- the oracle's own .out
+    // adds `AO1960.Mar` at t=-5.50. With a TD group present the two agree; with
+    // none they do not, and that is where the ~7.6 AICC sits. Refuse rather
+    // than return the number.
+    const bool no_td_group = tdgrp == 0 && stdgrp == 0;
     if (xg.nbx == 0 && (ctx.x11reg.xtdtst > 0 || ctx.x11log.xeastr))
         xrg_not_ported(ctx, "x11regression aictest with no regression "
                             "variables (editor.f:1760-1846)");
+    else if (ctx.x11log.xeastr && no_td_group)
+        xrg_not_ported(ctx, "x11regression aictest=(easter) with no "
+                            "trading-day group: the AIC baseline is fitted on "
+                            "an auto-AO design (editor.f:1727 Otlxrg, "
+                            "x11aic.f:112-143 strip)");
 }
 
 // ---- x11regression{} (gtxreg.f) -------------------------------------------
@@ -3957,13 +4027,11 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                 if (s == "easter") {   // gtxreg.f:395-397: Xeastr=T, Havxhl=T
                     ctx.x11log.xeastr = true;
                     havhol = true;
-                    // editor.f:1577-1590: no explicit Easter group in the model
-                    // -> the default window set {0,1,8,15} to AIC-test over.
-                    ctx.x11reg.xeasvc(1) = 0;
-                    ctx.x11reg.xeasvc(2) = 1;
-                    ctx.x11reg.xeasvc(3) = 8;
-                    ctx.x11reg.xeasvc(4) = 15;
-                    ctx.x11reg.neasvx = 4;
+                    // The window set (editor.f:1577-1591) is NOT decided here.
+                    // It depends on whether `variables=` named Easter
+                    // regressors, and that may not have been parsed yet -- the
+                    // oracle resolves it in the editor, and so does
+                    // xrg_editor_setup.
                 } else if (s == "user") {
                     ctx.x11log.xuser = true;   // gtxreg.f:398-399
                 } else {

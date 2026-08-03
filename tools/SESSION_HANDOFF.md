@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6468<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->671<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6486<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->675<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6468<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6486<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1109,6 +1109,54 @@ Suite 6219 -> 6468 passed, 0 failed, 0 xfailed, 492 -> 671 skipped. Mutation:
 dropping the `Arimap`/`ctx.model` restore fails 5 gates; before this increment
 it failed none.
 
+## This session, part 21: the Easter AIC window set -- decided in the wrong phase, behind a wall guarding the wrong condition
+
+Entry 70. Board item 1 said to measure the `aictest=(easter)` AICC gap before
+touching `editor.f:1760-1846`, because it might be the more general defect. It
+was two defects, neither of them that block, and one was LIVE on a route no wall
+covered.
+
+**The wall was keyed on `Nbx == 0`.** Wrong condition. `x11aic.f:112-143`'s
+strip loop deletes the Easter columns whenever `Xeastr` is on, so
+`variables=(easter[8]) aictest=(easter)` reaches the i==1 baseline with exactly
+the design an empty `variables=` would have -- the oracle returns the same
+-734.3172 for both, which is what identifies the real trigger: **no surviving
+trading-day group**. That spec has `Nbx == 1`, sailed past, and returned
+`OUTCOME: OK` with four AICCs where the oracle prints two.
+
+**Defect 1, PORTED.** `editor.f:1577-1591`: when `variables=` NAMES Easter
+regressors the AIC test sweeps THEIR windows -- `Neasvx = endcol-begcol+2`,
+`Xeasvc(2..)` read back out of the column TITLES (`getstr`, then `ctoi` past the
+`[`). Only with no Easter group does the default `{0,1,8,15}` apply. This port
+had the default half only, **in the `aictest=` parser**, where the question
+cannot be answered: `variables=` may not have been read yet, so `Easgrp` is
+unknown. That is why the oracle decides it in the editor. Moved to
+`xrg_editor_setup`, where `easgrp` is already computed eleven lines above.
+
+Worth naming as a class: the value was read, and was correct for every gated
+spec. **The defect was computing it in a phase that could not see its own
+precondition** -- and a single-branch implementation of a two-branch Fortran
+`IF` looks exactly like a working one until something takes the other branch.
+
+**Defect 2, still walled -- and it is the AO half.** `xeastr` suppresses
+`editor.f:1727`'s `Sigxrg=2.5` default, so these runs take the `Otlxrg` branch
+and do AUTOMATIC AO IDENTIFICATION on the irregular (the oracle's `.out` adds
+`AO1960.Mar`, t=-5.50). The i==1 "baseline" is therefore not an empty fit at
+all. With a TD group present the two agree bit-exact; with none they do not, and
+that is where the ~7.6 sits. Wall rewritten to name that condition.
+
+**The gateable route is not the broken one.** `variables=(td easter[8])`: the
+strip loop removes Easter, TD survives, the auto-AO arm is never reached -- and
+`Easgrp > 0` still exercises the window set. Bit-identical on both AICCs and the
+chosen window. New spec `extra/airline_x11regression-aictest-easter8`.
+
+Mutations: reverting the `Easgrp>0` arm fails **17** gates. The wall is **0**
+and is reported as 0 -- a walled route cannot be corpus-gated the usual way,
+since the engine refuses where the oracle succeeds. Verified by hand instead:
+fires on `variables=(easter[8])`, not on `variables=(td easter[8])`.
+
+Suite 6468 -> 6486 passed, 0 failed, 0 xfailed; WALLS 23 -> 24 gaps.
+
 ## Open, in the order I would take them
 
 1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
@@ -1124,9 +1172,13 @@ it failed none.
      the oracle's `td` aictest silently becomes `td1coef` -- then rejects, and
      lands in x11mdl.f:308's identity-factor NOTE branch. Decide whether an
      OOB read gets reproduced (and on what evidence) or stays walled.
-   - `aictest=(easter)` with no `variables=`: AICC(no easter) -734.3172 against
-     this engine's -741.9217, d11 1.4e-2 out. Cause NOT located and NOT this
-     block. Measure that first -- it may be the more general defect.
+   - The easter half is now SPLIT and half closed (part 21 / entry 70). The
+     window set (`editor.f:1577-1591`) is ported and gated. What remains is
+     NOT this block either: with no surviving TD group, `xeastr` suppresses
+     `editor.f:1727`'s `Sigxrg=2.5` and the AIC baseline is fitted on an
+     AUTOMATIC-AO design (the oracle adds `AO1960.Mar` at t=-5.50), which is
+     where the ~7.6 AICC gap lives. Newly walled under that condition. Take it
+     as an AO-identification question, not an aictest one.
 2. **`x11regression{ variables=(td) aictest=(user) }`** -- the oracle abends
    singular at the C iteration (`singular because of Mon`, printed design with
    six headers and zero rows); this engine returns `OUTCOME: OK`. Hypothesis,

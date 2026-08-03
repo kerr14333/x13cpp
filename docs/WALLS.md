@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**23 walls.**
+**24 walls.**
 
 
 ## Automatic model selection
@@ -71,9 +71,13 @@ reproduce.
 - **`core/src/specparse/getreg_vars.cpp:1121`**
   AOS/LSS outlier regressors (rdotls.f)
 
-- **`core/src/specparse/readers_spec.cpp:3653`**
+- **`core/src/specparse/readers_spec.cpp:3718`**
   x11regression aictest with no regression variables (editor.f:1760-1846)
   *Fortran:* `editor.f:1760-1846`
+
+- **`core/src/specparse/readers_spec.cpp:3721`**
+  x11regression aictest=(easter) with no trading-day group: the AIC baseline is fitted on an auto-AO design (editor.f:1727 Otlxrg, x11aic.f:112-143 strip)
+  *Fortran:* `editor.f:1727, x11aic.f:112-143`
 
 
 ## X-11

@@ -3602,3 +3602,69 @@ tree in `test_x11_tables.py`; `airline_x11regression-tdprior-td`'s a4. Suite
 
 **Mutation:** dropping the `ctx.model`/`Arimap` restore fails 5 gates. Before
 this increment it failed none -- which is the entire point of the entry.
+
+## 70. The Easter AIC window set was decided in the wrong phase -- and the wall in front of it was guarding the wrong condition.
+
+Board item 1 said to measure the `aictest=(easter)` AICC gap before touching
+`editor.f:1760-1846`, on the grounds that it might be the more general defect.
+It was two defects, neither of them that block, and one of them was live on a
+route no wall covered.
+
+**What the wall thought it was guarding.** `readers_spec.cpp` refused
+`x11regression{}` aictest when `Nbx == 0` -- "no regression variables" -- with
+the easter arm measured at oracle -734.3172 vs engine -741.9217. The condition
+was wrong. `x11aic.f:112-143`'s strip loop deletes the Easter columns whenever
+`Xeastr` is on, so `variables=(easter[8]) aictest=(easter)` reaches the i==1
+baseline with **exactly the design an empty `variables=` would have** -- and the
+oracle returns the same -734.3172 for both, which is what identifies the real
+condition. That spec has `Nbx == 1`. It sailed past the wall and returned
+`OUTCOME: OK`.
+
+Two things were wrong with what it returned.
+
+**1. The window set, and the phase it was decided in.** `editor.f:1577-1591`:
+when `variables=` NAMES Easter regressors, the windows the AIC test sweeps are
+THEIRS -- `Neasvx = endcol-begcol+2`, and `Xeasvc(2..)` is read back out of the
+column TITLES (`getstr` then `ctoi` past the `[`, so "Easter[8]" -> 8). Only
+with no Easter group in the model does the default `{0,1,8,15}` sweep apply.
+
+This port had the default half only, and had it in the **`aictest=` parser**,
+where the question cannot be answered: at that moment `variables=` may not have
+been read yet, so `Easgrp` is unknown. That is precisely why the oracle decides
+it in the EDITOR, with the whole spec in hand. The comment above the code even
+cited `editor.f:1577-1590` and said "no explicit Easter group in the model" --
+describing a condition it never tested. Moved to `xrg_editor_setup`, where
+`easgrp` is already computed eleven lines above. Before: four AICCs where the
+oracle prints two.
+
+This is the parsed-but-unread class with a twist worth naming: the value WAS
+read, and was even correct for every gated spec. **The defect was that it was
+computed in a phase that could not see its own precondition** -- and a
+single-branch implementation of a two-branch Fortran `IF` looks exactly like a
+working one until a spec takes the other branch.
+
+**2. The AICC itself, which is the AO half and is still open.** `xeastr`
+suppresses `editor.f:1727`'s `Sigxrg=2.5` default, so these runs take the
+`Otlxrg` branch and do AUTOMATIC AO IDENTIFICATION on the irregular -- the
+oracle's own `.out` adds `AO1960.Mar` at t=-5.50. So the i==1 "baseline" is not
+an empty fit at all; it is a fit on an auto-AO design. With a trading-day group
+present the two agree bit-exact; with none they do not, and that is where the
+~7.6 lives. Still walled, now under a message that names the actual condition.
+
+**The gateable route.** `variables=(td easter[8]) aictest=(easter)`: the strip
+loop takes the Easter columns out, the TD group survives, the run never reaches
+the auto-AO arm -- and it still exercises the window set, because `Easgrp > 0`.
+Both AICCs and the chosen window come out bit-identical. That is the new spec.
+It is worth noticing that the fix and the wall needed DIFFERENT specs, and that
+the one that could be gated is the one where the second defect is absent.
+
+**Gated:** `extra/airline_x11regression-aictest-easter8` (new).
+
+**Mutations:** reverting the `Easgrp>0` arm to the unconditional default fails
+**17** gates. The widened wall is **0**, and is reported as 0 on purpose: a
+walled route cannot be corpus-gated the usual way, because the engine refuses
+where the oracle succeeds, so a golden comparison would fail rather than pass.
+`docs/WALLS.md` is its record (23 -> 24 gaps), and the refusal was verified by
+hand to fire on `variables=(easter[8])` and NOT on `variables=(td easter[8])`.
+
+Suite 6468 -> 6486 passed, 0 failed, 0 xfailed.
