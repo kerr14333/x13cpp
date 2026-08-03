@@ -14,14 +14,14 @@ stale figure is a build error instead of something a reader finds first.
 
 | Metric | Value |
 |---|---|
-| Parity tests passing | **6065** |
+| Parity tests passing | **6087** |
 | Parity tests failing | **0** |
 | Parity tests skipped | **476** |
 | Parity tests xfailed | **0** |
 | Unit tests (ctest) | **12/12** |
-| Corpus spec files | **421** |
+| Corpus spec files | **423** |
 | Parity test modules | **31** |
-| C++ non-blank lines (excl. generated) | **47683** |
+| C++ non-blank lines (excl. generated) | **47777** |
 | C++ files (excl. generated) | **182** |
 | Fortran reference, non-blank lines | **166076** |
 | Fortran reference, files | **712** |
@@ -29,9 +29,9 @@ stale figure is a build error instead of something a reader finds first.
 | Fortran routines in scope (excl. n-a) | **690** |
 | Percent of routines ported | **58.8** |
 | Census bugs catalogued | **36** |
-| Commits | **396** |
+| Commits | **397** |
 | Active development time | **60h 35m** |
-| Calendar days worked | **16** |
-| Last commit | **2026-08-02** |
+| Calendar days worked | **17** |
+| Last commit | **2026-08-03** |
 
 Metric names for markers: `parity_pass`, `parity_fail`, `parity_skip`, `parity_xfail`, `ctest`, `corpus_specs`, `parity_modules`, `cpp_lines`, `cpp_files`, `fortran_lines`, `fortran_files`, `routines_done`, `routines_total`, `routines_pct`, `census_bugs`, `commits`, `active_time`, `calendar_days`, `last_commit`.

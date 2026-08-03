@@ -75,9 +75,9 @@ reproduce.
   x11regression aictest with no regression variables (editor.f:1760-1846)
   *Fortran:* `editor.f:1760-1846`
 
-- **`core/src/specparse/readers_spec.cpp:4217`**
-  x11regression{span=} narrowing the irregular regression span (x11mdl.f:115-118)
-  *Fortran:* `x11mdl.f:115-118`
+- **`core/src/specparse/readers_spec.cpp:4218`**
+  x11regression{span=} ENDING before the series span (xrgdrv.f:152-158 Xdsp)
+  *Fortran:* `xrgdrv.f:152-158`
 
 
 ## X-11
@@ -112,10 +112,10 @@ reproduce.
 - **`core/src/x11/x11reg.cpp:855`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1243`**
+- **`core/src/x11/x11reg.cpp:1337`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1282`**
+- **`core/src/x11/x11reg.cpp:1376`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:44`**

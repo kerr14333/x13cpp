@@ -921,7 +921,6 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     const int sp = m.sp;
     const int pos1ob = ctx.x11ptr.pos1ob, posfob = ctx.x11ptr.posfob;
     int pos1bk = ctx.x11ptr.pos1bk, posffc = ctx.x11ptr.posffc;
-    const int nspobs = md.nspobs;
     const int muladd = ctx.x11opt.muladd;
     double* sti = ctx.x11srs.sti.data();
 
@@ -947,15 +946,72 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         posffc = posfob + nfcst;
         pos1bk = pos1ob - ctx.xrgfct.nbcstx;
     }
-    const int nbeg = 0, irridx = pos1ob + nbeg;
-    // The design/factors span the forecast-extended buffer [pos1ob, posffc] so
-    // Factd/Faccal cover the whole [pos1bk,posffc] used by the Stcsi feedback and
-    // the D-part; the OLS itself still uses only the Nspobs data rows (regx11).
-    const int nobspf = posffc - pos1ob + 1;
+    // x11mdl.f:113-118 -- move Begspn/Endspn onto the IRREGULAR REGRESSION span
+    // (`x11regression{span=}`, gtxreg.f:629-661). Everything from here to the
+    // restore below fits on that span; the factor built afterwards spans the
+    // full one, which is why the Fortran restores and rebuilds the design
+    // rather than simply keeping the narrow fit.
+    int endspn_cur[2];
+    addate(md.begspn.data(), sp, md.nspobs - 1, endspn_cur);
+    int nbeg = 0, nend = 0;
+    dfdate(ctx.x11reg.begxrg.data(), md.begspn.data(), sp, nbeg);
+    dfdate(endspn_cur, ctx.x11reg.endxrg.data(), sp, nend);
+    // Everything the narrowing touches, saved for the restore. The guard makes
+    // the restore unconditional on the way out: this is a full x11 COMMON, and
+    // an early return leaving Begspn/Nspobs narrowed is the span-replay bug
+    // this subsystem has already paid for four times (see core/src/x11/
+    // CLAUDE.md). The explicit setspn below runs FIRST, before the factor
+    // build; by the time the guard fires the values already match.
+    struct SpanGuard {
+        X13Context& c;
+        int begspn[2], nspobs, frstsy, nomnfy, adj1st;
+        ~SpanGuard() {
+            c.mdldat.begspn(1) = begspn[0];
+            c.mdldat.begspn(2) = begspn[1];
+            c.mdldat.nspobs = nspobs;
+            c.arima.frstsy = frstsy;
+            c.arima.nomnfy = nomnfy;
+            c.adj.adj1st = adj1st;
+        }
+    } span_guard{ctx, {md.begspn(1), md.begspn(2)}, md.nspobs, ar.frstsy,
+                 ar.nomnfy, ctx.adj.adj1st};
+    if (nbeg > 0) {
+        md.begspn(1) = ctx.x11reg.begxrg(1);
+        md.begspn(2) = ctx.x11reg.begxrg(2);
+    }
+    if (nend > 0) {
+        endspn_cur[0] = ctx.x11reg.endxrg(1);
+        endspn_cur[1] = ctx.x11reg.endxrg(2);
+    }
+    // x11mdl.f:186-195 -- Nspobs off the (possibly moved) endpoints, and the
+    // series-relative pointers only when something actually moved.
+    int nspobs = 0;
+    dfdate(endspn_cur, md.begspn.data(), sp, nspobs);
+    nspobs += 1;
+    md.nspobs = nspobs;
+    const int irridx = pos1ob + nbeg;
+    // With no span the design/factors span the forecast-extended buffer
+    // [pos1ob, posffc] so Factd/Faccal cover the whole [pos1bk,posffc] used by
+    // the Stcsi feedback and the D-part; the OLS itself still uses only the
+    // Nspobs data rows (regx11). Once the span narrows, x11mdl.f:193 is what
+    // sizes the design instead, and the buffer-wide factor comes from the
+    // rebuild after the restore.
+    int nobspf = posffc - pos1ob + 1;
+    if (nbeg > 0 || nend > 0) {
+        dfdate(md.begspn.data(), ar.begsrs.data(), sp, ar.frstsy);
+        ar.frstsy += 1;
+        ar.nomnfy = ar.nobs - ar.frstsy + 1;
+        nobspf = std::min(nspobs + std::max(nfcst - ar.fctdrp, 0), ar.nomnfy);
+    }
     const int irrend = irridx + nspobs - 1;
 
-    // Trading-day calendar quantities (tdset).
-    int begd[2] = {md.begspn(1), md.begspn(2)};
+    // Trading-day calendar quantities (tdset). The oracle calls tdset ONCE,
+    // from editor.f:2240, with Begbak and the whole [Pos1bk,Posffc] buffer --
+    // never per x11mdl call and never with a narrowed span. This port issues it
+    // here, so it must use the span start the BUFFER is indexed from, i.e. the
+    // one saved before the x11regression span narrowed Begspn. Feeding it the
+    // narrowed date slides Xnstar/Xn by nbeg periods against the factor.
+    int begd[2] = {span_guard.begspn[0], span_guard.begspn[1]};
     tdset_td(ctx, begd, pos1bk, posffc, sp);
 
     // editor.f:1618-1627 -- the group pointers into the irregular-regression
@@ -1160,6 +1216,44 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         if (ctx.error.lfatal) return;
         nrxy = nrxya;
         ar.nrxy = nrxy;
+    }
+
+    // x11mdl.f:512-528 -- walk the span back out (setspn.f) and REBUILD the
+    // design over it, so the factor below covers the full series span even
+    // though the fit above used only the regression span. Xdsp (a `0.per`
+    // regression span, editor.f:1976) extends the C iteration further still;
+    // it is 0 on every path that reaches here, since the only route that sets
+    // it is the no-model one x11_prestage refuses.
+    {
+        int nend_r = nend;
+        if (ctx.x11reg.xdsp > 0 && kpart == 3) nend_r = ctx.x11reg.xdsp;
+        if (nbeg > 0 || nend_r > 0) {
+            if (nend_r > 0)
+                addate(ctx.x11reg.endxrg.data(), sp, nend_r, endspn_cur);
+            if (nbeg > 0)
+                addate(ctx.x11reg.begxrg.data(), sp, -nbeg, md.begspn.data());
+            dfdate(endspn_cur, md.begspn.data(), sp, nspobs);
+            nspobs += 1;
+            md.nspobs = nspobs;
+            dfdate(md.begspn.data(), ar.begsrs.data(), sp, ar.frstsy);
+            ar.frstsy += 1;
+            ar.nomnfy = ar.nobs - ar.frstsy + 1;
+            nobspf = std::min(nspobs + std::max(nfcst - ar.fctdrp, 0),
+                              ar.nomnfy);
+            dfdate(md.begspn.data(), ctx.adj.begadj.data(), sp, ctx.adj.adj1st);
+            ctx.adj.adj1st += 1;
+            int nrxyr = 0, frstryr = 0;
+            regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst,
+                   ctx.extend.nbcst, ar.userx.data(), ar.bgusrx.data(),
+                   ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxyr,
+                   ar.begxy.data(), frstryr, /*xmeans=*/true, ar.elong);
+            if (ctx.error.lfatal) return;
+            nrxy = nrxyr;
+            ar.nrxy = nrxy;
+            // (x11mdl.f:526's `IF(Xhlnln) kfcn` -- the nonlinear-holiday
+            // rescale -- is not reached: Xhlnln needs an x11regression holiday
+            // regressor, which this TD-only path does not carry.)
+        }
     }
 
     // x11mdl.f:531-540 -- the EFFECTIVE regressor type x11ref classifies by is

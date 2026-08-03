@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6065<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->476<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6087<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->476<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -422,7 +422,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6065<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6087<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -972,6 +972,34 @@ family as the `metrics.py` failure that put `test_doc_tooling.py` in the parity
 suite: **a guardrail that is not inventoried is not a guardrail.** After adding
 a refusal, run `walls.py --write` and check it is actually listed.
 
+## This session, part 18: fit narrow, apply wide -- and a calendar array indexed from the wrong thing
+
+`docs/M5_PORT_NOTES.md` entry 67. Entry 66 read `x11regression{span=}` and
+refused to act on it; this ports the half of the narrowing that is a span
+narrowing (`x11mdl.f:113-118` + the `:512-528` setspn restore and regvar
+rebuild -- fit on the regression span, build the factor on the full one) and
+leaves the half that is a pointer mutation refused.
+
+**The trap, and it is a C++-port-only trap.** The first working version came
+out 4.6e-2 on d11, WORSE than ignoring the option. Cause: `tdset`. The oracle
+calls it ONCE, from `editor.f:2240`, over the whole `[Pos1bk,Posffc]` buffer;
+this port issues it inside `x11mdl_td`, which was harmless until the span
+moved -- and then feeding it the narrowed `Begspn` slid `Xnstar`/`Xn` by nbeg
+periods against a factor still indexed from the buffer. **A calendar array
+indexed from the BUFFER cannot be built from a date describing the SPAN.**
+More generally: every oracle one-shot call this port has relocated into the
+routine that needs it is fine until some caller mutates what the original call
+site read. Worth a sweep of the others some day.
+
+The restore is a `SpanGuard` destructor as well as an explicit `setspn`, so an
+early return cannot leave Begspn/Nspobs narrowed -- that is the span-replay bug
+this subsystem has paid for four times already.
+
+**And the argument for lifting walls.** Entry 66's mutations were five zeros,
+structurally: everything that mattered sat behind a wall, so nothing was
+gateable. Lifting half of one wall turned three of them into 20s. **A wall
+costs the coverage of everything behind it, not just the feature.**
+
 ## Open, in the order I would take them
 
 1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
@@ -995,19 +1023,21 @@ a refusal, run `walls.py --write` and check it is actually listed.
    six headers and zero rows); this engine returns `OUTCOME: OK`. Hypothesis,
    unmeasured: the B iteration's `adrgef` restore and the following `regvar`
    each add a copy of the user column (entry 61).
-3. **The two walls entry 66 left**, both measured, neither gated:
-   - `x11regression{span=}` that actually NARROWS. The parse, Begxrg/Endxrg,
-     Fxprxr, Xdsp and editor.f:1970-1977's Ixreg promotion are ported; the
-     narrowing itself (`x11mdl.f:115-118` + the `:515-525` setspn restore) is
-     not, because this port's `x11mdl_td` derives Nobspf from the
-     forecast-extended buffer rather than Fortran's
-     `min(Nspobs+max(Nfcst-Fctdrp,0), Nomnfy)`, and it must join
-     `run_x11.cpp`'s span-replay save/restore set. Oracle delta 1.3e-2 (d11).
+3. **The two x11regression span walls left after entry 67**, both measured:
+   - A span that ENDS EARLY. `xrgdrv.f:152-158` re-derives `Xdsp` from
+     `Endspn`/`Endxrg` -- overriding editor.f:1976, which leaves it 0 whenever a
+     model already promoted Ixreg -- and shortens `Posfob`/`Posffc` for the
+     whole transparent pass, which `x11mdl.f:515-518` reads back. So this is a
+     POINTER mutation across x11pt1/x11pt2 and belongs with the span-replay
+     save/restore set, not with the span narrowing (which is now ported and
+     gated). Measured with that narrowing in place: b16 1.3e-3, d11 1.4e-2.
+     While taking it, fix the `.xrm` snapshot too: the oracle saves it at
+     x11mdl.f:500-509, BEFORE the restore, so its rows are the NARROW design
+     (132 on the probe) and this port would write 156.
    - The x11regression OLS prior TD (`Ixreg>=2`) on the NO-MODEL path. `xrgdrv`
      is called only from `run_pre_model`; the oracle reaches it from
      `x12run.f:174`/`x11ari.f` on both paths, so a no-model spec that promotes
      Ixreg silently answered as if Ixreg were 1. Oracle delta 9.1e-3 (d11).
-   Lifting either one makes the other's probe gateable, so take them together.
 4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a

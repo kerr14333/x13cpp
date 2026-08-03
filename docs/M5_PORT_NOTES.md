@@ -3346,3 +3346,75 @@ indistinguishable everywhere in this port, revdrv included, and a `per` that is
 NOT the last period narrows and hits the wall. The spec was DELETED rather than
 committed with a coverage claim measurement had already refuted -- the corpus
 already carries six history+x11regression specs, so it added nothing else.
+
+## 67. The x11regression span narrowing: fit narrow, apply wide -- and the calendar array that is indexed from the BUFFER, not the span.
+
+Entry 66 read `x11regression{span=}` and refused to act on it. This lifts half
+that wall: a span whose START moves is now ported and gates bit-exact. A span
+that ENDS early is a different mechanism and stays refused, for a reason worth
+writing down.
+
+**The shape of the Fortran.** `x11mdl.f:113-118` moves `Begspn`/`Endspn` onto
+the regression span, `:186-195` re-derives `Nspobs`/`Frstsy`/`Nobspf` from
+them, and the whole irregular regression -- transform, extreme values, AIC
+tests, OLS -- runs there. Then `:512-528` calls `setspn` to put the span BACK
+and rebuilds the design with `regvar` before the factor is built. Fit narrow,
+apply wide. Skipping the rebuild would leave a factor covering only the
+regression span.
+
+**The trap that cost the most, and it is a C++-port-only trap.** The first
+working version was 4.6e-2 out on d11 -- WORSE than ignoring the option
+(1.3e-2). The cause was `tdset`. The oracle calls it exactly ONCE, from
+`editor.f:2240`, over the whole `[Pos1bk,Posffc]` buffer with `Begbak`; it is
+never called per x11mdl pass and never sees a narrowed span. This port issues
+it from inside `x11mdl_td`, which was harmless while the span never moved --
+and the moment it did, feeding it the narrowed `Begspn` slid `Xnstar`/`Xn` by
+`nbeg` periods against a factor still indexed from the buffer. **A calendar
+array indexed from the BUFFER cannot be built from a date that describes the
+SPAN.** Fixed by handing `tdset` the pre-narrowing start.
+
+That generalizes: this port has relocated several oracle one-shot calls into
+the routine that needs them. Every such relocation is fine until some caller
+mutates the state the original call site read.
+
+**The restore is guarded, not just written.** `x11mdl_td` has a dozen early
+returns (`lfatal`, the x11mdl.f:308 NOTE branch). A `SpanGuard` destructor puts
+`Begspn`/`Nspobs`/`Frstsy`/`Nomnfy`/`Adj1st` back unconditionally; the explicit
+`setspn` still runs first, before the factor build, because the factor needs
+the wide design. Leaving those narrowed on an early return is the span-replay
+bug this subsystem has already paid for four times.
+
+**What is still walled: a span that ends EARLY.** `xrgdrv.f:152-158`
+RE-derives `Xdsp` from `Endspn`/`Endxrg` -- overriding `editor.f:1976`, which
+leaves it 0 whenever a regARIMA model promoted `Ixreg` first -- and then
+shortens `Posfob`/`Posffc` for the whole transparent pass, which `x11mdl.f:515-518`
+reads back. So the early-end case is a POINTER mutation across x11pt1/x11pt2,
+not a span narrowing, and it belongs with the span-replay save/restore set.
+Measured with the start narrowing in place: b16 1.3e-3, d11 1.4e-2. Refused.
+
+One observable that is not yet right on that path either, noted for whoever
+takes it: the oracle saves the `.xrm` design matrix at `x11mdl.f:500-509`,
+i.e. BEFORE the restore, so its rows are the NARROW design (132 on the probe);
+this port snapshots after, and would write 156.
+
+**Gated:**
+
+* `extra/airline_x11regression-span-start` -- `span=(1953.07,1960.12)`.
+* `extra/airline_x11regression-span-0per-start` -- `span=(1952.01,0.12)`, which
+  narrows the start AND exercises the `0.per` end form. Entry 66 could not pin
+  that arm at all; this pins it.
+
+**Mutations -- and note what changed since entry 66:**
+
+| removed | gates lost |
+|---|---|
+| the START narrowing (`Begspn <- Begxrg`) | 20 |
+| `tdset` fed the narrowed start instead of the buffer's | 20 |
+| the setspn restore + regvar rebuild | 20 |
+| the early-END wall | 0 |
+
+Entry 66's five zeros were structural: everything that mattered was behind a
+wall, so nothing was gateable. Lifting half the wall turned three of them into
+20s. That is the argument for lifting walls rather than documenting them --
+**a wall costs you the coverage of everything behind it**, not just the
+feature.

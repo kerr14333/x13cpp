@@ -4198,24 +4198,25 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                 inptok = false;
             }
         }
-        // x11mdl.f:115-118 narrows Begspn/Endspn/Nspobs/Frstsy/Nobspf onto this
-        // span for the whole irregular regression and walks them back out at
-        // :515-525 (setspn + a regvar rebuild). NOT ported -- the C++ x11mdl_td
-        // derives Nobspf from the forecast-extended buffer instead of Fortran's
-        // min(Nspobs+max(Nfcst-Fctdrp,0), Nomnfy), so the narrowing is not a
-        // two-line change and it has to join run_x11.cpp's span-replay
-        // save/restore set. Refuse rather than silently answer over the full
-        // span, which is what this port did until the option was read at all.
-        int nbeg = 0, nend = 0;
+        // The START narrowing is ported (x11mdl.f:113-118 + the :512-528
+        // restore, in x11reg.cpp's x11mdl_td) and gates bit-exact. A span that
+        // ends EARLY is not, and it is a different mechanism: xrgdrv.f:152-158
+        // RE-derives Xdsp from Endspn/Endxrg -- overriding editor.f:1976, which
+        // leaves it 0 whenever a regARIMA model promoted Ixreg first -- and
+        // shortens Posfob/Posffc for the whole transparent pass, which x11mdl
+        // then reads back at :515-518. That is a pointer mutation across the
+        // x11pt1/x11pt2 pass, so it belongs with the span-replay save/restore
+        // set rather than in this parse. Measured with the start narrowing in
+        // place: b16 1.3e-3, d11 1.4e-2.
+        int nend = 0;
         {
             int endspn[2];
             addate(ctx.mdldat.begspn.data(), sp, ctx.mdldat.nspobs - 1, endspn);
-            dfdate(xr.begxrg.data(), ctx.mdldat.begspn.data(), sp, nbeg);
             dfdate(endspn, xr.endxrg.data(), sp, nend);
         }
-        if (nbeg > 0 || nend > 0)
-            xrg_not_ported(ctx, "x11regression{span=} narrowing the irregular "
-                                "regression span (x11mdl.f:115-118)");
+        if (nend > 0)
+            xrg_not_ported(ctx, "x11regression{span=} ENDING before the series "
+                                "span (xrgdrv.f:152-158 Xdsp)");
     }
 
     // gtxreg.f:828-878 -- reads the WORKING regARIMA COMMON, which still holds
