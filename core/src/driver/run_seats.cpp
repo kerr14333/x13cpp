@@ -206,11 +206,30 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         // count from). tools/x13run_seats.cpp re-derives the whole ESTBUR chain
         // from ctx AFTER this returns, so a miss here shows up as the LAST
         // SPAN's decomposition under the main run's dates.
+        //
+        // ...and that is exactly what the ESTIMATED MODEL was doing. history{}
+        // (not slidingspans{}, which runs fixmdl) RE-ESTIMATES per span, so
+        // /mdldat/'s Arimap comes back holding the last span's ARMA
+        // coefficients -- and seats_decode_model reads Arimap, so the whole
+        // canonical decomposition the harness rebuilds afterwards is that
+        // span's. Measured on airline_seats-history: s10-s13 all ~8.1e-7 out
+        // against the oracle, which punches its s-tables before revdrv runs;
+        // deleting the history{} block from the same spec put every table back
+        // to ~5e-15. Nothing saw it because the SEATS table gate only
+        // discovered `generated/*seats.spc` and this spec is
+        // `extra/airline_seats-history`. The whole of model/ and mdldat/ is
+        // saved rather than Arimap alone: the structure arrays (Mdl, Opr,
+        // Oprfac, Arimal, Arimaf) are what decode walks to FIND Arimap, and an
+        // automdl history spec can move those too. /mdldat/ is saved field-by-
+        // field, not wholesale: it carries Armacm/Xy/Matd (~1.5 MB), and a
+        // by-value copy of it here overflows the stack outright.
         const lkhd_cmn lkhd_main = ctx.lkhd;
         const auto x11srs_main = ctx.x11srs;
         const auto adxser_main = ctx.adxser;
         const auto x11fac_main = ctx.x11fac;
         const auto x11ptr_main = ctx.x11ptr;
+        const auto model_main = ctx.model;
+        const auto arimap_main = ctx.mdldat.arimap;
         const auto mdlbegspn_main = ctx.mdldat.begspn;
         const int nspobs_main = ctx.mdldat.nspobs;
         const auto tsrs_main = ctx.series.tsrs;
@@ -237,6 +256,8 @@ bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string&
         ctx.adxser = adxser_main;
         ctx.x11fac = x11fac_main;
         ctx.x11ptr = x11ptr_main;
+        ctx.model = model_main;
+        ctx.mdldat.arimap = arimap_main;
         ctx.mdldat.begspn = mdlbegspn_main;
         ctx.mdldat.nspobs = nspobs_main;
         ctx.series.tsrs = tsrs_main;

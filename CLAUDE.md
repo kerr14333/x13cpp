@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (53
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (69
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -205,9 +205,23 @@ because by the time you would think to look them up, the damage is done.
   span-replay save/restore set** in `run_x11.cpp` and `run_seats.cpp`. A
   `slidingspans{}`/`history{}` replay is a full x11pt3 pass that overwrites the
   live COMMONs in place; the oracle punches its tables before the span drivers
-  run, this harness dumps at exit. This seam has bitten the port four times
-  (`/x11srs/`, `/lkhd/`, `ctx.x11_f2tests`, `ctx.d8bd9a`) — check it by
-  default, not per feature.
+  run, this harness dumps at exit. This seam has bitten the port five times
+  (`/x11srs/`, `/lkhd/`, `ctx.x11_f2tests`, `ctx.d8bd9a`, `/mdldat/`'s
+  `Arimap`) — check it by default, not per feature. The fifth one generalises
+  the rule: the set needs **whatever a consumer re-derives from, not only what
+  it publishes.** `history{}` re-estimates per span, so it leaves the last
+  span's ARMA coefficients in `Arimap`, and the SEATS harness rebuilds the
+  whole decomposition from `ctx` after `run_seats` returns (entry 69).
+- **A discovery predicate is a hand-written case list that has learned to
+  hide.** `endswith("seats")` and `all(_CORE_TAGS)` read like generic discovery
+  and are exactly as brittle as a literal, with none of the visibility — a
+  literal at least shows you its length. The failure mode is a parametrisation
+  that SHRINKS, and one that shrinks to nothing reports green, so every
+  discovery carries a `test_*_cases_discovered` floor assertion. To audit
+  coverage, never grep the tests: run `pytest --collect-only -q`, keep the
+  `[...]` ids, and cross them against every golden on disk — both sides
+  derived, so it cannot go stale. That probe found three blind gates in one
+  pass, one of them hiding an 8.1e-7 engine defect (entry 69).
 - **A parsed-but-unread option is the silent-wrongness class.** The single most
   common defect shape in this port: the parser consumes a documented option,
   writes it nowhere, and the run returns `OUTCOME: OK` with wrong numbers.

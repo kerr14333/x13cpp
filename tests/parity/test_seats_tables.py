@@ -29,6 +29,19 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
 _CORPUS = os.path.join(_REPO, "tests", "corpus", "generated")
 _GOLDEN = os.path.join(_REPO, "tests", "golden", "generated")
+# ...and the hand-authored SEATS specs, which do NOT live in generated/ and do
+# NOT end in "seats" -- see _discover.
+_TREES = ("generated", "extra")
+# base -> (corpus dir, golden dir), filled by _discover.
+_WHERE: dict[str, tuple[str, str]] = {}
+
+
+def _spec(base: str) -> str:
+    return os.path.join(_WHERE[base][0], base + ".spc")
+
+
+def _gold(base: str, ext: str) -> str:
+    return os.path.join(_WHERE[base][1], base, base + "." + ext)
 
 RTOL = 1e-8
 # Absolute-tolerance floor (numpy-allclose style): a point passes if
@@ -78,26 +91,54 @@ def _read_golden(path: str) -> dict[str, float]:
 
 
 def _discover() -> list[str]:
+    """Every spec that runs SEATS and ships a golden bundle.
+
+    This used to scan `generated/` only and require `base.endswith("seats")`,
+    which is the hand-maintained-case-list defect wearing a predicate: the four
+    hand-authored `extra/airline_seats-*` specs match neither half, so their
+    s10-s18 goldens were never compared to anything. `airline_seats-history`
+    was 8.1e-7 out on all four of its tables the whole time -- history{}
+    re-estimates per span and left /mdldat/'s Arimap holding the LAST span's
+    ARMA coefficients, which seats_decode_model then read (fixed in
+    run_seats.cpp's span-replay restore set). Discover, do not enumerate.
+    """
     specs: list[str] = []
-    if not os.path.isdir(_CORPUS):
-        return specs
-    for fn in sorted(os.listdir(_CORPUS)):
-        if not fn.endswith(".spc"):
+    for tree in _TREES:
+        cdir = os.path.join(_REPO, "tests", "corpus", tree)
+        gtree = os.path.join(_REPO, "tests", "golden", tree)
+        if not os.path.isdir(cdir):
             continue
-        base = fn[:-4]
-        if not base.endswith("seats"):
-            continue
-        gdir = os.path.join(_GOLDEN, base)
-        # Require at least one gated table's golden to exist -- some tags
-        # (s18) are shipped but sometimes empty; s10-s13 always ship for the
-        # SEATS corpus.
-        if not os.path.isdir(gdir):
-            continue
-        specs.append(base)
-    return specs
+        for fn in sorted(os.listdir(cdir)):
+            if not fn.endswith(".spc"):
+                continue
+            base = fn[:-4]
+            if "seats" not in base:
+                continue
+            gdir = os.path.join(gtree, base)
+            # Require at least one gated table's golden to exist -- some tags
+            # (s18) are shipped but sometimes empty; s10-s13 always ship for the
+            # SEATS corpus.
+            if not os.path.isdir(gdir):
+                continue
+            _WHERE[base] = (cdir, gtree)
+            specs.append(base)
+    return sorted(specs)
 
 
 CASES = _discover()
+
+
+def test_seats_cases_discovered() -> None:
+    """A shrunken parametrisation passes silently -- assert the floor.
+
+    Guards the discovery above the way test_x11regression_tables.py's own floor
+    guards its CASES: if a rename or a moved corpus tree drops specs, this fails
+    loudly instead of the suite quietly gating less than it did yesterday.
+    """
+    assert len(CASES) >= 60, f"only {len(CASES)} SEATS specs discovered"
+    for tree in _TREES:
+        assert any(_WHERE[b][0].endswith(tree) for b in CASES), \
+            f"no SEATS spec discovered under tests/corpus/{tree}"
 
 
 @pytest.mark.skipif(not CASES, reason="no seats{} spec ships a golden bundle")
@@ -443,6 +484,26 @@ def test_seats_table(base: str, tag: str) -> None:
         ("expgs_finite-seats", "s10"), ("expgs_finite-seats", "s11"),
         ("expgs_finite-seats", "s12"), ("expgs_finite-seats", "s13"),
         ("expgs_finite-seats", "s16"), ("expgs_finite-seats", "s18"),
+        # The four hand-authored extra/ SEATS specs, which _discover reached
+        # for the first time (they are not in generated/ and do not end in
+        # "seats"). qmax-rmod / tabtables / slidingspans were already bit-exact
+        # at ~5e-15; airline_seats-history was 8.1e-7 out on all four of its
+        # tables and is the reason this widening happened -- see _discover and
+        # run_seats.cpp's Arimap restore. history{} and slidingspans{} ship no
+        # s16/s18 golden (their spec's seats{save=} names s10-s13 only), so
+        # those two tags skip above rather than gate.
+        ("airline_seats-history", "s10"), ("airline_seats-history", "s11"),
+        ("airline_seats-history", "s12"), ("airline_seats-history", "s13"),
+        ("airline_seats-slidingspans", "s10"),
+        ("airline_seats-slidingspans", "s11"),
+        ("airline_seats-slidingspans", "s12"),
+        ("airline_seats-slidingspans", "s13"),
+        ("airline_seats-qmax-rmod", "s10"), ("airline_seats-qmax-rmod", "s11"),
+        ("airline_seats-qmax-rmod", "s12"), ("airline_seats-qmax-rmod", "s13"),
+        ("airline_seats-qmax-rmod", "s16"), ("airline_seats-qmax-rmod", "s18"),
+        ("airline_seats-tabtables", "s10"), ("airline_seats-tabtables", "s11"),
+        ("airline_seats-tabtables", "s12"), ("airline_seats-tabtables", "s13"),
+        ("airline_seats-tabtables", "s16"), ("airline_seats-tabtables", "s18"),
     }
     # No golden shipped => the oracle produced no such table, so there is no
     # parity target (not an engine gap). This covers the inadmissible-
@@ -450,7 +511,7 @@ def test_seats_table(base: str, tag: str) -> None:
     # irregular spectrum, so the oracle aborts with "DECOMPOSITION INVALID,
     # IRREGULAR SPECTRUM NEGATIVE" and writes no s-tables) and the no-seasonal-
     # component tables (unrate_seats s10/s16: npsi==1). Skip, don't xfail.
-    gold_path = os.path.join(_GOLDEN, base, base + "." + tag)
+    gold_path = _gold(base, tag)
     if not os.path.exists(gold_path):
         pytest.skip(f"{base}.{tag}: oracle shipped no golden "
                     "(inadmissible decomposition or no seasonal component)")
@@ -458,7 +519,7 @@ def test_seats_table(base: str, tag: str) -> None:
         pytest.xfail("SEATS (base, tag) not in the gated allowlist -- a spec "
                      "whose golden is not yet blessed/verified here; see "
                      "tools/seats_scope.md")
-    spec = os.path.join(_CORPUS, base + ".spc")
+    spec = _spec(base)
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.returncode == 0, f"{base}: harness exit {r.returncode}\n{r.stderr}"
     assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]
@@ -469,7 +530,7 @@ def test_seats_table(base: str, tag: str) -> None:
         if len(p) == 3 and p[0] == tag:
             produced[p[1]] = float(p[2])
 
-    gold_path = os.path.join(_GOLDEN, base, base + "." + tag)
+    gold_path = _gold(base, tag)
     if not os.path.exists(gold_path):
         pytest.skip(f"{base}.{tag}: no golden shipped")
     gold = _read_golden(gold_path)
@@ -500,7 +561,7 @@ _ARIMAMDL_RE = re.compile(r"^arimamdl:\s*(.+)$")
 
 
 def _read_golden_arimamdl(base: str) -> str | None:
-    udg = os.path.join(_GOLDEN, base, base + ".udg")
+    udg = _gold(base, "udg")
     if not os.path.exists(udg):
         return None
     with open(udg, encoding="utf-8", errors="replace") as f:
@@ -528,7 +589,7 @@ def test_seats_model_decode(base: str) -> None:
     gold = _read_golden_arimamdl(base)
     if gold is None:
         pytest.skip(f"{base}: no arimamdl key in golden .udg")
-    spec = os.path.join(_CORPUS, base + ".spc")
+    spec = _spec(base)
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.stdout.splitlines(), f"{base}: no output at all (exit {r.returncode})\n{r.stderr}"
     produced = None
@@ -545,7 +606,7 @@ _IRRVAR_RE = re.compile(r"^irrvar:\s*(.+)$")
 
 
 def _read_golden_irrvar(base: str) -> float | None:
-    mdc = os.path.join(_GOLDEN, base, base + ".mdc")
+    mdc = _gold(base, "mdc")
     if not os.path.exists(mdc):
         return None
     with open(mdc, encoding="utf-8", errors="replace") as f:
@@ -585,7 +646,7 @@ def test_seats_qt1(base: str) -> None:
     gold = _read_golden_irrvar(base)
     if gold is None:
         pytest.skip(f"{base}: no irrvar key in golden .mdc (oracle likely rejected the model)")
-    spec = os.path.join(_CORPUS, base + ".spc")
+    spec = _spec(base)
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.stdout.splitlines(), f"{base}: no output at all (exit {r.returncode})\n{r.stderr}"
     produced = None
@@ -667,11 +728,11 @@ def test_seats_mdc(base: str) -> None:
     ncycth=1). expgs_seats has no golden `.mdc` at all (oracle rejects the
     model, unchanged since session 2) -- skipped.
     """
-    gold_path = os.path.join(_GOLDEN, base, base + ".mdc")
+    gold_path = _gold(base, "mdc")
     gold = _read_mdc_dict(gold_path)
     if not gold:
         pytest.skip(f"{base}: no .mdc golden (oracle likely rejected the model)")
-    spec = os.path.join(_CORPUS, base + ".spc")
+    spec = _spec(base)
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
     assert r.stdout.splitlines(), f"{base}: no output at all (exit {r.returncode})\n{r.stderr}"
     produced = _read_produced_mdc_dict(r.stdout)
@@ -715,7 +776,7 @@ def test_seats_harness_runs_cleanly() -> None:
     independent of the (still-unported) SEATS-specific work."""
     assert CASES, "no seats{} spec discovered"
     for base in CASES:
-        spec = os.path.join(_CORPUS, base + ".spc")
+        spec = _spec(base)
         r = subprocess.run([BIN, spec], capture_output=True, text=True)
         assert r.stdout.splitlines(), f"{base}: no output at all (exit {r.returncode})"
         outcome = r.stdout.splitlines()[0].strip()

@@ -46,7 +46,7 @@ reproduce.
   transform{constant=} through SEATS (seatpr.f:211-390 constant removal)
   *Fortran:* `seatpr.f:211-390`
 
-- **`core/src/driver/run_seats.cpp:370`**
+- **`core/src/driver/run_seats.cpp:391`**
   SEATS historical-span decomposition (ESTBUR general-branch solve) -- either an unsupported model shape (p>0/bp>0/imean!=0) or the chain failed; see tools/seats_scope.md
 
 - **`core/src/driver/x11_prestage.cpp:225`**

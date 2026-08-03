@@ -72,30 +72,42 @@ def _read_golden(path: str) -> dict[str, float]:
     return out
 
 
-CASES = [
-    b for b in ("airline_x11regression-tdprior",
-                # x11{mode=logadd}. editor.f:1507 allows the weights for
-                # multiplicative OR log-additive, and x11pt1.f:52 collapses
-                # Muladd 2->0 for the prior stage, so logadd takes the identical
-                # divide. run_pre_model had gated its half on muladd==0 and
-                # x11pt1's own guard tests muladd AFTER that collapse, so logadd
-                # fell through both and returned OUTCOME: OK with the prior TD
-                # missing from B1 and d10-d13 -- off by exactly a factor of a4
-                # (~2e-2..3.8e-2), while a4 itself stayed bit-exact.
-                "airline_x11regression-tdprior-logadd",
-                # x11pt1.f:229-230's ENTRY condition, not the block itself: with
-                # the classic X-11 Easter on (Khol==2) and no x11-regression
-                # prior calendar, the oracle SKIPS the prior-TD block and
-                # adjusts without one. It does not reject the spec -- it writes
-                # d10-d13 normally. The engine used to FATAL there (measured:
-                # oracle 144 d10 rows, engine none), because the guard could not
-                # tell "unported branch" from "branch the oracle declines to
-                # enter". This spec therefore ships NO a4 golden by design --
-                # pritd never runs -- which is why the filter below keys on d10.
-                "airline_x11regression-tdprior-x11easter")
-    if os.path.exists(os.path.join(_CORPUS, b + ".spc"))
+# Every tdprior spec that ships the d10 golden, DISCOVERED rather than named.
+# The list used to be a three-element literal and had gone one spec stale:
+# `airline_x11regression-tdprior-td` ships a full bundle (a4 included) and was
+# reaching no a4 gate at all. Its d-tables were covered by
+# test_x11regression_tables.py, so only a4 -- the one table unique to this file
+# -- was uncompared.
+#
+# What the individual specs are for, since naming them no longer documents it:
+#   * -logadd: x11{mode=logadd}. editor.f:1507 allows the weights for
+#     multiplicative OR log-additive and x11pt1.f:52 collapses Muladd 2->0 for
+#     the prior stage, so logadd takes the identical divide. run_pre_model had
+#     gated its half on muladd==0 while x11pt1's own guard tests muladd AFTER
+#     that collapse, so logadd fell through both and returned OUTCOME: OK with
+#     the prior TD missing from B1 and d10-d13 -- off by exactly a factor of a4
+#     (~2e-2..3.8e-2), while a4 itself stayed bit-exact.
+#   * -x11easter: x11pt1.f:229-230's ENTRY condition, not the block itself. With
+#     the classic X-11 Easter on (Khol==2) and no x11-regression prior calendar
+#     the oracle SKIPS the prior-TD block and adjusts without one -- it does not
+#     reject the spec. The engine used to FATAL there (measured: oracle 144 d10
+#     rows, engine none) because the guard could not tell "unported branch" from
+#     "branch the oracle declines to enter". Ships NO a4 golden by design (pritd
+#     never runs), which is why the filter keys on d10 and the a4 case skips.
+#   * -add: additive mode, which the editor refuses the weights for -- no d10
+#     golden, so discovery drops it here (its refusal is gated on stdout).
+CASES = sorted(
+    b for b in (
+        f[:-4] for f in os.listdir(_CORPUS) if f.endswith(".spc")
+    )
+    if "tdprior" in b
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".d10"))
-]
+)
+
+
+def test_tdprior_cases_discovered() -> None:
+    """An empty (or shrunken) parametrisation passes silently."""
+    assert len(CASES) >= 4, f"only {len(CASES)} tdprior specs found: {CASES}"
 
 
 @pytest.mark.skipif(not CASES, reason="no tdprior spec ships the d10 golden")

@@ -3522,3 +3522,83 @@ transcriptions -- x11mdl.f:126-137 writes those COMMONs, and the Fortran's
 what they change is `Nofpob`, and the only observable that depends on it is the
 LENGTH of the B 1 table, which nothing in the corpus saves. They are kept
 because they are what the Fortran does, not because a gate proves them.
+
+## 69. Three gates that could not see their specs -- and the SEATS decomposition that had been 8.1e-7 wrong behind them.
+
+Entry 68 closed with a finding rather than a port: `test_x11regression_tables.py`
+had named its cases by hand, and widening it immediately exposed a real dating
+bug. This is the sweep that finding earned, and it found the same shape three
+more times. One of the three was hiding an engine defect.
+
+**How to look for this.** Do not read the test files for literals -- most
+literal lists in this suite are TAG lists (which tables to compare), and those
+are deliberate. The question is *which (spec, table) pairs does the suite
+actually compare*, so ask pytest: `--collect-only -q`, keep the `[...]` ids,
+and cross them against every golden on disk. Anything with a golden and no id
+is ungated. That probe is ~20 lines and it is the only version of this check
+that cannot itself go stale, because both sides are derived.
+
+It reported three real holes (and one false positive worth knowing about: the
+`.xrm` gate parametrises on the spec alone, so its ids carry no table name and
+every xrm golden looks uncovered).
+
+**1. The SEATS table gate, and the bug behind it.** `_discover` scanned
+`generated/` only and required `base.endswith("seats")`. The four hand-authored
+SEATS specs are `extra/airline_seats-{history,slidingspans,qmax-rmod,tabtables}`
+and match neither half, so their s10-s18 goldens were compared to nothing.
+Three were bit-exact at ~5e-15. **`airline_seats-history` was 8.1e-7 out on
+all four of its tables.**
+
+The cause is this port's most-repeated seam, for the fifth time.
+`history{}` RE-ESTIMATES the model per span (`slidingspans{}` does not -- it
+runs fixmdl, which is why the spec beside it was clean). Each span's estimate
+leaves its own ARMA coefficients in `/mdldat/`'s `Arimap`, and
+`seats_decode_model` reads `Arimap` -- so the canonical decomposition that
+`tools/x13run_seats.cpp` rebuilds after `run_seats` returns was the LAST SPAN's,
+published under the main run's dates. The oracle is immune for the usual reason:
+it punches its s-tables inside x11ari, before x12run.f:257 ever calls revdrv.
+
+The proof was one line of spec surgery: delete the `history{}` block, rerun the
+same spec against the *same* golden, and every table drops to ~5e-15. The fix is
+`ctx.model` + `ctx.mdldat.arimap` joining run_seats.cpp's span-replay restore
+set, where `/lkhd/`, `/x11srs/`, `/x11fac/`, `ctx.seats_*` and `ctx.series.tsrs`
+already were. Note the shape of the omission: the restore set had every
+*published output* the replay overwrites and none of the *estimated model* it
+re-derives them from.
+
+Save `/mdldat/` field-by-field. A by-value copy of the whole COMMON overflows
+the stack outright (Armacm + Xy + Matd are ~1.5 MB) -- the first attempt exited
+`0xC00000FD` on every SEATS spec.
+
+**2. The x11 table gate's `b1` requirement, which cost 18 specs.**
+`test_x11_tables.py` discovered on `all(_CORE_TAGS)` with `_CORE_TAGS` =
+`b1,d10,d11,d12,d13`. Eighteen specs ship the four D tables and no `b1` (they
+do not save it), so that one tag excluded each of them ENTIRELY -- not their b1,
+their whole decomposition. The list is the entire `pickmdl-*` family,
+`airline_slidingspans-td`, `noapply-{ao,ls,td,holiday}`, `reg-tcrate`,
+`outlier-tcrate`, `fcst-lognormal`, `reg-eastermeans`, `outofsample`. The gate
+also scanned `generated/` only, while feature gates cover `extra/` piecemeal by
+feature -- so a spec belonging to no feature front fell through both. All 18
+measured bit-exact (~5e-15); this one was pure coverage. `b1` now gates
+where-shipped, exactly as `d16`/`sac`/`tac` already did.
+
+**3. The tdprior gate.** A three-element literal, one spec stale:
+`airline_x11regression-tdprior-td` ships a full bundle and reached no `a4` gate
+at all. Its d-tables were covered by `test_x11regression_tables.py`, so the only
+uncompared table was `a4` -- the one table unique to that file. Bit-exact.
+
+**The rule this leaves.** A discovery predicate is a hand-written case list
+that has learned to hide. `endswith("seats")` and `all(_CORE_TAGS)` read like
+generic discovery and are as brittle as a literal, with none of the visibility
+-- a literal at least shows you its length. Every discovery in this suite now
+carries a floor assertion (`test_*_cases_discovered`), because the failure mode
+is a SHRINKING parametrisation, and a parametrisation that shrinks to nothing
+reports as green.
+
+**Gated:** the four `extra/airline_seats-*` specs (20 new (base,tag) pairs, all
+bit-exact, added to `_gated`); the 18 D-table specs above plus the `extra/`
+tree in `test_x11_tables.py`; `airline_x11regression-tdprior-td`'s a4. Suite
+6219 -> 6468 passed, 0 failed, 0 xfailed, 492 -> 671 skipped.
+
+**Mutation:** dropping the `ctx.model`/`Arimap` restore fails 5 gates. Before
+this increment it failed none -- which is the entire point of the entry.

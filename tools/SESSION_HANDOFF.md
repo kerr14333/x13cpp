@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6219<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->492<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6468<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->671<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -27,10 +27,11 @@ Standing constraints: **never merge this branch to `main`.** Pushing THIS
 BRANCH is authorised as of 2026-08-02 (the repo is PUBLIC —
 `github.com/kerr14333/x13cpp` — and `origin/main` is still at M1, so the branch
 push publishes the whole port on a new remote branch and leaves the default
-branch alone). **DONE — the branch is on the remote at `ccbe7bbe`**, local
-tracking set, nothing ahead or behind. `main` is an ancestor of this branch
-(`HEAD..main` == 0), so that one push carried every local commit and `main` can
-fast-forward whenever wanted, with no merge commit and nothing discarded.
+branch alone). The branch is on the remote at `ccbe7bbe` with local tracking set, and
+`main` is an ancestor of it (`HEAD..main` == 0) — so `main` can fast-forward
+whenever wanted, with no merge commit and nothing discarded. **The remote is
+now 11 commits behind: everything from `119af354` (gtxreg) through this
+session's gate sweep is local only.** Push when convenient.
 
 Mechanics for the next push, because this cost two minutes to rediscover: the
 assistant's `git push` is blocked by the permission system, AND
@@ -422,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6219<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6468<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1048,7 +1049,65 @@ counts were right; only a date-keyed comparison sees it.
 
 **Worth a sweep:** grep the parity suite for other hand-written case lists.
 Two have now been caught in the same file; there is no reason to think it is
-the only one.
+the only one. (Done -- part 20.)
+
+## This session, part 20: the sweep -- three more blind gates, and the SEATS decomposition behind one of them
+
+Entry 69. The sweep part 19 asked for, and it paid immediately.
+
+**Do not grep for literals.** Most literal lists in this suite are TAG lists
+(which tables to compare) and are deliberate. The question is which
+`(spec, table)` pairs the suite actually compares, so ask pytest:
+`--collect-only -q`, keep the `[...]` ids, cross them against every golden on
+disk, and report anything with a golden and no id. ~20 lines, and it cannot go
+stale because both sides are derived. One false positive to know about: the
+`.xrm` gate parametrises on the spec alone, so its ids carry no table name and
+every xrm golden looks uncovered.
+
+**The engine bug it found.** `test_seats_tables.py::_discover` scanned
+`generated/` only and required `base.endswith("seats")`. The four hand-authored
+`extra/airline_seats-*` specs match neither half, so their s10-s18 goldens were
+compared to nothing at all. Three were bit-exact; **`airline_seats-history` was
+8.1e-7 out on all four tables.**
+
+`history{}` re-estimates per span (`slidingspans{}` runs fixmdl, which is why
+the spec beside it was clean), leaving each span's ARMA coefficients in
+`/mdldat/`'s `Arimap` -- which `seats_decode_model` reads. So the canonical
+decomposition `tools/x13run_seats.cpp` rebuilds AFTER `run_seats` returns was
+the last span's, under the main run's dates. Fifth appearance of the
+punch-before-the-span-drivers seam. Fix: `ctx.model` + `ctx.mdldat.arimap` join
+run_seats.cpp's restore set. Note the shape of what was missing -- the set had
+every published OUTPUT the replay overwrites and none of the estimated MODEL
+they are derived from. Save `/mdldat/` field by field: a whole-COMMON copy is
+~1.5 MB (Armacm/Xy/Matd) and overflows the stack (`0xC00000FD`).
+
+The decisive measurement was one line of spec surgery: delete the `history{}`
+block, rerun against the SAME golden, watch every table drop to ~5e-15.
+
+**Two coverage holes with no bug behind them** (all measured, all bit-exact):
+
+* `test_x11_tables.py` discovered on `all(_CORE_TAGS)` with `b1` in
+  `_CORE_TAGS`. Eighteen specs ship the four D tables and no `b1`, so that one
+  tag excluded each of them ENTIRELY -- the whole `pickmdl-*` family,
+  `slidingspans-td`, `noapply-*`, `reg-tcrate`, `outlier-tcrate`,
+  `fcst-lognormal`, `reg-eastermeans`, `outofsample`. It also scanned
+  `generated/` only while feature gates cover `extra/` piecemeal by feature, so
+  a spec on no feature front fell through both.
+* `test_x11_tdprior_tables.py`'s three-element literal, one spec stale:
+  `airline_x11regression-tdprior-td`'s `a4` -- the one table unique to that
+  file -- reached no gate.
+
+**The rule.** A discovery predicate is a hand-written case list that has
+learned to hide. `endswith("seats")` and `all(_CORE_TAGS)` read like generic
+discovery and are as brittle as a literal with none of the visibility -- a
+literal at least shows you its length. Every discovery in this suite now
+carries a floor assertion (`test_*_cases_discovered`), because the failure mode
+is a SHRINKING parametrisation and a parametrisation that shrinks to nothing
+reports green.
+
+Suite 6219 -> 6468 passed, 0 failed, 0 xfailed, 492 -> 671 skipped. Mutation:
+dropping the `Arimap`/`ctx.model` restore fails 5 gates; before this increment
+it failed none.
 
 ## Open, in the order I would take them
 

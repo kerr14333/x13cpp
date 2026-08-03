@@ -30,6 +30,22 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
 _CORPUS = os.path.join(_REPO, "tests", "corpus", "generated")
 _GOLDEN = os.path.join(_REPO, "tests", "golden", "generated")
+# The hand-authored corpus too -- see _discover. Feature gates (force,
+# x11regression, prior-adj, ...) already cover parts of extra/, but each covers
+# only the specs ITS feature owns, so a spec belonging to no feature front (the
+# pickmdl-* family, slidingspans-td) had its whole decomposition ungated.
+_TREES = ("generated", "extra")
+# base -> (corpus dir, golden tree), filled by _discover.
+_WHERE: dict[str, tuple[str, str]] = {}
+
+
+def _spec_path(base: str) -> str:
+    return os.path.join(_WHERE[base][0], base + ".spc")
+
+
+def _gold_path(base: str, tag: str) -> str:
+    return os.path.join(_WHERE[base][1], base, base + "." + tag)
+
 
 # Tolerance policy (see the second-brain note / tools/x11_regeff_handoff.md):
 # the goldens are printed to 15 significant digits, so ~1e-15 is the hard
@@ -88,37 +104,58 @@ def _is_no_model(spec_path: str) -> bool:
 # counting) the trading-day / holiday factor while d10-d13 still look right.
 # sac / tac are the transform{constant=} pair: the D11 and published D12 with the
 # constant still in them (the oracle's Stcipc / stc2pc), gated where they ship.
-_CORE_TAGS = ["b1", "d10", "d11", "d12", "d13"]
-_TAGS = _CORE_TAGS + ["d16", "sac", "tac"]
+#
+# b1 is NOT part of the discovery requirement. It used to be, and that single
+# tag was silently dropping 18 specs whose entire d10-d13 decomposition then
+# reached no gate anywhere -- the whole pickmdl-* family, airline_slidingspans-td,
+# noapply-{ao,ls,td,holiday}, reg-tcrate, outlier-tcrate, fcst-lognormal,
+# reg-eastermeans, outofsample. None of them saves b1, so `all(_CORE_TAGS)`
+# excluded them outright. Requiring only the four D tables and gating everything
+# else where-shipped is what the d16/sac/tac tags already did.
+_CORE_TAGS = ["d10", "d11", "d12", "d13"]
+_TAGS = ["b1"] + _CORE_TAGS + ["d16", "sac", "tac"]
 
 
 def _discover() -> list[str]:
+    """Every spec shipping the four D-table goldens, in BOTH corpus trees."""
     specs: list[str] = []
-    if not os.path.isdir(_CORPUS):
-        return specs
-    for fn in sorted(os.listdir(_CORPUS)):
-        if not fn.endswith(".spc"):
+    for tree in _TREES:
+        cdir = os.path.join(_REPO, "tests", "corpus", tree)
+        gtree = os.path.join(_REPO, "tests", "golden", tree)
+        if not os.path.isdir(cdir):
             continue
-        base = fn[:-4]
-        gdir = os.path.join(_GOLDEN, base)
-        if not all(os.path.exists(os.path.join(gdir, base + "." + t))
-                   for t in _CORE_TAGS):
-            continue
-        specs.append(base)
-    return specs
+        for fn in sorted(os.listdir(cdir)):
+            if not fn.endswith(".spc"):
+                continue
+            base = fn[:-4]
+            gdir = os.path.join(gtree, base)
+            if not all(os.path.exists(os.path.join(gdir, base + "." + t))
+                       for t in _CORE_TAGS):
+                continue
+            _WHERE[base] = (cdir, gtree)
+            specs.append(base)
+    return sorted(specs)
 
 
 CASES = _discover()
 
 
-@pytest.mark.skipif(not CASES, reason="no no-model x11 spec ships the b1/d10-d13 goldens")
+def test_x11_cases_discovered() -> None:
+    """A shrunken parametrisation passes silently -- assert the floor."""
+    assert len(CASES) >= 140, f"only {len(CASES)} x11 table specs discovered"
+    for tree in _TREES:
+        assert any(_WHERE[b][0].endswith(tree) for b in CASES), \
+            f"no x11 table spec discovered under tests/corpus/{tree}"
+
+
+@pytest.mark.skipif(not CASES, reason="no x11 spec ships the d10-d13 goldens")
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
 def test_x11_table(base: str, tag: str) -> None:
-    goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
+    goldpath = _gold_path(base, tag)
     if not os.path.exists(goldpath):
         pytest.skip(f"{base} does not ship the {tag} golden")
-    spec = os.path.join(_CORPUS, base + ".spc")
+    spec = _spec_path(base)
     # Tolerance by path: no-model decomposition is pure arithmetic (tight);
     # model-based runs carry estimation-derived values (loose).
     tol = RTOL_ARITHMETIC if _is_no_model(spec) else RTOL_ESTIMATION
