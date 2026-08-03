@@ -4198,25 +4198,11 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                 inptok = false;
             }
         }
-        // The START narrowing is ported (x11mdl.f:113-118 + the :512-528
-        // restore, in x11reg.cpp's x11mdl_td) and gates bit-exact. A span that
-        // ends EARLY is not, and it is a different mechanism: xrgdrv.f:152-158
-        // RE-derives Xdsp from Endspn/Endxrg -- overriding editor.f:1976, which
-        // leaves it 0 whenever a regARIMA model promoted Ixreg first -- and
-        // shortens Posfob/Posffc for the whole transparent pass, which x11mdl
-        // then reads back at :515-518. That is a pointer mutation across the
-        // x11pt1/x11pt2 pass, so it belongs with the span-replay save/restore
-        // set rather than in this parse. Measured with the start narrowing in
-        // place: b16 1.3e-3, d11 1.4e-2.
-        int nend = 0;
-        {
-            int endspn[2];
-            addate(ctx.mdldat.begspn.data(), sp, ctx.mdldat.nspobs - 1, endspn);
-            dfdate(endspn, xr.endxrg.data(), sp, nend);
-        }
-        if (nend > 0)
-            xrg_not_ported(ctx, "x11regression{span=} ENDING before the series "
-                                "span (xrgdrv.f:152-158 Xdsp)");
+        // Both halves of the narrowing are now ported, and they are DIFFERENT
+        // mechanisms: a span that starts late narrows Begspn/Nspobs inside
+        // x11mdl (x11mdl.f:113-118 + the :512-528 restore, x11reg.cpp), while a
+        // span that ends early is applied by xrgdrv.f:151-158 as an Xdsp pointer
+        // shortening across the whole transparent pass.
     }
 
     // gtxreg.f:828-878 -- reads the WORKING regARIMA COMMON, which still holds

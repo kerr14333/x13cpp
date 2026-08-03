@@ -505,8 +505,14 @@ int main(int argc, char** argv) {
     // x11regression{} b16/c16 regression trading-day factors (B/C iterations),
     // over [pos1ob, posfob]. Gated in test_x11regression_tables.py.
     if (ctx.x11reg_ran) {
+        // The B and C iterations can carry DIFFERENT lengths: with an
+        // x11regression span that ends early (Xdsp) the oracle prints b16 over
+        // the narrowed span and c16 over the restored one (x11mdl.f:514-517's
+        // `lastpr`). Drive the loop off the vector, not off the main run's
+        // posfob -- that read past the end of the shorter one.
         auto emit16 = [&](const char* tag, const std::vector<double>& v) {
-            for (int i = pos1ob; i <= posfob; ++i) {
+            const int last = pos1ob + static_cast<int>(v.size()) - 1;
+            for (int i = pos1ob; i <= last; ++i) {
                 int idate[2];
                 x13::addate(begspn, sp, i - pos1ob, idate);
                 std::printf("%s %04d%02d %.15E\n", tag, idate[0], idate[1],
@@ -520,9 +526,14 @@ int main(int argc, char** argv) {
         const int nc = ctx.x11reg_xrm_ncol;
         if (nc > 0 && !ctx.x11reg_xrm.empty()) {
             const int nrows = static_cast<int>(ctx.x11reg_xrm.size()) / nc;
+            // Row 0 is dated Begxy (what savmtx.f is handed), not Begspn: with
+            // an x11regression span that starts late the saved design is the
+            // NARROW fit's and begins at Begxrg.
+            const int* bxy = (ctx.x11reg_xrm_begxy[0] > 0)
+                                 ? ctx.x11reg_xrm_begxy : begspn;
             for (int r = 0; r < nrows; ++r) {
                 int idate[2];
-                x13::addate(begspn, sp, r, idate);
+                x13::addate(bxy, sp, r, idate);
                 std::printf("xrm %04d%02d", idate[0], idate[1]);
                 for (int c = 0; c < nc; ++c)
                     std::printf(" %.15E", ctx.x11reg_xrm[static_cast<std::size_t>(r) * nc + c]);

@@ -12,8 +12,8 @@
 #  - the restore has to happen even on an early return, or Begspn/Nspobs leak
 #    narrowed into the rest of the X-11 run.
 #
-# A span that ends EARLY is a different mechanism (xrgdrv.f:152-158's Xdsp) and
-# is refused; see docs/WALLS.md.
+# A span that ends EARLY is a different mechanism (xrgdrv.f:151-158's Xdsp),
+# ported separately -- see airline_x11regression-span-end.
 series{
   title = "International Airline Passengers"
   file = "../data/airline.dat"

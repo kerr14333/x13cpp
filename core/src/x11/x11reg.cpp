@@ -945,14 +945,45 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         nfcst = ctx.xrgfct.nfcstx;
         posffc = posfob + nfcst;
         pos1bk = pos1ob - ctx.xrgfct.nbcstx;
+        // ...and x11mdl.f:126-137 writes the COMMONs too, not just this
+        // routine's view of them: Nofpob/Nbfpob come off the CURRENT Nspobs,
+        // which on the Xdsp route is still the NARROW one the B iteration left,
+        // and xrgdrv.f:166's restore is conditional -- so that narrow Nofpob is
+        // what the oracle's main run inherits.
+        //
+        // Scoped to Ixreg>=2, i.e. to the xrgdrv TRANSPARENT pass. The oracle's
+        // write is unconditional, but with Ixreg==1 the ordinary irregular
+        // regression runs x11mdl from the MAIN x11pt2, where this port already
+        // carries the equivalent state by other means -- so the scope is about
+        // which x11mdl call site each port reaches the write from, not about
+        // the write itself.
+        if (ctx.hiddn.ixreg >= 2) {
+            ctx.extend.nfcst = nfcst;
+            ctx.extend.nbcst = ctx.xrgfct.nbcstx;
+            ctx.x11ptr.pos1bk = pos1bk;
+            ctx.x11ptr.posffc = posffc;
+            ctx.extend.nofpob = md.nspobs + nfcst;
+            ctx.extend.nbfpob = md.nspobs + nfcst + ctx.xrgfct.nbcstx;
+        }
     }
     // x11mdl.f:113-118 -- move Begspn/Endspn onto the IRREGULAR REGRESSION span
     // (`x11regression{span=}`, gtxreg.f:629-661). Everything from here to the
     // restore below fits on that span; the factor built afterwards spans the
     // full one, which is why the Fortran restores and rebuilds the design
     // rather than simply keeping the narrow fit.
+    // ...except on the route where xrgdrv already did it: xrgdrv.f:151-158 moved
+    // Endspn onto Endxrg (and pulled Posfob/Posffc back by Xdsp) before the
+    // transparent pass started, leaving Nspobs alone. Endspn is not a field this
+    // port maintains -- it is derived from Begspn+Nspobs-1 -- so the flag stands
+    // in for it. `nend` then comes out 0, exactly as it does in the Fortran, and
+    // the span arrives instead as the shortened pointers.
     int endspn_cur[2];
-    addate(md.begspn.data(), sp, md.nspobs - 1, endspn_cur);
+    if (ctx.xrg_endspn_narrow) {
+        endspn_cur[0] = ctx.x11reg.endxrg(1);
+        endspn_cur[1] = ctx.x11reg.endxrg(2);
+    } else {
+        addate(md.begspn.data(), sp, md.nspobs - 1, endspn_cur);
+    }
     int nbeg = 0, nend = 0;
     dfdate(ctx.x11reg.begxrg.data(), md.begspn.data(), sp, nbeg);
     dfdate(endspn_cur, ctx.x11reg.endxrg.data(), sp, nend);
@@ -961,11 +992,17 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     // an early return leaving Begspn/Nspobs narrowed is the span-replay bug
     // this subsystem has already paid for four times (see core/src/x11/
     // CLAUDE.md). The explicit setspn below runs FIRST, before the factor
-    // build; by the time the guard fires the values already match.
+    // build, and DISARMS the guard: past that point the Fortran leaves these
+    // values wherever :512-528 left them, and re-imposing the entry values would
+    // be wrong. It matters on the Xdsp route -- there the B iteration legitimately
+    // ends with Nspobs still narrow, and the C iteration's entry value IS that
+    // narrow one, so an unconditional guard would undo the C restore.
     struct SpanGuard {
         X13Context& c;
         int begspn[2], nspobs, frstsy, nomnfy, adj1st;
+        bool armed = true;
         ~SpanGuard() {
+            if (!armed) return;
             c.mdldat.begspn(1) = begspn[0];
             c.mdldat.begspn(2) = begspn[1];
             c.mdldat.nspobs = nspobs;
@@ -1011,8 +1048,13 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     // here, so it must use the span start the BUFFER is indexed from, i.e. the
     // one saved before the x11regression span narrowed Begspn. Feeding it the
     // narrowed date slides Xnstar/Xn by nbeg periods against the factor.
+    // The END of that buffer has the same requirement, and it is the Xdsp route
+    // that exposes it: xrgdrv pulled Posffc back by Xdsp, but the C iteration
+    // rebuilds the design over the FULL span and x11ref indexes Xnstar by row.
+    // Stopping tdset at the shortened Posffc left Xnstar zero over the last Xdsp
+    // rows and the factor came out NaN there.
     int begd[2] = {span_guard.begspn[0], span_guard.begspn[1]};
-    tdset_td(ctx, begd, pos1bk, posffc, sp);
+    tdset_td(ctx, begd, pos1bk, posffc + std::max(ctx.x11reg.xdsp, 0), sp);
 
     // editor.f:1618-1627 -- the group pointers into the irregular-regression
     // model. The oracle derives these at spec-read time from Grpttx; this port
@@ -1218,12 +1260,27 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         ar.nrxy = nrxy;
     }
 
+    // x11mdl.f:499-509 -- the `.xrm` design-matrix save, and it sits HERE, before
+    // the restore, so what the oracle writes is the NARROW design (the fit's own
+    // rows), not the rebuilt full-span one. Kpart==3 only.
+    if (kpart == 3) {
+        const int ncxy_x = m.ncxy, nb_x = m.nb;
+        ctx.x11reg_xrm_ncol = nb_x;
+        ctx.x11reg_xrm_begxy[0] = ar.begxy(1);
+        ctx.x11reg_xrm_begxy[1] = ar.begxy(2);
+        ctx.x11reg_xrm.assign(static_cast<std::size_t>(nrxy) * nb_x, 0.0);
+        for (int r = 0; r < nrxy; ++r)
+            for (int c = 1; c <= nb_x; ++c)
+                ctx.x11reg_xrm[static_cast<std::size_t>(r) * nb_x + (c - 1)] =
+                    md.xy(r * ncxy_x + c);
+    }
+
     // x11mdl.f:512-528 -- walk the span back out (setspn.f) and REBUILD the
     // design over it, so the factor below covers the full series span even
-    // though the fit above used only the regression span. Xdsp (a `0.per`
-    // regression span, editor.f:1976) extends the C iteration further still;
-    // it is 0 on every path that reaches here, since the only route that sets
-    // it is the no-model one x11_prestage refuses.
+    // though the fit above used only the regression span. Xdsp is the OTHER
+    // narrowing: xrgdrv shortened the pointers rather than Begspn/Nspobs, so
+    // `nend` is 0 above and :515-517 is what puts the span back -- on the C
+    // iteration only. The B iteration therefore ENDS narrow, deliberately.
     {
         int nend_r = nend;
         if (ctx.x11reg.xdsp > 0 && kpart == 3) nend_r = ctx.x11reg.xdsp;
@@ -1254,6 +1311,13 @@ void x11mdl_td(X13Context& ctx, int kpart) {
             // rescale -- is not reached: Xhlnln needs an x11regression holiday
             // regressor, which this TD-only path does not carry.)
         }
+        // Disarm only where the Fortran's own restore is what left the values:
+        // when :518's `IF(nbeg>0.or.nend>0)` fired, and on the Xdsp route, where
+        // the B iteration is SUPPOSED to end narrow. Everywhere else the guard
+        // keeps its original restore-to-entry behaviour -- history{}'s per-span
+        // xrgdrv replays depend on it (29 gates).
+        if (nbeg > 0 || nend_r > 0 || ctx.x11reg.xdsp > 0)
+            span_guard.armed = false;
     }
 
     // x11mdl.f:531-540 -- the EFFECTIVE regressor type x11ref classifies by is
@@ -1286,30 +1350,25 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
     x11ref_td(ctx, fcal.data(), ftd.data(), pos1bk, nrxy, m.ncxy, md.b.data(),
               md.xy.data(), m.nb, rtype.data(), ctx.x11opt.kswv);
-    const int nfac = posffc - pos1bk + 1;
+    // x11mdl.f:701-702 -- the C iteration writes Xdsp EXTRA points, covering the
+    // stretch xrgdrv chopped off the pointers; the design was rebuilt over the
+    // full span just above, so the rows exist.
+    int nfac = posffc - pos1bk + 1;
+    if (ctx.x11reg.xdsp > 0 && kpart == 3) nfac += ctx.x11reg.xdsp;
     for (int i = 0; i < nfac; ++i) {
         ctx.x11fac.faccal(pos1bk + i) = fcal[i];
         ctx.x11fac.factd(pos1bk + i) = ftd[i];
     }
 
-    // Snapshot b16 (Kpart=2) / c16 (Kpart=3) over [Pos1ob, Posfob].
-    std::vector<double> snap(posfob - pos1ob + 1);
-    for (int i = pos1ob; i <= posfob; ++i) snap[i - pos1ob] = ctx.x11fac.factd(i);
+    // Snapshot b16 (Kpart=2) / c16 (Kpart=3) over [Pos1ob, lastpr] -- x11mdl.f
+    // :514-517, the same Xdsp extension the table/punch calls use.
+    int lastpr = posfob;
+    if (ctx.x11reg.xdsp > 0 && kpart == 3) lastpr = posfob + ctx.x11reg.xdsp;
+    std::vector<double> snap(lastpr - pos1ob + 1);
+    for (int i = pos1ob; i <= lastpr; ++i) snap[i - pos1ob] = ctx.x11fac.factd(i);
     if (kpart == 2) ctx.x11reg_b16 = snap;
     else ctx.x11reg_c16 = snap;
 
-    // Snapshot the xrm design matrix: the Nb regressor columns over ALL Nrxy
-    // rows (the oracle saves the forecast-extended span: Nspobs data + Nfcst
-    // rows). md.xy is row-major, stride Ncxy; col c of row r at r*Ncxy+c.
-    // Iteration-independent (the TD contrasts are date-based), so the last write
-    // wins -- C iteration.
-    const int ncxy = m.ncxy, nb = m.nb;
-    ctx.x11reg_xrm_ncol = nb;
-    ctx.x11reg_xrm.assign(static_cast<std::size_t>(nrxy) * nb, 0.0);
-    for (int r = 0; r < nrxy; ++r)
-        for (int c = 1; c <= nb; ++c)
-            ctx.x11reg_xrm[static_cast<std::size_t>(r) * nb + (c - 1)] =
-                md.xy(r * ncxy + c);
     ctx.x11reg_ran = true;
 
     // Divide the TD effect out of the irregular (x11pt2 re-iterates without it).

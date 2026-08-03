@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**24 walls.**
+**23 walls.**
 
 
 ## Automatic model selection
@@ -49,7 +49,7 @@ reproduce.
 - **`core/src/driver/run_seats.cpp:370`**
   SEATS historical-span decomposition (ESTBUR general-branch solve) -- either an unsupported model shape (p>0/bp>0/imean!=0) or the chain failed; see tools/seats_scope.md
 
-- **`core/src/driver/x11_prestage.cpp:190`**
+- **`core/src/driver/x11_prestage.cpp:225`**
   x11regression OLS prior trading day (Ixreg>=2) on the NO-MODEL path (x12run.f:174 -> x11ari.f)
   *Fortran:* `x12run.f:174`
 
@@ -74,10 +74,6 @@ reproduce.
 - **`core/src/specparse/readers_spec.cpp:3653`**
   x11regression aictest with no regression variables (editor.f:1760-1846)
   *Fortran:* `editor.f:1760-1846`
-
-- **`core/src/specparse/readers_spec.cpp:4218`**
-  x11regression{span=} ENDING before the series span (xrgdrv.f:152-158 Xdsp)
-  *Fortran:* `xrgdrv.f:152-158`
 
 
 ## X-11
@@ -112,13 +108,13 @@ reproduce.
 - **`core/src/x11/x11reg.cpp:855`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1337`**
+- **`core/src/x11/x11reg.cpp:1396`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1376`**
+- **`core/src/x11/x11reg.cpp:1435`**
   x11mdl Kswv=3 forcecal= combine
 
-- **`core/src/x11/xrgdrv.cpp:44`**
+- **`core/src/x11/xrgdrv.cpp:43`**
   xrgdrv OLS prior trading-day (Ixreg>=2): only the TD-only multiplicative path is ported
 
 

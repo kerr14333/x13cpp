@@ -409,6 +409,13 @@ struct X13Context {
     // Snapshotted from md.xy at x11mdl_td (the design is iteration-independent).
     std::vector<double> x11reg_xrm;
     int x11reg_xrm_ncol = 0;
+    // ...and the date of row 0, which is Begxy -- what savmtx.f is handed -- NOT
+    // Begspn. They differ the moment `x11regression{span=}` moves the START: the
+    // save happens before the span restore, so the rows are the narrow fit's and
+    // begin at Begxrg. Dating them from Begspn labelled every row nbeg periods
+    // early, and the gate that would have caught it named its three cases by
+    // hand and had never been shown these specs.
+    int x11reg_xrm_begxy[2] = {0, 0};
     bool x11reg_ran = false;
     // x11regression{ aictest=(easter) } AICC test (x11aic.f easter branch): one
     // (window, AICC) pair per candidate over Xeasvc (window 0 == "noeaster"),
@@ -439,6 +446,12 @@ struct X13Context {
     double x11reg_aicc_xu_user = 0.0;
     bool x11reg_xu_ran = false;
     bool x11reg_xu_accepted = false;
+    // xrgdrv.f:151-158 narrowed Endspn onto Endxrg WITHOUT touching Nspobs (the
+    // two are independent COMMONs in the Fortran; this port derives Endspn from
+    // Begspn+Nspobs-1 everywhere else, so the narrowing needs its own carrier).
+    // True only between xrgdrv's pointer shortening and its restore -- x11mdl_td
+    // is the sole reader, exactly as in the oracle.
+    bool xrg_endspn_narrow = false;
     // x11regression{} user prior trading-day factor (a4 save): the Kswv=1 pritd
     // factor over the observed span [Pos1ob,Posfob]. Bit-exact vs the oracle a4.
     std::vector<double> x11_a4_prior;

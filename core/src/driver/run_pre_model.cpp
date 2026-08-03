@@ -464,7 +464,17 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // Adj wholesale, and the oracle re-issues the copy after it at
     // trnaic.f:278. Copying here covers both -- the geometry is a pure function
     // of the span and the forecast/backcast counts, so it does not care.
+    // ...but NOT when xrgdrv has just left the geometry deliberately narrowed.
+    // The oracle's editor runs once, at parse, BEFORE x11ari calls xrgdrv; this
+    // port stands in for it here, i.e. after. That inversion is invisible while
+    // the derivation is idempotent, and it stops being idempotent exactly when
+    // an x11regression span ends early (xrgdrv.f:151-158 + x11mdl.f:126-137
+    // leave Nofpob narrow on purpose). Same guard in x11_prestage; see there.
+    const bool xrgdrv_left_geometry =
+        ctx.hiddn.ixreg == 3 && ctx.x11reg.xdsp > 0;
+    const xrg_geometry sv_geom = xrg_geometry::capture(ctx);
     x11_editor_geometry(ctx, lsadj, /*set_setpri=*/true);
+    if (xrgdrv_left_geometry) sv_geom.restore(ctx);
     if (ctx.adj.nadj > 0)
         copy(ctx.adj.adj.data(), prm::PLEN - ctx.adj.setpri + 1, -1,
              ctx.inpt.sprior.data() + (ctx.adj.setpri - 1));

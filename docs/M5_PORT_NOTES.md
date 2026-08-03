@@ -3418,3 +3418,107 @@ wall, so nothing was gateable. Lifting half the wall turned three of them into
 20s. That is the argument for lifting walls rather than documenting them --
 **a wall costs you the coverage of everything behind it**, not just the
 feature.
+
+## 68. The x11regression span that ENDS early: a pointer mutation, a deliberately narrow Nofpob, and the gate that named its cases by hand.
+
+Entry 67 ported the half of `x11regression{span=}` that narrows the START and
+refused the half that ends EARLY, on the grounds that it is a different
+mechanism. It is, and this closes it. The wall count goes 24 -> 23.
+
+**The two mechanisms, side by side.** A span that starts late is applied
+INSIDE x11mdl: `x11mdl.f:113-118` moves Begspn/Nspobs, `:512-528` puts them
+back. A span that ends early never reaches that code. `xrgdrv.f:151-158` runs
+first, RE-derives `Xdsp` from Endspn/Endxrg (overriding `editor.f:1976`, which
+leaves it 0 whenever a regARIMA model promoted Ixreg before the `0.per` clause
+could fire), pulls `Posfob`/`Posffc` back by it, and moves `Endspn` onto
+`Endxrg` **without touching Nspobs**. So by the time x11mdl runs, its own
+`nend` is ZERO -- the span has already arrived, as shortened pointers -- and
+the only place Xdsp appears again is the Kpart==3 restore at `:515-517`.
+
+Endspn is not a field this port maintains (it derives it from
+`Begspn+Nspobs-1`), so `ctx.xrg_endspn_narrow` stands in for it, set for
+exactly the window between xrgdrv's shortening and its restore. x11mdl_td is
+its only reader, as in the oracle.
+
+**The trap, and it is the same trap as entry 67 rotated 180 degrees.** Entry
+67 cost a session to `tdset` being fed the NARROWED span start. This one cost
+the same routine's END: xrgdrv pulls `Posffc` back, but the C iteration
+rebuilds the design over the FULL span, and `x11ref` indexes `Xnstar` by row.
+Stopping tdset at the shortened Posffc left Xnstar ZERO over the last Xdsp
+rows, the factor came out NaN there, and the run died in the prior-TD divide
+with `Do not take log of a zero, y( 133)= NaN`. **A calendar array indexed
+from the buffer needs the buffer's start AND its end.** Written down twice now
+in two entries; treat any relocated one-shot call the same way.
+
+**The finding that took the longest: Nofpob is left NARROW on purpose.** With
+b16 and c16 bit-exact the d-tables were still 1.3e-2 out, growing toward the
+end of the series. The oracle's own `.out` gave it away -- its **B 1** table
+prints `Observations 132` on a 144-point span. The chain:
+`x11mdl.f:126-137`'s C iteration recomputes `Nofpob = Nspobs + Nfcst` off the
+still-narrow Nspobs (132 = 120 + Nfcstx), and `xrgdrv.f:166`'s restore is
+CONDITIONAL -- `IF(Nfcst.ne.nf2.or.Nbcst.ne.nb2)` -- so when the spec's own
+forecast horizon already equals Nfcstx the test is false and the narrow value
+survives into the main run, where `x11pt1.f:70` reads it as
+`Nspobs = Nofpob - Nfdrp`.
+
+The oracle can afford that because **its editor runs once, at parse, BEFORE
+x11ari reaches xrgdrv**, and `x11ari.f:149`'s setxpt is NOT unconditional --
+it sits under `IF((Same.or.(.not.havmdl).or.(.not.extok)).and.Lmodel)`, i.e.
+model-failure only. This port stands in for the editor TWICE
+(`run_pre_model`, `x11_prestage`) and both stand-ins run AFTER xrgdrv, so both
+re-derived the geometry and discarded exactly what xrgdrv had left. Fixed with
+`xrg_geometry::capture/restore` around each call, armed only on this route.
+Restoring the counters is not the same as skipping the call: skipping also
+dropped `Lsp`/`Begbak`, and the d8b year labels came out as `1*  5z 11*`.
+
+**And a `max(Xdsp,0)` that cost 28 gates.** Xdsp is a raw `dfdate` result. It
+goes NEGATIVE whenever Endxrg is LATER than the span end -- which is every
+`history{}` and `slidingspans{}` replay, where each span is a slice of a
+series whose x11regression span is the whole thing. Unclamped in the Faccal
+stash length it shortened the stash by |Xdsp| (71 points on the first history
+span) and every replayed span came back wrong. Three separate hypotheses were
+eliminated before a git-stash bisect found it. **A quantity the Fortran only
+ever tests with `.gt.0` is not thereby non-negative** -- and this port stores
+it, where the Fortran mostly consumes it inline.
+
+**The gate that named its cases by hand.** Four mutations came back ZERO. The
+cause was not saturation: `test_x11regression_tables.py`'s `CASES` was a
+three-element literal, so the `xrm`/`b16`/`c16` gates had never been shown ANY
+of the six `x11regression{span=}` specs. The same file already carries a note
+about this exact defect for `AIC_CASES`, one list over, from 2026-07-31.
+Auto-discovering CASES (plus a floor assertion) immediately failed three specs
+for a real bug it had been hiding: **the `.xrm` rows were dated from Begspn
+when savmtx.f is handed Begxy**, so every row of a late-starting span's design
+was labelled `nbeg` periods early. Row COUNTS had been right all along; only a
+date-keyed comparison sees it, and nothing was comparing.
+
+**Gated:**
+
+* `extra/airline_x11regression-span-end` -- `span=(1949.01,1958.12)`.
+* `extra/airline_x11regression-span-both` -- `span=(1951.07,1958.12)`, the only
+  place the two narrowing mechanisms compose (nbeg > 0 AND nend = Xdsp).
+* plus the six existing span specs, which now reach the xrm/b16/c16 gates.
+
+**Mutations** (full suite, 6219 gates):
+
+| removed | gates lost |
+|---|---|
+| tdset extended past the shortened Posffc | 34 |
+| `nfac += Xdsp` on the C iteration | 30 |
+| the `max(Xdsp,0)` stash clamp | 28 |
+| the `.xrm` save moved BEFORE the restore | 27 * |
+| the geometry restore (each of the two call sites) | 24 |
+| the xrgdrv Xdsp pointer shortening | 22 |
+| the `.xrm` Begxy dating | 3 * |
+| the b16/c16 `lastpr` extension | 2 |
+| x11mdl.f:126-137's COMMON writes | **0** |
+| the SpanGuard disarm | **0** |
+
+\* measured at 6179 gates, before b16/c16 joined `_DTABLES`.
+
+The last two zeros are reported as zeros deliberately. Both are faithful
+transcriptions -- x11mdl.f:126-137 writes those COMMONs, and the Fortran's
+`:518` restore genuinely does not fire when `nbeg` and `nend` are both 0 -- but
+what they change is `Nofpob`, and the only observable that depends on it is the
+LENGTH of the B 1 table, which nothing in the corpus saves. They are kept
+because they are what the Fortran does, not because a gate proves them.

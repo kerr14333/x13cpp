@@ -91,6 +91,27 @@ static void x11_easter_prepass(X13Context& ctx) {
     restor_span(ctx);
 }
 
+xrg_geometry xrg_geometry::capture(const X13Context& ctx) {
+    return xrg_geometry{ctx.extend.nfcst,   ctx.extend.nbcst,
+                        ctx.extend.nfdrp,   ctx.extend.nobspf,
+                        ctx.extend.nofpob,  ctx.extend.nbfpob,
+                        ctx.x11ptr.pos1ob,  ctx.x11ptr.posfob,
+                        ctx.x11ptr.pos1bk,  ctx.x11ptr.posffc};
+}
+
+void xrg_geometry::restore(X13Context& ctx) const {
+    ctx.extend.nfcst = nfcst;
+    ctx.extend.nbcst = nbcst;
+    ctx.extend.nfdrp = nfdrp;
+    ctx.extend.nobspf = nobspf;
+    ctx.extend.nofpob = nofpob;
+    ctx.extend.nbfpob = nbfpob;
+    ctx.x11ptr.pos1ob = pos1ob;
+    ctx.x11ptr.posfob = posfob;
+    ctx.x11ptr.pos1bk = pos1bk;
+    ctx.x11ptr.posffc = posffc;
+}
+
 void x11_editor_geometry(X13Context& ctx, bool lsadj, bool set_setpri) {
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
@@ -171,8 +192,22 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     // the geometry -- the pre-model stage already ran it, and this one is
     // x11ari.f:149's re-derivation, which picks up any Nfcst/Nbcst the model
     // stage zeroed. Setpri does NOT move with it (see x11_editor_geometry).
+    //
+    // ...except that x11ari.f:149's setxpt is NOT unconditional: it sits under
+    // `IF((Same.or.(.not.havmdl).or.(.not.extok)).and.Lmodel)`, i.e. it only
+    // fires when the model stage FAILED. On the success path the oracle's main
+    // X-11 runs on whatever pointers xrgdrv left. Re-deriving them anyway is
+    // harmless while the derivation is idempotent -- and it is, until an
+    // x11regression span ENDS early: xrgdrv.f:151-158 + x11mdl.f:126-137 then
+    // leave Nofpob deliberately NARROW (the oracle's own B1 comes out 132 rows
+    // where the span is 144), and re-deriving it discards exactly that. So the
+    // re-derivation is skipped on that one route.
+    const bool xrgdrv_left_geometry =
+        has_model && ctx.hiddn.ixreg == 3 && ctx.x11reg.xdsp > 0;
+    const xrg_geometry sv_geom = xrg_geometry::capture(ctx);
     x11_editor_geometry(ctx, /*lsadj=*/true,   // x11ari.f:76 Lx11.or.Lseats
                         /*set_setpri=*/!has_model);
+    if (xrgdrv_left_geometry) sv_geom.restore(ctx);
     const int nfcst = ctx.extend.nfcst;
     const int nbcst = ctx.extend.nbcst;
     const int nfdrp = ctx.extend.nfdrp;

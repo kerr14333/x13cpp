@@ -48,6 +48,25 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
 // caller per run -- whichever one is standing in for the editor.
 void x11_editor_geometry(X13Context& ctx, bool lsadj, bool set_setpri);
 
+// The forecast-extension counters and X-11 span pointers, captured/reimposed
+// around that call. There is exactly one route that needs it: an
+// `x11regression{span=}` that ENDS early. xrgdrv.f:151-158 shortens
+// Posfob/Posffc by Xdsp and x11mdl.f:126-137 recomputes Nofpob off the
+// still-narrow Nspobs, and xrgdrv.f:166's restore is CONDITIONAL, so the narrow
+// counters survive into the oracle's main run -- its own B 1 table comes out
+// 132 rows over a 144-point span. The oracle can afford to leave them because
+// its editor ran once, at parse, BEFORE x11ari reaches xrgdrv; this port stands
+// in for the editor twice and both stand-ins run AFTER, so each has to hand the
+// counters back. Everything else the geometry sets (Lsp, Begbak, Nbcst2,
+// Setpri) is NOT restored -- the oracle's editor set those before xrgdrv, and
+// dropping them cost the d8b year labels.
+struct xrg_geometry {
+    int nfcst, nbcst, nfdrp, nobspf, nofpob, nbfpob;
+    int pos1ob, posfob, pos1bk, posffc;
+    static xrg_geometry capture(const X13Context& ctx);
+    void restore(X13Context& ctx) const;
+};
+
 }  // namespace x13
 
 #endif  // X13_DRIVER_X11_PRESTAGE_HPP

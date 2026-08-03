@@ -47,7 +47,13 @@ RTOL_XRM = 1e-12
 # other model-X11 table gates).
 RTOL_DTBL = 1e-6
 
-_DTABLES = ("d10", "d11", "d12", "d13")
+# b16/c16 join the d-tables here rather than staying an aictest-only comparison
+# (_AIC_TABLES below): they are the B and C iteration TD factors, and with an
+# x11regression span that ends early the two carry DIFFERENT lengths -- 120 rows
+# and 144 on airline_x11regression-span-end, x11mdl.f:514-517's `lastpr`.
+# Nothing was checking either one on a non-aictest spec, so dropping that
+# extension left the whole suite green.
+_DTABLES = ("d10", "d11", "d12", "d13", "b16", "c16")
 
 
 def _find_binary() -> str:
@@ -102,12 +108,25 @@ def _run(base: str) -> str:
     return r.stdout
 
 
-CASES = [
-    b for b in ("airline_x11regression-td", "airline_x11regression-critical",
-                "airline_x11regression-sigma")
-    if os.path.exists(os.path.join(_CORPUS, b + ".spc"))
+# AUTO-DISCOVERED, and it was a three-element literal until 2026-08-03 -- the
+# same defect AIC_CASES below already carries a note about, one list over. Six
+# `x11regression{span=}` specs had been added since without ever reaching this
+# gate. Proved by mutation: dropping x11mdl.f:514-517's `lastpr` extension (c16
+# comes out 120 rows where the oracle writes 144) and moving the .xrm save back
+# to AFTER the span restore (132 rows -> 156) both left the whole suite green.
+# A hand-maintained case list is an allowlist that silently stops growing.
+CASES = sorted(
+    b for b in (
+        os.path.splitext(f)[0] for f in os.listdir(_CORPUS) if f.endswith(".spc")
+    )
+    if "x11regression" in b
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".xrm"))
-]
+)
+
+
+def test_xrm_cases_discovered() -> None:
+    """An empty (or shrunken) parametrisation passes silently."""
+    assert len(CASES) >= 9, f"only {len(CASES)} x11regression xrm specs found"
 
 
 @pytest.mark.skipif(not CASES, reason="no x11regression spec ships the xrm golden")

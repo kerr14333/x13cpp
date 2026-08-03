@@ -34,8 +34,7 @@ static void xrg_not_ported(X13Context& ctx, const char* what) {
 static bool xrgdrv_supported(X13Context& ctx) {
     return ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd &&
            ctx.x11opt.muladd == 0 && !ctx.x11msc.psuadd &&
-           ctx.x11opt.khol != 1 && ctx.usrreg.ncusrx == 0 &&
-           ctx.x11reg.xdsp == 0;
+           ctx.x11opt.khol != 1 && ctx.usrreg.ncusrx == 0;
 }
 
 bool xrgdrv(X13Context& ctx, bool span_mode) {
@@ -201,6 +200,27 @@ bool xrgdrv(X13Context& ctx, bool span_mode) {
     } else {
         setxpt(ctx, /*nfdrp=*/0, lsadj, fctdrp);
     }
+    // --- xrgdrv.f:151-158. An `x11regression{span=}` that ENDS BEFORE the series
+    // span shortens the transparent pass itself: Xdsp is RE-derived here (this
+    // overrides editor.f:1976, which leaves it 0 whenever a regARIMA model
+    // promoted Ixreg first), Posfob/Posffc are pulled back by it, and Endspn is
+    // moved onto Endxrg WITHOUT touching Nspobs. So the narrowing arrives at
+    // x11mdl as a pointer + Endspn mutation, not as the Begspn/Nspobs narrowing
+    // x11mdl.f:113-118 does for itself -- which is why x11mdl's own `nend` comes
+    // out ZERO on this route and only its Kpart==3 restore (:515-517) sees Xdsp.
+    int xdsp = 0;
+    {
+        int endspn_cur[2];
+        addate(begspn, sp, nspobs - 1, endspn_cur);
+        dfdate(endspn_cur, ctx.x11reg.endxrg.data(), sp, xdsp);
+    }
+    ctx.x11reg.xdsp = xdsp;
+    if (xdsp > 0) {
+        ctx.x11ptr.posfob -= xdsp;
+        ctx.x11ptr.posffc = ctx.x11ptr.posfob;
+        ctx.xrg_endspn_narrow = true;
+    }
+
     const int pos1ob = ctx.x11ptr.pos1ob;
     const int posfob = ctx.x11ptr.posfob;
     ctx.adj.setpri = ctx.x11ptr.pos1bk;
@@ -250,8 +270,21 @@ bool xrgdrv(X13Context& ctx, bool span_mode) {
     adj.adjls = sv_adjls; adj.adjtc = sv_adjtc; adj.adjso = sv_adjso;
     adj.adjusr = sv_adjusr; adj.adjsea = sv_adjsea;
     ctx.picktd.picktd = sv_picktd;   // xrgdrv.f:211-217 (pktd branch already set)
-    ext.nfcst = sv_nfcst;
-    ext.nbcst = sv_nbcst;
+    // xrgdrv.f:166-178, and the CONDITION carries weight. x11mdl's C iteration
+    // (x11mdl.f:126-137) rewrote Nfcst/Nbcst and the four derived counters; this
+    // puts them back only if the count actually CHANGED. When the spec's own
+    // forecast horizon already equals Nfcstx the test is false, and Nofpob keeps
+    // the value x11mdl computed off the NARROW Nspobs -- which is how an Xdsp
+    // span reaches the main run's x11pt1 (`Nspobs = Nofpob - Nfdrp`).
+    if (ext.nfcst != sv_nfcst || ext.nbcst != sv_nbcst) {
+        ext.nfcst = sv_nfcst;
+        ext.nbcst = sv_nbcst;
+        ext.nfdrp = sv_nfcst;
+        ctx.x11ptr.pos1bk = ctx.x11ptr.pos1ob - ext.nbcst;
+        ctx.x11ptr.posffc = ctx.x11ptr.posfob + ext.nfcst;
+        ext.nofpob = ctx.mdldat.nspobs + ext.nfcst;
+        ext.nbfpob = ctx.mdldat.nspobs + ext.nfcst + ext.nbcst;
+    }
 
     // Restore Lterm (-> main run re-resolves Lter/Lmsr/Lstabl/L3x5 in editor.f's
     // 2042-2103 block) and Ksdev (-> main run re-runs the Bundesbank spread test).
@@ -288,6 +321,17 @@ bool xrgdrv(X13Context& ctx, bool span_mode) {
         ctx.saved = sv_saved;
     }
 
+    // --- xrgdrv.f:197-202: put the pointers back. Note the oracle does this
+    // AFTER the :166-178 forecast restore and ends with Posffc==Posfob, i.e. it
+    // drops the Nfcst extension it had just re-applied -- harmless because
+    // x11ari.f:149's setxpt re-derives both before anything reads them (this
+    // port's x11_prestage does the same, via x11_editor_geometry).
+    if (xdsp > 0) {
+        ctx.x11ptr.posfob += xdsp;
+        ctx.x11ptr.posffc = ctx.x11ptr.posfob;
+        ctx.xrg_endspn_narrow = false;
+    }
+
     if (ctx.error.lfatal) return false;
 
     // Stash the estimated Faccal over the FORECAST-EXTENDED span for (a) the
@@ -296,7 +340,15 @@ bool xrgdrv(X13Context& ctx, bool span_mode) {
     // [Pos1ob,Posffc] (main x11int wipes /x11fac/, so it is restored from here).
     // x11mdl_td (Kpart==3) filled Faccal to Posfob+Nfcstx; carry that whole span.
     const int nfcstx = ctx.xrgfct.nfcstx > 0 ? ctx.xrgfct.nfcstx : 0;
-    const int stash_end = posfob + nfcstx;
+    // `posfob` was captured while the Xdsp shortening was in force; the C
+    // iteration filled Faccal over the FULL span plus Nfcstx (x11mdl.f:701-702),
+    // so add it back here or the last Xdsp points of the stash are stale.
+    // Clamp: Xdsp is a raw dfdate result and goes NEGATIVE whenever Endxrg is
+    // LATER than the span end -- which is every history{}/slidingspans{} replay,
+    // where the span is a slice of a series whose x11regression span is the
+    // whole thing. Unclamped it SHORTENED the stash by |Xdsp| (71 points on the
+    // first history span) and every replayed span came back wrong (24 gates).
+    const int stash_end = posfob + std::max(xdsp, 0) + nfcstx;
     ctx.x11_faccal_prior.assign(ctx.x11fac.faccal.data() + (pos1ob - 1),
                                 ctx.x11fac.faccal.data() + (pos1ob - 1) + (stash_end - pos1ob + 1));
 

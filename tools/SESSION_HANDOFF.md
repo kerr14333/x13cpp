@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6087<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->476<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6219<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->492<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -422,7 +422,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6087<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6219<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1000,6 +1000,56 @@ structurally: everything that mattered sat behind a wall, so nothing was
 gateable. Lifting half of one wall turned three of them into 20s. **A wall
 costs the coverage of everything behind it, not just the feature.**
 
+## This session, part 19: the OTHER half of the span -- and a gate that named its cases by hand
+
+`docs/M5_PORT_NOTES.md` entry 68. Entry 67 ported the START narrowing and
+refused the END; this closes the END, and the two are genuinely different
+mechanisms. A late START narrows Begspn/Nspobs inside x11mdl. An early END is
+applied by `xrgdrv.f:151-158` BEFORE x11mdl runs, as a Posfob/Posffc
+shortening plus an Endspn move that leaves Nspobs alone -- so x11mdl's own
+`nend` is zero and only its Kpart==3 restore ever sees Xdsp. WALLS 24 -> 23.
+
+**Three things worth carrying forward.**
+
+1. **`tdset` again, the END this time.** Entry 67 paid for feeding it the
+   narrowed span START; this paid for stopping it at the shortened Posffc,
+   which left `Xnstar` zero over the C iteration's last Xdsp rows and NaN'd
+   the factor. A calendar array indexed from the buffer needs the buffer's
+   start AND its end. Any other relocated one-shot call is suspect the same
+   way.
+
+2. **`Xdsp` goes NEGATIVE.** It is a raw `dfdate` result, and every
+   `history{}`/`slidingspans{}` replay has Endxrg later than the span end.
+   Unclamped in the Faccal stash length it shortened the stash by 71 points
+   and broke 24 history gates. **A quantity the Fortran only ever tests with
+   `.gt.0` is not thereby non-negative** -- and this port STORES it where the
+   Fortran mostly consumes it inline.
+
+3. **The oracle's editor runs BEFORE xrgdrv; this port's two stand-ins run
+   after.** `x11ari.f:149`'s setxpt is model-failure-only, so the oracle's
+   main X-11 inherits whatever pointers xrgdrv left -- including a
+   deliberately NARROW `Nofpob` (its own B 1 table prints 132 rows on a
+   144-point span). Both `run_pre_model` and `x11_prestage` now capture and
+   re-impose the counters around their geometry call
+   (`xrg_geometry::capture/restore`). Skipping the call outright is NOT the
+   same thing -- it also drops `Lsp`/`Begbak` and the d8b year labels come out
+   as `1* 5z 11*`.
+
+**And the gate finding, which is the reusable one.**
+`tests/parity/test_x11regression_tables.py`'s `CASES` was a three-element
+literal, so the `xrm`/`b16`/`c16` gates had never been shown ANY of the six
+`x11regression{span=}` specs -- four mutations came back 0 for that reason and
+not from saturation. **The same file already carried a note about this exact
+defect for `AIC_CASES`, one list over, dated 2026-07-31.** Auto-discovering
+CASES immediately failed three specs for a real bug it had been hiding: the
+`.xrm` rows were dated from Begspn where `savmtx.f` is handed **Begxy**, so
+every row of a late-starting design was labelled `nbeg` periods early. Row
+counts were right; only a date-keyed comparison sees it.
+
+**Worth a sweep:** grep the parity suite for other hand-written case lists.
+Two have now been caught in the same file; there is no reason to think it is
+the only one.
+
 ## Open, in the order I would take them
 
 1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
@@ -1023,21 +1073,11 @@ costs the coverage of everything behind it, not just the feature.**
    six headers and zero rows); this engine returns `OUTCOME: OK`. Hypothesis,
    unmeasured: the B iteration's `adrgef` restore and the following `regvar`
    each add a copy of the user column (entry 61).
-3. **The two x11regression span walls left after entry 67**, both measured:
-   - A span that ENDS EARLY. `xrgdrv.f:152-158` re-derives `Xdsp` from
-     `Endspn`/`Endxrg` -- overriding editor.f:1976, which leaves it 0 whenever a
-     model already promoted Ixreg -- and shortens `Posfob`/`Posffc` for the
-     whole transparent pass, which `x11mdl.f:515-518` reads back. So this is a
-     POINTER mutation across x11pt1/x11pt2 and belongs with the span-replay
-     save/restore set, not with the span narrowing (which is now ported and
-     gated). Measured with that narrowing in place: b16 1.3e-3, d11 1.4e-2.
-     While taking it, fix the `.xrm` snapshot too: the oracle saves it at
-     x11mdl.f:500-509, BEFORE the restore, so its rows are the NARROW design
-     (132 on the probe) and this port would write 156.
-   - The x11regression OLS prior TD (`Ixreg>=2`) on the NO-MODEL path. `xrgdrv`
-     is called only from `run_pre_model`; the oracle reaches it from
-     `x12run.f:174`/`x11ari.f` on both paths, so a no-model spec that promotes
-     Ixreg silently answered as if Ixreg were 1. Oracle delta 9.1e-3 (d11).
+3. **The x11regression OLS prior TD (`Ixreg>=2`) on the NO-MODEL path**, the
+   last of the span walls (the early-END half closed with entry 68). `xrgdrv`
+   is called only from `run_pre_model`; the oracle reaches it from
+   `x12run.f:174`/`x11ari.f` on both paths, so a no-model spec that promotes
+   Ixreg silently answered as if Ixreg were 1. Oracle delta 9.1e-3 (d11).
 4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
