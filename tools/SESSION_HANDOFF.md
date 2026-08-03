@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6043<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->476<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6065<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->476<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -422,7 +422,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6043<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6065<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -937,6 +937,41 @@ a claim about a port, not about the Fortran.** That one was true of the oracle
 and false here, and the thing that made it false was a dropped disjunct three
 files away.
 
+## This session, part 17: x11regression{span=} was never read, and neither were the three fields behind it
+
+`docs/M5_PORT_NOTES.md` entry 66. Board item 3 was `editor.f:1972-1976`'s
+second `Ixreg` promotion; it turned out to rest on an option this port did not
+read at all.
+
+**Three COMMON fields had readers and no writer.** `Begxrg`/`Endxrg`
+(`run_history.cpp:679`), `Fxprxr` (`run_history.cpp:763`/`:822`) and `Xdsp`
+(`xrgdrv.cpp:38`) were all permanently 0, and `span=` fell through
+`gt_x11regression`'s `consume_value`. Measured on the airline series: the
+oracle moves d11 1.3e-2 for an explicit narrower span and 1.6e-2 for the
+`0.per` form; this engine returned the unrestricted answer both times at
+`OUTCOME: OK`.
+
+Ported: the arg, the NOTSET defaults, the `0.per` end-date form and its
+`Fxprxr`, the `chkcvr` coverage refusal, `Xdsp`, and the second promotion --
+which goes in `gtinpt.cpp` next to the first because the oracle runs editor
+after ALL specs and `Khol` may not be parsed yet when `x11regression{}` is.
+Note the ORDER: editor's block is `IF(Ixreg.eq.1)` and gtinpt.f:1201 already
+promoted on `lmodel`, so with an `arima{}` present `Xdsp` is never computed.
+
+**Five mutations, five zeros, and that is the finding.** Every span that
+matters is behind one of the two new walls, so the only gateable spans are the
+ones resolving to the series span -- where ported and discarded code agree by
+construction. A `history{}` spec was built to give the `0.per` arm teeth via
+`revdrv.f:500-503`; it did not, so it was DELETED rather than committed with a
+coverage claim measurement had refuted.
+
+**And a wall the inventory could not see.** The no-model refusal was first
+written as a bare `errhdr`/`writln`/`abend`; `walls.py` counts refusals by
+HELPER NAME, so it reported 23 gaps where the truth was 24. Standing rule, same
+family as the `metrics.py` failure that put `test_doc_tooling.py` in the parity
+suite: **a guardrail that is not inventoried is not a guardrail.** After adding
+a refusal, run `walls.py --write` and check it is actually listed.
+
 ## Open, in the order I would take them
 
 1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
@@ -960,12 +995,19 @@ files away.
    six headers and zero rows); this engine returns `OUTCOME: OK`. Hypothesis,
    unmeasured: the B iteration's `adrgef` restore and the following `regvar`
    each add a copy of the user column (entry 61).
-3. **`editor.f:1972-1976`'s second `Ixreg` promotion is not ported.** The
-   oracle promotes Ixreg 1 -> 2 when `Khol>=1`, `Fxprxr>0` or the x11reg span
-   ends before the series span (`Xdsp>0`); this port promotes only on
-   `lmodel` (gtinpt.f:1201). UNMEASURED -- the cheap probe is
-   `x11regression{ variables=(td) span=(...) }` with no `arima{}`. Found while
-   porting entry 65 and deliberately not chased there.
+3. **The two walls entry 66 left**, both measured, neither gated:
+   - `x11regression{span=}` that actually NARROWS. The parse, Begxrg/Endxrg,
+     Fxprxr, Xdsp and editor.f:1970-1977's Ixreg promotion are ported; the
+     narrowing itself (`x11mdl.f:115-118` + the `:515-525` setspn restore) is
+     not, because this port's `x11mdl_td` derives Nobspf from the
+     forecast-extended buffer rather than Fortran's
+     `min(Nspobs+max(Nfcst-Fctdrp,0), Nomnfy)`, and it must join
+     `run_x11.cpp`'s span-replay save/restore set. Oracle delta 1.3e-2 (d11).
+   - The x11regression OLS prior TD (`Ixreg>=2`) on the NO-MODEL path. `xrgdrv`
+     is called only from `run_pre_model`; the oracle reaches it from
+     `x12run.f:174`/`x11ari.f` on both paths, so a no-model spec that promotes
+     Ixreg silently answered as if Ixreg were 1. Oracle delta 9.1e-3 (d11).
+   Lifting either one makes the other's probe gateable, so take them together.
 4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a

@@ -3258,3 +3258,91 @@ green suite. The broadcast needs a spec with two-plus user columns and ONE
 cheap specs and neither exists.
 
 **Gated:** `extra/airline_x11regression-usertype-tdonly`.
+
+## 66. `x11regression{span=}` was parsed and discarded -- and the flag it promotes has no consumer without a model.
+
+Board item 3 (entry 65's leftover, `editor.f:1972-1976`'s second `Ixreg`
+promotion) turned out to rest on an option this port never read at all. Two
+fields, `Begxrg`/`Endxrg`, had readers -- `run_history.cpp:679` takes the model
+span end from `Endxrg` -- and NO writer anywhere in the C++; `span=` itself fell
+through `gt_x11regression`'s `consume_value`. So did `Fxprxr` and `Xdsp`, both
+read (`run_history.cpp:763`/`:822`, `xrgdrv.cpp:38`) and never written.
+
+**Measure the oracle on-vs-off first, and this is why.** On the airline series
+with `x11regression{variables=(td)}`:
+
+| spec | oracle vs its own no-span run | engine vs oracle |
+|---|---|---|
+| `span = (1952.01,1958.12)` | d11 1.3e-2 | 1.3e-2 |
+| `span = (1952.01,0.12)` | d11 1.6e-2 | 1.6e-2 |
+| `span = (1949.01,1960.12)` (the full span) | 0 | 3.2e-15 |
+
+The engine's answer never moved: it was the unrestricted one every time, at
+`OUTCOME: OK`. Textbook parsed-but-unread.
+
+**What is ported.** `gtxreg.f:472-482` (the arg and its two-dates check),
+`:629-661` (the NOTSET defaults, the `0.per` end-date form and its `Fxprxr`,
+the `chkcvr` coverage refusal), and `editor.f:1970-1977` (`Xdsp` plus the
+second `Ixreg` promotion, placed in `gtinpt.cpp` next to the first because the
+oracle runs editor after ALL specs and `Khol` may not be parsed yet when
+`x11regression{}` is).
+
+Note the order the two promotions run in, which is load-bearing: editor's block
+is `IF(Ixreg.eq.1)`, and gtinpt.f:1201's model promotion already ran. So on any
+spec with a `arima{}`, `Xdsp` is never computed at all. Ported as written.
+
+**What is walled, and the second thing that fell out.** The narrowing itself --
+`x11mdl.f:115-118` moves `Begspn`/`Endspn`/`Nspobs`/`Frstsy`/`Nobspf` onto the
+regression span and `:515-525` walks them back out with `setspn` plus a
+`regvar` rebuild. This port's `x11mdl_td` derives `Nobspf` from the
+forecast-extended buffer instead of Fortran's
+`min(Nspobs+max(Nfcst-Fctdrp,0), Nomnfy)`, so that is not a two-line change,
+and it has to join `run_x11.cpp`'s span-replay save/restore set. Refused
+instead.
+
+Then the promotion exposed its own hole. `span = (1949.01,0.12)` with NO
+`arima{}` sets `Fxprxr`, promotes `Ixreg` to 2, and moves the ORACLE's d11
+9.1e-3 -- while this engine came out bit-identical to its own no-span run,
+because `xrgdrv` is only ever called from `run_pre_model`, which runs only when
+there is a model. The oracle reaches it from `x12run.f:174`/`x11ari.f` on both
+paths. Also refused, in `x11_prestage`.
+
+**A wall the inventory could not see.** That second refusal was first written
+as a bare `errhdr`/`writln`/`abend`, and `tools/walls.py` reported 23 gaps
+where it should have said 24: the tool collects refusals by HELPER NAME, and a
+hand-rolled one is invisible to it. Fixed by giving `x11_prestage.cpp` a local
+`not_ported` helper. Standing rule, and it is the same one that put
+`test_doc_tooling.py` in the parity suite: **a guardrail that is not inventoried
+is not a guardrail.** If you write a refusal, check it appears in
+`docs/WALLS.md` after `walls.py --write`.
+
+**Gated:** `extra/airline_x11regression-span-full` (`span=` naming the full
+series span) and `extra/airline_x11regression-span-0per` (the `0.per` form with
+`per` equal to the series' last period). Both run bit-exact.
+
+**Mutations -- five zeros, and they are the point of this entry:**
+
+| removed | gates lost |
+|---|---|
+| the `span=` parse arm | 0 |
+| the `0.per` end-date arm | 0 |
+| the narrowing wall | 0 |
+| editor.f:1970-1977's second Ixreg promotion | 0 |
+| the no-model Ixreg>=2 wall | 0 |
+
+Nothing in this increment is pinned by the suite, and the reason is
+structural: every span that MATTERS is behind a wall, so the only gateable
+spans are the ones that resolve to the series span -- where the ported code and
+the old discard-everything code produce identical output by construction. The
+two specs prove the parse does not crash or over-refuse; they prove nothing
+about the semantics.
+
+That was worth one more measurement rather than an assumption. `Fxprxr` has a
+real consumer -- `revdrv.f:500-503` re-derives each history span's regression
+end from it -- so a `history{}` spec was built on top of the `0.per` one to
+give the `0.per` arm teeth. It did not: mutating the arm out still cost zero
+gates. With `per` equal to the series' last period the two spellings are
+indistinguishable everywhere in this port, revdrv included, and a `per` that is
+NOT the last period narrows and hits the wall. The spec was DELETED rather than
+committed with a coverage claim measurement had already refuted -- the corpus
+already carries six history+x11regression specs, so it added nothing else.

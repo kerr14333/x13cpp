@@ -3694,6 +3694,10 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // scan (and CB-36 with it) unreachable.
     int& nusxrg = ctx.xrgmdl.nusxrg;
     nusxrg = 0;
+    // gtxreg.f:162 -- span= (the irregular regression's own estimation span).
+    // Column-major [YR/MO][1..2], NOTSET until parsed.
+    int spnxrg[4] = {prm::NOTSET, prm::NOTSET, prm::NOTSET, prm::NOTSET};
+    bool hvmdsp = false;
     std::string xrfile(static_cast<std::size_t>(stdio::PFILCR), ' ');
     std::string xrfmt(static_cast<std::size_t>(stdio::PFILCR), ' ');
     int nflchr = 0, nfmtch = 0;
@@ -3850,6 +3854,23 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                 inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
                        "Must have seven prior trading day weights.");
                 inptok = false;
+            }
+        } else if (argidx == 25) {   // span -> spnxrg (gtxreg.f:472-482)
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            int nelt = 0;
+            gtdtvc(ctx, havesp, ctx.model.sp, LPAREN, false, 2, spnxrg, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt == 1) {
+                inpter(ctx, PERROR, L.errpos.data() + 1,
+                       "Need two dates for the irregular component regression "
+                       "span or");
+                writln(ctx, "       use a comma as a place holder.",
+                       stdio::STDERR, ctx.units.mt2, false);
+                inptok = false;
+            } else if (argok) {
+                hvmdsp = true;
             }
         } else if (argidx == 24) {   // forcecal -> Calfrc (gtxreg.f:463-468)
             // Was falling through to the discard arm below -- parsed and thrown
@@ -4127,6 +4148,76 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
         rmlnvr(ctx, tmppa, 0, ctx.mdldat.nspobs);
         if (ctx.error.lfatal) return;
     }
+    // gtxreg.f:629-661 -- resolve `span=` into Begxrg/Endxrg. Both were never
+    // written by this port and `span=` fell through to consume_value, so the
+    // option was parsed and DISCARDED: measured on the airline series, the
+    // oracle honours it (d11 moves 1.3e-2 for an explicit end date, 1.6e-2 for
+    // the `0.per` form) and the engine returned the unrestricted answer at
+    // `OUTCOME: OK`.
+    {
+        auto& xr = ctx.x11reg;
+        const int sp = ctx.model.sp;
+        if (spnxrg[0] == prm::NOTSET) {
+            xr.begxrg(1) = ctx.mdldat.begspn(1);
+            xr.begxrg(2) = ctx.mdldat.begspn(2);
+        } else {
+            xr.begxrg(1) = spnxrg[0];
+            xr.begxrg(2) = spnxrg[1];
+        }
+        if (spnxrg[2] == prm::NOTSET || spnxrg[2] == 0) {
+            int endv[2];
+            addate(ctx.mdldat.begspn.data(), sp, ctx.mdldat.nspobs - 1, endv);
+            xr.endxrg(1) = endv[0];
+            xr.endxrg(2) = endv[1];
+            if (spnxrg[2] == 0) {
+                // gtxreg.f:638-641 -- the `0.per` form: keep the series' last
+                // YEAR but end at period `per`, backing up a year when that
+                // period is past the end of the span. Fxprxr remembers the
+                // period so revdrv.f:500-503 can re-derive it per history span.
+                int endspn[2];
+                addate(ctx.mdldat.begspn.data(), sp, ctx.mdldat.nspobs - 1,
+                       endspn);
+                xr.endxrg(2) = spnxrg[3];
+                if (xr.endxrg(2) > endspn[1]) xr.endxrg(1) -= 1;
+                xr.fxprxr = xr.endxrg(2);
+            }
+        } else {
+            xr.endxrg(1) = spnxrg[2];
+            xr.endxrg(2) = spnxrg[3];
+        }
+        // gtxreg.f:647-660 -- the span must lie inside the series span.
+        if (hvmdsp) {
+            int nxrg = 0;
+            dfdate(xr.endxrg.data(), xr.begxrg.data(), sp, nxrg);
+            nxrg += 1;
+            if (!chkcvr(ctx.mdldat.begspn.data(), ctx.mdldat.nspobs,
+                        xr.begxrg.data(), nxrg, sp)) {
+                inpter(ctx, PERRNP, L.errpos.data() + 1,
+                       "Irregular component regression span not within the "
+                       "span of available data.");
+                inptok = false;
+            }
+        }
+        // x11mdl.f:115-118 narrows Begspn/Endspn/Nspobs/Frstsy/Nobspf onto this
+        // span for the whole irregular regression and walks them back out at
+        // :515-525 (setspn + a regvar rebuild). NOT ported -- the C++ x11mdl_td
+        // derives Nobspf from the forecast-extended buffer instead of Fortran's
+        // min(Nspobs+max(Nfcst-Fctdrp,0), Nomnfy), so the narrowing is not a
+        // two-line change and it has to join run_x11.cpp's span-replay
+        // save/restore set. Refuse rather than silently answer over the full
+        // span, which is what this port did until the option was read at all.
+        int nbeg = 0, nend = 0;
+        {
+            int endspn[2];
+            addate(ctx.mdldat.begspn.data(), sp, ctx.mdldat.nspobs - 1, endspn);
+            dfdate(xr.begxrg.data(), ctx.mdldat.begspn.data(), sp, nbeg);
+            dfdate(endspn, xr.endxrg.data(), sp, nend);
+        }
+        if (nbeg > 0 || nend > 0)
+            xrg_not_ported(ctx, "x11regression{span=} narrowing the irregular "
+                                "regression span (x11mdl.f:115-118)");
+    }
+
     // gtxreg.f:828-878 -- reads the WORKING regARIMA COMMON, which still holds
     // the x11regression model until loadxr moves it out below, so it must run
     // here and not after. (Fortran calls rmlnvr much earlier, at :186; the

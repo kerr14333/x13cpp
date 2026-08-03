@@ -797,6 +797,24 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
         // x11pt1 Ixreg==3 fold.
         if (lmodel && ctx.hiddn.ixreg == 1) ctx.hiddn.ixreg = 2;
 
+        // editor.f:1970-1977 -- the SECOND promotion, on the same flag. An X-11
+        // holiday adjustment, a `0.per` regression span, or a regression span
+        // that simply ends before the series does all make the irregular
+        // regression a PRIOR adjustment. Xdsp is how many periods short the
+        // span ends, and x11mdl.f:515-518 reads it to extend the C iteration's
+        // factor back out to Posfob. Neither Xdsp nor Fxprxr had a writer here
+        // before `span=` was read at all.
+        if (ctx.hiddn.ixreg == 1) {
+            int endspn[2];
+            addate(ctx.mdldat.begspn.data(), ctx.model.sp,
+                   ctx.mdldat.nspobs - 1, endspn);
+            dfdate(endspn, ctx.x11reg.endxrg.data(), ctx.model.sp,
+                   ctx.x11reg.xdsp);
+            if (ctx.x11opt.khol >= 1 || ctx.x11reg.fxprxr > 0 ||
+                ctx.x11reg.xdsp > 0)
+                ctx.hiddn.ixreg = 2;
+        }
+
         // gtinpt.f 1142-1167: default Nbcst / Nfcst.
         if (ctx.extend.nbcst == prm::NOTSET) ctx.extend.nbcst = 0;
         if (ctx.extend.nfcst == prm::NOTSET) {
