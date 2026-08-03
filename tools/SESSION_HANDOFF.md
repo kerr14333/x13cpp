@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6486<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->675<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6508<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->678<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6486<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6508<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1157,6 +1157,48 @@ fires on `variables=(easter[8])`, not on `variables=(td easter[8])`.
 
 Suite 6468 -> 6486 passed, 0 failed, 0 xfailed; WALLS 23 -> 24 gaps.
 
+## This session, part 22: the no-model OLS prior TD, and a restore that was compensating for a hoist
+
+Entry 71. Board item 3, closed. `x11ari.f:88-95` calls `xrgdrv` under
+`IF(Lx11)` alone -- `Lmodel` is only passed THROUGH to `ssprep`/`restor` -- so
+the OLS prior-TD pass runs on both paths. This port drove it from
+`run_pre_model`, which runs only with a model, so a no-model spec that promoted
+`Ixreg` skipped it. It was walled, so the outcome was a refusal, not wrong
+numbers.
+
+**Measured first.** `x11regression{ variables=(td) span=(1949.01,0.12) }` with
+no `arima{}` moves the oracle's d10 9.2e-3 / d11 8.3e-3 / d12 8.4e-3 / d13
+1.6e-2 against the same spec without `span=`. (`0.per` is the only writer of
+`Fxprxr`; `editor.f:1976-1978` promotes on it. `0.12` on a December-ending
+series resolves to the series end, so `Xdsp` is 0 -- the promotion is all this
+route is for.)
+
+**The port is a placement.** Nothing in `xrgdrv` changed. The call goes into
+`x11_prestage` at x11ari's own point: after `x11int`, before `x11pt1`. That
+order is the content -- the transparent pass reads `Sprior`, which on the
+no-model path exists only once `adjsrs` has been copied by `x11int`.
+
+**Then the interesting half.** The calendar factor came out bit-exact (b16, c16
+and the TD part of d16 at 5e-15) and the SEASONAL factor was 0.67% out -- d10
+and d16 carrying the SAME relative error, which is what says the calendar half
+is right. It was `Ksdev`. `xrgdrv.cpp` saved and restored it alongside `Lterm`;
+`restor.f` restores `Lter`, `Ktcopt` and `Tic` and NOTHING else, so the restore
+is not in the Fortran. Deleting it fails **362** gates -- it compensates for the
+MODEL path's HOIST (the call is moved out of x11ari, ahead of the editor
+stand-in that then sets `Kersa=0`). The no-model call makes no such move and
+must not carry the compensation. New `at_x11ari` parameter; it names the CALL
+SITE, not the spec.
+
+Standing shape: **a compensating restore is invisible while every gated spec
+goes through the path it compensates for.** Ask of any save/restore here
+whether it mirrors the Fortran or patches a rearrangement -- only the second
+kind has to be re-derived per caller.
+
+**Gated:** `extra/airline_x11regression-nomodel-priortd` (new, auto-discovered).
+Mutations: disabling the call fails **18**; restoring `Ksdev` unconditionally
+fails **17**; never restoring it fails **361**. WALLS 24 -> 23 gaps. Suite
+6486 -> 6508 passed, 0 failed, 0 xfailed.
+
 ## Open, in the order I would take them
 
 1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
@@ -1184,11 +1226,20 @@ Suite 6468 -> 6486 passed, 0 failed, 0 xfailed; WALLS 23 -> 24 gaps.
    six headers and zero rows); this engine returns `OUTCOME: OK`. Hypothesis,
    unmeasured: the B iteration's `adrgef` restore and the following `regvar`
    each add a copy of the user column (entry 61).
-3. **The x11regression OLS prior TD (`Ixreg>=2`) on the NO-MODEL path**, the
-   last of the span walls (the early-END half closed with entry 68). `xrgdrv`
-   is called only from `run_pre_model`; the oracle reaches it from
-   `x12run.f:174`/`x11ari.f` on both paths, so a no-model spec that promotes
-   Ixreg silently answered as if Ixreg were 1. Oracle delta 9.1e-3 (d11).
+3. **`transform{function=log}` with NO MODEL, on the x11regression route.**
+   Found while closing the old item 3 (part 22 / entry 71), not fixed. With no
+   model the oracle's `transform{function=log}` is a no-op for every X-11 table
+   -- measured bit-identical against the same spec carrying no `transform{}` at
+   all, on a bare `x11{}` run AND on an `x11regression{ variables=(td) }` one.
+   This engine agrees on the bare run and does NOT on the x11regression one:
+   d11 1.2e-2, b16/c16 1.5e-3, at `OUTCOME: OK`. B1 is bit-identical between
+   the two engine runs, so it is inside the X-11 spine. Cause NOT established.
+   Look at (a) x11pt2.f:115/:324's `goodlm` gates, which `Lam` alone opens and
+   which also need `Ixreg!=2 .and. Priadj>1` -- the real question may be
+   whether this port sets `Priadj` where the oracle leaves it 0; then (b)
+   `x11mdl.f:104-109`, which forces `Lam=1, Fcntyp=4` for the whole irregular
+   regression (restoring at :356/:833) and is not reproduced here at all.
+   Measure (a) first.
 4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a

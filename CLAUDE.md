@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (69
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (71
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -222,6 +222,16 @@ because by the time you would think to look them up, the damage is done.
   `[...]` ids, and cross them against every golden on disk — both sides
   derived, so it cannot go stale. That probe found three blind gates in one
   pass, one of them hiding an 8.1e-7 engine defect (entry 69).
+- **Know whether a save/restore mirrors the Fortran or patches a
+  rearrangement.** Where this port moves a call to a different phase than the
+  oracle runs it in, the compensating state save has no counterpart in the
+  Fortran — and it is invisible for as long as every gated spec goes through
+  the moved path. Add a SECOND call site that did not make the move and the
+  compensation becomes a defect there, one that will not look like one, because
+  the code is identical and correct twenty lines up. `xrgdrv`'s `Ksdev` restore
+  is the worked example: deleting it fails 362 gates, keeping it on the
+  un-hoisted no-model call fails 17 (entry 71). Gate such restores on the CALL
+  SITE, not on the spec.
 - **A parsed-but-unread option is the silent-wrongness class.** The single most
   common defect shape in this port: the parser consumes a documented option,
   writes it nowhere, and the run returns `OUTCOME: OK` with wrong numbers.

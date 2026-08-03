@@ -46,7 +46,14 @@ struct X13Context;
 //            just restored from) but this port does, because ctx.saved carries
 //            three non-oracle fields (ksdev0/lterm0/nterm0) that the span loop
 //            reads back.
-bool xrgdrv(X13Context& ctx, bool span_mode = false);
+//
+// `at_x11ari` says this call sits at x11ari.f:88-95's own point in time rather
+// than being hoisted ahead of the model stage. Only the NO-MODEL main-run call
+// (x11_prestage) sets it: with no model there is no estimation input to divide,
+// so nothing has to run early, and x11_prestage issues it exactly where x11ari
+// does -- after x11int, before x11pt1. The flag suppresses the Ksdev restore,
+// which exists solely to compensate for the hoist (see xrgdrv.cpp).
+bool xrgdrv(X13Context& ctx, bool span_mode = false, bool at_x11ari = false);
 
 }  // namespace x13
 #endif  // X13_X11_XRGDRV_HPP

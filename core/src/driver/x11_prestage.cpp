@@ -9,6 +9,7 @@
 #include "x11/x11drv.hpp"         // setxpt, x11int, chkadj, regeff, extend, adjreg
 #include "x11/slidingspans.hpp"   // ssprep_snapshot, restor_span
 #include "x11/x11easter.hpp"      // holday (classic X-11 Easter estimation)
+#include "x11/xrgdrv.hpp"         // xrgdrv (x11regression OLS prior TD, x11ari.f:88-95)
 #include "regarima/regvar.hpp"    // regvar (design rebuild for regression effects)
 #include "regarima/priadj.hpp"    // adjsrs_factors (prior-adjustment factor series)
 #include "composite/agr3.hpp"     // agrxpt (composite total buffer geometry)
@@ -20,15 +21,10 @@
 
 namespace x13 {
 
-// Signal that an X-11 pre-stage path is not yet ported. Named to match the
-// helper set tools/walls.py inventories -- a refusal it cannot see is a gap
-// that never reaches docs/WALLS.md.
-static void not_ported(X13Context& ctx, const char* what) {
-    errhdr(ctx);
-    writln(ctx, std::string("ERROR: ") + what + " not yet ported (X-11 pre-stage).",
-           stdio::STDERR, ctx.units.mt2, true);
-    abend(ctx);
-}
+// (The `not_ported` stand-in this file used to carry went with its last wall --
+// the no-model Ixreg>=2 refusal. Nothing here refuses any more; the surviving
+// x11regression prior-TD refusals all live in xrgdrv itself, which walls.py
+// inventories directly.)
 
 // xrgdrv.f (Khol==1 branch): estimate the classic X-11 Easter holiday factor.
 // Runs a preliminary, model-free, no-forecast/backcast transparent X-11
@@ -212,20 +208,6 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     const int nbcst = ctx.extend.nbcst;
     const int nfdrp = ctx.extend.nfdrp;
     const int fctdrp = ctx.arima.fctdrp;
-
-    // The x11regression OLS prior trading day (Ixreg>=2) is driven from
-    // run_pre_model, which only runs when there IS a regARIMA model. The oracle
-    // reaches xrgdrv from x12run.f/x11ari.f on BOTH paths, so a no-model spec
-    // that promotes Ixreg simply skipped the prior pass here and answered as if
-    // Ixreg were 1. Measured: `x11regression{ variables=(td) span=(1949.01,
-    // 0.12) }` with no `arima{}` moves the oracle's d11 9.1e-3 (the `0.per`
-    // form sets Fxprxr, and editor.f:1976 promotes on it) and left this engine
-    // bit-identical to its own no-span run.
-    if (!has_model && ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd) {
-        not_ported(ctx, "x11regression OLS prior trading day (Ixreg>=2) on the "
-                        "NO-MODEL path (x12run.f:174 -> x11ari.f)");
-        return false;
-    }
 
     // editor.f:150 Ny=Sp ; editor.f:235 Lyr=Begspn(1) ; editor.f:1486 Kersa=0
     // (set under IF(Lx11)). Lyr (the calendar year of the analyzed span's
@@ -477,6 +459,20 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
         ctx.xeastr.lgenx = true;
         x11_easter_prepass(ctx);
         if (ctx.error.lfatal) return false;
+    }
+
+    // x11ari.f:88-95 -- the OTHER arm of the same `IF(Ixreg.eq.2.or.Khol.eq.1)`
+    // the Easter pre-pass above stands in for: the x11regression OLS prior
+    // trading day. On the MODEL path this port hoists it into run_pre_model,
+    // because the estimation input has to be divided by the resulting Faccal
+    // before arima ever runs; with no model there is no estimation input and
+    // nothing runs earlier, so the call belongs exactly where x11ari puts it --
+    // after x11int (x12run.f:174), before x11pt1. That ORDER is the whole
+    // content of this block: xrgdrv's transparent pass reads Sprior, which only
+    // exists once the no-model adjsrs record above has been copied by x11int,
+    // and it leaves Faccal for x11pt1's Ixreg==3 restore to fold.
+    if (lx11 && !has_model && ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd) {
+        if (!xrgdrv(ctx, /*span_mode=*/false, /*at_x11ari=*/true)) return false;
     }
 
     // (x11int already ran above.) The parts spine follows.

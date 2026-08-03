@@ -37,7 +37,7 @@ static bool xrgdrv_supported(X13Context& ctx) {
            ctx.x11opt.khol != 1 && ctx.usrreg.ncusrx == 0;
 }
 
-bool xrgdrv(X13Context& ctx, bool span_mode) {
+bool xrgdrv(X13Context& ctx, bool span_mode, bool at_x11ari) {
     if (!(ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd)) return true;  // no-op
     if (!xrgdrv_supported(ctx)) {
         xrg_not_ported(ctx, "xrgdrv OLS prior trading-day (Ixreg>=2): only the "
@@ -95,17 +95,31 @@ bool xrgdrv(X13Context& ctx, bool span_mode) {
         ctx.prior.kfmt = 0;
     }
 
-    // Save the X-11 seasonal-filter selector (Lterm) and the Bundesbank extreme-
-    // value spread control (Ksdev) so the main run re-derives them fresh. The
-    // transparent pass's setup sets Lterm NOTSET->6 and its x11pt2 MSR selection
-    // overwrites Lter + the Bundesbank vtest/entsch sets Ksdev; without restoring,
-    // the main run inherits both (run_x11's editor re-resolves Lter only when
-    // Lterm==NOTSET, and x11pt2's Bundesbank test re-derives Ksdev only when
-    // Ksdev<4), leaking the transparent decomposition's filter/spread into the
-    // final seasonal factors (~2% off, worst at the low-amplitude series start).
-    // Mirrors restor.f restoring Lter (via Lterm re-resolution here) and the
-    // slidingspans/history per-span Ksdev reset. Ktcopt/Tic are unchanged (same
-    // default value in both passes), so they need no explicit save.
+    // Save the X-11 seasonal-filter selector (Lterm) so the main run re-derives
+    // Lter fresh. The transparent pass's setup sets Lterm NOTSET->6 and its
+    // x11pt2 MSR selection overwrites Lter; without restoring, the main run
+    // inherits it (run_x11's editor re-resolves Lter only when Lterm==NOTSET),
+    // leaking the transparent decomposition's filter into the final seasonal
+    // factors (~2% off, worst at the low-amplitude series start). This mirrors
+    // restor.f, which restores Lter (here via the Lterm re-resolution) together
+    // with Ktcopt/Tic -- those two carry the same default in both passes, so
+    // they need no explicit save.
+    //
+    // Ksdev (the Bundesbank extreme-value spread control, which entsch rewrites
+    // and whose own re-derivation is gated `Ksdev < 4`) is a different case,
+    // and `at_x11ari` is exactly the difference. restor.f restores Lter, Ktcopt
+    // and Tic and NOTHING else, so in the oracle the transparent pass's Ksdev
+    // simply carries into the main x11pt2 -- no restore at all. What makes the
+    // restore necessary HERE is that the MODEL path HOISTS this call out of
+    // x11ari into run_pre_model, ahead of the editor stand-in that then sets
+    // Kersa=0 (editor.f:1486); the compensation is for the hoist, not for the
+    // Fortran. Dropping it outright fails 362 gates.
+    //
+    // The no-model call is NOT hoisted -- x11_prestage issues it at x11ari's own
+    // point, after x11int and before x11pt1 -- so it must not compensate for a
+    // move it did not make. Restoring there moved d10/d13 0.67%/1.0% at
+    // OUTCOME: OK. (The per-span ksdev0 reset in run_x11_span is a third thing
+    // again: ssx11a/revdrv call ssprep/restor with Lx11rg=T.)
     const int sv_lterm = ctx.x11opt.lterm;
     const int sv_ksdev = ctx.xtrm.ksdev;
 
@@ -287,9 +301,9 @@ bool xrgdrv(X13Context& ctx, bool span_mode) {
     }
 
     // Restore Lterm (-> main run re-resolves Lter/Lmsr/Lstabl/L3x5 in editor.f's
-    // 2042-2103 block) and Ksdev (-> main run re-runs the Bundesbank spread test).
+    // 2042-2103 block), and Ksdev only on the hoisted call -- see the save block.
     ctx.x11opt.lterm = sv_lterm;
-    ctx.xtrm.ksdev = sv_ksdev;
+    if (!at_x11ari) ctx.xtrm.ksdev = sv_ksdev;
 
     if (span_mode) {
         // xrgdrv.f:167-178 puts Nfcst/Nbcst/Nfdrp and the four derived pointers

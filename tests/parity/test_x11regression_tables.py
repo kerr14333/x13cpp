@@ -9,12 +9,17 @@ main x11pt1 then divides the series by Faccal, so the regARIMA model fits the
 TD-adjusted series (converged nonseasonal MA1 ~= 0.2607, vs bare-airline ~0.40).
 
 The C++ runs regARIMA in an earlier phase (run_pre_model) than the main X-11
-(run_x11), so xrgdrv is hoisted ahead of the estimate: run_pre_model divides the
-estimation input by the stashed Faccal, and x11pt1 restores Faccal for the Ixreg==3
-divide. The whole chain is bit-exact -- including the two /x11/ state vars the
-transparent pass must NOT leak into the main run (Lterm, which drives the editor's
-per-period seasonal-filter re-resolution, and the Bundesbank Ksdev spread; both are
-saved/restored in xrgdrv.cpp, same class as the slidingspans/history per-span reset).
+(run_x11), so on the MODEL path xrgdrv is hoisted ahead of the estimate:
+run_pre_model divides the estimation input by the stashed Faccal, and x11pt1
+restores Faccal for the Ixreg==3 divide. The whole chain is bit-exact --
+including Lterm, the /x11/ selector the transparent pass must NOT leak into the
+main run (it drives the editor's per-period seasonal-filter re-resolution), and
+the Bundesbank Ksdev spread, which the hoisted call restores and the un-hoisted
+one must not (restor.f resets Lter/Ktcopt/Tic and nothing else; the restore
+compensates for the move, not for the Fortran -- see xrgdrv.cpp).
+
+There is no model on `-nomodel-priortd`, and that is x11ari.f:88-95's point: the
+oracle's xrgdrv call sits under `IF(Lx11)` alone, so it runs on both paths.
 
 GATED here, all bit-exact:
   * xrm -- the regression DESIGN matrix (the Nb trading-day contrast columns over

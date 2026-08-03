@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**24 walls.**
+**23 walls.**
 
 
 ## Automatic model selection
@@ -48,10 +48,6 @@ reproduce.
 
 - **`core/src/driver/run_seats.cpp:391`**
   SEATS historical-span decomposition (ESTBUR general-branch solve) -- either an unsupported model shape (p>0/bp>0/imean!=0) or the chain failed; see tools/seats_scope.md
-
-- **`core/src/driver/x11_prestage.cpp:225`**
-  x11regression OLS prior trading day (Ixreg>=2) on the NO-MODEL path (x12run.f:174 -> x11ari.f)
-  *Fortran:* `x12run.f:174`
 
 
 ## regARIMA

@@ -3668,3 +3668,90 @@ where the oracle succeeds, so a golden comparison would fail rather than pass.
 hand to fire on `variables=(easter[8])` and NOT on `variables=(td easter[8])`.
 
 Suite 6468 -> 6486 passed, 0 failed, 0 xfailed.
+
+## 71. The no-model OLS prior TD -- and a restore that was compensating for a hoist, on the one path that had not made the move.
+
+`x11ari.f:88-95` calls `xrgdrv` under `IF(Lx11)` alone:
+
+```
+IF(Ixreg.eq.2.or.Khol.eq.1)THEN
+ CALL xrgdrv(Lmodel,Lx11,Kh2,Lgraf)
+```
+
+`Lmodel` is only passed THROUGH, to `ssprep`/`restor`, to widen the snapshot.
+The OLS prior trading-day pass itself runs whether or not a regARIMA model was
+requested. This port drives it from `run_pre_model`, which runs only when there
+IS one, so a no-model spec that promoted `Ixreg` skipped it and answered as if
+`Ixreg` were 1. It was WALLED (entry 65's sibling), so the outcome was a clean
+refusal rather than wrong numbers.
+
+**The measurement first.** `x11regression{ variables=(td) span=(1949.01,0.12) }`
+with no `arima{}`: the oracle moves d10 9.2e-3, d11 8.3e-3, d12 8.4e-3, d13
+1.6e-2 against the same spec without `span=`. `0.per` is the only writer of
+`Fxprxr` and `editor.f:1976-1978` promotes `Ixreg` 1->2 on it; `0.12` on a
+series ending in December resolves to the series end, so `Xdsp` is 0 and nothing
+narrows -- the promotion is all this route is for.
+
+**The port is a placement, not an algorithm.** Nothing in `xrgdrv` needed
+changing; the call goes into `x11_prestage` at x11ari's own point in time --
+after `x11int` (x12run.f:174), before `x11pt1`. That ORDER is the content: the
+transparent pass reads `Sprior`, which on the no-model path exists only once the
+`adjsrs` record has been copied by `x11int`, and it leaves `Faccal` for
+x11pt1's `Ixreg==3` restore to fold.
+
+**Then the interesting half.** With the call in place the calendar factor came
+out bit-exact -- `b16`, `c16` and the TD part of `d16` all matched to 5e-15 --
+and the SEASONAL factor was 0.67% out. d10 and d16 carried the SAME relative
+error, which is what says the calendar half is right and the filtering is not.
+
+It was `Ksdev`, the Bundesbank extreme-value spread control. `xrgdrv.cpp` saved
+and restored it alongside `Lterm`, on the reasoning that both are
+transparent-pass leakage. `restor.f` restores `Lter`, `Ktcopt` and `Tic` and
+NOTHING else -- the oracle's main `x11pt2` simply inherits whatever the
+transparent pass's `entsch` left, and its own re-derivation is gated `Ksdev < 4`
+on that inherited value. So the restore is not in the Fortran at all.
+
+Deleting it fails **362** gates. It is not dead code: it compensates for the
+MODEL path's HOIST -- the port moves the call out of x11ari and ahead of the
+editor stand-in that then sets `Kersa=0` (editor.f:1486). The no-model call
+makes no such move, so it must not carry the compensation. `at_x11ari` is that
+distinction, and it is the honest name for it: the flag does not describe the
+spec, it describes which call site is being stood in for.
+
+**The shape worth keeping.** A compensating restore is invisible while every
+gated spec goes through the path it compensates for. The moment a second call
+site appears, the compensation becomes a defect there -- and it will not look
+like one, because the code is identical and correct twenty lines up. Ask of any
+save/restore in this port whether it mirrors the Fortran or patches a
+rearrangement; the two need different call-site conditions, and only the second
+kind has to be re-derived per caller.
+
+**Gated:** `extra/airline_x11regression-nomodel-priortd` (new). Auto-discovered
+by `test_x11regression_tables.py` (name contains `x11regression` + an `.xrm`
+golden) and by the x11-table / diagnostic gates.
+
+**Mutations:** disabling the new call fails **18** gates; restoring `Ksdev`
+unconditionally fails **17** (the new spec); never restoring it fails **361**
+(the model path). WALLS 24 -> 23 gaps. Suite 6486 -> 6508 passed, 0 failed,
+0 xfailed.
+
+**Found on the way, NOT fixed (open).** On the no-model path the oracle's
+`transform{function=log}` is a no-op for every X-11 table -- measured
+bit-identical against the same spec with no `transform{}` at all, on both a bare
+`x11{}` run and an `x11regression{ variables=(td) }` one. This engine agrees on
+the bare run and does NOT on the x11regression one: d11 comes out 1.2e-2 out,
+b16/c16 1.5e-3, at `OUTCOME: OK`. Something on the irregular-regression route
+B1 is bit-identical between the two engine runs, so the divergence is inside the
+X-11 spine, not the input.
+
+Cause NOT established. Two candidates, in order: (a) `Lam` alone opens
+x11pt2.f's `goodlm` gates -- :115 and :324, the makadj/tdlom fold, which also
+need `Ixreg!=2 .and. Priadj>1`, so the real question may be whether this port
+sets `Priadj` on a route where the oracle leaves it 0; (b) `x11mdl.f:104-109`
+saves `Lam`/`Fcntyp` and forces `Lam=1, Fcntyp=4` for the whole irregular
+regression, restoring at :356 and :833 -- this port does not reproduce that at
+all, and it is inert on every gated MODEL spec, which is why it survived.
+Measure (a) first; it is one flag away from being decided.
+
+The new spec deliberately carries no `transform{}` so that this does not
+contaminate what it gates.
