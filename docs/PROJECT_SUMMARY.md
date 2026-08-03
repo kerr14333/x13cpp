@@ -91,7 +91,7 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 Engineering documentation is generated as a byproduct of the work, not as an afterthought:
 
-- **Scope / trace docs** (`tools/`, 31 documents): `seats_scope.md`, `slidingspans_scope.md`, `engine_scope.md`, `lmdif_port_spec.md`, `coverage_plan.md`, and a per-front scouting note for each area attacked (`automdl`, `pickmdl`, `composite`, `spectrum_peaks`, `genqs`, `x11regression`, `history_options`, `dropped_options`, …). Each records what was measured, what it cost, and what was deliberately left open.
+- **Scope / trace docs** (`tools/`, <!--x13:scope_docs-->32<!--/x13--> documents): `seats_scope.md`, `slidingspans_scope.md`, `engine_scope.md`, `lmdif_port_spec.md`, `coverage_plan.md`, and a per-front scouting note for each area attacked (`automdl`, `pickmdl`, `composite`, `spectrum_peaks`, `genqs`, `x11regression`, `history_options`, `dropped_options`, …). Each records what was measured, what it cost, and what was deliberately left open.
 - **`tools/census_bugs.md`** — the catalogue of original-source bugs, for a later modernization pass.
 - **`tools/coverage_plan.md`** — the plan to gate *every* documented spec option against the oracle (the hardening phase after the core lands).
 - **Persistent project memory** — `CLAUDE.md` plus a per-session handoff (`tools/SESSION_HANDOFF.md`), carrying the vision, the milestones, and the hard-won gotchas across sessions. This is load-bearing: most of the defects found in the last week were found by re-reading a measurement someone had written down, not by re-deriving it.
@@ -110,11 +110,11 @@ number here is a build failure. Full table: [`docs/METRICS.md`](METRICS.md).
 | C++ written | **<!--x13:cpp_lines-->47966<!--/x13--> non-blank lines**, <!--x13:cpp_files-->182<!--/x13--> files | excludes generated COMMON headers |
 | Fortran reference | <!--x13:fortran_lines-->166076<!--/x13--> lines, <!--x13:fortran_files-->712<!--/x13--> files | not all on the port's critical path |
 | Fortran routines ported | **<!--x13:routines_done-->406<!--/x13--> of <!--x13:routines_total-->690<!--/x13-->** (<!--x13:routines_pct-->58.8<!--/x13-->%) | `tools/ported.yaml`; excludes 22 not-applicable files, and counts 3 `partial` as neither |
-| Parity result | <!--x13:parity_pass-->6468<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->671<!--/x13--> skip | plus ctest 11/11, R bindings 165/165 |
+| Parity result | <!--x13:parity_pass-->6468<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->671<!--/x13--> skip | plus ctest <!--x13:ctest-->12/12<!--/x13-->, R bindings 165/165 |
 | Corpus | <!--x13:corpus_specs-->425<!--/x13--> spec files, <!--x13:parity_modules-->31<!--/x13--> test modules | real + synthetic series |
 | Census bugs catalogued | <!--x13:census_bugs-->36<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->36<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
 | Active development time | **<!--x13:active_time-->61h 15m<!--/x13-->** over <!--x13:calendar_days-->17<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
-| Commits | <!--x13:commits-->399<!--/x13--> | 2026-07-18 → 2026-07-29 |
+| Commits | <!--x13:commits-->400<!--/x13--> | 2026-07-18 → 2026-07-29 |
 | Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
 *Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*

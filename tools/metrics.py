@@ -122,6 +122,13 @@ def m_parity_modules():
                 if f.startswith("test_") and f.endswith(".py")])
 
 
+def m_scope_docs():
+    # The scope/trace/scouting notes under tools/. PROJECT_SUMMARY used to type
+    # this count into prose, and it went stale by one the moment a doc was
+    # added -- exactly what markers exist to stop.
+    return len([f for f in os.listdir(HERE) if f.endswith(".md")])
+
+
 def m_census_bugs():
     p = os.path.join(HERE, "census_bugs.md")
     with open(p, "r", errors="replace") as fh:
@@ -247,6 +254,7 @@ METRICS = [
     ("ctest",           m_ctest,           "Unit tests (ctest)"),
     ("corpus_specs",    m_corpus_specs,    "Corpus spec files"),
     ("parity_modules",  m_parity_modules,  "Parity test modules"),
+    ("scope_docs",      m_scope_docs,      "Scope / trace docs under tools/"),
     ("cpp_lines",       m_cpp_lines,       "C++ non-blank lines (excl. generated)"),
     ("cpp_files",       m_cpp_files,       "C++ files (excl. generated)"),
     ("fortran_lines",   m_fortran_lines,   "Fortran reference, non-blank lines"),

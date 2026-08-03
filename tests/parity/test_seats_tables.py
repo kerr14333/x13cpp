@@ -53,8 +53,11 @@ RTOL = 1e-8
 # forgives zero-crossings, never masks a genuine discrepancy.
 ATOL = 1e-9
 
-# The 8 SEATS corpus specs (tools/seats_scope.md section 4 / the task's gate
-# list): the 4 base series x {default seats, fixed-airline-seats}.
+# The six SEATS save tables. (This comment used to describe the CASES list
+# instead -- "the 8 SEATS corpus specs, the 4 base series x {default seats,
+# fixed-airline-seats}" -- which _discover outgrew long before it was widened to
+# reach extra/; it stands at 63. Counts belong in the discovery, not in prose
+# above an unrelated constant.)
 _TAGS = ["s10", "s11", "s12", "s13", "s16", "s18"]
 
 
