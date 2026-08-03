@@ -85,7 +85,13 @@ adds force/slidingspans/history variants. ~50-80 specs. This covers the spec
 
 ## Sequencing
 
-Blocked on: core engine + SEATS bit-exact first (so the matrix has a correct
-target to gate against). This is the QA phase that turns "the port reproduces
-the oracle on our examples" into "the port reproduces the oracle on every
-documented option," which is the bar for a shippable R/Python library.
+Blocked on the core engine being bit-exact first, so the matrix has a correct
+target to gate against. **The SEATS half of that precondition is met** (the
+decomposition, the forecast decomposition and `composite{}` under SEATS all gate
+bit-exact); what remains is the X-11 / regARIMA option surface still behind a
+wall — `docs/WALLS.md` is the live count, and this document deliberately does
+not repeat it.
+
+This is the QA phase that turns "the port reproduces the oracle on our examples"
+into "the port reproduces the oracle on every documented option," which is the
+bar for a shippable R/Python library.

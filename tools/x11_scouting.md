@@ -1,4 +1,35 @@
-# X-11 Scouting Report — Moving-Average Seasonal Adjustment (M5, in progress)
+# X-11 Scouting Report — Moving-Average Seasonal Adjustment (M5)
+
+> ## READ THIS FIRST — every "UNPORTED" / "defer" below is a 2026-07-20 reading
+>
+> **This document is a scouting and planning record, not a status board.** It
+> owns *how X-11 works* and *what was measured while scouting it*, which is
+> durable. It does NOT own what is ported — `docs/WALLS.md` (generated from the
+> engine's own refusals) and `tools/SESSION_HANDOFF.md` do, and they cannot go
+> stale the way a hand-written list can.
+>
+> The banner is here because the plan sections below are dated and the reference
+> sections (§1–§6) were not: a reader landing mid-file saw "**UNPORTED —
+> diagnostics**" with no date on screen. Corrected in place, 2026-08-03, in the
+> style of the 2026-07-27 refresh already in §2.
+>
+> **Landed since 2026-07-20**, i.e. every one of these now gates bit-exact and
+> the claims below that call them unported or deferred are wrong:
+> `x11pt1`–`x11pt4` and `x11ari` themselves; the whole diagnostics front
+> (`ftest`, `mstest`, `kwtest`, `combft`, `f3cal`, `sumry`, `avedur`, plus
+> `prtd8b`/`prtd9a`, which write onto `ctx` rather than printing); `chktrn`;
+> `ssrit` (`slidingspans{}`) and `getrev` (`history{}`); `rndsa`, `shrink`,
+> `qmap`/`qmap2` (`force{}`); `makadj`/`tdlom` and the prior-TD block;
+> `xrgdrv`/`x11mdl`/`x11aic`/`x11ref` (the whole `x11regression{}`
+> sub-milestone, including `span=` both halves); `spcdrv` (`spectrum{}`) and
+> `agr*` (`composite{}`).
+>
+> **Still accurate below**, checked rather than assumed: the print/save emitters
+> (`table`, `punch`, `prttrn`, `x11plt`, `prtf2`, `fgen`, `prtagr`, `pragr2`,
+> `writln`) are deferred *by project policy* — results live on the result object
+> — and `svchsd`, the %-change standard-deviation savelog, is genuinely still
+> open. `pe5`/`pe6` being gated is not evidence otherwise: those are the E5/E6
+> tables in percent, not `svchsd`'s std-dev field.
 
 > **STATUS (2026-07-20, updated): Tiers 0–3 leaves DONE + unit-tested; Tier 4
 > drivers ALL DONE (`vtc`, `sfmsr`, `si`, `tdxtrm`).** Tier 0–3 (28 routines) in
@@ -144,6 +175,13 @@ save tables, then a `tests/parity/test_x11_*.py` gating airline_x11-default
 (24 x11 golden dirs ship them at 15-digit precision).
 
 ## x11pt2 port plan (the B1->D7 heart, 954 lines) — scouted 2026-07-20
+
+> **Refreshed 2026-08-03.** x11pt2 is ported and gated. The UNPORTED tags in the
+> flow sketch below were true when scouted and are not now: `makadj`/`tdlom`
+> (the TD/length-of-month prior block) and `ssrit` (sliding spans) and `ftest`
+> and `chktrn` have all landed. Kept unedited because the FLOW is what this
+> section is for -- the call order, the gating conditions and the
+> base-case reachability check under it are still the accurate part.
 
 Structure = the classic B/C/D iteration; **most CALLs are already-ported leaves**
 (averag, divsub, addmul, setdp, si, vsfa, vsfb, vtc, forcst, logar, copy). Flow:
@@ -382,7 +420,8 @@ the **sliding-spans span-setup wrapper** — it sets span dates then calls
 
 1. **`trnaic`** (x11ari.f:84) — automatic transform test if `Fcntyp==0`
    (already scouted for automdl; shared).
-2. Prior TD/holiday adjustments via `xrgdrv` (x11regression — defer).
+2. Prior TD/holiday adjustments via `xrgdrv` (x11regression — PORTED; the
+   whole sub-milestone is in `core/src/x11/{xrgdrv,x11reg}.cpp`).
 3. **`x11pt1`** (x11ari.f:101, 327 lines) — **prior adjustments → table B1**
    (the modeled, prior-adjusted, forecast-extended input series).
 4. **`arima`** (x11ari.f:133) — regARIMA modeling (already ported).
@@ -393,7 +432,8 @@ the **sliding-spans span-setup wrapper** — it sets span dates then calls
    D-tables + seasonal F/M diagnostics.
 7. **`x11pt4`** (x11ari.f:262, 778 lines) — **X-11 PARTS E1→F4**: modified
    tables, year-over-year, F2/F3 quality stats.
-8. Spectral plots (`spcdrv`, defer), composite/aggregate (`agr*`, defer).
+8. Spectral plots (`spcdrv` — PORTED, `driver/run_spectrum.cpp`),
+   composite/aggregate (`agr*` — PORTED, `core/src/composite/`).
 
 The classic B/C/D three-iteration structure lives *inside* `x11pt2` (B1→D7) and
 `x11pt3` (D8→D16). Each pass is the same kernel sequence: form SI ratios
@@ -463,8 +503,9 @@ STATUS block. Only the "DONE"/"defer"-marked Tier 4+ rows track live status.
 | 6 | x11pt3 | 1291 | PARTS D8→D16: D10/D11/D12/D13 finals + seasonal tests | new |
 | 6 | x11pt4 | 778 | PARTS E1→F4: modified tables, F2/F3 stats | new |
 | 6 | x11ari | 389 | top partition driver (wire behind `x11{}` in run_m2) | new |
-| dx | ftest / mstest / kwtest / f3cal / sumry / avedur / rndsa / shrink / qmap / qmap2 | 294/158/99/142/84/51/129/79/116/328 | F-tests, M-stats, D9A, quality diagnostics (savelog fields) | new — defer past first gate |
-| — | table / punch / prttrn / x11plt / svf2f3 / fgen / prtf2 / prtd8b / prtd9a | | print/save engines — **DEFER** (like fcstout/amdprt) | defer |
+| dx | ftest / mstest / kwtest / f3cal / sumry / avedur / rndsa / shrink / qmap / qmap2 | 294/158/99/142/84/51/129/79/116/328 | F-tests, M-stats, D9A, quality diagnostics (savelog fields) | **ALL PORTED + gated** (was: defer past first gate) |
+| — | table / punch / prttrn / x11plt / fgen / prtf2 | | print engines — **DEFER** (like fcstout/amdprt), still policy | defer |
+| — | svf2f3 / prtd8b / prtd9a | | **PORTED** — these write onto `ctx` (the `f2.*`/`f3.*` savelog block, d8b/d9a), they do not print | done |
 
 **First 3–5 to port (why):**
 1. **divsub + addmul + logar/antilg + setmv/setdp** — the mode-arithmetic
@@ -579,6 +620,15 @@ Additive/logadd coverage: `airline_x11-additive`, `airline_x11-logadd`.
   `agr*`, spectrum `spc*`/`genqs`, x11regression `x11mdl`/`x11aic`/`regx11`).
 
 ## x11pt3 port plan (D8->D16 finals) — scouted 2026-07-20
+
+> **Refreshed 2026-08-03.** x11pt3 is ported and gated. Every heading below that
+> begins "UNPORTED" describes 2026-07-20: `chktrn`, the diagnostics four
+> (`ftest`/`kwtest`/`mstest`/`COMBFT`), `prtd8b`/`prtd9a`, and all four of the
+> "gated OFF for base" entries (`ssrit`, `getrev`, `shrink`, `qmap`/`qmap2`) have
+> landed -- the last four as `slidingspans{}`, `history{}` and `force{}`, which
+> is why they no longer read as flag-guarded stubs. The genuine remainder is the
+> print engines, deferred by policy. The per-routine line counts, call sites and
+> entry conditions recorded below were the point of the section and still hold.
 
 `x11pt3.f` is **1292 lines** but almost entirely PRINT/SAVE + gated-off feature
 branches. The base-path *compute* is a short spine of already-ported leaves plus
