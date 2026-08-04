@@ -1291,28 +1291,62 @@ measured it, then removed it.
 
 Suite 6530 -> 6535 passed, 0 failed, 0 xfailed, 681 skipped.
 
+## This session, part 25: `Grpx(-1)` measured -- and the wall in front of it was too narrow
+
+Entry 74. Board item 1's first half had been blocked since entry 65 on "decide
+whether an OOB read gets reproduced, and on what evidence". The evidence is in.
+
+**It is not undefined behaviour.** `COMMON /cx11rg/` declares `Clxptr(0:PB)`
+immediately before `Grpx(0:PGRP)`, so storage association makes
+`Grpx(Tdgrp-1)` with `Tdgrp==0` resolve to `Clxptr(PB)` -- a determined address
+81 integers INSIDE the block. A probe compiled read-only against the vendored
+headers (`tools/ref_grpx.f`, the `ref_*.f` pattern) poisons both arrays and runs
+editor's own two lines: `begcol = 1080 = Clxptr(PB)`, alias confirmed.
+
+`Clxptr(PB)` is `Colptr(PB)` (loadxr.f:38 copies all `PB+1` elements regardless
+of how many are meaningful), which no realistic model writes, so it holds the
+static 0; `Grpx(0)` is 1, `endcol` is 0, and `Xtdtst` flips 1 -> 3 -- `td`
+becomes `td1coef`. Measured stable in the oracle across 1, 2 and 4
+x11regression columns; the control (`td` present in `variables=`) reports `td`.
+
+**What that found.** The wall guarding this block tested `Nbx == 0`, a PROXY for
+the real trigger (no trading-day group). `variables=(easter[8]) aictest=(td)`
+has `Nbx == 1` and went straight through: engine `aictest.xtd.reg: td`,
+`aictest.xtd: yes`, AICC(td) -758.367; oracle `td1coef`, `no`, **-1732.145**,
+ending `aictest: none`. Both `OUTCOME: OK`. Condition is now
+`Xtdtst > 0 && no_td_group`. WALLS stayed at 23 -- widened, not added, which is
+why a gap count is not a coverage measure.
+
+**Still the user's call**, and it is now a policy question rather than an
+evidence one: does this port reproduce a documented COMMON aliasing? Cost is one
+explicit line -- the C++ arrays are separate objects, so the alias must be
+written (`ctx.xrgmdl.clxptr(prm::PB)`), not inherited.
+
+Suite 6535 passed, 0 failed, 0 xfailed, 681 skipped.
+
 ## Open, in the order I would take them
 
 1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
-   block**, newly WALLED (entry 65), so this is a gap with a refusal in front
-   of it rather than a silent one. It holds three td/tdstock agreement
-   refusals, the `Xtdtst` 1 -> 3 rewrite for a single-column TD group,
-   `Xaicst`/`Xaicrg`, and the monthly-data / pre-1776 generatability refusals.
-   Inert for every gated aictest spec (all name their regressors in
-   `variables=`); the wall fires only for an aictest with none. Two things
-   have to be settled to lift it:
-   - `aictest=(td)` with no `variables=`: `editor.f:1786` reads `Grpx(-1)`
-     out of bounds when `Tdgrp==0`, the read compares equal to `endcol`, and
-     the oracle's `td` aictest silently becomes `td1coef` -- then rejects, and
-     lands in x11mdl.f:308's identity-factor NOTE branch. Decide whether an
-     OOB read gets reproduced (and on what evidence) or stays walled.
-   - The easter half is now SPLIT and half closed (part 21 / entry 70). The
-     window set (`editor.f:1577-1591`) is ported and gated. What remains is
-     NOT this block either: with no surviving TD group, `xeastr` suppresses
-     `editor.f:1727`'s `Sigxrg=2.5` and the AIC baseline is fitted on an
-     AUTOMATIC-AO design (the oracle adds `AO1960.Mar` at t=-5.50), which is
-     where the ~7.6 AICC gap lives. Newly walled under that condition. Take it
-     as an AO-identification question, not an aictest one.
+   block**, WALLED (entry 65), and the wall was WIDENED in part 25 after it was
+   caught covering less than it looked like (`Nbx == 0` was a proxy for the real
+   trigger, no trading-day group; one non-TD variable walked past it into a
+   974-unit AICC error at `OUTCOME: OK`). It holds three td/tdstock agreement
+   refusals, the `Xtdtst` 1 -> 3 rewrite, `Xaicst`/`Xaicrg`, and the
+   monthly-data / pre-1776 generatability refusals. Two halves left, and they
+   are now different KINDS of open:
+   - The `Grpx(-1)` flip is **MEASURED and no longer an evidence question**
+     (entry 74). It is not UB: storage association aliases it onto
+     `Clxptr(PB)`, proved by `tools/ref_grpx.f`, and the flip is stable across
+     column counts. What is left is a POLICY call -- does this port reproduce a
+     documented COMMON aliasing? Cost is one explicit line, since the C++
+     arrays are separate objects and the alias must be written rather than
+     inherited. Everything downstream (`td1coef` tested, rejected, into
+     x11mdl.f:308's identity-factor NOTE) follows from that one decision.
+   - The AO half, untouched by the above. With no surviving TD group, `xeastr`
+     suppresses `editor.f:1727`'s `Sigxrg=2.5` and the AIC baseline is fitted
+     on an AUTOMATIC-AO design (the oracle adds `AO1960.Mar` at t=-5.50), which
+     is where the ~7.6 AICC gap lives. Walled under that condition. Take it as
+     an AO-identification question, not an aictest one.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a

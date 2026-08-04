@@ -3941,3 +3941,112 @@ Entry 61 wrote this spec, measured it, and then REMOVED it rather than gate it.
 
 Suite 6530 -> 6535 passed, 0 failed, 0 xfailed, 681 skipped; ctest 12/12; WALLS
 23 gaps unchanged.
+
+## 74. `Grpx(-1)` is not undefined behaviour -- it is documented COMMON aliasing. And measuring that found a live gap the wall was too narrow to cover.
+
+Board item 1's first half, blocked since entry 65 on "decide whether an OOB read
+gets reproduced (and on what evidence)". The evidence is now in, and it changes
+the question.
+
+**The read.** `editor.f:1783-1786`, reached when `aictest=(td)` names a trading
+day that `variables=` does not, so `Tdgrp==0`:
+
+```fortran
+ELSE IF (Xtdtst.eq.1.or.Xtdtst.eq.3)THEN
+ begcol=Grpx(Tdgrp-1)
+ endcol=Grpx(Tdgrp)-1
+ IF((Xtdtst.eq.1).and.(begcol.eq.endcol))THEN
+  Xtdtst=3
+```
+
+`Grpx` is `DIMENSION Grpx(0:PGRP)` with `PGRP=PB=80`, so `Grpx(-1)` is one
+element below the lower bound.
+
+**It resolves to a determined address.** `xrgmdl.cmn:49`:
+
+```fortran
+COMMON /cx11rg/ Clxptr,Grpx,Gpxptr,Nbx,Ncoltx,...
+```
+
+`Clxptr(0:PB)` is declared immediately before `Grpx(0:PGRP)` in the same COMMON,
+and Fortran storage association makes a COMMON block contiguous in declaration
+order. `Grpx(-1)` is therefore `Clxptr(PB)` -- 81 integers INSIDE the block, not
+off the end of it. No wild pointer, no fault, no compiler roulette. The
+subscript is non-conforming; the address is not.
+
+**Proved, not argued.** A probe compiled against the vendored headers read-only
+(the `tools/ref_*.f` pattern) poisons both arrays with distinguishable values
+(`Clxptr(i)=1000+i`, `Grpx(i)=2000+i`) and runs editor's own two lines from a
+subroutine so `-O0` cannot fold them:
+
+```
+ Clxptr(PB)          =     1080
+ Grpx(0)             =     2000
+ begcol = Grpx(-1)   =     1080
+ alias is Clxptr(PB)? T
+```
+
+**Why the comparison then succeeds.** `Clxptr(PB)` is `Colptr(PB)`:
+`loadxr.f:38` does `cpyint(Colptr(0),PB+1,1,Clxptr(0))`, copying all 81 elements
+regardless of how many are meaningful. Nothing writes `Colptr(80)` in any
+realistic model -- it would take 80 regressors -- so it holds the block's static
+0. `Grpx(0)` is 1, so `endcol` is 0, `begcol` is 0, and `Xtdtst` flips 1 -> 3:
+**`td` silently becomes `td1coef`.** The same probe over a zeroed block
+reproduces exactly that.
+
+**Stable in the real oracle, across column counts.** Three specs, all
+`aictest=(td)` with no `td` in `variables=`, differing only in how many
+x11regression columns they carry (`easter[8]`; + 1 user column; + 3 user
+columns -- 1, 2 and 4 columns):
+
+| spec | columns | `aictest.xtd.reg` |
+|---|---|---|
+| easter[8] | 1 | `td1coef` |
+| easter[8] + u1 | 2 | `td1coef` |
+| easter[8] + u1..u3 | 4 | `td1coef` |
+
+Control: every gated spec that DOES name `td` in `variables=` reports
+`aictest.xtd.reg: td`. The flip is keyed on the absence of a TD group and
+nothing else -- consistent with a read that lands on an index the model's own
+size never reaches.
+
+**THE FINDING: the wall was narrower than the divergence.** The refusal guarding
+this block tested `Nbx == 0` -- "no regression variables". But `Nbx == 0` is a
+PROXY for the actual trigger, which is **no trading-day group**. A spec with one
+non-TD variable has `Nbx == 1` and sailed straight through:
+
+| key | engine | oracle |
+|---|---|---|
+| `aictest.xtd.reg` | `td` | `td1coef` |
+| `aictest.xtd` | **yes** | **no** |
+| `aictest.xtd.aicc.notd` | -744.271 | -736.359 |
+| `aictest.xtd.aicc.td` | -758.367 | **-1732.145** |
+| `aictest` | (absent) | `none` |
+
+Both at `OUTCOME: OK`. A 974-unit AICC difference and an inverted accept/reject
+verdict, unwalled, for as long as nobody wrote `variables=(easter[8])
+aictest=(td)`. The condition is now `Xtdtst > 0 && no_td_group`, which subsumes
+the old `Nbx == 0` arm (no variables implies no TD group) and closes the hole.
+WALLS count unchanged at 23 -- the wall was WIDENED and reworded, not added,
+which is exactly why a count is not a coverage measure.
+
+**What is decided and what is not.** Decided: the read is deterministic, its
+target is named, and reproducing it costs one explicit line -- the C++ arrays
+are separate `farray1lb` objects (`xrgmdl_cmn.hpp:11-13`), not
+storage-associated, so the alias has to be WRITTEN (`ctx.xrgmdl.clxptr(prm::PB)`)
+rather than inherited. Not decided, and still the user's call: whether this port
+reproduces a documented COMMON aliasing at all. That is a policy question about
+faithfulness, not the evidence question entry 65 was blocked on. The AO half of
+board item 1 (the ~7.6 AICC on an auto-AO design) is untouched by this and stays
+open.
+
+**The lesson, and it generalises past this block.** A wall keyed on a PROXY for
+its trigger is narrower than the divergence it claims to cover, and the gap is
+invisible because the wall LOOKS conservative -- `Nbx == 0` reads like "the
+degenerate case", and it is, just not the degenerate case that matters. Same
+family as the discovery-predicate rule: `endswith("seats")` and `Nbx == 0` are
+both stand-ins for a condition nobody wrote down. When you wall something,
+state the trigger in the condition, not a symptom of it.
+
+Suite 6535 passed, 0 failed, 0 xfailed, 681 skipped; ctest 12/12; WALLS 23 gaps
+/ 4 faithful.

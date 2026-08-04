@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (73
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (74
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -272,6 +272,15 @@ because by the time you would think to look them up, the damage is done.
   day one. Entry 61 wrote the spec that triggers it, measured the divergence,
   and then DELETED the spec rather than gate it. Measuring a divergence and not
   landing a spec leaves nothing behind but prose.
+- **A wall keyed on a PROXY for its trigger is narrower than the divergence it
+  claims to cover.** The x11regression aictest wall tested `Nbx == 0` ("no
+  regression variables") when the real trigger was NO TRADING-DAY GROUP. One
+  non-TD variable walked past it into a 974-unit AICC error and an inverted
+  accept/reject verdict, at `OUTCOME: OK` (entry 74). The wall looked
+  conservative, which is what hid it. **State the trigger in the condition, not
+  a symptom of it** -- and note that the WALLS count did not move when this was
+  fixed, because the wall was widened rather than added. A gap count is not a
+  coverage measure.
 - **Measure before naming a Census bug.** Two near-CB entries turned out to be
   correct Fortran read against the wrong mode. And a comment documenting a
   Census bug is not the same as code reproducing it — check the code below it

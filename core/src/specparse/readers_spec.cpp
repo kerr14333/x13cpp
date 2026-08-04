@@ -3714,9 +3714,32 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     // none they do not, and that is where the ~7.6 AICC sits. Refuse rather
     // than return the number.
     const bool no_td_group = tdgrp == 0 && stdgrp == 0;
-    if (xg.nbx == 0 && (ctx.x11reg.xtdtst > 0 || ctx.x11log.xeastr))
-        xrg_not_ported(ctx, "x11regression aictest with no regression "
-                            "variables (editor.f:1760-1846)");
+    // The TD arm's trigger is NO TD GROUP, not `Nbx == 0` -- measured, and the
+    // narrower form was a live silent divergence rather than a conservative
+    // wall. `variables=(easter[8]) aictest=(td)` has Nbx==1, so it sailed past
+    // the old condition: the oracle reports `aictest.xtd.reg: td1coef`,
+    // `aictest.xtd: no`, AICC(td) -1732.145 and ends `aictest: none`, while
+    // this engine reported `td` / `yes` / -758.367 at OUTCOME: OK.
+    //
+    // editor.f:1786 is why, and the read is NOT unpredictable. `COMMON
+    // /cx11rg/` declares `Clxptr(0:PB)` immediately before `Grpx(0:PGRP)`, so
+    // storage association makes `Grpx(Tdgrp-1)` with Tdgrp==0 resolve to
+    // `Clxptr(PB)` -- a determined in-COMMON address 81 integers inside the
+    // block. Proved by probe (M5_PORT_NOTES entry 74): poisoning the arrays and
+    // running editor's own two lines returns Clxptr(PB) exactly. `Clxptr(PB)`
+    // is `Colptr(PB)` (loadxr.f:38 copies all PB+1 elements regardless of how
+    // many are meaningful), which no realistic model ever writes, so it holds
+    // the block's static 0; `Grpx(0)` is 1, `endcol` is 0, and the comparison
+    // succeeds -- flipping Xtdtst 1 -> 3, i.e. `td` silently becomes `td1coef`.
+    // Measured stable across 1, 2 and 4 x11regression columns.
+    //
+    // Reproducing that is a decision about porting a documented COMMON aliasing,
+    // not about porting a coin flip; until it is taken, refuse.
+    if (ctx.x11reg.xtdtst > 0 && no_td_group)
+        xrg_not_ported(ctx, "x11regression aictest=(td) with no trading-day "
+                            "group: editor.f:1786 reads Grpx(-1), which storage "
+                            "association aliases onto Clxptr(PB), flipping the "
+                            "test to td1coef (editor.f:1760-1846)");
     else if (ctx.x11log.xeastr && no_td_group)
         xrg_not_ported(ctx, "x11regression aictest=(easter) with no "
                             "trading-day group: the AIC baseline is fitted on "

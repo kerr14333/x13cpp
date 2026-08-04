@@ -22,7 +22,7 @@ stale figure is a build error instead of something a reader finds first.
 | Corpus spec files | **429** |
 | Parity test modules | **31** |
 | Scope / trace docs under tools/ | **32** |
-| C++ non-blank lines (excl. generated) | **48130** |
+| C++ non-blank lines (excl. generated) | **48153** |
 | C++ files (excl. generated) | **182** |
 | Fortran reference, non-blank lines | **166076** |
 | Fortran reference, files | **712** |
@@ -30,8 +30,8 @@ stale figure is a build error instead of something a reader finds first.
 | Fortran routines in scope (excl. n-a) | **690** |
 | Percent of routines ported | **58.8** |
 | Census bugs catalogued | **36** |
-| Commits | **405** |
-| Active development time | **61h 27m** |
+| Commits | **406** |
+| Active development time | **62h 08m** |
 | Calendar days worked | **17** |
 | Last commit | **2026-08-03** |
 

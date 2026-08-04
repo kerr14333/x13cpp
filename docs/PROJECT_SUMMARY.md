@@ -107,14 +107,14 @@ number here is a build failure. Full table: [`docs/METRICS.md`](METRICS.md).
 
 | Metric | Value | Notes |
 |---|---|---|
-| C++ written | **<!--x13:cpp_lines-->48130<!--/x13--> non-blank lines**, <!--x13:cpp_files-->182<!--/x13--> files | excludes generated COMMON headers |
+| C++ written | **<!--x13:cpp_lines-->48153<!--/x13--> non-blank lines**, <!--x13:cpp_files-->182<!--/x13--> files | excludes generated COMMON headers |
 | Fortran reference | <!--x13:fortran_lines-->166076<!--/x13--> lines, <!--x13:fortran_files-->712<!--/x13--> files | not all on the port's critical path |
 | Fortran routines ported | **<!--x13:routines_done-->406<!--/x13--> of <!--x13:routines_total-->690<!--/x13-->** (<!--x13:routines_pct-->58.8<!--/x13-->%) | `tools/ported.yaml`; excludes 22 not-applicable files, and counts 3 `partial` as neither |
 | Parity result | <!--x13:parity_pass-->6535<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->681<!--/x13--> skip | plus ctest <!--x13:ctest-->12/12<!--/x13-->, R bindings 165/165 |
 | Corpus | <!--x13:corpus_specs-->429<!--/x13--> spec files, <!--x13:parity_modules-->31<!--/x13--> test modules | real + synthetic series |
 | Census bugs catalogued | <!--x13:census_bugs-->36<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->36<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
-| Active development time | **<!--x13:active_time-->61h 27m<!--/x13-->** over <!--x13:calendar_days-->17<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
-| Commits | <!--x13:commits-->405<!--/x13--> | 2026-07-18 → 2026-07-29 |
+| Active development time | **<!--x13:active_time-->62h 08m<!--/x13-->** over <!--x13:calendar_days-->17<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
+| Commits | <!--x13:commits-->406<!--/x13--> | 2026-07-18 → 2026-07-29 |
 | Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
 *Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*

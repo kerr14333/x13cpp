@@ -67,11 +67,11 @@ reproduce.
 - **`core/src/specparse/getreg_vars.cpp:1121`**
   AOS/LSS outlier regressors (rdotls.f)
 
-- **`core/src/specparse/readers_spec.cpp:3718`**
-  x11regression aictest with no regression variables (editor.f:1760-1846)
-  *Fortran:* `editor.f:1760-1846`
+- **`core/src/specparse/readers_spec.cpp:3739`**
+  x11regression aictest=(td) with no trading-day group: editor.f:1786 reads Grpx(-1), which storage association aliases onto Clxptr(PB), flipping the test to td1coef (editor.f:1760-1846)
+  *Fortran:* `editor.f:1760-1846, editor.f:1786`
 
-- **`core/src/specparse/readers_spec.cpp:3721`**
+- **`core/src/specparse/readers_spec.cpp:3744`**
   x11regression aictest=(easter) with no trading-day group: the AIC baseline is fitted on an auto-AO design (editor.f:1727 Otlxrg, x11aic.f:112-143 strip)
   *Fortran:* `editor.f:1727, x11aic.f:112-143`
 
