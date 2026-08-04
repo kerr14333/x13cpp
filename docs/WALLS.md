@@ -67,11 +67,11 @@ reproduce.
 - **`core/src/specparse/getreg_vars.cpp:1121`**
   AOS/LSS outlier regressors (rdotls.f)
 
-- **`core/src/specparse/readers_spec.cpp:3802`**
+- **`core/src/specparse/readers_spec.cpp:3846`**
   x11regression aictest with a tdstock group: Xaicst is read but never written (editor.f:1802-1808)
   *Fortran:* `editor.f:1802-1808`
 
-- **`core/src/specparse/readers_spec.cpp:3806`**
+- **`core/src/specparse/readers_spec.cpp:3850`**
   x11regression aictest with a change-of- regime trading day: Xaicrg is read but never written (editor.f:1811-1822)
   *Fortran:* `editor.f:1811-1822`
 
@@ -108,10 +108,10 @@ reproduce.
 - **`core/src/x11/x11reg.cpp:964`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1506`**
+- **`core/src/x11/x11reg.cpp:1623`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1545`**
+- **`core/src/x11/x11reg.cpp:1640`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:49`**

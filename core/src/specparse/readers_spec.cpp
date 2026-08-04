@@ -3603,6 +3603,50 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
         inptok = false;
     }
 
+    // editor.f:1636-1668 -- with `reweight=yes` and FIXED trading-day
+    // coefficients, x11mdl.f's reweighting has either nothing to work with or
+    // an impossible target.
+    //
+    // Guarded on `Irgxfx.ge.2`, so it only fires once some x11regression
+    // coefficient is held fixed (b= with an `f` suffix, or history's
+    // fixx11reg=). `Tdgrp` here is the NAMED trading-day group only: the
+    // user-column loop below can still set Tdgrp, and the oracle runs this
+    // check before that loop, so a user-TD column never reaches it.
+    if (tdgrp > 0 && ctx.x11log.lxrneg && xg.irgxfx >= 2) {
+        const int begcol = xg.grpx(tdgrp - 1);
+        const int endcol = xg.grpx(tdgrp) - 1;
+        bool tdfneg = false, alltdf = true;
+        for (int i = begcol; i <= endcol; ++i) {
+            if (xg.regfxx(i)) {
+                if (xg.bx(i) < -1.0) tdfneg = true;   // MINONE
+            } else {
+                alltdf = false;
+            }
+        }
+        if (tdfneg) {
+            writln(ctx, "ERROR: Cannot specify fixed coefficients for the "
+                   "trading day regressors", stdio::STDERR, ctx.units.mt2, true);
+            // "zero w hen" is NOT a transcription slip -- see CB-38.
+            // editor.f:1655 is 71 characters long and breaks the word `when`
+            // across the continuation, so fixed-form's blank pad at column 72
+            // lands inside it. Measured on the vendored binary.
+            writln(ctx, "       that imply daily weights less than zero w hen "
+                   "specifying", stdio::STDERR, ctx.units.mt2, false);
+            writln(ctx, "       reweight=yes in the x11regression spec.",
+                   stdio::STDERR, ctx.units.mt2, false);
+            inptok = false;
+        } else if (alltdf) {
+            errhdr(ctx);
+            writln(ctx, "NOTE: Cannot reweight trading day coefficients if all "
+                   "trading day", stdio::STDERR, ctx.units.mt2, true);
+            writln(ctx, "      regressors are fixed; reweighting of daily "
+                   "weights will not", stdio::STDERR, ctx.units.mt2, false);
+            writln(ctx, "      be performed.", stdio::STDERR, ctx.units.mt2,
+                   false);
+            ctx.x11log.lxrneg = false;
+        }
+    }
+
     // editor.f:1690-1716 -- the USER columns can supply the trading-day or the
     // holiday group. Two Census defects live in this loop; both are reproduced.
     //
@@ -3924,6 +3968,11 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // and rmlnvr sets Priadj=4 / Kfmt=1 on a series the oracle never
     // prior-adjusts. See the restore after loadxr below.
     const bool sv_picktd_pre_xreg = ctx.picktd.picktd;
+    // Iregfx is the SECOND field of that snapshot this port needs, for the same
+    // reason: gtxreg.f:861's regfix() (restored below) now recomputes it for the
+    // x11reg design, and restor.f:69 puts the regARIMA value back. Nothing else
+    // did -- xrg_clear_working clears Regfx but not Iregfx.
+    const int sv_iregfx_pre_xreg = ctx.model.iregfx;
     xrg_clear_working(ctx);
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
@@ -3935,6 +3984,28 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                    ctx.arima.nobs, havsrs, havesp, /*x11reg=*/true, havtd, havhol,
                    havln, havlp, locok, inptok);
             if (ctx.error.lfatal) return;
+            // gtxreg.f:186-192: for the multiplicative/log-additive td
+            // regression the length-of-month / leap-year variation is carried
+            // by the Xnstar day-count normalization (x11ref), not a regression
+            // column -- rmlnvr strips the Leap Year regressor that gtpdrg's
+            // picktd "td" adds, so the x11reg model is the 6 day-contrasts
+            // alone (the oracle's nxreg=6). The prior-adjust argument is a
+            // throwaway here (NOTSET): x11reg does not fold the LOM into a
+            // series prior.
+            //
+            // This belongs HERE, inside the variables= branch, not after the
+            // argument loop, because Nb is what gtxreg.f:608 compares the b=
+            // list length against. Run late, `variables=(td) b=(<6 values>)`
+            // measured Nb==7 (Leap Year still attached), took the
+            // count-mismatch branch, and DISCARDED the whole b= list -- at
+            // OUTCOME: OK, while the oracle applied it. The mirror image is
+            // just as bad: a 7-value list the oracle refuses was accepted.
+            if (ctx.picktd.picktd && ctx.prior.priadj != prm::NOTSET &&
+                ctx.prior.priadj != 1) {
+                int tmppa = prm::NOTSET;
+                rmlnvr(ctx, tmppa, 0, ctx.mdldat.nspobs);
+                if (ctx.error.lfatal) return;
+            }
         } else if (argidx == 2) {    // user -- names/# columns (gtxreg.f:198)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             bool argok = true;
@@ -4030,19 +4101,55 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                     else ut = prm::PRGTUD;   // 4/user, or NOTSET
                 }
             }
-        } else if (argidx == 30) {   // centeruser (gtxreg.f:537-543)
+        } else if (argidx == 30) {   // umtrimzero (gtxreg.f:528-532, label 300)
+            // ARGDIC positions 203..212. This branch used to carry the
+            // centeruser reader -- an off-by-one against the computed GO TO,
+            // where label 300 is umtrimzero and 310 is centeruser. The engine
+            // therefore accepted `umtrimzero = seasonal` at OUTCOME: OK (the
+            // oracle errors "Choices for umtrimzero are yes, span or no.") and
+            // rejected the three legal values.
+            //
+            // `ltrim` itself only reaches gtfldt at gtxreg.f:810, the umfile=
+            // read, and this port does not honour the user-mean subsystem at
+            // all (Haveum is never set) -- so the value is consumed and
+            // dropped. What is NOT droppable is the validation: parse it
+            // through ZRODIC so an illegal value is refused exactly where the
+            // oracle refuses it.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int ivec[1] = {0}; int nelt = 0;
+            static const char ZRODIC[] = "yesspanno";
+            static const int zroptr[4] = {1, 4, 8, 10};
+            gtdcvc(ctx, LPAREN, false, 1, ZRODIC, zroptr, 3,
+                   "Choices for umtrimzero are yes, span or no.", ivec, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+        } else if (argidx == 31) {   // centeruser (gtxreg.f:537-543, label 310)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             bool argok = true; int ivec[1] = {0}; int nelt = 0;
             static const char URRDIC[] = "meanseasonal";
             static const int urrptr[3] = {1, 5, 13};
             gtdcvc(ctx, LPAREN, false, 1, URRDIC, urrptr, 2,
-                   "Choices for centeruser are mean or seasonal.", ivec, nelt,
+                   "Choices for centeruser are mean and seasonal.", ivec, nelt,
                    argok, inptok);
             if (ctx.error.lfatal) return;
             if (argok && nelt > 0) {
                 lumean = (ivec[0] == 1);
                 luseas = (ivec[0] == 2);
             }
+        } else if (argidx == 32) {   // reweight -> Lxrneg (gtxreg.f:549-553)
+            // Parsed and DISCARDED until now, while THREE ported readers took
+            // the permanently-false flag as fact: editor.f:1511's negative
+            // prior-TD-weight clamp (gtinpt.cpp), x11mdl.f:578's daily-weight
+            // reweighting, and revdrv.f:327's history reset.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true; int ivec[1] = {0}; int nelt = 0;
+            static const char YSNDIC[] = "yesno";
+            static const int ysnptr[3] = {1, 4, 6};
+            gtdcvc(ctx, LPAREN, false, 1, YSNDIC, ysnptr, 2,
+                   "Choices for reweight are yes or no.", ivec, nelt,
+                   argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) ctx.x11log.lxrneg = (ivec[0] == 1);
         } else if (argidx == 21) {   // noapply -> Ixrgtd/Ixrghl (gtxreg.f:425-440)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             bool argok = true;
@@ -4346,18 +4453,8 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // the regARIMA estimate stays the bare ARIMA model (the oracle fits np=3, no
     // TD -- the x11reg estimates are not ML). gtinpt.f:832 restor: restore the
     // regARIMA model (bare ARIMA -> clear the working regressors back out).
-    // gtxreg.f:186-192: for the multiplicative/log-additive td regression the
-    // length-of-month / leap-year variation is carried by the Xnstar day-count
-    // normalization (x11ref), not a regression column -- rmlnvr strips the Leap
-    // Year regressor that gtpdrg's picktd "td" adds, so the x11reg model is the
-    // 6 day-contrasts alone (the oracle's nxreg=6). The prior-adjust arg is a
-    // throwaway here (NOTSET): x11reg does not fold the LOM into a series prior.
-    if (ctx.picktd.picktd && ctx.prior.priadj != prm::NOTSET &&
-        ctx.prior.priadj != 1) {
-        int tmppa = prm::NOTSET;
-        rmlnvr(ctx, tmppa, 0, ctx.mdldat.nspobs);
-        if (ctx.error.lfatal) return;
-    }
+    // (gtxreg.f:186-192's rmlnvr now runs in the variables= branch above, where
+    // the oracle runs it.)
     // gtxreg.f:629-661 -- resolve `span=` into Begxrg/Endxrg. Both were never
     // written by this port and `span=` fell through to consume_value, so the
     // option was parsed and DISCARDED: measured on the airline series, the
@@ -4455,6 +4552,14 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
         // gtxreg.f:858-877 -- Iregfx from the b= fixings, then Userfx: does the
         // irregular regression hold a FIXED user column? Unlike getreg.f's
         // version this one tests a single group, and only 'User-defined'.
+        //
+        // gtxreg.f:861. The regfix() call was MISSING while the Userfx block
+        // below already read its result -- so `M.iregfx` here was whatever the
+        // regARIMA parse left behind, and the loadxr(true) two dozen lines down
+        // copied that into `Irgxfx`. Every reader of Irgxfx was therefore
+        // reading the wrong model's fix state: editor.f:1640's reweight check,
+        // editor.f:1675's stock-TD check, and the Userfx test right here.
+        regfix(ctx);
         M.userfx = false;
         if (nusxrg > 0 && M.iregfx >= 2) {
             if (M.iregfx == 3) {
@@ -4485,6 +4590,7 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // (Nrxy/Iregfx/Regfx/Ncusrx/Nrusrx/Adj*/model params) is what
     // xrg_clear_working stands in for on the bare-ARIMA path.
     ctx.picktd.picktd = sv_picktd_pre_xreg;
+    ctx.model.iregfx = sv_iregfx_pre_xreg;   // restor.f:69 `Iregfx=Irfx2`
     // gtxreg.f:883-897: Nbx>0 -> Ixreg=1 (prior=yes -> 2, deferred). Havxtd/
     // Havxhl gate Ixrgtd/Ixrghl, which gate Axrgtd/Axrghl -- so an explicit
     // `noapply=(td)` leaves Havxtd set but clears Axrgtd, and the requirement

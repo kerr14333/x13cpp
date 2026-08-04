@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (76
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (77
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -243,6 +243,16 @@ because by the time you would think to look them up, the damage is done.
   common defect shape in this port: the parser consumes a documented option,
   writes it nowhere, and the run returns `OUTCOME: OK` with wrong numbers.
   Before believing an option works, find the read, not just the parse.
+- **A comment naming a `.f` line is a claim, not evidence — and the two drift in
+  opposite directions.** Twice in one increment (entry 77): a branch labelled
+  `// centeruser (gtxreg.f:537-543)` was dispatched on the argidx of
+  `umtrimzero`, the comment and the code disagreeing with each other in plain
+  sight; and a block headed "Iregfx from the b= fixings, then Userfx" did the
+  Userfx half while the `regfix()` that produces `Iregfx` was never called at
+  all. Both readers were inert, so nothing failed. **Verify a dispatch against
+  the computed `GO TO` and the ARGDIC pointer table, not against the comment
+  above the branch** — decoding `argptr` takes a minute and is the only check
+  that cannot lie.
 - **Measure the ORACLE on-vs-off before porting anything**, then measure
   engine-vs-oracle separately. The first tells you a flag matters; only the
   second tells you whether the engine already honours it. Both have been

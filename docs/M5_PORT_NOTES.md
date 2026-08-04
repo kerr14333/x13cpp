@@ -4253,3 +4253,134 @@ only through its effect on gates, not directly.
 **39** gates.
 **Wall DELETED**, not widened -- WALLS 24 -> 23 gaps. Suite 6537 -> 6581 passed,
 0 failed, 0 xfailed; ctest 12/12.
+
+## 77. `x11regression{reweight=}` was parsed and discarded -- and finding its readers turned up a mis-dispatched argument, a missing `regfix()`, and an ordering that silently ate `b=`.
+
+Board item 1. `reweight=` (`gtxreg.f:553` -> `Lxrneg`) was consumed by the
+argument loop and written nowhere, while **three** ported readers took the
+permanently-false flag as fact. Measured before touching anything, oracle
+on-vs-off: a log-additive `tdprior = (1.4 1.4 1.4 1.4 1.4 -0.5 0.5)` with
+`reweight=yes` moves `a4` by 1.2e-2 at 1949.Jan. Engine-vs-oracle then gave the
+same delta at `OUTCOME: OK` -- the option did nothing at all.
+
+**The three readers.**
+
+1. `editor.f:1511` -- the negative prior-TD weight clamp, already ported in
+   `gtinpt.cpp` and already reading `ctx.x11log.lxrneg`. The weights in that spec
+   sum to exactly 7.0 as given, so without the clamp the standardization factor
+   is 1 and the `-0.5` survives; with it the weight becomes 0, the total is 7.5,
+   and all seven are scaled by 7/7.5.
+2. `x11mdl.f:577-624` -- the reweighting proper. Unported.
+3. `revdrv.f:327` -- the history reset, already ported.
+
+**The reweight had to move up a phase.** `x11mdl.f` builds the X-11 daily
+weights `Dx11` at `:541-570`, reweights at `:577-624`, and only then calls
+`x11ref` at `:694`. This port had the `Dx11` build BELOW its `x11ref_td` call,
+which was harmless for as long as the single consumer (the Kswv==3 combine)
+re-ran `x11ref_td` for itself. The reweight is not like that: `:610` writes back
+into `B`, so every factor `x11ref` builds afterwards comes off the rewritten
+coefficients. The build is now hoisted above the `x11ref_td` call and the Kswv==3
+block consumes the same `dx11`.
+
+**Reaching it took a constructed spec, and the construction is the interesting
+part.** `Dx11 = 1 + B`, so a negative weight needs a TD coefficient below -1.
+Additive mode would give `Dx11 = B` directly, where any negative coefficient
+does -- but `x11pt1`'s additive/pseudo-additive prior TD is walled, so that
+route is closed. `editor.f:1640` refuses a FIXED coefficient below -1 outright.
+What is left is the DERIVED Sunday weight `Dx11(7) = 1 - sum(B)`: fix five of
+the six day contrasts high enough that the estimated sixth cannot pull the sum
+back under 1.
+
+The window is narrow and both edges are gated:
+
+| five fixed at | derived Sunday | what happens |
+|---|---|---|
+| 0.35 | -0.9753 | `Dx11(7)` = +0.02, nothing fires |
+| **0.39** | **-1.0566** | `Dx11(7)` = -0.057 < 0, Saturday's 0.107 is the one positive unfixed weight -- the reweight runs |
+| 0.43 | -1.1431 | Saturday's own estimate crosses -1 too, `tdwsum` is 0, `x11mdl.f:613-623` abends |
+
+0.39 and 0.43 are both gated. 80 `c16` lines and 290 `d11` lines separate 0.39
+from the same spec with `reweight=no`.
+
+**CB-38, measured not inferred.** `editor.f:1655` is 71 characters long and
+breaks the word `when` across the fixed-form continuation, so the blank pad at
+column 72 lands inside it: the oracle prints `less than zero w hen specifying`.
+The neighbouring `:1663` breaks at a word boundary, where the same pad supplies
+the space the text needed -- which is exactly why this one reads as a typo
+rather than as a mechanism. Confirmed by running the vendored binary, not by
+reading the source.
+
+**NOT claimed: the stale `icol`.** `x11mdl.f:597-602` TESTS `Dx11(7)` and
+ADDS/ZEROES `Dx11(icol)`, where `icol` is the DO variable the loop above left at
+`ncol0+1`. For a six-column TD group the two agree by accident; for `td1coef`
+(`ncol0==1`) it reads element 7 and writes element 2. It is transcribed verbatim
+and left as an OPEN QUESTION, because the divergent case needs an UNFIXED
+`td1coef` coefficient above 0.4 -- and fixing it to get there makes the group
+all-fixed, which `editor.f:1660` answers by clearing `Lxrneg` before this code
+runs. No spec reaches it, so per the standing rule it is not a CB entry.
+
+### Three defects found on the way in, none of them about reweighting
+
+**The computed GO TO was off by one.** `gtxreg.f`'s dispatch maps argidx 30 to
+label 300 (`umtrimzero`, ZRODIC yes/span/no) and 31 to label 310 (`centeruser`,
+URRDIC mean/seasonal). This port dispatched the CENTERUSER reader on **argidx
+30**, and had a comment citing `gtxreg.f:537-543` -- which is label 310 -- right
+above it. So the line numbers in the comment and the index in the code disagreed
+with each other, and had for as long as the branch existed. It ran both ways:
+`umtrimzero = seasonal` was accepted at `OUTCOME: OK` where the oracle errors,
+and a real `centeruser=` fell through to the generic consume and was discarded.
+Decoding an ARGDIC by its pointer table takes about a minute and would have
+caught it; nothing else would, because both arguments were inert.
+
+**`regfix()` was never called for the x11reg design.** `gtxreg.f:861` calls it;
+`loadxr.f:49` then copies `Iregfx` into `Irgxfx`; and `editor.f:1640` (this
+work), `editor.f:1675` (the stock-TD check) and `gtxreg.f:866` (`Userfx`) all
+read the result. The port had the `Userfx` block -- under a comment saying
+"gtxreg.f:858-877 -- Iregfx from the b= fixings, then Userfx" -- but not the
+call that produces `Iregfx`. So every one of those readers was testing whatever
+fix state the regARIMA parse had left behind. This is the read-but-never-written
+shape again, with the distinguishing feature that the comment ASSERTED the write
+happened.
+
+Adding the call needed the matching restore, which is the `restor`-stand-in trap
+for the fourth time: `restor.f:69` puts `Iregfx` back after `loadxr(T)`, and
+`xrg_clear_working` -- the stand-in here -- clears `Regfx` but not `Iregfx`.
+Snapshotted alongside `Picktd`.
+
+**`rmlnvr` ran a phase too late, and `b=` paid for it.** `gtxreg.f:186-192`
+strips the Leap Year column INSIDE the `variables=` branch, so `Nb` is 6 by the
+time `:608` compares it against the length of the `b=` list. This port ran
+`rmlnvr` after the whole argument loop, so `Nb` was still 7 there. Consequences,
+both at `OUTCOME: OK`:
+
+- a correct 6-value `b=` list took the count-mismatch branch and was DISCARDED
+  (`gtxreg.f:609`'s message is a plain WRITE that never touches `Inptok`, so the
+  run continues with no coefficients applied -- which is what makes it silent);
+- a 7-value list, which the oracle rejects, was applied.
+
+Hoisted into the `variables=` branch where the oracle has it. The 6-value
+direction is gated by every new `b=`-carrying spec here. The 7-value direction
+is NOT gated, and the reason is worth recording: `gtxreg.f:609`'s message starts
+with `ERROR:` but is not a fatal, and BOTH of the parity suite's derived
+predicates -- `test_m1_parse::_oracle_ok` and
+`test_x11regression_tables::_oracle_abended` -- read an `ERROR:` line in a
+blessed `.err` as a rejection. A spec for it reports two false failures. Rather
+than bolt a name-list exception onto a deliberately derived predicate, the spec
+was dropped and the measurement recorded here.
+
+**Gated:** `extra/airline_x11regression-reweight` (the reweight itself),
+`-reweight-off` (the A/B control), `-reweight-abend` (`x11mdl.f:613-623`),
+`-reweight-tdprior` (`editor.f:1511`), `-reweight-allfixed` (`editor.f:1660`'s
+NOTE and the `Lxrneg` clear), `-reweight-fixneg` (`editor.f:1652`'s refusal, and
+CB-38), `-umtrimzero` (the argidx off-by-one). All seven new.
+
+Suite 6582 -> 6678 passed, 0 failed, 0 xfailed. WALLS unchanged at 23 gaps.
+
+**Still open here.** `x11mdl.f:661-690`'s ELSE arm -- the stock-trading-day
+nonpositive-factor abend -- is not ported, and it is an unguarded path rather
+than a wall, which is the shape entry 76 named as worse than no code at all. It
+needs its own spec first: note that `:664` reads the x11reg STORE
+(`Grpttx/Gpxptr/Ngrptx`) where `:545` twenty lines up reads the WORKING model
+(`Grpttl/Grpptr/Ngrptl`), so which model it tests is itself a question to
+settle. Also `slidingspans.cpp:395` still carries "Nbx==0 always in this port",
+which x11regression makes false.

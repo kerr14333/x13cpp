@@ -84,6 +84,12 @@ _POST_PARSE_FATAL = {
     # oracle has written a complete .udg. Gated for real in
     # test_x11regression_tables.py::test_x11regression_abend.
     "extra/airline_x11regression-aictest-usersing.spc",
+    # x11mdl.f:613-623 -- reweight=yes with a negative daily weight and no
+    # positive UNFIXED weight to rescale against. Raised in the B iteration,
+    # same shape as usersing: the spec parses, the oracle writes a complete
+    # .udg, and only then abends. Gated in
+    # test_x11regression_tables.py::test_x11regression_abend.
+    "extra/airline_x11regression-reweight-abend.spc",
 }
 
 

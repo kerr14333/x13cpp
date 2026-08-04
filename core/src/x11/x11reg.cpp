@@ -1454,6 +1454,131 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         }
     }
 
+    // ---- x11mdl.f:541-660 -- the "X-11 style" daily weights Dx11 ------------
+    // Built here, ABOVE x11ref (x11mdl.f:694), because the Lxrneg reweighting
+    // at :603-612 writes back into B: every TD factor downstream comes off the
+    // rewritten coefficients. This block used to sit below the x11ref_td call,
+    // which was harmless only because its one consumer (the Kswv==3 combine)
+    // re-runs x11ref_td for itself.
+    //
+    // `Haveum` is never set in this port, so :541's `.and.(.not.Haveum)` is
+    // always true.
+    double dx11[7];
+    bool have_dx11 = false;
+    int tdbegcol = 0, tdendcol = 0;
+    if (ctx.x11log.havxtd) {
+        const int igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
+                                m.ngrptl, "Trading Day");
+        if (igrp > 0) {
+            have_dx11 = true;
+            tdbegcol = m.grp(igrp - 1);
+            tdendcol = m.grp(igrp) - 1;
+            const int begcol = tdbegcol, endcol = tdendcol;
+            setdp(prm::DNOTST, 7, dx11);
+            dx11[6] = 0.0;
+            if (begcol == endcol) {
+                // td1coef: one contrast coefficient -> five weekday weights and
+                // the -5/2 weekend split.
+                for (int icol = 1; icol <= 5; ++icol) {
+                    dx11[icol - 1] = md.b(begcol);
+                    if (muladd != 1) dx11[icol - 1] += 1.0;
+                }
+                for (int icol = 6; icol <= 7; ++icol) {
+                    dx11[icol - 1] = (-5.0 * md.b(begcol)) / 2.0;
+                    if (muladd != 1) dx11[icol - 1] += 1.0;
+                }
+            } else {
+                for (int icol = begcol; icol <= endcol; ++icol) {
+                    dx11[icol - begcol] =
+                        (muladd == 1) ? md.b(icol) : 1.0 + md.b(icol);
+                    dx11[6] -= md.b(icol);
+                }
+                if (muladd != 1) dx11[6] += 1.0;
+            }
+
+            // x11mdl.f:577-624 -- x11regression{reweight=yes}. A negative daily
+            // weight makes the B16/C16 trading-day factor go negative, which a
+            // multiplicative adjustment cannot use. Reweighting clamps every
+            // UNFIXED negative weight to zero and rescales the surviving
+            // positive unfixed weights so the seven still total 7, leaving the
+            // fixed ones alone; the rescaled weights are then written back into
+            // B, so x11ref builds the factors from them.
+            if (ctx.x11log.lxrneg) {
+                const auto& xg = ctx.xrgmdl;
+                double tdwsum = 0.0, tdwfix = 0.0;
+                bool tdneg = false;
+                const int ncol0 = endcol - begcol + 1;
+                int icol = 1;
+                for (icol = 1; icol <= ncol0; ++icol) {
+                    const bool isfix = xg.regfxx(begcol + icol - 1);
+                    if (dx11[icol - 1] >= 0.0) {
+                        if (isfix) tdwfix += dx11[icol - 1];
+                        else tdwsum += dx11[icol - 1];
+                    } else if (!isfix) {
+                        dx11[icol - 1] = 0.0;
+                        tdneg = true;
+                    }
+                }
+                // NOT a transcription slip. x11mdl.f:597-602 TESTS `Dx11(7)` but
+                // ADDS/ZEROES `Dx11(icol)`, where `icol` is the DO variable the
+                // loop above left at ncol0+1. For a six-column TD group ncol0==6
+                // and icol==7, so the two agree by accident; for td1coef ncol0==1
+                // and it would read element 7 while writing element 2.
+                //
+                // OPEN QUESTION, deliberately not filed as a CB entry. The
+                // divergent case needs an UNFIXED td1coef coefficient above 0.4
+                // (Dx11(6)=Dx11(7)=1-2.5B goes negative there) -- fixing it makes
+                // the group all-fixed, which editor.f:1660 answers by clearing
+                // Lxrneg before this code runs. No spec in the corpus reaches it,
+                // so this is read off the Fortran and NOT measured, and the
+                // standing rule is measure-before-naming. Transcribed verbatim so
+                // that whichever way it behaves, this port behaves the same.
+                const int stale = ncol0 + 1;
+                if (dx11[6] >= 0.0) {
+                    tdwsum += dx11[stale - 1];
+                } else {
+                    dx11[stale - 1] = 0.0;
+                    tdneg = true;
+                }
+                if (tdneg) {
+                    if (!(tdwsum > 0.0)) {
+                        // x11mdl.f:613-623 -- every unfixed weight is zero, so
+                        // there is no scale factor to build. The oracle abends.
+                        writln(ctx, "ERROR: Cannot generate factor necessary to "
+                               "reweight trading day", stdio::STDERR,
+                               ctx.units.mt2, true);
+                        writln(ctx, "       daily weights - none of the unfixed "
+                               "daily weights are greater", stdio::STDERR,
+                               ctx.units.mt2, false);
+                        writln(ctx, "      than zero.", stdio::STDERR,
+                               ctx.units.mt2, false);
+                        abend(ctx);
+                        return;
+                    }
+                    for (int i = 1; i <= 7; ++i) {
+                        const int icol2 = begcol + i - 1;
+                        // `Regfxx(icol2)` runs past endcol for a short TD group;
+                        // the Fortran reads the same slots out of the same
+                        // PB-length array, so the read is in bounds either way.
+                        const bool fixed_here =
+                            (icol2 >= 1 && icol2 <= prm::PB) && xg.regfxx(icol2);
+                        if (fixed_here && endcol > begcol) continue;
+                        if (dx11[i - 1] > 0.0)
+                            dx11[i - 1] *= (7.0 - tdwfix) / tdwsum;
+                        if (i <= ncol0) md.b(icol2) = dx11[i - 1] - 1.0;
+                    }
+                    // x11mdl.f:628-658's "NOTE: At least one of the parameter
+                    // estimates above yields a negative daily weight" table is
+                    // part of the deferred .out print engine: it is guarded by
+                    // Prttab(fext) and writes only to Mt1/Mt2, never STDERR.
+                }
+            }
+        }
+    }
+    // x11mdl.f:661-690's ELSE arm -- the stock-trading-day nonpositive-factor
+    // abend -- is NOT ported. See tools/SESSION_HANDOFF.md; it is an unguarded
+    // path, not a wall, and wants its own spec before anything is claimed.
+
     // Build the TD factor series and copy into Factd/Faccal.
     std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);
     std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
@@ -1484,52 +1609,22 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     // Divide the TD effect out of the irregular (x11pt2 re-iterates without it).
     divsub(sti, sti, ctx.x11fac.faccal.data(), pos1ob, posfob, muladd);
 
-    // ---- x11mdl.f:541-572 + :786-830 -- the COMBINED daily weights ----------
+    // ---- x11mdl.f:786-830 -- the COMBINED daily weights ---------------------
     // Only on the Kswv==3 route (tdprior weights AND an x11regression TD model,
-    // see x11pt1.f:235). The estimated irregular-regression coefficients are
-    // converted to X-11 style daily weights Dx11, ADDED to the user's prior
-    // weights, and the calendar/TD factors rebuilt from the sum -- so the
-    // published Faccal/Factd carry BOTH effects, not just the estimated one.
-    //
-    // The oracle builds Dx11 unconditionally at :541 (it is also the print
-    // vector for the B16/C16 table header); it is only READ here, so the build
-    // and the combine live together. The Lxrneg reweighting at :575-626 is out
-    // of scope: Lxrneg defaults false (gtinpt.f:465) and x11regression{reweight=}
-    // is not honoured by this parser.
+    // see x11pt1.f:235). Dx11 -- built above, and already reweighted if
+    // reweight=yes -- is ADDED to the user's prior weights and the
+    // calendar/TD factors rebuilt from the sum, so the published Faccal/Factd
+    // carry BOTH effects, not just the estimated one.
     if (ctx.x11opt.kswv == 3 && ctx.x11log.havxtd) {
-        const int igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
-                                m.ngrptl, "Trading Day");
-        if (igrp <= 0) {
+        if (!have_dx11) {
             // Kswv==3 requires Axrgtd, and Axrgtd without a Trading Day group in
             // the loaded x11reg model would leave Dx11 at DNOTST -- the oracle
             // would combine sentinels. Refuse rather than reproduce garbage.
             x11reg_not_ported(ctx, "x11mdl Kswv=3 with no Trading Day group");
             return;
         }
-        const int begcol = m.grp(igrp - 1);
-        const int endcol = m.grp(igrp) - 1;
-        double dx11[7];
-        setdp(prm::DNOTST, 7, dx11);
-        dx11[6] = 0.0;
-        if (begcol == endcol) {
-            // td1coef: one contrast coefficient -> five weekday weights and the
-            // -5/2 weekend split.
-            for (int icol = 1; icol <= 5; ++icol) {
-                dx11[icol - 1] = md.b(begcol);
-                if (muladd != 1) dx11[icol - 1] += 1.0;
-            }
-            for (int icol = 6; icol <= 7; ++icol) {
-                dx11[icol - 1] = (-5.0 * md.b(begcol)) / 2.0;
-                if (muladd != 1) dx11[icol - 1] += 1.0;
-            }
-        } else {
-            for (int icol = begcol; icol <= endcol; ++icol) {
-                dx11[icol - begcol] =
-                    (muladd == 1) ? md.b(icol) : 1.0 + md.b(icol);
-                dx11[6] -= md.b(icol);
-            }
-            if (muladd != 1) dx11[6] += 1.0;
-        }
+        const int begcol = tdbegcol;
+        const int endcol = tdendcol;
         ctx.x11reg_tdwt.assign(dx11, dx11 + 7);
 
         // x11mdl.f:787-789 -- the combine itself.

@@ -1372,3 +1372,51 @@ ELSE IF (Xtdtst.eq.1.or.Xtdtst.eq.3)THEN
   holiday regressor, so "no TD group" forces a holiday, which forces
   `editor.f:1727`'s auto-AO branch, whose ~7.9 AICC gap is a separate open
   front and is walled.
+
+## CB-38
+
+**A fixed-form continuation splits the word `when` in an error message, and the
+blank pad at column 72 lands inside it: the oracle prints "less than zero w hen
+specifying".**
+
+- **File:line:** `editor.f:1655-1656`.
+- **Severity:** `cosmetic`. It is a printed message, not a number -- but it is a
+  message this port has to emit VERBATIM, so it earns an entry rather than a
+  code comment nobody would trust.
+
+`editor.f:1655` is 71 characters long:
+
+```
+          CALL writln('       that imply daily weights less than zero w
+     &hen specifying',STDERR,Mt2,F)
+```
+
+A fixed-form character constant continued across lines is the concatenation of
+columns 7-72 of each line, and a line shorter than 72 columns is treated as
+blank-padded to 72. The initial line's literal therefore ends `...zero w` plus
+one blank, and the continuation contributes `hen specifying`. The neighbouring
+`editor.f:1663` breaks at a word boundary instead, so there the same pad
+supplies exactly the space the text needed and nothing looks wrong -- which is
+why this one reads as a typo rather than as a mechanism.
+
+- **What it does to the result.** Nothing numeric. It changes one line of the
+  `.err`, which IS a compared surface for a refused spec.
+
+- **Measured, not inferred.** Ran the vendored `x13as_ascii_O2.exe` on an
+  `x11regression{variables=(td) b=(-1.5f ...) reweight=yes}` spec; the `.err`
+  reads:
+
+```
+ ERROR: Cannot specify fixed coefficients for the trading day regressors
+        that imply daily weights less than zero w hen specifying
+        reweight=yes in the x11regression spec.
+```
+
+- **Port:** reproduced verbatim in `xrg_editor_setup`
+  (`core/src/specparse/readers_spec.cpp`), with the column arithmetic in the
+  comment above it so the next reader does not "correct" it.
+
+- **Pinned by:** `tests/corpus/extra/airline_x11regression-reweight-fixneg`,
+  through `test_m1_parse::test_outcome_matches_oracle`, which compares the
+  `ERROR:` block against the blessed `.err` line for line. Rewriting the string
+  to `zero when specifying` fails that gate.

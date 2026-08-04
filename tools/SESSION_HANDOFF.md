@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6582<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->693<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6678<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->704<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6582<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6678<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1425,36 +1425,97 @@ the binary behaves as `.true.`.
 Suite 6537 -> 6581 passed, 0 failed, 0 xfailed. WALLS 24 -> 23 (wall DELETED,
 not widened). Mutation: restoring the `Axrgtd` proxy costs 39 gates.
 
+## This session, part 28: board item 1 (`reweight=`) CLOSED -- plus three defects found on the way in
+
+Entry 77. `x11regression{reweight=}` (gtxreg.f:553 -> `Lxrneg`) was parsed and
+DISCARDED while THREE ported readers took the permanently-false flag as fact
+(`editor.f:1511`'s negative prior-TD clamp in gtinpt.cpp, `x11mdl.f:578`'s
+daily-weight reweighting, `revdrv.f:327`'s history reset). Oracle on-vs-off
+first: a log-additive `tdprior` with a -0.5 weight moves `a4` 1.2e-2 at
+1949.Jan. Engine-vs-oracle gave the same delta at `OUTCOME: OK`.
+
+**The reweight had to move up a phase.** `x11mdl.f:610` writes back into `B`, so
+every factor `x11ref` builds afterwards comes off the rewritten coefficients.
+This port had the `Dx11` build BELOW its `x11ref_td` call -- harmless only
+because its single consumer (the Kswv==3 combine) re-ran `x11ref_td` for itself.
+Hoisted.
+
+**Reaching it needed a constructed spec.** `Dx11 = 1 + B`, so a negative weight
+wants a coefficient below -1. Additive mode (where `Dx11 = B`) is walled;
+`editor.f:1640` refuses a FIXED coefficient below -1. What is left is the
+DERIVED Sunday weight `1 - sum(B)`: fix five day contrasts high enough that the
+estimated sixth cannot pull the sum back under 1. The window is one notch wide
+and both edges are gated -- 0.39 reweights, 0.43 abends (`x11mdl.f:613-623`),
+0.35 does nothing.
+
+**CB-38, measured on the binary.** `editor.f:1655` is 71 characters and breaks
+`when` across the fixed-form continuation, so the blank pad at column 72 lands
+inside the word: the oracle prints `less than zero w hen specifying`.
+
+**Three defects found on the way in, none about reweighting:**
+
+1. **The computed GO TO was off by one.** `centeruser` (label 310, argidx 31)
+   was dispatched on argidx **30**, which is `umtrimzero` (label 300) -- under a
+   comment citing `gtxreg.f:537-543`, i.e. label 310. Comment and code disagreed
+   with each other in plain sight. Both ways: `umtrimzero = seasonal` accepted at
+   `OUTCOME: OK` where the oracle errors, and a real `centeruser=` discarded.
+2. **`regfix()` was never called for the x11reg design** (`gtxreg.f:861`), while
+   the block right below it -- headed "Iregfx from the b= fixings, then Userfx"
+   -- READ the `Iregfx` it produces. `loadxr` copies it into `Irgxfx`, which
+   `editor.f:1640`, `editor.f:1675` and `gtxreg.f:866` all test, so all three
+   were reading the regARIMA model's fix state. Adding the call needed the
+   matching `restor.f:69` snapshot -- the restor-stand-in trap, fourth time.
+3. **`rmlnvr` ran a phase too late.** `gtxreg.f:186-192` strips Leap Year inside
+   the `variables=` branch, so `Nb` is 6 when `:608` checks the `b=` length. This
+   port ran it after the argument loop, `Nb`==7: a correct 6-value `b=` list was
+   silently DISCARDED and a 7-value list the oracle rejects was applied. Both at
+   `OUTCOME: OK`.
+
+**Not gatable, and worth knowing why.** `gtxreg.f:609`'s count-mismatch message
+starts with `ERROR:` but never touches `Inptok` -- the oracle prints it and
+carries on. Both of the suite's DERIVED predicates (`test_m1_parse::_oracle_ok`,
+`test_x11regression_tables::_oracle_abended`) read an `ERROR:` line in a blessed
+`.err` as a rejection, so a spec for the 7-value direction reports two false
+failures. The spec was dropped rather than bolt a name-list exception onto a
+deliberately derived predicate.
+
+Suite 6582 -> 6678 passed, 0 failed, 0 xfailed. WALLS unchanged at 23 gaps.
+Seven new specs, all `extra/airline_x11regression-reweight*` plus `-umtrimzero`.
+
+**One unreproducible event, logged not chased.** A single full `-n 8` run had
+`x13run_m3.exe` on `airline_pickmdl-backcast-oos` exit 0xC0000005 with EMPTY
+stdout and EMPTY stderr; the same test passes serially and in every subsequent
+parallel run. Empty on both streams points at process creation under xdist load
+rather than the engine. If it recurs, that is a real signal.
+
 ## Open, in the order I would take them
 
-1. **`x11regression{reweight=}`** -- argidx 32 (`Lxrneg`), parsed and
-   DISCARDED. Two ported readers see a permanently-false flag. Needs
-   `editor.f:1640-1667` + `x11mdl.f:575-626` and a spec carrying a NEGATIVE
-   tdprior weight. Bounded, and it closes a parsed-but-unread hole rather than
-   chasing a numeric delta. (Was item 3; item 1 closed, see part 27.)
-   Two smaller siblings still walled in `xrg_editor_setup`, both cheap:
-   `Xaicst` (editor.f:1802-1808, the stock-TD day-of-month) and `Xaicrg`
-   (:1811-1822, the change-of-regime date) are READ by `x11reg.cpp:642/658`
-   and never written except to their gtinpt defaults.
-   Also parked there: `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the
-   uninitialized `Trumlt`, both recorded in entry 76 as open questions -- they
-   want the Fortran instrumented directly (the `tools/ref_*.f` read-only probe
-   pattern), not more reasoning.
-2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
-   the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
+1. **`x11mdl.f:661-690`'s stock-trading-day abend is UNPORTED and UNGUARDED.**
+   Found in entry 77 while hoisting the `Dx11` build past it. It is the shape
+   entry 76 named as worse than no code at all -- neither a wall nor a gate --
+   and it needs a spec first. Note the question inside it: `:664` reads the
+   x11reg STORE (`Grpttx/Gpxptr/Ngrptx`) where `:545` twenty lines above reads
+   the WORKING model (`Grpttl/Grpptr/Ngrptl`), so which model it tests is itself
+   undecided. Cheap siblings still walled in `xrg_editor_setup`: `Xaicst`
+   (editor.f:1802-1808) and `Xaicrg` (:1811-1822), both READ by
+   `x11reg.cpp:642/658` and never written except to their gtinpt defaults.
+2. **`slidingspans.cpp:395` claims "Nbx==0 always in this port"** and skips
+   `ssxmdl`'s x11-regression span setup on that basis. x11regression has been
+   ported since; the claim is false and the skip is silent. Checked 2026-08-04:
+   NO spec in the corpus combines `slidingspans{}` with `x11regression{}`, so
+   the claim has never been under test -- that is the spec to write, and
+   `ssxmdl.f:153`'s `Lxrneg` reset comes with it.
+3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+   the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-3. **`x11regression{reweight=}` (argidx 32 -> `Lxrneg`) is parsed and
-   DISCARDED** -- found while porting Kswv==3, deliberately not fixed there
-   because it is not a one-liner. `Lxrneg` is READ in two ported places
-   (`gtinpt.cpp`'s negative-tdprior-weight clamp, `run_history.cpp:591`'s
-   fixreg check), so both see a permanently-false flag; honouring it also needs
-   `editor.f:1640-1667`'s fixed-coefficient check and `x11mdl.f:575-626`'s
-   daily-weight reweighting, neither ported. Wire the parse, port or wall both
-   readers, and gate a spec with a NEGATIVE tdprior weight.
 4. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-5. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+5. `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the uninitialized `Trumlt`,
+   both recorded in entry 76 as open questions -- they want the Fortran
+   instrumented directly (the `tools/ref_*.f` read-only probe pattern), not
+   more reasoning. Same for `x11mdl.f:597-602`'s stale `icol` (entry 77).
+6. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`
