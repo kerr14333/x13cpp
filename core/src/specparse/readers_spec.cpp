@@ -3782,6 +3782,17 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // path the model has no regressors, so the clear is exact; a regARIMA model
     // that already carries regressors needs the full ssprep/restor snapshot
     // (deferred -- xrg_clear_working leaves that case as future work).
+    //
+    // Picktd is the one field of that snapshot this port DOES need, because
+    // gtinpt.f:999-1032 reads it AFTER gtxreg returns (line 999 > 832) and
+    // turns it into a leap-year PRIOR on the series. `variables=(td)` inside
+    // x11regression{} sets it via the same adpdrg.f:642 line the regARIMA
+    // parser uses, and gtinpt.f:832's restor puts it back to Pktd2 -- the
+    // ssprep(T,F,F) at gtinpt.f:804, i.e. the value from BEFORE this block.
+    // Without the restore an x11regression-only `td` looks like a regARIMA one
+    // and rmlnvr sets Priadj=4 / Kfmt=1 on a series the oracle never
+    // prior-adjusts. See the restore after loadxr below.
+    const bool sv_picktd_pre_xreg = ctx.picktd.picktd;
     xrg_clear_working(ctx);
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
@@ -4336,6 +4347,13 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     }
     loadxr(ctx, /*toxreg=*/true);
     xrg_clear_working(ctx);
+    // gtinpt.f:832's restor(T,F,F) -- restor.f:73 `Picktd=Pktd2`. loadxr.f:53
+    // has just parked the x11reg model's flag in Pckxtd, which is where xrgdrv
+    // and x11mdl read it from; the WORKING flag goes back to what gtinpt.f:804
+    // snapshotted. Only Picktd is reinstated here: the rest of restor.f's set
+    // (Nrxy/Iregfx/Regfx/Ncusrx/Nrusrx/Adj*/model params) is what
+    // xrg_clear_working stands in for on the bare-ARIMA path.
+    ctx.picktd.picktd = sv_picktd_pre_xreg;
     // gtxreg.f:883-897: Nbx>0 -> Ixreg=1 (prior=yes -> 2, deferred). Havxtd/
     // Havxhl gate Ixrgtd/Ixrghl, which gate Axrgtd/Axrghl -- so an explicit
     // `noapply=(td)` leaves Havxtd set but clears Axrgtd, and the requirement

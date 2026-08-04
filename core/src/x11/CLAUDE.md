@@ -10,7 +10,7 @@ already paid for once.
 | **5, 23** | `force{}` — non-original targets, the forecast-span prior, and the negative-value correction (`qmap2`) |
 | **6, 8** | backcasts (`forecast{maxback=}`) and `x11{appendbcst=yes}` |
 | **7, 11, 12, 18** | seasonal outliers + `centerseasonal`; holiday regressors (`Finhol`); user prior factors; `transform{constant=}` |
-| **13, 14, 15, 24, 71** | `x11regression{}` — `tdprior`, the OLS prior TD (`xrgdrv`) on both the model and the no-model path, the Easter aictest sub-engine, and the logadd tdprior bug |
+| **13, 14, 15, 24, 71, 72** | `x11regression{}` — `tdprior`, the OLS prior TD (`xrgdrv`) on both the model and the no-model path, the Easter aictest sub-engine, the logadd tdprior bug, and the `Picktd` half of gtinpt's `restor` |
 | **19, 20, 21** | x11pt4 — the F2 test battery, the Part-F summary measures + F3 quality statistics, and the Part-E tables |
 | **25** | `x11pt2 tdlom Adjtd==0` — and why the original unreachability proof was invalid |
 | **39, 40, 41–44, 46** | D8B/D9A, the single-line savelog canaries, and the spectrum / QS / NP / Tukey diagnostic blocks |

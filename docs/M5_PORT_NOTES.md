@@ -3755,3 +3755,84 @@ Measure (a) first; it is one flag away from being decided.
 
 The new spec deliberately carries no `transform{}` so that this does not
 contaminate what it gates.
+
+## 72. A stand-in for `restor` that restored less than `restor` does -- and turned an x11regression `td` into a prior adjustment.
+
+Entry 71 left this measured and unexplained: with no model, the oracle's
+`transform{function=log}` is a no-op for every X-11 table -- bit-identical to
+the same spec carrying no `transform{}` at all, on a bare `x11{}` run AND on an
+`x11regression{ variables=(td) }` one. This engine agreed on the bare run and
+did not on the x11regression one: d11 1.2e-2, d13 1.6e-2, b16/c16 1.5e-3, at
+`OUTCOME: OK`.
+
+**Ruling out the first candidate mattered.** Entry 71 named x11pt2.f's `goodlm`
+gates as the likely route, `Lam` being the only input that changes. Forcing
+`goodlm` false moved NOTHING, and neither did disabling the makadj/tdlom block
+outright. That is the whole value of writing the candidate down: it was cheap
+to kill, and killing it is what made the next step obvious.
+
+**A state dump, not more reading.** One `fprintf` of the /prior/, /adj/,
+/picktd/, /x11opt/ and /xtrm/ scalars at the top of the X-11 spine, on both
+probes:
+
+```
+log:   lam=0 fcntyp=1 muladd=0 adjmod=0 priadj=4 kfmt=1 picktd=1 ...
+nolog: lam=1 fcntyp=4 muladd=0 adjmod=0 priadj=0 kfmt=0 picktd=1 ...
+```
+
+`Priadj=4`, `Kfmt=1`: the engine was applying a LEAP-YEAR PRIOR to the series.
+`Picktd=1` on both, and that is the bug -- it should have been 0.
+
+**The chain.** `variables=(td)` inside `x11regression{}` sets `Picktd` through
+the same `adpdrg.f:642` line the regARIMA parser uses. `gtinpt.f` then does:
+
+```
+ 804  CALL ssprep(T,F,F)          ! Pktd2 = Picktd  (still F here)
+ 818  CALL gtxreg(...)            ! parses x11regression -> Picktd = T
+ 830  CALL loadxr(T)              ! Pckxtd = Picktd   (the x11reg model's copy)
+ 832  CALL restor(T,F,F)          ! Picktd = Pktd2    -> back to F
+ ...
+ 999  IF(Picktd)THEN
+1000   IF(dpeq(Lam,ZERO))THEN
+1032    CALL rmlnvr(Priadj,Kfulsm,Nspobs)   ! Priadj = 4
+```
+
+Line 999 is AFTER line 832, so the flag that block reads is the RESTORED one.
+`Pckxtd` is the copy that survives, and it is what `xrgdrv` and `x11mdl` read.
+This port's stand-in for the :832 `restor` is `xrg_clear_working` + the parked
+store; it clears the regressors and never touched `Picktd`. So an
+x11regression-only `td` looked like a regARIMA one, and rmlnvr set `Priadj=4` /
+`Kfmt=1` on a series the oracle never prior-adjusts.
+
+Three conditions have to coincide, which is why nothing caught it: a log
+transform (the `dpeq(Lam,ZERO)` gate at :1000), a `td` that lives ONLY in
+`x11regression{}` (with `regression{ variables=(td) }` the snapshot is already
+T and the restore is a no-op), and no regARIMA model to mask the result.
+
+**The class, third appearance.** `xrgdrv` already carries a hand-written
+`Ncusrx`/`Nrusrx`/`Usrtyp` restore for exactly this reason, with a comment
+saying so. The general shape: **where this port stands in for `restor`, the
+stand-in restores a SUBSET, and the fields it omits are invisible until
+something downstream reads one.** `restor.f`'s set is `Lter`, `Ktcopt`, `Tic`,
+the model parameters, `Nrxy`, `Iregfx`, `Regfx`, `Ncusrx`, `Nrusrx`, `Picktd`,
+`Adjtd`..`Adjsea`. Of those, the parse-time stand-in now covers `Picktd`
+explicitly; `Ncusrx`/`Nrusrx` are covered in `xrgdrv`; the `Adj*` block is
+never written by `gtxreg`, and `Iregfx`/`Nrxy` are only READ there. That list
+is the audit, and it is worth redoing whenever a new writer appears inside a
+block a `restor` is supposed to bracket.
+
+**Gated:** `extra/airline_x11regression-nomodel-logtd` (new). It pins the
+oracle's actual invariant -- with no model, a log transform changes no X-11
+table -- as a pair with `-nomodel-priortd`, which deliberately carries no
+`transform{}`.
+
+**Mutation:** dropping the restore fails **20** gates. Suite 6508 -> 6530
+passed, 0 failed, 0 xfailed.
+
+**Observed once, not reproduced:** one `-n 8` run had
+`airline_pickmdl-backcast-oos` exit `0xC0000005` in `x13run_m3`. It passed
+serially and on the next full parallel run, and its spec contains no
+`x11regression{}`, so this increment cannot reach it. Logged because an access
+violation is not a flake worth forgetting -- the harness carries large
+stack-resident arrays and this project has already hit `0xC00000FD` once for
+that reason.

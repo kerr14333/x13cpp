@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6508<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->678<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6530<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->681<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6508<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6530<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1199,6 +1199,53 @@ Mutations: disabling the call fails **18**; restoring `Ksdev` unconditionally
 fails **17**; never restoring it fails **361**. WALLS 24 -> 23 gaps. Suite
 6486 -> 6508 passed, 0 failed, 0 xfailed.
 
+## This session, part 23: a stand-in for `restor` that restored less than `restor` does
+
+Entry 72, and it closes the board item part 22 had just opened. With no model
+the oracle's `transform{function=log}` is a no-op for every X-11 table;
+this engine agreed on a bare `x11{}` run and did not on an
+`x11regression{ variables=(td) }` one -- d11 1.2e-2, d13 1.6e-2, b16/c16
+1.5e-3, at `OUTCOME: OK`.
+
+**The named candidate was wrong, and killing it was the cheap step.** Part 22
+pointed at x11pt2.f's `goodlm` gates. Forcing `goodlm` false moved nothing;
+neither did disabling the makadj/tdlom block outright.
+
+**A state dump settled it.** One `fprintf` of the /prior/, /adj/, /picktd/
+scalars on both probes: `priadj=4 kfmt=1 picktd=1` with the log transform,
+`priadj=0 kfmt=0 picktd=1` without. The engine was applying a LEAP-YEAR PRIOR,
+and `Picktd` should have been 0 on both.
+
+**The chain.** `variables=(td)` inside `x11regression{}` sets `Picktd` via the
+same `adpdrg.f:642` line the regARIMA parser uses. `gtinpt.f:804` snapshots it
+(F), `:818` gtxreg sets it (T), `:830` loadxr parks the x11reg copy in `Pckxtd`
+-- which is what `xrgdrv`/`x11mdl` read -- and `:832` restor puts the WORKING
+flag back to F. `gtinpt.f:999-1032` then reads it, AFTER :832, under
+`dpeq(Lam,ZERO)`, and calls rmlnvr. This port's stand-in for that restor
+(`xrg_clear_working` + the parked store) never touched `Picktd`, so an
+x11regression-only `td` looked like a regARIMA one.
+
+Three conditions coincide, which is why nothing caught it: a log transform, a
+`td` that lives ONLY in `x11regression{}`, and no regARIMA model to mask it.
+
+**The class, third appearance.** `xrgdrv` already carries a hand-written
+`Ncusrx`/`Nrusrx`/`Usrtyp` restore for the same reason. Where this port stands
+in for `restor`, the stand-in restores a SUBSET, and the omitted fields are
+invisible until something downstream reads one. Entry 72 carries the full
+`restor.f` field list and which stand-in now covers each -- redo that audit
+whenever a new writer appears inside a block a `restor` brackets.
+
+**Gated:** `extra/airline_x11regression-nomodel-logtd` (new), pinning the
+oracle's actual invariant as a pair with `-nomodel-priortd`. Mutation: dropping
+the restore fails **20** gates. Suite 6508 -> 6530 passed, 0 failed, 0 xfailed.
+
+**Observed once, not reproduced:** one `-n 8` run had
+`airline_pickmdl-backcast-oos` exit `0xC0000005` in `x13run_m3`. Passed
+serially and on the next parallel run; its spec has no `x11regression{}`, so
+this increment cannot reach it. Logged rather than dismissed -- the harness
+carries large stack-resident arrays and this project has hit `0xC00000FD` once
+for that reason.
+
 ## Open, in the order I would take them
 
 1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
@@ -1226,25 +1273,11 @@ fails **17**; never restoring it fails **361**. WALLS 24 -> 23 gaps. Suite
    six headers and zero rows); this engine returns `OUTCOME: OK`. Hypothesis,
    unmeasured: the B iteration's `adrgef` restore and the following `regvar`
    each add a copy of the user column (entry 61).
-3. **`transform{function=log}` with NO MODEL, on the x11regression route.**
-   Found while closing the old item 3 (part 22 / entry 71), not fixed. With no
-   model the oracle's `transform{function=log}` is a no-op for every X-11 table
-   -- measured bit-identical against the same spec carrying no `transform{}` at
-   all, on a bare `x11{}` run AND on an `x11regression{ variables=(td) }` one.
-   This engine agrees on the bare run and does NOT on the x11regression one:
-   d11 1.2e-2, b16/c16 1.5e-3, at `OUTCOME: OK`. B1 is bit-identical between
-   the two engine runs, so it is inside the X-11 spine. Cause NOT established.
-   Look at (a) x11pt2.f:115/:324's `goodlm` gates, which `Lam` alone opens and
-   which also need `Ixreg!=2 .and. Priadj>1` -- the real question may be
-   whether this port sets `Priadj` where the oracle leaves it 0; then (b)
-   `x11mdl.f:104-109`, which forces `Lam=1, Fcntyp=4` for the whole irregular
-   regression (restoring at :356/:833) and is not reproduced here at all.
-   Measure (a) first.
-4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-5. **`x11regression{reweight=}` (argidx 32 -> `Lxrneg`) is parsed and
+4. **`x11regression{reweight=}` (argidx 32 -> `Lxrneg`) is parsed and
    DISCARDED** -- found while porting Kswv==3, deliberately not fixed there
    because it is not a one-liner. `Lxrneg` is READ in two ported places
    (`gtinpt.cpp`'s negative-tdprior-weight clamp, `run_history.cpp:591`'s
@@ -1252,9 +1285,9 @@ fails **17**; never restoring it fails **361**. WALLS 24 -> 23 gaps. Suite
    `editor.f:1640-1667`'s fixed-coefficient check and `x11mdl.f:575-626`'s
    daily-weight reweighting, neither ported. Wire the parse, port or wall both
    readers, and gate a spec with a NEGATIVE tdprior weight.
-6. **A composite whose components carry a residual peak**, to gate savpk's real
+5. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+6. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`

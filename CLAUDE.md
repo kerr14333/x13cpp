@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (71
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (72
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -232,6 +232,13 @@ because by the time you would think to look them up, the damage is done.
   is the worked example: deleting it fails 362 gates, keeping it on the
   un-hoisted no-model call fails 17 (entry 71). Gate such restores on the CALL
   SITE, not on the spec.
+- **Where this port stands in for `restor`, the stand-in restores a SUBSET.**
+  Three separate defects now (entry 72): the omitted fields are invisible until
+  something downstream reads one, and the read is usually in a different file
+  and a later phase. `restor.f`'s set is `Lter`, `Ktcopt`, `Tic`, the model
+  parameters, `Nrxy`, `Iregfx`, `Regfx`, `Ncusrx`, `Nrusrx`, `Picktd`,
+  `Adjtd`..`Adjsea` — check that list against the writers inside whatever block
+  the stand-in brackets, and re-check it whenever a new writer appears there.
 - **A parsed-but-unread option is the silent-wrongness class.** The single most
   common defect shape in this port: the parser consumes a documented option,
   writes it nowhere, and the run returns `OUTCOME: OK` with wrong numbers.
