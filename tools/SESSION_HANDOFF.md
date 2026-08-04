@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6678<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->704<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6702<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->710<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6678<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6702<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1488,23 +1488,75 @@ stdout and EMPTY stderr; the same test passes serially and in every subsequent
 parallel run. Empty on both streams points at process creation under xdist load
 rather than the engine. If it recurs, that is a real signal.
 
+## This session, part 29: `slidingspans{}` and `x11regression{}` had never met
+
+Entry 78. `slidingspans.cpp:395` skipped `setssp.f:353`'s `ssxmdl` under the
+comment "out of scope, Nbx==0 always in this port" -- true when x11regression
+was unported, false ever since. Nothing caught it because NO corpus spec
+combined the two. Same shape as entry 76's `xrgdrv`: not a wall, not a gate, a
+silent skip justified by a fact that expired.
+
+`ssxmdl` turns out to be INERT on the spec (no `x11regression{span=}`, nothing
+fixed, `Irgxfx==1`), so the claim was harmless here. It was never checked, which
+is the finding.
+
+**What the pairing did find:** `sfs` bit-exact across all four spans, every
+D-table and b16/c16 bit-exact -- and `chs` wrong in **408 of 600 cells**, worst
+5.0e+0. Per-span seasonal factors right, per-span CALENDAR factor wrong.
+
+**A misattribution in a code comment, settled by two runs.** `chs` was already a
+KNOWN GAP for `airline_slidingspans-td`, attributed to a per-span PRIOR PHASE,
+and `slidingspans.cpp` claimed this family's `chs` was "the same" problem:
+
+| spec | chs cells wrong |
+|---|---|
+| airline + slidingspans + x11regression + log | 408 / 600 |
+| same, `x11regression{}` DELETED | **0 / 600 -- bit-exact** |
+| same, `transform{function=log}` DELETED | 408 / 600 |
+
+Deleting the feature the OTHER gap is about changes nothing. Two gaps, one
+symptom, different owners. Both now recorded separately in
+`test_slidingspans_tables.py`'s `_KNOWN_GAPS`, goldens committed.
+
+**Ruled out, and labelled inert at its site:** `ssx11a.f:96-97`'s per-span
+`Begxrg`/`Endxrg` move. This port had them frozen at parse-time values while
+`Begspn`/`Endspn` moved underneath, so `x11reg.cpp:1097` measured each span
+against the full series. Ported (`run_x11_span`'s `set_xrg_span` -- a CALL-SITE
+switch, since `revdrv.f:500-511` uses different arithmetic for the same field)
+and measured inert: 408/600 either way, including on a spec whose
+`x11regression{span=}` makes `nbeg` positive so the precondition is genuinely
+non-empty. Kept because it is what ssx11a does.
+
+**Where the next session starts:** the engine's `chs` DOES respond to
+x11regression (427 of 600 cells move when the spec drops it), so the irregular
+regression IS running per span, on wrong inputs, landing nearer the no-TD answer
+than the oracle's.
+
+Suite 6678 -> 6702 passed, 0 failed, 0 xfailed. One new spec,
+`extra/airline_slidingspans-x11regression`.
+
 ## Open, in the order I would take them
 
-1. **`x11mdl.f:661-690`'s stock-trading-day abend is UNPORTED and UNGUARDED.**
-   Found in entry 77 while hoisting the `Dx11` build past it. It is the shape
-   entry 76 named as worse than no code at all -- neither a wall nor a gate --
-   and it needs a spec first. Note the question inside it: `:664` reads the
-   x11reg STORE (`Grpttx/Gpxptr/Ngrptx`) where `:545` twenty lines above reads
-   the WORKING model (`Grpttl/Grpptr/Ngrptl`), so which model it tests is itself
-   undecided. Cheap siblings still walled in `xrg_editor_setup`: `Xaicst`
-   (editor.f:1802-1808) and `Xaicrg` (:1811-1822), both READ by
-   `x11reg.cpp:642/658` and never written except to their gtinpt defaults.
-2. **`slidingspans.cpp:395` claims "Nbx==0 always in this port"** and skips
-   `ssxmdl`'s x11-regression span setup on that basis. x11regression has been
-   ported since; the claim is false and the skip is silent. Checked 2026-08-04:
-   NO spec in the corpus combines `slidingspans{}` with `x11regression{}`, so
-   the claim has never been under test -- that is the spec to write, and
-   `ssxmdl.f:153`'s `Lxrneg` reset comes with it.
+1. **The per-span CALENDAR factor under `slidingspans{}` + `x11regression{}`**
+   -- entry 78's `chs`, 408/600 cells, worst 5.0e+0, golden committed and the
+   gate skipping it by name. Measured: `sfs` bit-exact so the seasonal half is
+   right; the irregular regression IS re-running per span (427/600 cells move
+   when the spec drops x11regression) but on wrong inputs, landing nearer the
+   no-TD answer. `ssx11a.f:96-97`'s Begxrg/Endxrg is ported and ruled out.
+   Next candidates: what `restor(Lmodel,Lx11,Ixreg.gt.0)` at ssx11a.f:160
+   restores that this port's `restor_span` does not, and setssp.f:353's
+   unported `ssxmdl` under a spec that makes it NON-inert (add
+   `x11regression{span=}` or a fixed `b=` and Ssxint/rvfixd start deciding
+   things).
+2. **`x11mdl.f:661-690`'s stock-trading-day abend is UNPORTED and UNGUARDED.**
+   Found in entry 77 while hoisting the `Dx11` build past it -- neither a wall
+   nor a gate, the shape entry 76 named as worse than no code at all. Needs a
+   spec first. Note the question inside it: `:664` reads the x11reg STORE
+   (`Grpttx/Gpxptr/Ngrptx`) where `:545` twenty lines above reads the WORKING
+   model (`Grpttl/Grpptr/Ngrptl`). Cheap siblings still walled in
+   `xrg_editor_setup`: `Xaicst` (editor.f:1802-1808) and `Xaicrg` (:1811-1822),
+   both READ by `x11reg.cpp:642/658` and never written except to their gtinpt
+   defaults.
 3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a

@@ -66,9 +66,19 @@ struct X13Context;
 // through to x11ari, so a SEATS spec's spans differ from an X-11 spec's only in
 // which adjustment routine follows x11pt2. With lseats the span's store is
 // seatdg.f's (ssrit on Seatsf/Seatsa) rather than x11pt3's.
+//
+// set_xrg_span (default false): ssx11a.f:92-97 -- move the IRREGULAR
+// REGRESSION's own span (Begxrg/Endxrg) onto this span before x11mdl reads it.
+// The oracle does this per span in ssx11a and, with its own Fxprxr arithmetic,
+// in revdrv.f:500-511; the two are NOT the same rule, so this is a call-site
+// switch and not something to derive from ctx. `false` reproduces what this
+// port did before: Begxrg/Endxrg frozen at their parse-time values while
+// Begspn/Endspn move under them, which makes x11reg.cpp:1097's nbeg/nend --
+// the x11mdl.f:115-118 narrowing -- measure the span against the wrong anchor.
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
-                   int lsp, int nend_mdl = 0, bool lseats = false);
+                   int lsp, int nend_mdl = 0, bool lseats = false,
+                   bool set_xrg_span = false);
 
 }  // namespace x13
 

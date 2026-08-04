@@ -226,10 +226,24 @@ def _run(base: str) -> str:
 #
 # The golden is blessed and committed, so whoever closes this has the target
 # already. Do not "fix" it by dropping chs from the spec's save list.
+#
+# A SECOND, SEPARATE chs gap, and the separation is the point. On
+# `airline_slidingspans-x11regression` the symptom is identical (sfs bit-exact,
+# chs ~5e+0 out, 408 of 600 cells) and the owner is not: deleting
+# `x11regression{}` from that spec makes chs BIT-EXACT (0/600), while deleting
+# `transform{function=log}` -- which is what creates the lom/leap-year prior the
+# gap above is about -- leaves all 408 wrong cells exactly where they were. Two
+# gaps, one symptom. slidingspans.cpp carried the opposite claim in a comment
+# until that pair of runs was done; measuring cheap-spec-vs-expensive-spec is
+# what separated them.
 _KNOWN_GAPS = {
     ("airline_slidingspans-td", "chs"):
         "slidingspans{} + regression{}: the per-span SA change table is still "
         "out of scope (per-span prior phase; see the comment above this map)",
+    ("airline_slidingspans-x11regression", "chs"):
+        "slidingspans{} + x11regression{}: the per-span CALENDAR factor is "
+        "wrong (sfs is bit-exact, so the seasonal half is right). A DIFFERENT "
+        "gap from the one above -- see the comment above this map",
 }
 
 

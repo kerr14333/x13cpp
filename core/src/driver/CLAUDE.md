@@ -12,6 +12,7 @@ already paid for once.
 | **31** | fixed / initial coefficients — `regression{b=}`, `arima{ar= ma= diff=}`, and the rmfix/addfix seam |
 | **32** | the C / R / Python ABI, and the host floating-point-mode finding |
 | **44** | the model-only diagnostics path (`x11ari` with neither `Lx11` nor `Lseats`) |
+| **78** | `slidingspans{}` + `x11regression{}` — the pairing no spec had, `ssx11a.f`'s per-span `Begxrg`/`Endxrg` (ported, measured inert), and the per-span calendar factor that is still wrong |
 | **47, 50–52** | `pickmdl{}` / `automx.f`, amdfct's out-of-sample and backcast arms, and the per-candidate AIC tests |
 
 ## The four traps most likely to bite here

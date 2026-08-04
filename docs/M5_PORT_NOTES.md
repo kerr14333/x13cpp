@@ -4384,3 +4384,62 @@ needs its own spec first: note that `:664` reads the x11reg STORE
 (`Grpttl/Grpptr/Ngrptl`), so which model it tests is itself a question to
 settle. Also `slidingspans.cpp:395` still carries "Nbx==0 always in this port",
 which x11regression makes false.
+
+## 78. Two `chs` gaps with one symptom -- and a comment that had merged them. `slidingspans{}` and `x11regression{}` had never met.
+
+`slidingspans.cpp:395` skipped `setssp.f:353`'s `ssxmdl` under the comment "out
+of scope, Nbx==0 always in this port". True when x11regression was unported,
+false ever since. Nothing caught it because **no corpus spec combined
+`slidingspans{}` with `x11regression{}`** -- checked, and that absence is the
+whole reason the claim stood. This is the same shape as entry 76's `xrgdrv`: not
+a wall, not a gate, a silent skip justified by a fact that expired.
+
+**What the pairing found.** `sfs` bit-exact across all four spans, every D-table
+and b16/c16 bit-exact -- and `chs`, the per-span seasonally-adjusted-series
+change table, wrong in **408 of 600 cells**, worst 5.0e+0. So the per-span
+SEASONAL factors are right and the per-span CALENDAR factor is not.
+
+`ssxmdl` itself turns out to be inert on this spec -- no `x11regression{span=}`,
+nothing fixed, `Irgxfx==1`, so none of its four decisions (Ssxint, rvfixd's
+Tdfix/Holfix, the Itd/Ihol demote, the `Lxrneg` reset) fire. The claim was
+harmless HERE. It was never checked, which is the finding.
+
+**The attribution that was wrong, and how one run settled it.** `chs` was
+already a recorded KNOWN GAP for `airline_slidingspans-td` (regression{td} +
+transform=log), attributed to a per-span PRIOR PHASE -- each span placing Adj[0]
+at its own Setpri. `slidingspans.cpp` then claimed this family's `chs` was "the
+same per-span prior-phase problem". Cheap-spec-vs-expensive-spec, two runs:
+
+| spec | chs cells wrong |
+|---|---|
+| airline + slidingspans + x11regression + log | 408 / 600 |
+| same, `x11regression{}` DELETED | **0 / 600 -- bit-exact** |
+| same, `transform{function=log}` DELETED | 408 / 600 |
+
+Deleting the feature the other gap is about changes nothing; deleting
+x11regression fixes it completely. **Two gaps, one symptom, different owners.**
+The standing rule from entry 76 -- build the spec WITHOUT X before believing X
+owns the delta -- caught a misattribution that was sitting in a code comment
+rather than in a diagnosis, which is the harder place to find one.
+
+**What the defect is not.** `ssx11a.f:96-97` moves the irregular regression's
+own span (`Begxrg`/`Endxrg`) onto each sliding span, and this port had them
+frozen at their parse-time values while `Begspn`/`Endspn` moved underneath --
+so `x11reg.cpp:1097-1098` measured each span against the full series and
+`x11mdl.f:115-118` could narrow by a bogus offset. That was the obvious
+candidate. It is now ported (`run_x11_span`'s `set_xrg_span`, a call-site switch
+because `revdrv.f:500-511` uses different arithmetic for the same field) and it
+is **measured inert**: 408/600 with it and without it, including on a spec whose
+`x11regression{span=}` makes `nbeg` positive so the narrowing precondition is
+genuinely non-empty. Kept because it is what ssx11a does -- without it the port
+relies on `nbeg`/`nend` happening to come out non-positive -- and labelled inert
+at its site so nobody reads it as the fix.
+
+**What is measured about the real one.** The engine's `chs` DOES respond to
+x11regression: 427 of 600 cells move when the spec drops it. So the irregular
+regression is running per span, on wrong inputs, and lands nearer the no-TD
+answer than the oracle's. That is where the next session starts.
+
+**Gated:** `extra/airline_slidingspans-x11regression` -- sfs, b16, c16 and the
+D-tables bit-exact; `chs` a KNOWN GAP with the golden committed. Suite 6678 ->
+6702 passed, 0 failed, 0 xfailed.

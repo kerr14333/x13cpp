@@ -183,6 +183,12 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // them back for anything that reads the main adjustment afterwards.
     const int ixreg_main = ctx.hiddn.ixreg;
     const std::vector<double> faccal_main = ctx.x11_faccal_prior;
+    // ... and each span now moves the irregular regression's OWN span onto
+    // itself (ssx11a.f:96-97, run_x11_span's set_xrg_span), so Begxrg/Endxrg
+    // are span-replay state too. Same rule as everything above: whatever a
+    // consumer re-derives from joins this set, not only what it publishes.
+    const int begxrg_main[2] = {ctx.x11reg.begxrg(1), ctx.x11reg.begxrg(2)};
+    const int endxrg_main[2] = {ctx.x11reg.endxrg(1), ctx.x11reg.endxrg(2)};
     // prtd8b/prtd9a write straight onto ctx from inside x11pt3, so a span
     // replay overwrites them with that span's own extremes and moving-
     // seasonality ratios -- measured: airline_slidingspans reported the LAST
@@ -234,6 +240,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.x11_frcfac = frcfac_main;
     ctx.hiddn.ixreg = ixreg_main;
     ctx.x11_faccal_prior = faccal_main;
+    ctx.x11reg.begxrg(1) = begxrg_main[0];
+    ctx.x11reg.begxrg(2) = begxrg_main[1];
+    ctx.x11reg.endxrg(1) = endxrg_main[0];
+    ctx.x11reg.endxrg(2) = endxrg_main[1];
     ctx.d8bd9a = d8bd9a_main;
     ctx.x11reg_aicc_xe = aicc_xe_main;
     ctx.x11reg_xe_window = xe_window_main;

@@ -392,8 +392,21 @@ bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
     // has no fixreg= argument, Nssfxr==0.)
 
     if (lmodel) ssmdl_fix_model(ctx);
-    // (Nbx>0 ssxmdl x11-regression-span setup: out of scope, Nbx==0 always
-    // in this port.)
+    // setssp.f:353-356's `IF(Nbx.gt.0) CALL ssxmdl(...)` -- NOT ported.
+    //
+    // This used to read "out of scope, Nbx==0 always in this port", which was
+    // true when x11regression{} was unported and false ever since. Nothing
+    // caught it because NO corpus spec combined slidingspans{} with
+    // x11regression{} -- checked 2026-08-04, and that is the whole reason this
+    // stood. extra/airline_slidingspans-x11regression is that spec now.
+    //
+    // What ssxmdl decides, in the order it decides it: whether an
+    // x11regression{span=} forces Ssxint (every coefficient held fixed for the
+    // spans, plus a NOTE); rvfixd's Tdfix/Holfix; whether Itd/Ihol are demoted
+    // to -1 so the TD/holiday span analyses do not run; and ssxmdl.f:153's
+    // Lxrneg reset. On the gated spec every one of those is inert -- no span=,
+    // nothing fixed, Irgxfx==1 -- which is why the spec gates bit-exact on
+    // sfs and every D-table. It is NOT why `chs` is wrong; see below.
 
     return true;
 }
@@ -589,13 +602,34 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
         // to 4.1e+0. Whatever ssx11a's demote costs is evidently paid back inside
         // sspdrv (Ssinit/Ssxint hold the irregular regression across spans), which
         // is not ported. Do not "fix" this by copying the history change.
-        // Still open and separately wrong on this family: `chs` (5.5e+0 -- the
-        // same per-span prior-phase problem airline_slidingspans-td already
-        // records) and the whole MODEL-FREE case (sfs 2.0e+2). Neither moves with
-        // the demote, so neither is this seam.
+        // Still open and separately wrong on this family: `chs` (5.0e+0) and the
+        // whole MODEL-FREE case (sfs 2.0e+2). Neither moves with the demote, so
+        // neither is this seam.
+        //
+        // The `chs` half was attributed HERE to "the same per-span prior-phase
+        // problem airline_slidingspans-td already records". That attribution is
+        // WRONG, and cheap-spec-vs-expensive-spec is what showed it: delete
+        // `x11regression{}` and chs goes 0/600 different -- BIT-EXACT -- while
+        // deleting `transform{function=log}`, which is what creates the lom /
+        // leap-year prior the other spec's gap is about, leaves all 408 of 600
+        // wrong cells exactly where they were. The two gaps share a symptom and
+        // not an owner.
+        //
+        // What IS measured about this one: `sfs` is bit-exact and `chs` is not,
+        // so the per-span SEASONAL factors are right and the per-span
+        // SEASONALLY ADJUSTED series is not -- i.e. the per-span calendar
+        // factor. The engine's chs does respond to x11regression (427 of 600
+        // cells move when the spec drops it), so the irregular regression is
+        // running per span; it lands nearer the no-TD answer than the oracle's,
+        // so it is running on the wrong inputs. ssx11a.f:96-97's per-span
+        // Begxrg/Endxrg was the obvious candidate and has been ported (see
+        // run_x11_span's set_xrg_span) -- it is measurably inert, so that is not
+        // it either. Recorded as a KNOWN GAP in test_slidingspans_tables.py with
+        // the golden committed.
         const int lsp = l0 + (j - 1) * ny + sa.im - nbcst2 - 1;
         if (!run_x11_span(ctx, trnsrs_full, has_model, si.nlen, nfcst, nbcst,
-                           nbcst2, lsp, /*nend_mdl=*/0, lseats))
+                           nbcst2, lsp, /*nend_mdl=*/0, lseats,
+                           /*set_xrg_span=*/true))
             return false;
         if (ctx.error.lfatal) return false;
     }

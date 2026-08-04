@@ -27,7 +27,7 @@ namespace x13 {
 
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
-                   int lsp, int nend_mdl, bool lseats) {
+                   int lsp, int nend_mdl, bool lseats, bool set_xrg_span) {
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
 
@@ -91,6 +91,29 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     ctx.arima.begmdl(2) = begspn[1];
     ctx.arima.endmdl(1) = endspn[0];
     ctx.arima.endmdl(2) = endspn[1];
+    // ssx11a.f:92-97 -- the IRREGULAR REGRESSION's own span follows the sliding
+    // span. Without it Begxrg/Endxrg keep their parse-time values while
+    // Begspn/Endspn move, so x11reg.cpp:1097-1098 measures this span against the
+    // FULL series and x11mdl.f:115-118 narrows the irregular regression by that
+    // bogus offset.
+    //
+    // MEASURED INERT on the current corpus, and recorded as such so nobody
+    // reads it as the fix for the `chs` gap below it. On airline +
+    // `x11regression{variables=(td)}` + `slidingspans{}` -- with and without an
+    // `x11regression{span=}` narrow enough to make nbeg positive -- taking this
+    // moves nothing: 408 of 600 `chs` cells are wrong either way. It is here
+    // because it is what ssx11a does, not because it repaired anything; without
+    // it the port is relying on nbeg/nend happening to come out <= 0.
+    //
+    // ssx11a.f:93-94's `Ixreg=1; IF(Lmodel)Ixreg=2` demote is deliberately NOT
+    // taken with it; see the comment at its site in slidingspans.cpp.
+    if (set_xrg_span && ctx.hiddn.ixreg > 0) {
+        ctx.x11reg.begxrg(1) = begspn[0];
+        ctx.x11reg.begxrg(2) = begspn[1];
+        ctx.x11reg.endxrg(1) = endspn[0];
+        ctx.x11reg.endxrg(2) = endspn[1];
+    }
+
     // history{} Fixper (revdrv.f:481-489): the model span ends `nend_mdl`
     // periods before the span end, at the last occurrence of period Fixper.
     // Begmdl is never moved (nbeg==0), so Frstsy/Nomnfy/Adj1st are unaffected
