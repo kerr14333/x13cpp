@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6537<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->681<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6582<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->693<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6537<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6582<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1371,22 +1371,75 @@ walled under `Stdgrp>0` / `Xrgmtd`; on the board below.
 
 Suite 6535 -> 6537 passed, 0 failed, 0 xfailed. WALLS 23 -> 24.
 
+## This session, part 27: board item 1 CLOSED -- and it was never what it said
+
+Entry 76. The "auto-AO AICC gap" was neither auto-AO nor an AICC gap. A
+HOLIDAY-ONLY `x11regression{}` (`variables=(easter[8])`, no trading-day group)
+never ran its transparent `xrgdrv` prior pass at all: B1 came back as the RAW
+series, the irregular regression's automatic AO identification found nothing,
+and the seasonal filter choice flipped with it -- at `OUTCOME: OK`.
+
+**Five stacked defects**, each invisible until the one above was fixed:
+
+1. `Axrgtd` is a PROXY and **four** guards used it (`run_pre_model`,
+   `x11_prestage`, `xrgdrv`'s own entry test, `x11parts`'s Ixreg==3 restore).
+   The oracle's condition is `x11ari.f:91`'s `IF(Ixreg.eq.2.or.Khol.eq.1)`;
+   `editor.f:1722` CLEARS Axrgtd when there is no TD group.
+2. `xrgdrv`'s entry test **returned true** -- a silent no-op, not a wall. That is
+   why it survived: an unported path that fatals shows up the day a spec reaches
+   it; one that returns quietly does not.
+3. `Easgrp` was READ (`x11reg.cpp:1122` derives Holgrp from it) and never
+   WRITTEN -- the editor computed it into a local. Holgrp 0 + no TD group sent
+   x11mdl_td into `x11mdl.f:308`'s identity-factor NOTE return.
+4. `gtxreg.f:889`'s `Axrghl=T` had been deliberately skipped, on the evidence
+   that every holiday-carrying spec was bit-exact without it -- and the corpus
+   had no HOLIDAY-ONLY spec, the only shape where it is load-bearing. Taken now;
+   no gated spec moved.
+5. `x11ref.f`'s `Tdgrp==0` arms were unported. The `Tdgrp>0` arm adds
+   `Xn/Xnstar` to Fcal, which put the MONTH-LENGTH ratio into a holiday-only
+   factor: February off by exactly 28/28.25.
+
+`Tdgrp/Stdgrp/Holgrp` also became PARAMETERS of `x11ref_td` -- `pritd.f:44`
+passes the literals `1,0,0` while `x11mdl.f:694/814` pass the COMMON (the
+call-site rule from entry 71, hit again).
+
+Both new specs are BIT-EXACT: every D-table at 1e-15, all shared udg keys
+including the two AICCs the board item was about.
+
+**The lesson, and it is about method not code.** The divergence was
+engine-vs-oracle measured. It was never cheap-spec-vs-expensive-spec measured.
+Deleting one line -- `aictest = (td)` -- reproduced the entire thing and named
+the subsystem in one run. Entry 75 had even PROVEN the flip and the AICC gap
+were inseparable by spec, and used that proof to justify not building the
+cheaper spec. Inseparability says two features co-occur; it never says which one
+owns the delta.
+
+**Left open, honestly:** `x11ref.f:87`'s `IF(Holgrp.gt.0)` outer guard on the
+Fhol fold is not reproduced -- adding it costs 54 gates, so on the vendored
+binary the fold demonstrably happens even though `x11aic.f:64` clears Holgrp and
+no visible path restores it. Open question, not a CB claim. Same for
+`x11ref.f:19`'s `Trumlt`: declared, never assigned, not a dummy, in no COMMON,
+read at line 88 -- an uninitialized local, reachable only with `Tdgrp>0`, where
+the binary behaves as `.true.`.
+
+Suite 6537 -> 6581 passed, 0 failed, 0 xfailed. WALLS 24 -> 23 (wall DELETED,
+not widened). Mutation: restoring the `Axrgtd` proxy costs 39 gates.
+
 ## Open, in the order I would take them
 
-1. **The auto-AO AICC gap on an x11regression aictest with no trading-day
-   group** -- what is left of the old `editor.f:1760-1846` item, now that the
-   block itself is PORTED (part 26 / entry 75, CB-37) and the `Grpx(-1)` alias
-   is reproduced and gated. The block is no longer the open thing; this is.
-   With no TD group, `editor.f:1727` takes `Otlxrg` instead of `Sigxrg=2.5` and
-   the AIC baseline is fitted on an AUTOMATIC-AO design (the oracle's .out adds
-   `AO1960.Mar` at t=-5.50). Measured ~7.9 AICC out on
-   `variables=(easter[8]) aictest=(td)`; walled on `Otlxrg && no_td_group`.
-   Take it as an AO-identification question, not an aictest one -- and note it
-   is NOT separable from the flip by spec, so any gate for it gates both.
-   Two smaller siblings, both walled in the same function and both cheap:
+1. **`x11regression{reweight=}`** -- argidx 32 (`Lxrneg`), parsed and
+   DISCARDED. Two ported readers see a permanently-false flag. Needs
+   `editor.f:1640-1667` + `x11mdl.f:575-626` and a spec carrying a NEGATIVE
+   tdprior weight. Bounded, and it closes a parsed-but-unread hole rather than
+   chasing a numeric delta. (Was item 3; item 1 closed, see part 27.)
+   Two smaller siblings still walled in `xrg_editor_setup`, both cheap:
    `Xaicst` (editor.f:1802-1808, the stock-TD day-of-month) and `Xaicrg`
-   (:1811-1822, the change-of-regime date) are READ by x11reg.cpp:642/658 and
-   never written except to their gtinpt defaults.
+   (:1811-1822, the change-of-regime date) are READ by `x11reg.cpp:642/658`
+   and never written except to their gtinpt defaults.
+   Also parked there: `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the
+   uninitialized `Trumlt`, both recorded in entry 76 as open questions -- they
+   want the Fortran instrumented directly (the `tools/ref_*.f` read-only probe
+   pattern), not more reasoning.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a

@@ -240,7 +240,16 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     // Faccal for its Ixreg==3 fold. The stashed Faccal is forecast-extended
     // (spans [Pos1ob, Posfob+Nfcstx] per x11mdl.f:124-134); here we consume only
     // the leading nobspf rows the estimation input needs (min-guarded on nfac).
-    if (ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd && ctx.x11opt.muladd == 0) {
+    // The guard is x11ari.f:91's `Ixreg.eq.2.or.Khol.eq.1` -- NOT `Axrgtd`. It
+    // used to test Axrgtd, which is a PROXY for "the irregular regression has a
+    // prior to estimate" and is narrower than the thing it stands for: a
+    // HOLIDAY-only x11regression clears Axrgtd at editor.f:1722 and sets Axrghl
+    // instead, so the whole transparent pass was skipped and B1 came back as the
+    // raw series where the oracle had already divided the holiday factor out
+    // (measured 8.8e-3 on `x11regression{variables=(easter[8])}`, and 1.4e-2 by
+    // D10 once the filter choice flipped with it). Khol==1 is the classic X-11
+    // Easter arm, which this port routes through x11_easter_prepass instead.
+    if (ctx.hiddn.ixreg >= 2 && ctx.x11opt.muladd == 0) {
         if (!xrgdrv(ctx)) return false;
         const std::vector<double>& xrgfac = ctx.x11_faccal_prior;
         const int nfac = static_cast<int>(xrgfac.size());

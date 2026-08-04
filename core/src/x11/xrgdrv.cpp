@@ -32,13 +32,19 @@ static void xrg_not_ported(X13Context& ctx, const char* what) {
 // no-classic-Easter path is ported. Anything else fatals cleanly (matching the
 // old x11pt1 not_ported behaviour, just relocated to the estimation front).
 static bool xrgdrv_supported(X13Context& ctx) {
-    return ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd &&
+    return ctx.hiddn.ixreg >= 2 &&
            ctx.x11opt.muladd == 0 && !ctx.x11msc.psuadd &&
            ctx.x11opt.khol != 1 && ctx.usrreg.ncusrx == 0;
 }
 
 bool xrgdrv(X13Context& ctx, bool span_mode, bool at_x11ari) {
-    if (!(ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd)) return true;  // no-op
+    // x11ari.f:91 -- the entry condition is Ixreg, nothing else. `Axrgtd` used to
+    // be in both this no-op test and the support guard, and it is a PROXY: a
+    // HOLIDAY-only x11regression clears it (editor.f:1722) while Axrghl stays
+    // set, so the whole transparent prior pass returned true and did nothing.
+    // Silently -- which is why it survived: an unported path that fatals is
+    // visible, one that no-ops is not.
+    if (ctx.hiddn.ixreg < 2) return true;  // no-op
     if (!xrgdrv_supported(ctx)) {
         xrg_not_ported(ctx, "xrgdrv OLS prior trading-day (Ixreg>=2): only the "
                             "TD-only multiplicative path is ported");

@@ -471,7 +471,10 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     // content of this block: xrgdrv's transparent pass reads Sprior, which only
     // exists once the no-model adjsrs record above has been copied by x11int,
     // and it leaves Faccal for x11pt1's Ixreg==3 restore to fold.
-    if (lx11 && !has_model && ctx.hiddn.ixreg >= 2 && ctx.x11log.axrgtd) {
+    // (Guard is Ixreg, not Axrgtd -- see the note at the model-path call site in
+    // run_pre_model.cpp: Axrgtd is a proxy that a holiday-only x11regression
+    // clears, and it skipped the whole pass.)
+    if (lx11 && !has_model && ctx.hiddn.ixreg >= 2) {
         if (!xrgdrv(ctx, /*span_mode=*/false, /*at_x11ari=*/true)) return false;
     }
 

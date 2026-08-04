@@ -72,7 +72,7 @@ void prterx_if_singular(X13Context& ctx);
 // COMMON holds 3.
 void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
                int ncxy, const double* b, const double* xy, int nb,
-               const int* rtype, int kswv);
+               const int* rtype, int kswv, int tdgrp, int stdgrp, int holgrp);
 
 // pritd.f (Kswv=1 user-weight prior trading day): build the prior-TD factors from
 // the seven tdprior weights (ctx.x11reg.dwt) via td6var + x11ref_td. begdat is the

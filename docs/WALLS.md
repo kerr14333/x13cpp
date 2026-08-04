@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**24 walls.**
+**23 walls.**
 
 
 ## Automatic model selection
@@ -67,58 +67,54 @@ reproduce.
 - **`core/src/specparse/getreg_vars.cpp:1121`**
   AOS/LSS outlier regressors (rdotls.f)
 
-- **`core/src/specparse/readers_spec.cpp:3791`**
+- **`core/src/specparse/readers_spec.cpp:3802`**
   x11regression aictest with a tdstock group: Xaicst is read but never written (editor.f:1802-1808)
   *Fortran:* `editor.f:1802-1808`
 
-- **`core/src/specparse/readers_spec.cpp:3795`**
+- **`core/src/specparse/readers_spec.cpp:3806`**
   x11regression aictest with a change-of- regime trading day: Xaicrg is read but never written (editor.f:1811-1822)
   *Fortran:* `editor.f:1811-1822`
-
-- **`core/src/specparse/readers_spec.cpp:3857`**
-  x11regression aictest with no trading-day group: the AIC baseline is fitted on an auto-AO design (editor.f:1727 Otlxrg, x11aic.f:112-143 strip)
-  *Fortran:* `editor.f:1727, x11aic.f:112-143`
 
 
 ## X-11
 
-- **`core/src/x11/x11parts.cpp:225`**
+- **`core/src/x11/x11parts.cpp:231`**
   x11pt1 prior trading-day adjustment (pritd/ssrit)
 
-- **`core/src/x11/x11parts.cpp:276`**
+- **`core/src/x11/x11parts.cpp:282`**
   x11pt1 additive/pseudo-additive prior trading-day
 
-- **`core/src/x11/x11parts.cpp:548`**
+- **`core/src/x11/x11parts.cpp:554`**
   x11pt2 user/seasonal/cycle/x11reg factor combine+emit
 
-- **`core/src/x11/x11parts.cpp:754`**
+- **`core/src/x11/x11parts.cpp:760`**
   x11pt2 x11reg Stcsi rebuild with outlier/seasonal/user prior factors
 
-- **`core/src/x11/x11parts.cpp:1011`**
+- **`core/src/x11/x11parts.cpp:1017`**
   x11pt3 revisions seasonal store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1227`**
+- **`core/src/x11/x11parts.cpp:1233`**
   x11pt3 revisions SA store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1337`**
+- **`core/src/x11/x11parts.cpp:1343`**
   x11pt3 revisions forced-SA store (getrev)
 
-- **`core/src/x11/x11parts.cpp:1425`**
+- **`core/src/x11/x11parts.cpp:1431`**
   x11pt3 revisions trend store (getrev)
 
-- **`core/src/x11/x11reg.cpp:387`**
+- **`core/src/x11/x11reg.cpp:393`**
   x11ref forcecal= combined calendar factor
 
-- **`core/src/x11/x11reg.cpp:906`**
+- **`core/src/x11/x11reg.cpp:964`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1447`**
+- **`core/src/x11/x11reg.cpp:1506`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1486`**
+- **`core/src/x11/x11reg.cpp:1545`**
   x11mdl Kswv=3 forcecal= combine
 
-- **`core/src/x11/xrgdrv.cpp:43`**
+- **`core/src/x11/xrgdrv.cpp:49`**
   xrgdrv OLS prior trading-day (Ixreg>=2): only the TD-only multiplicative path is ported
 
 

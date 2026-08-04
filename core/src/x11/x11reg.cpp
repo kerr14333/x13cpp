@@ -371,9 +371,15 @@ bool regx11(X13Context& ctx, double* aout, int* naout, int* nefout) {
 // no holiday column Fhol stays 0 and Fcal is TD-only (the pritd / bare-TD case).
 // The Bell-Hilmer nonlinear-Easter Kvec path (Xhlnln) is not reached here (the
 // x11regression easter regressor is linear, Xhlnln=F).
+//
+// Tdgrp/Stdgrp/Holgrp are PARAMETERS, not the COMMON: pritd.f:44 passes the
+// literals 1/0/0 (it is building a prior-TD factor out of six day-of-week
+// contrasts and has no regression groups at all), while x11mdl.f:694/814 pass
+// the live values. Reading ctx here would give pritd whatever the irregular
+// regression happened to leave behind.
 void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
                int ncxy, const double* b, const double* xy, int nb,
-               const int* rtype, int kswv) {
+               const int* rtype, int kswv, int tdgrp, int stdgrp, int holgrp) {
     for (int i = 0; i < nrxy; ++i) { fcal[i] = 0.0; ftd[i] = 0.0; }
     std::vector<double> fhol(nrxy > 0 ? nrxy : 1, 0.0);
     // x11ref.f:123-129 -- with a holiday group AND forcecal=yes the combined
@@ -398,21 +404,71 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
         else if (is_hol_type(rtype[icol - 1]))
             daxpy(nrxy, b[icol - 1], xy + (icol - 1), ncxy, fhol.data(), 1);
     }
-    // Mean-normalize the TD factor by Xnstar (mulref, DNOTST -> use the vector).
-    mulref(nrxy, fcal, ftd, xdev, xnstar, prm::DNOTST, false);
-    mulref(nrxy, ftd, ftd, xdev, xnstar, prm::DNOTST, true);
-    // Fold the holiday factor into Fcal the same way (no-op when Fhol is all 0).
-    mulref(nrxy, fcal, fhol.data(), xdev, xnstar, prm::DNOTST, false);
-    mulref(nrxy, fhol.data(), fhol.data(), xdev, xnstar, prm::DNOTST, true);
-    // x11ref.f:116-122 -- Kswv==3 (a tdprior prior TD has already removed the
-    // day-count effect) adds ONE instead of the Xn/Xnstar month-length ratio.
-    // Note the Kswv=4 recompute at x11mdl.f:813 deliberately does NOT: it passes
-    // 4 precisely so the combined-weight factor is built the ordinary way.
+    // x11ref.f:76-86 -- mean-normalize the TD factor by Xnstar. GUARDED on
+    // Tdgrp: with no trading-day group Ftd is all zero and the oracle skips the
+    // pair entirely.
+    if (tdgrp > 0) {
+        mulref(nrxy, fcal, ftd, xdev, xnstar, prm::DNOTST, false);
+        mulref(nrxy, ftd, ftd, xdev, xnstar, prm::DNOTST, true);
+    }
+    // x11ref.f:87-95 -- fold the holiday factor into Fcal. Two different arms,
+    // and which one you get turns on Tdgrp:
+    //
+    //   IF((Muladd.eq.2.or.Trumlt).and.Tdgrp.gt.0)  -> normalize by Xnstar
+    //   ELSE                                        -> divide by ONE (i.e. add
+    //                                                  Fhol to Fcal unscaled)
+    //
+    // `Trumlt` there is a CENSUS DEFECT: x11ref.f:19 declares it LOGICAL, it is
+    // not a dummy argument and not in any COMMON, and nothing ever assigns it --
+    // line 88 reads an uninitialized local. It is only reachable with Tdgrp>0,
+    // where the vendored binary behaves as if it were .true. (every gated TD +
+    // holiday spec is bit-exact taking that arm), so the read is reproduced by
+    // taking it. With Tdgrp==0 the condition is false whatever Trumlt holds, so
+    // the defect cannot reach the no-TD path at all.
+    // The `IF(Holgrp.gt.0)` OUTER guard is deliberately not reproduced, and this
+    // is a measured decision, not an oversight. It is a no-op whenever there is
+    // no holiday column (Fhol is all zero and both arms add zero), so it only
+    // bites when Fhol is nonzero while Holgrp is 0 -- which is what an Easter
+    // AICtest leaves behind: x11aic.f:64 clears Holgrp and neither the accept arm
+    // (:445) nor the "winner was the last window tested" path (estend=F) puts it
+    // back. Adding the guard costs 54 gates (c16 3.4e-4 on
+    // airline_x11regression-aictest-easter8 and its siblings), so on the vendored
+    // binary the fold demonstrably HAPPENS for those runs. Something restores
+    // Holgrp that is not visible in x11aic.f; until that is found, fold
+    // unconditionally, which is what the measurement says. OPEN QUESTION, not a
+    // Census bug claim -- it has not been measured in the Fortran directly.
+    if (tdgrp > 0) {
+        mulref(nrxy, fcal, fhol.data(), xdev, xnstar, prm::DNOTST, false);
+        mulref(nrxy, fhol.data(), fhol.data(), xdev, xnstar, prm::DNOTST, true);
+    } else {
+        mulref(nrxy, fcal, fhol.data(), xdev, xnstar, 1.0, false);
+    }
+    // x11ref.f:99-135, the Muladd==0 arm (psuadd and log-additive are walled
+    // upstream). x11ref.f:116-122 -- Kswv==3 (a tdprior prior TD has already
+    // removed the day-count effect) adds ONE instead of the Xn/Xnstar
+    // month-length ratio. Note the Kswv=4 recompute at x11mdl.f:813 deliberately
+    // does NOT: it passes 4 precisely so the combined-weight factor is built the
+    // ordinary way.
+    //
+    // The Tdgrp==0 arm (x11ref.f:133-135) adds ONE to Fcal and leaves Ftd alone
+    // unless there is a STOCK trading-day group. Adding Xn/Xnstar there instead
+    // -- which this port did, because it only had the Tdgrp>0 arm -- puts the
+    // month-length ratio into a factor that is supposed to be holiday-only: a
+    // holiday-only x11regression came back with February off by 28/28.25 in B1.
     for (int irow = 1; irow <= nrxy; ++irow) {
         const int ir2 = irow + xdev - 1;
-        const double add = (kswv == 3) ? 1.0 : xn[ir2 - 1] / xnstar[ir2 - 1];
-        ftd[irow - 1] += add;
-        fcal[irow - 1] += add;
+        fhol[irow - 1] += 1.0;                       // x11ref.f:101
+        if (tdgrp > 0) {
+            const double add = (kswv == 3) ? 1.0 : xn[ir2 - 1] / xnstar[ir2 - 1];
+            ftd[irow - 1] += add;
+            fcal[irow - 1] += add;
+            // (x11ref.f:124-131's Xhlnln / Calfrc sub-arms are unreachable here:
+            // no x11regression holiday regressor sets Xhlnln, and Calfrc is
+            // walled above.)
+        } else {
+            fcal[irow - 1] += 1.0;
+            if (stdgrp > 0) ftd[irow - 1] += 1.0;
+        }
     }
 }
 
@@ -449,7 +505,9 @@ void pritd(X13Context& ctx, double* ptdfac, int nrxy, int sp, const int* begdat,
     std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);
     std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
     x11ref_td(ctx, fcal.data(), ftd.data(), frstob, nrxy, ncxy, btd, tdxy.data(),
-              6, rtype, ctx.x11opt.kswv);
+              6, rtype, ctx.x11opt.kswv,
+              // pritd.f:44 passes Tdgrp=1, Stdgrp=0, Holgrp=0 as literals.
+              /*tdgrp=*/1, /*stdgrp=*/0, /*holgrp=*/0);
     // pritd.f:47-51 -- shift the [1,Nrxy] factors up to absolute [Frstob, ...].
     for (int i = 0; i < nrxy; ++i) ptdfac[frstob - 1 + i] = ftd[i];
 }
@@ -1400,7 +1458,8 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);
     std::vector<double> ftd(nrxy > 0 ? nrxy : 1, 0.0);
     x11ref_td(ctx, fcal.data(), ftd.data(), pos1bk, nrxy, m.ncxy, md.b.data(),
-              md.xy.data(), m.nb, rtype.data(), ctx.x11opt.kswv);
+              md.xy.data(), m.nb, rtype.data(), ctx.x11opt.kswv,
+              ctx.x11reg.tdgrp, ctx.x11reg.stdgrp, ctx.x11reg.holgrp);
     // x11mdl.f:701-702 -- the C iteration writes Xdsp EXTRA points, covering the
     // stretch xrgdrv chopped off the pointers; the design was rebuilt over the
     // full span just above, so the rows exist.
@@ -1499,7 +1558,8 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         std::vector<double> fcal2(nrxy > 0 ? nrxy : 1, 0.0);
         std::vector<double> ftd2(nrxy > 0 ? nrxy : 1, 0.0);
         x11ref_td(ctx, fcal2.data(), ftd2.data(), pos1bk, nrxy, m.ncxy,
-                  bb2.data(), md.xy.data(), m.nb, rtype.data(), /*kswv=*/4);
+                  bb2.data(), md.xy.data(), m.nb, rtype.data(), /*kswv=*/4,
+                  ctx.x11reg.tdgrp, ctx.x11reg.stdgrp, ctx.x11reg.holgrp);
         for (int i = 0; i < nfac; ++i) {
             ctx.x11fac.faccal(pos1bk + i) = fcal2[i];
             ctx.x11fac.factd(pos1bk + i) = ftd2[i];

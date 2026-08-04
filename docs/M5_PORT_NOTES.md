@@ -4152,3 +4152,104 @@ fires costs **2** gates.
 Suite 6535 -> 6537 passed, 0 failed, 0 xfailed, 681 skipped; ctest 12/12; WALLS
 23 -> 24 gaps (one wall lifted, three added: Xaicst, Xaicrg, and the widened AO
 one).
+
+## 76. The "auto-AO AICC gap" was neither auto-AO nor an AICC gap -- a holiday-only x11regression skipped its whole prior pass.
+
+Board item 1 for two sessions, carrying a measured ~7.9 AICC divergence and a
+wall. Both the diagnosis and the framing were wrong, and the way they were wrong
+is the lesson.
+
+**What it actually was.** `x11regression{variables=(easter[8])}` -- a HOLIDAY-ONLY
+irregular regression -- never ran its transparent `xrgdrv` prior pass. `B1` came
+back as the RAW series where the oracle had already divided the Easter factor out
+(8.8e-3), the automatic AO identification found nothing where the oracle keeps
+`AO1960.Mar`, and the seasonal filter selection flipped with it (`3x3` vs `3x5`,
+D7 trend MA 9 vs 13). All at `OUTCOME: OK`.
+
+**Five defects, stacked.** Each was invisible until the one above it was fixed:
+
+1. **`Axrgtd` is a proxy, and FOUR guards used it.** The oracle's entry condition
+   is `x11ari.f:91`'s `IF(Ixreg.eq.2.or.Khol.eq.1)`. `Axrgtd` stands for "the
+   irregular regression has a prior to estimate" -- but `editor.f:1722` CLEARS it
+   when there is no trading-day group, leaving `Axrghl` as the only flag set. The
+   four: `run_pre_model.cpp` (model path), `x11_prestage.cpp` (no-model path),
+   `xrgdrv.cpp`'s own entry test, and `x11parts.cpp`'s Ixreg==3 Faccal restore.
+2. **`xrgdrv`'s entry test RETURNED TRUE.** A silent no-op, not a wall. This is
+   why the whole thing survived: an unported path that fatals is visible in the
+   corpus the day a spec reaches it; one that returns quietly is not.
+3. **`Easgrp` was read and never written.** `readers_spec.cpp` computed it into a
+   LOCAL and threw it away; `x11reg.cpp:1122` derives `Holgrp` from it. With
+   `Holgrp==0` and no TD group, `x11mdl.f:308`'s identity-factor NOTE branch fired
+   and the irregular regression was not fitted at all.
+4. **`gtxreg.f:889`'s `Axrghl=T` had been deliberately skipped**, with a comment
+   saying every holiday-carrying spec in the corpus was bit-exact without it.
+   True -- and the corpus had no HOLIDAY-ONLY spec, which is the only shape where
+   the flag is load-bearing. Taken now; no gated spec moved.
+5. **`x11ref.f`'s `Tdgrp==0` arms were not ported.** The `Tdgrp>0` arm adds
+   `Xn/Xnstar` -- the month-length ratio -- to Fcal; the `Tdgrp==0` arm (`:133-135`)
+   adds ONE and touches Ftd only for a STOCK TD group. Having only the first put
+   the month-length ratio into a factor that is supposed to be holiday-only, and
+   February came out off by exactly 28/28.25.
+
+Also: `Tdgrp/Stdgrp/Holgrp` had to become PARAMETERS of `x11ref_td`, because
+`pritd.f:44` passes the literals `1,0,0` while `x11mdl.f:694/814` pass the live
+COMMON. Reading ctx would have given pritd whatever the irregular regression left
+behind -- the call-site rule from entry 71, hit again.
+
+Result: `variables=(easter[8])` and `variables=(easter[8]) aictest=(td)` are now
+BIT-EXACT -- every D-table at 1e-15, and all 153/157 shared udg keys, including
+the two AICCs that were the whole board item (`-736.359339510335` /
+`-1732.14491025233`, previously `-744.271419570893` / `-1740.01162137319`).
+
+**Why it was misdiagnosed twice, which is the part worth keeping.**
+
+- *First reading:* the AICCs are ~7.9 out, and with no TD group `editor.f:1727`
+  picks `Otlxrg` over `Sigxrg=2.5`, so the AIC baseline must be fitted on an
+  automatic-AO design -- the oracle's .out does add `AO1960.Mar` at t=-5.50.
+  Plausible, and checkable in thirty seconds: `x11mdl.f` calls `x11aic` at `:253`
+  and does the AO identification at `:424`. The aictest baseline never sees an AO
+  design. **The evidence for the story was in the same file as its refutation.**
+- *Second reading:* entry 75 recorded the AICC gap as NOT SEPARABLE from the
+  CB-37 `Grpx(-1)` flip, because x11regression demands a trading-day OR holiday
+  regressor, so "no TD group" forces a holiday. The inseparability argument is
+  correct. The conclusion drawn from it was not: it was used to justify NOT
+  building the cheaper spec. Dropping `aictest=` reproduced the entire divergence
+  -- and that one probe is what located it, because it removed x11aic from the
+  picture and left the plain holiday-only path standing there alone.
+
+The standing rule this earns: **when a divergence is attributed to feature X,
+build the spec WITHOUT X before porting anything.** Engine-vs-oracle was measured
+here. Cheap-spec-vs-expensive-spec was not, and that is the measurement that
+names the subsystem. An inseparability proof tells you two features co-occur; it
+never tells you which one owns the delta.
+
+Second rule, from defect 2: **an unported path that returns success is worse than
+one that has no code at all.** Walls are inventory -- `walls.py` lists them and a
+deleted one leaves the list. A silent `return true` is in neither the wall list
+nor the gate count.
+
+**Left open, honestly.** `x11ref.f:87`'s `IF(Holgrp.gt.0)` outer guard on the
+Fhol fold is NOT reproduced. It is a no-op with no holiday column, so it only
+bites when Fhol is nonzero while Holgrp is 0 -- exactly what an Easter AICtest
+leaves behind (`x11aic.f:64` clears Holgrp; neither the accept arm at `:445` nor
+the estend=F path restores it). Adding the guard costs **54 gates** (c16 3.4e-4
+on `airline_x11regression-aictest-easter8` and siblings), so on the vendored
+binary the fold demonstrably happens. Something restores `Holgrp` that is not
+visible in `x11aic.f`. Folding unconditionally is what the measurement says, and
+that is what the code does; this is an open question, not a Census-bug claim,
+because the Fortran has not been instrumented directly.
+
+**Near-CB, not claimed.** `x11ref.f:19` declares `Trumlt` LOGICAL; it is not a
+dummy argument, it is in no COMMON, and nothing assigns it. Line 88 reads an
+uninitialized local. It is only reachable inside `.and.Tdgrp.gt.0`, where the
+vendored binary behaves as if it were `.true.`, and it cannot reach the no-TD
+path at all. Reproduced by taking that arm. Not filed as a CB entry: per the
+standing rule, measure before naming a Census bug, and this one has been measured
+only through its effect on gates, not directly.
+
+**Gated:** `extra/airline_x11regression-holiday-only` (new),
+`extra/airline_x11regression-holiday-only-aictest` (new).
+**Mutation:** restoring the `Axrgtd` proxy at the pre-model call site costs
+**39** gates.
+**Wall DELETED**, not widened -- WALLS 24 -> 23 gaps. Suite 6537 -> 6581 passed,
+0 failed, 0 xfailed; ctest 12/12.

@@ -177,8 +177,14 @@ void x11pt1(X13Context& ctx, bool lmodel, bool /*lgraf*/, bool /*lgrfxr*/) {
     // (this main run's x11int wiped /x11fac/), so restore Faccal before the divide
     // below folds the observed part out of Sto and x11pt3 folds the whole span
     // (incl. the forecast region c16.A) into D11/D16. Empty on every other path.
-    if (ctx.hiddn.ixreg == 3 && ctx.x11log.axrgtd &&
-        !ctx.x11_faccal_prior.empty()) {
+    // (This restore is a PORT artifact -- the oracle's /x11fac/ COMMON simply
+    // survives -- so it must be gated on "xrgdrv stashed something", which the
+    // non-empty test already says, not on Axrgtd. Axrgtd is the fourth proxy for
+    // that in this subsystem: with a holiday-only x11regression it is false, the
+    // restore was skipped, and Faccal stayed at the identity x11int had just
+    // wiped it to. The divide below then folded 1.0, so D16 came out equal to
+    // D10 and D11/D13 were off by the whole Easter factor -- 8.8e-3.)
+    if (ctx.hiddn.ixreg == 3 && !ctx.x11_faccal_prior.empty()) {
         const int nfp = static_cast<int>(ctx.x11_faccal_prior.size());
         for (int k = 0; k < nfp; ++k)
             fac.faccal(pos1ob + k) = ctx.x11_faccal_prior[static_cast<std::size_t>(k)];

@@ -3526,9 +3526,20 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     auto grp = [&](const char* t) {
         return strinx(true, xg.grpttx.raw(), xg.gpxptr.data(), 1, xg.ngrptx, t);
     };
-    // editor.f:1550-1552 / :1618-1627.
+    // editor.f:1550-1552 / :1618-1627. Easgrp is COMMON (/x11reg/) in the
+    // oracle and stays live all the way to x11mdl, which is why it is PUBLISHED
+    // here and not kept local: `x11reg.cpp:1122` derives Holgrp from it
+    // (x11mdl.f), and x11aic.f:63-65 clears it for the duration of the AIC test.
+    // It used to be a local, and the omission was invisible for as long as every
+    // x11regression spec carried a trading-day group -- with one, Holgrp is
+    // irrelevant to the `Holgrp>0 || Tdgrp>0 || Stdgrp>0` gate. An EASTER-ONLY
+    // design has none, so a zero Easgrp made that gate false, x11mdl_td took
+    // x11mdl.f:308's identity-factor NOTE return, and the irregular regression
+    // was never fitted at all: no automatic AO outliers, and every downstream
+    // X-11 table off, at OUTCOME: OK.
     int easgrp = grp("Easter");
     if (easgrp == 0) easgrp = grp("StatCanEaster");
+    ctx.x11reg.easgrp = easgrp;
 
     // editor.f:1553-1591 -- the Easter AIC-test WINDOW SET. When the user named
     // Easter regressors, the windows tested are THEIRS, read back out of the
@@ -3833,30 +3844,15 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
         }
     }
 
-    // The AO half of this front, and its trigger is `Otlxrg` -- NOT `Xeastr`,
-    // which was another proxy (entry 74's lesson, applied a second time in the
-    // same function). With no TD group the AIC baseline is fitted on an
-    // AUTOMATIC-AO design (editor.f:1727 chose Otlxrg over Sigxrg=2.5; the
-    // oracle's .out adds AO1960.Mar at t=-5.50) and the AICCs come out ~7.9
-    // apart -- measured on `variables=(easter[8]) aictest=(td)`, which has
-    // Xeastr FALSE and so walked straight past the old condition once the
-    // Xtdtst flip above stopped refusing it.
-    //
-    // These two halves are NOT separable by spec. x11regression demands a
-    // trading-day OR holiday regressor (gtxreg.f's "Must adjust for either
-    // trading day or holiday"), so "no TD group" forces a holiday, which forces
-    // Otlxrg. Every spec that reaches the flip therefore also reaches this. The
-    // flip is gated instead through the one consequence that lands at PARSE
-    // time -- the quarterly refusal above, which cannot fire unless Xtdtst was
-    // rewritten 1 -> 3.
-    // `inptok` guards it because this wall is a PORT artifact, not Fortran: a
-    // spec the oracle has already rejected must come back with the oracle's
-    // message and nothing else, or the ERROR-text half of the M1 parse gate
-    // sees two lines where the golden has one.
-    if (inptok && ctx.x11log.otlxrg && no_td_group)
-        xrg_not_ported(ctx, "x11regression aictest with no trading-day group: "
-                            "the AIC baseline is fitted on an auto-AO design "
-                            "(editor.f:1727 Otlxrg, x11aic.f:112-143 strip)");
+    // (There used to be a wall here for "x11regression aictest with no
+    // trading-day group", on the theory that the AIC baseline was fitted on an
+    // auto-AO design and the AICCs were ~7.9 out. The AO design was never the
+    // cause. With no TD group the irregular regression is HOLIDAY-only, and the
+    // transparent xrgdrv prior pass that estimates it was being skipped -- four
+    // separate guards keyed on Axrgtd, which a holiday-only spec clears. B1 came
+    // back as the raw series and everything downstream followed. With the prior
+    // pass running and x11ref's Tdgrp==0 arms ported, both AICCs and every
+    // D-table are bit-exact. See docs/M5_PORT_NOTES.md entry 76.)
 }
 
 // ---- x11regression{} (gtxreg.f) -------------------------------------------
@@ -4505,18 +4501,21 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     if (!ctx.x11log.havxtd) ctx.x11reg.ixrgtd = 0;
     if (ctx.x11reg.ixrgtd > 0) ctx.x11log.axrgtd = true;
     if (!ctx.x11log.havxhl) ctx.x11reg.ixrghl = 0;
-    // gtxreg.f:889 would set Axrghl here. NOT taken: this port reaches every
-    // holiday-carrying x11regression spec in the corpus bit-exact with the flag
-    // false, and turning it on switches x11pt2/x11pt3 folds that have never
-    // been measured on that path. The requirement check below therefore reads
-    // Ixrghl, which is what Axrghl would have been. Deliberate divergence in a
-    // FLAG, pinned by the specs; revisit with the CB-36 item.
+    // gtxreg.f:889. This was deliberately NOT taken for a long stretch -- every
+    // holiday-carrying x11regression spec in the corpus was bit-exact with the
+    // flag false, and it was left alone rather than disturb x11pt2/x11pt3 folds
+    // that had never been measured on that path. What the corpus did not have
+    // was a HOLIDAY-ONLY x11regression. With one, Axrgtd is cleared
+    // (editor.f:1722) and Axrghl is the only thing left saying the irregular
+    // regression has a prior to estimate, so a false Axrghl skipped the
+    // transparent xrgdrv pass entirely: B1 came back as the raw series.
+    if (ctx.x11reg.ixrghl > 0) ctx.x11log.axrghl = true;
     //
     // gtxreg.f:891-897 -- an irregular regression that adjusts for neither
     // trading day nor holiday nor a prior-TD weight set is refused. Without
     // this the engine ran `x11regression{user= data=}` to OUTCOME: OK while the
     // oracle rejected the spec.
-    if (!(ctx.x11log.axrgtd || ctx.x11reg.ixrghl > 0 || neltdw > 0)) {
+    if (!(ctx.x11log.axrgtd || ctx.x11log.axrghl || neltdw > 0)) {
         writln(ctx, "ERROR: Must adjust for either trading day or holiday in "
                "the x11regression spec.", stdio::STDERR, ctx.units.mt2, true);
         inptok = false;

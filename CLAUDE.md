@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (75
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (76
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -247,6 +247,19 @@ because by the time you would think to look them up, the damage is done.
   engine-vs-oracle separately. The first tells you a flag matters; only the
   second tells you whether the engine already honours it. Both have been
   skipped here, and both cost a wasted increment.
+- **When a divergence is attributed to feature X, build the spec WITHOUT X
+  before porting anything.** Engine-vs-oracle names a delta; only
+  cheap-spec-vs-expensive-spec names the SUBSYSTEM that owns it. Entry 76's
+  "auto-AO AICC gap" was neither auto-AO nor an AICC gap — deleting the
+  `aictest=` line reproduced the whole thing and pointed at a skipped prior
+  pass. Note also that an inseparability proof ("every spec reaching A also
+  reaches B") tells you two features co-occur; it never tells you which one owns
+  the delta, and entry 75 used one to justify NOT building the cheaper spec.
+- **An unported path that returns SUCCESS is worse than one that has no code.**
+  Walls are inventory — `walls.py` lists them and deleting one leaves the list.
+  A silent `return true` guard is in neither the wall list nor the gate count,
+  and it is how a whole phase went missing for months (entry 76, `xrgdrv`).
+  Every early-out on an unported path either fatals or is a wall.
 - **A null measured under the wrong preconditions is not a null.** If a
   feature's effect is conditional on a set being non-empty, the probe must
   assert the set is non-empty — a saturated precondition looks like a passing
