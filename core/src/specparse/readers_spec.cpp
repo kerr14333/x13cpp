@@ -3714,37 +3714,149 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     // none they do not, and that is where the ~7.6 AICC sits. Refuse rather
     // than return the number.
     const bool no_td_group = tdgrp == 0 && stdgrp == 0;
-    // The TD arm's trigger is NO TD GROUP, not `Nbx == 0` -- measured, and the
-    // narrower form was a live silent divergence rather than a conservative
-    // wall. `variables=(easter[8]) aictest=(td)` has Nbx==1, so it sailed past
-    // the old condition: the oracle reports `aictest.xtd.reg: td1coef`,
-    // `aictest.xtd: no`, AICC(td) -1732.145 and ends `aictest: none`, while
-    // this engine reported `td` / `yes` / -758.367 at OUTCOME: OK.
+
+    // ---- editor.f:1760-1846 "Check options for AIC trading day test" ------
+    // aictest token -> Xtdtst is td=1, tdstock=2, td1coef=3, tdstock1coef=4
+    // (gtxreg.f:400-408). This block reconciles that request against what
+    // `variables=` actually put in the model, and it is NOT inert: it can
+    // REWRITE the request.
+    if (ctx.x11reg.xtdtst > 0) {
+        auto& xr = ctx.x11reg;
+        if (stdgrp > 0 && xr.xtdtst == 1) {
+            xr.xtdtst = 2;                                  // editor.f:1763-1764
+        } else if (stdgrp > 0 && xr.xtdtst == 3) {          // editor.f:1765-1773
+            writln(ctx, "ERROR: A stocktd regressor has been specified in the "
+                   "variables argument", stdio::STDERR, ctx.units.mt2, true);
+            writln(ctx, "       of x11regression but td1coef is given in the "
+                   "aictest argument.", stdio::STDERR, ctx.units.mt2, false);
+            writln(ctx, "       The type of trading day regressor must agree.",
+                   stdio::STDERR, ctx.units.mt2, false);
+            inptok = false;
+        } else if (tdgrp > 0 && xr.xtdtst == 2) {           // editor.f:1774-1782
+            writln(ctx, "ERROR: A td or td1coef regressors has been specified "
+                   "in the variables argument", stdio::STDERR, ctx.units.mt2, true);
+            writln(ctx, "       of x11regression but tdstock is given in the "
+                   "aictest argument. ", stdio::STDERR, ctx.units.mt2, false);
+            writln(ctx, "       The type of trading day regressor must agree.",
+                   stdio::STDERR, ctx.units.mt2, false);
+            inptok = false;
+        } else if (xr.xtdtst == 1 || xr.xtdtst == 3) {      // editor.f:1783-1797
+            // THE ALIASED READ, reproduced deliberately (CB-37).
+            //
+            // `begcol=Grpx(Tdgrp-1)` with Tdgrp==0 is `Grpx(-1)`, one element
+            // below the declared lower bound of `Grpx(0:PGRP)`. It is NOT
+            // undefined: `COMMON /cx11rg/` (xrgmdl.cmn:49) declares
+            // `Clxptr(0:PB)` immediately before `Grpx`, and Fortran storage
+            // association makes the block contiguous in declaration order, so
+            // the subscript resolves to `Clxptr(PB)` -- 81 integers INSIDE the
+            // block, not off the end. Proved by `tools/ref_grpx.f`, which
+            // poisons both arrays and runs these two lines: begcol comes back
+            // 1080 == Clxptr(PB). M5_PORT_NOTES entry 75.
+            //
+            // The C++ mirrors are separate objects (xrgmdl_cmn.hpp:11-13), not
+            // storage-associated, so the alias has to be WRITTEN. Reading the
+            // real value rather than assuming 0 is the whole point: `Clxptr` is
+            // `Colptr` copied wholesale (loadxr.f:38, all PB+1 elements), and
+            // `Colptr(PB)` IS writable -- insptr.f:54-55 writes up to
+            // `Ptrvec(Nelt+1)` and adrgef.f:363 passes PB as the bound, so a
+            // 79-regressor model reaches index 80. Rare, legal, and the reason
+            // hardcoding the flip would have been wrong.
+            const int begcol = (tdgrp == 0) ? xg.clxptr(prm::PB)
+                                            : xg.grpx(tdgrp - 1);
+            const int endcol = xg.grpx(tdgrp) - 1;
+            if (xr.xtdtst == 1 && begcol == endcol) {
+                // A single-column TD group -- or, via the alias, no TD group at
+                // all -- silently rewrites `td` to `td1coef`.
+                xr.xtdtst = 3;
+            } else if (xr.xtdtst == 3 && begcol != endcol) {  // editor.f:1788-1796
+                writln(ctx, "ERROR: A td regressor has been specified in the "
+                       "variables argument of", stdio::STDERR, ctx.units.mt2, true);
+                writln(ctx, "       x11regression but td1coef is given in the "
+                       "aictest argument. ", stdio::STDERR, ctx.units.mt2, false);
+                writln(ctx, "       The type of trading day regressor must "
+                       "agree.", stdio::STDERR, ctx.units.mt2, false);
+                inptok = false;
+            }
+        }
+
+        if (inptok) {
+            // editor.f:1802-1808 (Xaicst, the stock-TD day-of-month read out of
+            // the group title) and :1811-1822 (Xaicrg, the change-of-regime
+            // date) are NOT ported. Both are READ by this port already --
+            // x11reg.cpp:642/658 hand them to mktdlb/addtd -- and only ever
+            // WRITTEN to their gtinpt.cpp:226-227 defaults (31 / NOTSET), which
+            // is the read-but-never-written half of the parsed-but-unread
+            // class. Refuse instead of testing the wrong trading day.
+            if (stdgrp > 0)
+                xrg_not_ported(ctx, "x11regression aictest with a tdstock "
+                                    "group: Xaicst is read but never written "
+                                    "(editor.f:1802-1808)");
+            else if (xg.xrgmtd)
+                xrg_not_ported(ctx, "x11regression aictest with a change-of-"
+                                    "regime trading day: Xaicrg is read but "
+                                    "never written (editor.f:1811-1822)");
+            else if (no_td_group) {
+                // editor.f:1828-1845 -- with no TD group the regressors have to
+                // be GENERATED, so the run needs a period and a start date that
+                // can produce them. Note the first arm tests Xtdtst 3/4 (the two
+                // "1coef" flavours) while its message says "stock trading day";
+                // reproduced verbatim, not corrected. Because the flip above
+                // turns `td` into 3, a QUARTERLY series with `aictest=(td)` and
+                // no TD group lands here -- which is the flip's most visible
+                // downstream consequence.
+                const int sp = ctx.model.sp;
+                if ((ctx.x11reg.xtdtst == 3 || ctx.x11reg.xtdtst == 4) && sp != 12) {
+                    writln(ctx, "ERROR: Need monthly data to perform aictest "
+                           "for stock trading day.", stdio::STDERR,
+                           ctx.units.mt2, true);
+                    inptok = false;
+                } else if (sp != 12 && sp != 4) {
+                    writln(ctx, "ERROR: Need monthly or quarterly data to "
+                           "perform aictest for trading day.", stdio::STDERR,
+                           ctx.units.mt2, true);
+                    inptok = false;
+                } else if (ctx.arima.begsrs(1) < 1776) {
+                    // NOTE the swapped channel order: this one writes Mt2 first
+                    // and STDERR second (editor.f:1839/1841/1843), unlike every
+                    // other message in the block. Reproduced.
+                    writln(ctx, "ERROR: Cannot generate trading variables for "
+                           "aictest before 1776.", ctx.units.mt2, stdio::STDERR,
+                           true);
+                    writln(ctx, "       Either specify a starting date, or "
+                           "include the century in the", ctx.units.mt2,
+                           stdio::STDERR, false);
+                    writln(ctx, "       start or modelspan arguments of the "
+                           "series spec.", ctx.units.mt2, stdio::STDERR, false);
+                    inptok = false;
+                }
+            }
+        }
+    }
+
+    // The AO half of this front, and its trigger is `Otlxrg` -- NOT `Xeastr`,
+    // which was another proxy (entry 74's lesson, applied a second time in the
+    // same function). With no TD group the AIC baseline is fitted on an
+    // AUTOMATIC-AO design (editor.f:1727 chose Otlxrg over Sigxrg=2.5; the
+    // oracle's .out adds AO1960.Mar at t=-5.50) and the AICCs come out ~7.9
+    // apart -- measured on `variables=(easter[8]) aictest=(td)`, which has
+    // Xeastr FALSE and so walked straight past the old condition once the
+    // Xtdtst flip above stopped refusing it.
     //
-    // editor.f:1786 is why, and the read is NOT unpredictable. `COMMON
-    // /cx11rg/` declares `Clxptr(0:PB)` immediately before `Grpx(0:PGRP)`, so
-    // storage association makes `Grpx(Tdgrp-1)` with Tdgrp==0 resolve to
-    // `Clxptr(PB)` -- a determined in-COMMON address 81 integers inside the
-    // block. Proved by probe (M5_PORT_NOTES entry 74): poisoning the arrays and
-    // running editor's own two lines returns Clxptr(PB) exactly. `Clxptr(PB)`
-    // is `Colptr(PB)` (loadxr.f:38 copies all PB+1 elements regardless of how
-    // many are meaningful), which no realistic model ever writes, so it holds
-    // the block's static 0; `Grpx(0)` is 1, `endcol` is 0, and the comparison
-    // succeeds -- flipping Xtdtst 1 -> 3, i.e. `td` silently becomes `td1coef`.
-    // Measured stable across 1, 2 and 4 x11regression columns.
-    //
-    // Reproducing that is a decision about porting a documented COMMON aliasing,
-    // not about porting a coin flip; until it is taken, refuse.
-    if (ctx.x11reg.xtdtst > 0 && no_td_group)
-        xrg_not_ported(ctx, "x11regression aictest=(td) with no trading-day "
-                            "group: editor.f:1786 reads Grpx(-1), which storage "
-                            "association aliases onto Clxptr(PB), flipping the "
-                            "test to td1coef (editor.f:1760-1846)");
-    else if (ctx.x11log.xeastr && no_td_group)
-        xrg_not_ported(ctx, "x11regression aictest=(easter) with no "
-                            "trading-day group: the AIC baseline is fitted on "
-                            "an auto-AO design (editor.f:1727 Otlxrg, "
-                            "x11aic.f:112-143 strip)");
+    // These two halves are NOT separable by spec. x11regression demands a
+    // trading-day OR holiday regressor (gtxreg.f's "Must adjust for either
+    // trading day or holiday"), so "no TD group" forces a holiday, which forces
+    // Otlxrg. Every spec that reaches the flip therefore also reaches this. The
+    // flip is gated instead through the one consequence that lands at PARSE
+    // time -- the quarterly refusal above, which cannot fire unless Xtdtst was
+    // rewritten 1 -> 3.
+    // `inptok` guards it because this wall is a PORT artifact, not Fortran: a
+    // spec the oracle has already rejected must come back with the oracle's
+    // message and nothing else, or the ERROR-text half of the M1 parse gate
+    // sees two lines where the golden has one.
+    if (inptok && ctx.x11log.otlxrg && no_td_group)
+        xrg_not_ported(ctx, "x11regression aictest with no trading-day group: "
+                            "the AIC baseline is fitted on an auto-AO design "
+                            "(editor.f:1727 Otlxrg, x11aic.f:112-143 strip)");
 }
 
 // ---- x11regression{} (gtxreg.f) -------------------------------------------

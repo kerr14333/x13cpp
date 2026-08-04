@@ -1281,3 +1281,94 @@ column's type.
   the `usertype=` order reversed and does not. Removing the arm costs 14 gates.
   `-easter` gates the other route into the same rule (`Holgrp>0` through a real
   `easter[8]` regressor).
+
+## CB-37
+
+**`editor.f:1786` reads `Grpx(-1)` when the AIC trading-day test is requested
+but `variables=` names no trading day. The subscript is out of bounds; the
+ADDRESS is not. COMMON storage association puts `Clxptr(PB)` there, it is 0,
+and the comparison it feeds silently rewrites the user's `td` request to
+`td1coef`.**
+
+- **File:line:** `editor.f:1783-1790`, inside the
+  `IF(Xtdtst.eq.1.or.Xtdtst.eq.3)` arm of the "Check options for AIC trading
+  day test" block.
+
+```fortran
+ELSE IF (Xtdtst.eq.1.or.Xtdtst.eq.3)THEN
+ begcol=Grpx(Tdgrp-1)          ! Tdgrp==0 -> Grpx(-1)
+ endcol=Grpx(Tdgrp)-1
+ IF((Xtdtst.eq.1).and.(begcol.eq.endcol))THEN
+  Xtdtst=3                     ! td  ->  td1coef
+```
+
+- **Why it is not undefined behaviour.** `Grpx` is `DIMENSION Grpx(0:PGRP)`
+  (`PGRP=PB=80`), so `-1` is one below the lower bound. But `xrgmdl.cmn:49`
+  declares
+
+  ```fortran
+  COMMON /cx11rg/ Clxptr,Grpx,Gpxptr,Nbx,Ncoltx,...
+  ```
+
+  with `Clxptr(0:PB)` immediately BEFORE `Grpx(0:PGRP)`, and Fortran storage
+  association makes a COMMON block contiguous in declaration order. `Grpx(-1)`
+  therefore resolves to `Clxptr(PB)` -- 81 integers INSIDE the block, not off
+  the end of it. No wild pointer, no fault, no compiler dependence. The
+  subscript is non-conforming; the address is fully determined.
+
+- **Measured, not inferred.** `tools/ref_grpx.f` compiles against the vendored
+  headers read-only, poisons both arrays with distinguishable values
+  (`Clxptr(i)=1000+i`, `Grpx(i)=2000+i`) and runs editor's own two lines from a
+  subroutine so `-O0` cannot fold them:
+
+  ```
+  Clxptr(PB)          =     1080
+  Grpx(0)             =     2000
+  begcol = Grpx(-1)   =     1080
+  alias is Clxptr(PB)? T
+  ```
+
+- **Why the comparison then succeeds.** `Clxptr(PB)` is `Colptr(PB)`:
+  `loadxr.f:38` does `cpyint(Colptr(0),PB+1,1,Clxptr(0))`, all `PB+1` elements,
+  regardless of how many are meaningful. `Colptr(80)` is only written by a model
+  carrying 79 regressors (`insptr.f:54-55` writes up to `Ptrvec(Nelt+1)`;
+  `adrgef.f:363` passes `PB` as the bound), so in practice it holds the block's
+  static 0. `Grpx(0)` is 1, `endcol` is 0, `begcol` is 0, and `Xtdtst` flips
+  1 -> 3.
+
+- **What it does to the result.** The user asked to AIC-test `td` (six
+  contrast columns); the oracle tests `td1coef` (one) instead, reports
+  `aictest.xtd.reg: td1coef`, and on the airline series rejects it --
+  `aictest.xtd: no`, `aictest: none` -- landing in `x11mdl.f:308`'s
+  identity-factor NOTE branch. Measured stable across 1, 2 and 4 x11regression
+  columns; the control, with `td` present in `variables=`, reports `td`.
+
+- **Port:** reproduced, in `xrg_editor_setup`
+  (`core/src/specparse/readers_spec.cpp`). The C++ COMMON mirrors are separate
+  `farray1lb` objects (`xrgmdl_cmn.hpp:11-13`) and are NOT storage-associated,
+  so the alias is written explicitly:
+
+  ```cpp
+  const int begcol = (tdgrp == 0) ? xg.clxptr(prm::PB) : xg.grpx(tdgrp - 1);
+  ```
+
+  Reading the real value rather than hardcoding the flip is deliberate:
+  `Colptr(PB)` IS writable by a 79-regressor model, so assuming 0 would be an
+  approximation that breaks silently at the limit. `farray1lb::operator()`
+  bounds-checks, so co-locating the arrays to make the alias implicit was
+  rejected -- it would make every stray subscript "work" and cost a live
+  guardrail.
+
+- **Pinned by:** `tests/corpus/extra/expgs_x11regression-aictest-tdflip-qtr`.
+  The flip has exactly one PARSE-time consequence, and that is what the gate
+  uses: on QUARTERLY data the rewritten `Xtdtst==3` walks into `editor.f:1832`'s
+  `(Xtdtst.eq.3.or.Xtdtst.eq.4).and.Sp.ne.12` and the run is refused with "Need
+  monthly data to perform aictest for stock trading day." Without the flip
+  `Xtdtst` is still 1, that arm does not fire, and `Sp==4` passes the next arm
+  cleanly -- so the refusal cannot happen unless the aliased read happened.
+  Replacing the alias with a sentinel costs 2 gates.
+
+  It could not be gated on the AICCs: x11regression demands a trading-day OR
+  holiday regressor, so "no TD group" forces a holiday, which forces
+  `editor.f:1727`'s auto-AO branch, whose ~7.9 AICC gap is a separate open
+  front and is walled.

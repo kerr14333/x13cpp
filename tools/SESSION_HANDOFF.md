@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6535<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->681<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6537<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->681<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6535<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6537<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1324,29 +1324,69 @@ written (`ctx.xrgmdl.clxptr(prm::PB)`), not inherited.
 
 Suite 6535 passed, 0 failed, 0 xfailed, 681 skipped.
 
+## This session, part 26: the alias ported (CB-37), and the two halves were never separable
+
+Entry 75. Option B taken on entry 74's policy call: reproduce `editor.f:1786`'s
+COMMON aliasing rather than stay walled. That meant porting
+`editor.f:1760-1846` -- the agreement refusals, the flip, and the
+generatability refusals -- not just the one read.
+
+```cpp
+const int begcol = (tdgrp == 0) ? xg.clxptr(prm::PB) : xg.grpx(tdgrp - 1);
+```
+
+Written explicitly, because the C++ mirrors are separate objects. Hardcoding
+the flip was rejected on measurement (`Colptr(PB)` IS writable by a
+79-regressor model -- insptr.f:54-55 / adrgef.f:363 -- so assuming 0 breaks
+silently at the limit); co-locating the COMMON was rejected because it would
+disarm `farray1lb`'s bounds check for every array in the block.
+
+**THE FINDING, and it corrects this handoff's own board.** Item 1 listed the
+flip and the AO gap as two independent sub-items. They are not separable:
+`x11regression{}` requires a trading-day OR holiday regressor, so *no TD group*
+forces a holiday, which makes editor.f:1727 pick `Otlxrg` (auto-AO) over
+`Sigxrg=2.5`. Every spec that reaches the flip also reaches the auto-AO path,
+whose AICCs are ~7.9 off. No spec isolates one from the other.
+
+**Gated anyway, through the flip's one PARSE-time consequence.** On QUARTERLY
+data the rewritten `Xtdtst==3` hits editor.f:1832 and the run is refused --
+"Need monthly data to perform aictest for stock trading day", a message about
+*stock* TD for a plain `td` request. Without the flip `Xtdtst` is 1, that arm
+never fires, and `Sp==4` passes cleanly. Predicted from the Fortran, confirmed
+against the oracle, and it cannot fire unless the aliased read did.
+
+**A second proxy wall, one day after the first.** Entry 74 fixed a wall keyed
+on `Nbx==0` (a proxy for "no TD group"). The AO wall beside it was keyed on
+`Xeastr` -- also a proxy; the real trigger is `Otlxrg`. The moment the flip
+stopped refusing `variables=(easter[8]) aictest=(td)`, that spec walked past
+the AO wall too at `OUTCOME: OK`. Fixing one proxy exposed the next. Also: that
+wall needed an `inptok` guard, because a wall placed after a refusal path is a
+PORT artifact and must not add a second ERROR line to a spec the oracle already
+rejected with one.
+
+**Third gap, walled not ported:** `Xaicst` (editor.f:1802-1808) and `Xaicrg`
+(:1811-1822) are READ by this port (x11reg.cpp:642/658 -> mktdlb/addtd) and
+were only ever WRITTEN to their gtinpt defaults. Read-but-never-written. Now
+walled under `Stdgrp>0` / `Xrgmtd`; on the board below.
+
+Suite 6535 -> 6537 passed, 0 failed, 0 xfailed. WALLS 23 -> 24.
+
 ## Open, in the order I would take them
 
-1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
-   block**, WALLED (entry 65), and the wall was WIDENED in part 25 after it was
-   caught covering less than it looked like (`Nbx == 0` was a proxy for the real
-   trigger, no trading-day group; one non-TD variable walked past it into a
-   974-unit AICC error at `OUTCOME: OK`). It holds three td/tdstock agreement
-   refusals, the `Xtdtst` 1 -> 3 rewrite, `Xaicst`/`Xaicrg`, and the
-   monthly-data / pre-1776 generatability refusals. Two halves left, and they
-   are now different KINDS of open:
-   - The `Grpx(-1)` flip is **MEASURED and no longer an evidence question**
-     (entry 74). It is not UB: storage association aliases it onto
-     `Clxptr(PB)`, proved by `tools/ref_grpx.f`, and the flip is stable across
-     column counts. What is left is a POLICY call -- does this port reproduce a
-     documented COMMON aliasing? Cost is one explicit line, since the C++
-     arrays are separate objects and the alias must be written rather than
-     inherited. Everything downstream (`td1coef` tested, rejected, into
-     x11mdl.f:308's identity-factor NOTE) follows from that one decision.
-   - The AO half, untouched by the above. With no surviving TD group, `xeastr`
-     suppresses `editor.f:1727`'s `Sigxrg=2.5` and the AIC baseline is fitted
-     on an AUTOMATIC-AO design (the oracle adds `AO1960.Mar` at t=-5.50), which
-     is where the ~7.6 AICC gap lives. Walled under that condition. Take it as
-     an AO-identification question, not an aictest one.
+1. **The auto-AO AICC gap on an x11regression aictest with no trading-day
+   group** -- what is left of the old `editor.f:1760-1846` item, now that the
+   block itself is PORTED (part 26 / entry 75, CB-37) and the `Grpx(-1)` alias
+   is reproduced and gated. The block is no longer the open thing; this is.
+   With no TD group, `editor.f:1727` takes `Otlxrg` instead of `Sigxrg=2.5` and
+   the AIC baseline is fitted on an AUTOMATIC-AO design (the oracle's .out adds
+   `AO1960.Mar` at t=-5.50). Measured ~7.9 AICC out on
+   `variables=(easter[8]) aictest=(td)`; walled on `Otlxrg && no_td_group`.
+   Take it as an AO-identification question, not an aictest one -- and note it
+   is NOT separable from the flip by spec, so any gate for it gates both.
+   Two smaller siblings, both walled in the same function and both cheap:
+   `Xaicst` (editor.f:1802-1808, the stock-TD day-of-month) and `Xaicrg`
+   (:1811-1822, the change-of-regime date) are READ by x11reg.cpp:642/658 and
+   never written except to their gtinpt defaults.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a

@@ -4050,3 +4050,105 @@ state the trigger in the condition, not a symptom of it.
 
 Suite 6535 passed, 0 failed, 0 xfailed, 681 skipped; ctest 12/12; WALLS 23 gaps
 / 4 faithful.
+
+## 75. Porting the alias (option B) -- and finding that the two halves of this front were never separable.
+
+Entry 74 measured `Grpx(-1)` and left a policy call: reproduce a documented
+COMMON aliasing, or stay walled. Taken: **reproduce it** (CB-37), which meant
+porting `editor.f:1760-1846` rather than refusing it.
+
+**Why B and not the cheaper shapes.** Two alternatives were rejected on
+measured grounds, not taste:
+
+- *Hardcode the flip* (`if (tdgrp == 0 && xtdtst == 1) xtdtst = 3;`). Reads
+  better, and is right for every model anyone will run. But `Colptr(PB)` is NOT
+  provably 0: `insptr.f:54-55` writes up to `Ptrvec(Nelt+1)` and
+  `adrgef.f:363` passes `PB` as the bound, so a 79-regressor model reaches index
+  80 and the comparison fails. Hardcoding manufactures the exact failure shape
+  this project exists to catch -- right answer, wrong reason, silent when the
+  precondition breaks.
+- *Co-locate the COMMON* so `grpx(-1)` lands on `clxptr(PB)` naturally. Maximally
+  faithful, and it would disarm `farray1lb::operator()`'s bounds check
+  (`farray.hpp:57`) for every array in the block. That check is how a stray
+  subscript surfaces as a crash instead of a wrong number. Not worth one case.
+
+So the alias is written explicitly, which is also the honest form -- the C++
+mirrors ARE separate objects, and pretending otherwise would hide the fact:
+
+```cpp
+const int begcol = (tdgrp == 0) ? xg.clxptr(prm::PB) : xg.grpx(tdgrp - 1);
+```
+
+**What else had to come with it.** Lifting the wall meant porting the whole
+block, not just the read: the three td/tdstock agreement refusals
+(editor.f:1765-1796), the flip, and the generatability refusals
+(editor.f:1828-1845). Two details reproduced verbatim rather than corrected:
+
+- `editor.f:1832` tests `Xtdtst.eq.3.or.Xtdtst.eq.4` -- the two "1coef"
+  flavours -- while its message says **"stock trading day"**. Condition and
+  message disagree; the stock flavours are 2 and 4.
+- the pre-1776 refusal writes **Mt2 first and STDERR second**
+  (editor.f:1839/1841/1843), the opposite channel order to every other message
+  in the block.
+
+**THE FINDING: the two halves of board item 1 were never separable, and the
+handoff had them listed as independent.** The plan was to gate the flip on
+`aictest.xtd.reg` / `aictest.xtd`, which the port now matches exactly. It also
+had to match the AICCs, and those came out ~7.9 off. That is the AO half --
+and it is not avoidable, because:
+
+> `x11regression{}` requires a trading-day OR holiday regressor ("Must adjust
+> for either trading day or holiday"). So *no TD group* forces a holiday, which
+> makes `editor.f:1727` choose `Otlxrg` (automatic AO identification) over
+> `Sigxrg=2.5`. **Every spec that can reach the flip also reaches the auto-AO
+> path.**
+
+There is no spec that isolates one from the other. Listing them as two
+independent sub-items was wrong.
+
+**What made it gateable anyway.** The flip has exactly one consequence that
+lands at PARSE time, before any AICC exists. On QUARTERLY data the rewritten
+`Xtdtst==3` walks into editor.f:1832 and the run is REFUSED:
+
+```
+ ERROR: Need monthly data to perform aictest for stock trading day.
+```
+
+A message about *stock* trading day, for a plain `td` request, on a series that
+is merely quarterly -- the message only makes sense once you know the flip
+happened. Without the flip `Xtdtst` is still 1, that arm does not fire, and
+`Sp==4` passes the next arm cleanly. So the refusal **cannot occur unless the
+aliased read occurred**, which makes it a gate for the read and nothing
+downstream of it. Predicted from the Fortran, then confirmed against the
+oracle.
+
+**The second proxy-wall, in the same function, one day after the first.** Entry
+74's lesson was "a wall keyed on a proxy for its trigger is narrower than the
+divergence". The AO wall next to it was keyed on `Xeastr` -- also a proxy. The
+real trigger is `Otlxrg`. `variables=(easter[8]) aictest=(td)` has `Xeastr`
+FALSE, so the moment the flip stopped refusing that spec, it sailed past the AO
+wall too and returned `OUTCOME: OK` with the 7.9-off AICCs. Fixing one proxy
+exposed the next. Now `Otlxrg && no_td_group`.
+
+That wall also had to be guarded on `inptok`: it is a PORT artifact, not
+Fortran, and a spec the oracle already rejected must come back with the
+oracle's message and nothing else, or the ERROR-text half of the M1 parse gate
+sees two lines where the golden has one. That is a general rule for walls
+placed after a refusal path.
+
+**A third gap, found and walled rather than ported.** `Xaicst` (the stock-TD
+day-of-month, editor.f:1802-1808) and `Xaicrg` (the change-of-regime date,
+:1811-1822) are READ by this port already -- `x11reg.cpp:642/658` hand them to
+mktdlb/addtd -- and were only ever WRITTEN to their gtinpt.cpp:226-227 defaults
+(31 / NOTSET). The read-but-never-written half of the parsed-but-unread class.
+Walled under `Stdgrp>0` and `Xrgmtd`; on the board.
+
+**Gated:** `extra/expgs_x11regression-aictest-tdflip-qtr` (new), through
+`test_m1_parse::test_outcome_matches_oracle` (outcome + ERROR text) and
+`test_x11regression_abend` (which discovered it by itself, from the blessed
+`.err`). **Mutation:** replacing the alias with a sentinel so the flip never
+fires costs **2** gates.
+
+Suite 6535 -> 6537 passed, 0 failed, 0 xfailed, 681 skipped; ctest 12/12; WALLS
+23 -> 24 gaps (one wall lifted, three added: Xaicst, Xaicrg, and the widened AO
+one).
