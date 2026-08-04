@@ -25,6 +25,7 @@
 #include "specparse/specparse.hpp" // addate
 #include "gen/model.hpp"           // PRG* regressor types, PSNGER
 #include "gen/notset.hpp"          // prm::DNOTST
+#include "x13/fformat.hpp"         // fwrite_fmt (prterx's two-channel diagnostic)
 
 namespace x13 {
 namespace {
@@ -263,6 +264,56 @@ void dlrgrw(double* xy, int ncxy, int nrxy, const bool* rgxcld) {
             ++i2;
         }
     }
+}
+
+// ---- prterx.f ------------------------------------------------------------
+// The irregular regression's singular-design abend. Every `CALL regx11` in the
+// oracle except x11mdl.f:416 is followed by
+//   IF(.not.Lfatal.and.Armaer.eq.PSNGER)CALL prterx()
+// and x11mdl.f:417 is that one too -- the guard is universal. Without it a
+// singular x11regression design is a SILENT stop: regx11 sets Armaer and the
+// caller unwinds, the run reaches its end, and the harness reports OUTCOME: OK
+// on a seasonal adjustment whose calendar regression never fitted. That was the
+// state of this port until now (M5_PORT_NOTES entry 73).
+//
+// prterx.f:28-34 names the offending column out of Colttl when Sngcol indexes a
+// real column and falls back to the literal 'data' otherwise (Sngcol==Ncxy is
+// the y column, which has no title). prterx.f:49-55's Prttab(LXRXMX) reprint of
+// the design matrix goes to Mt1, the .out print engine this port does not
+// implement at all, so it is deferred with the rest of it -- note that it prints
+// Nrxy rows while regx11 fits Nspobs of them, so on the aictest=(user) path it
+// renders zero rows over six live columns. Two different counts, not a
+// contradiction; see entry 73.
+void prterx(X13Context& ctx) {
+    auto& m = ctx.model;
+    std::string str;
+    int nchr = 4;
+    if (ctx.mdldat.sngcol < m.ncxy) {
+        getstr(ctx, m.colttl.data(), m.colptr.data(), m.ncoltl, ctx.mdldat.sngcol,
+               str, nchr);
+        if (ctx.error.lfatal) return;
+    } else {
+        str = "data";
+    }
+    errhdr(ctx);
+    const std::string col = str.substr(0, static_cast<std::size_t>(nchr));
+    auto& err = ctx.channels_.unit(stdio::STDERR);
+    auto& mt2 = ctx.channels_.unit(ctx.units.mt2);
+    // prterx.f:1230 -- STDERR only, and it names the .err file rather than the
+    // column. Serno is this port's Cursrs (both are the spec base name).
+    err.put(fwrite_fmt("(' Error(s) found while estimating the irregular ',"
+                       "'regression model.',/,"
+                       "' For more details, check the error file (',a,'.err).')",
+                       ctx.title.serno.str()) + "\n");
+    // prterx.f:1270 -- written to Mt1 AND Mt2; only the Mt2 half exists here.
+    mt2.put(fwrite_fmt("(/,' ERROR: Irregular regression matrix singular ',"
+                       "'because of ',a,'.',/,"
+                       "'        Check irregular regression model.',/)", col));
+    abend(ctx);
+}
+
+void prterx_if_singular(X13Context& ctx) {
+    if (!ctx.error.lfatal && ctx.mdldat.armaer == prm::PSNGER) prterx(ctx);
 }
 
 // ---- regx11.f (reuses olsreg/resid) --------------------------------------
@@ -597,7 +648,7 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         retransform();
         rebuild_design();
         if (ctx.error.lfatal) return;
-        if (!regx11(ctx)) return;
+        if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
         double aicntd = prm::DNOTST;
         xrlkhd(ctx, aicntd, xc.nxcld);
         if (ctx.error.lfatal) return;
@@ -621,7 +672,7 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         retransform();
         rebuild_design();
         if (ctx.error.lfatal) return;
-        if (!regx11(ctx)) return;
+        if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
         // (x11aic.f:208's rgtdhl is a no-op here: it returns unless Xhlnln,
         // the Bell-Hilmer nonlinear Easter, which this port never sets.)
         double aictd = prm::DNOTST;
@@ -737,7 +788,7 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         if (i > 1 || estend) {
             rebuild_design(eas_xm);
             if (ctx.error.lfatal) return;
-            if (!regx11(ctx)) return;
+            if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
             aichol = prm::DNOTST;
             xrlkhd(ctx, aichol, xc.nxcld);
             // x11aic.f:345-350 -- the Jacobian is the TD one whenever a TD
@@ -805,7 +856,7 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
     // x11aic.f:463-479 -- the no-user AICC, only when nothing upstream has
     // already left a fitted design behind.
     if (estend) {
-        if (!regx11(ctx)) return;
+        if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
         // (:466's rgtdhl is the same Xhlnln no-op as in the TD branch.)
         xrlkhd(ctx, aicnus, xc.nxcld);
         if (ctx.error.lfatal) return;
@@ -859,7 +910,7 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
     // x11aic.f:537-552 -- refit WITH the user columns and score.
     rebuild_design();
     if (ctx.error.lfatal) return;
-    if (!regx11(ctx)) return;
+    if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
     double aicusr = prm::DNOTST;
     xrlkhd(ctx, aicusr, xc.nxcld);
     if (ctx.error.lfatal) return;
@@ -1204,7 +1255,7 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     // outlier-ID robust mse has its starting values (x11mdl.f:416 regx11(a)).
     std::vector<double> aotl(PLEN, 0.0);
     int naotl = 0, nefotl = 0;
-    if (!regx11(ctx, aotl.data(), &naotl, &nefotl)) return;
+    if (!regx11(ctx, aotl.data(), &naotl, &nefotl)) { prterx_if_singular(ctx); return; }
     // x11mdl.f:424 -- Otlxrg is the automatic AO outlier identification arm of
     // the extreme-value method; editor.f:1727-1747 chose it at spec-read (see
     // xrg_editor_setup). AO-only, add-one, over the full model span, with the

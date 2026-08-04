@@ -50,6 +50,19 @@ void dlrgrw(double* xy, int ncxy, int nrxy, const bool* rgxcld);
 bool regx11(X13Context& ctx, double* aout = nullptr, int* naout = nullptr,
             int* nefout = nullptr);
 
+// prterx.f: the irregular regression's singular-design abend -- names the
+// offending column, writes the two-channel diagnostic, and calls abend. Every
+// `CALL regx11` in the oracle is followed by the guard below, so a singular
+// x11regression design is FATAL everywhere; regx11 alone returning false is not
+// enough, because it also returns false when olsreg has already set Lfatal.
+void prterx(X13Context& ctx);
+
+// The universal guard: `IF(.not.Lfatal.and.Armaer.eq.PSNGER)CALL prterx()`
+// (x11aic.f:171/207/338/465/538/597, x11mdl.f:417, rgtdhl.f:63, idotlr.f:878/995).
+// Call it on the failure edge of regx11; it is a no-op when the failure was a
+// fatal raised further down instead of a singular column.
+void prterx_if_singular(X13Context& ctx);
+
 // x11ref.f (mult, TD-only): build the TD factor series ftd (and combined fcal)
 // from the fitted coeffs b x design xy over Nrxy rows, mean-normalized by Xnstar
 // (mulref) then finished with Xn/Xnstar -- or with 1 when kswv==3, the prior-TD

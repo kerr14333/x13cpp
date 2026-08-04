@@ -77,7 +77,14 @@ def _unparsed_reason(spc: str):
 # later in the pipeline. They are gated by their own runtime harness (e.g.
 # test_transform_err.py), so the M1 parse gate must not treat them as parse-error
 # cases (it would see parser OK=True vs oracle OK=False).
-_POST_PARSE_FATAL = {"edge/log-zero-series.spc"}
+_POST_PARSE_FATAL = {
+    "edge/log-zero-series.spc",
+    # prterx.f -- the irregular regression's singular design, raised inside
+    # x11mdl/x11aic at the B iteration, long after the spec has parsed and the
+    # oracle has written a complete .udg. Gated for real in
+    # test_x11regression_tables.py::test_x11regression_abend.
+    "extra/airline_x11regression-aictest-usersing.spc",
+}
 
 
 def _corpus_specs():

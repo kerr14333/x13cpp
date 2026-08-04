@@ -3836,3 +3836,108 @@ serially and on the next full parallel run, and its spec contains no
 violation is not a flake worth forgetting -- the harness carries large
 stack-resident arrays and this project has already hit `0xC00000FD` once for
 that reason.
+
+## 73. `prterx` -- the Census routine whose name says "print" and whose job is `abend`. An unported error stop, and the class swept to exhaustion.
+
+Board item 2 since entry 61 opened it. `x11regression{ variables=(td)
+aictest=(user) }` makes the ORACLE stop:
+
+```
+ ERROR: Irregular regression matrix singular because of Mon.
+        Check irregular regression model.
+```
+
+This engine ran it to `OUTCOME: OK` and published a full seasonal adjustment.
+
+**Entry 61's recorded hypothesis was wrong, on both counts.** It guessed the B
+iteration's `adrgef` restore and the following `regvar` each add a copy of the
+user column, so the C iteration fits a duplicated design. The abend is at the
+**B** iteration (`x11mdl.f:253`, under `Kpart.eq.2` -- the file's own comment
+says "change to B iteration - march 6 2006"), and the design is EMPTY, not
+duplicated. Writing the hypothesis down still paid: it named a specific thing to
+disprove, and disproving it took one run.
+
+**What actually happens.** x11aic runs its three tests in order -- trading day
+(:148-297), Easter (:298-458), user (:462-591) -- and only the first two call
+`regvar`. With `Xtdtst==0` and `Xeastr==F` both are skipped, so :463-464's
+`IF(estend) CALL regx11(A)` fits whatever design is resident. Nothing built one:
+x11mdl's own first `regvar` is at :388, AFTER the x11aic call at :253, and
+`x11pt2.f:720`'s `IF(Ixreg.eq.1) CALL loadxr(F)` has just restored `Nrxy` from
+`Nxrxy` (loadxr.f:84) -- parked by `gtinpt.f:830`'s `loadxr(T)` at PARSE time,
+before any `regvar` ran. `Ixreg` stays 1 (editor.f:1976-1978 promotes to 2 only
+for a holiday, a fixed prior or a narrowed span), so `xrgdrv` never runs either.
+
+**TWO ROW COUNTS, and reading them as one is the trap.** `prterx.f:52` reprints
+the design over `Nrxy` -- zero rows under six live column headers, which is what
+the oracle's `.out` shows -- while `regx11.f:49-50` fits `Nspobs` of them. The
+empty print is NOT the design `regx11` saw. The singularity is in the CONTENT of
+`Xy`, which still holds the regARIMA-era matrix reinterpreted at the x11reg
+model's stride.
+
+**The port had all of this right already.** Instrumenting the C++ at the user
+branch printed `nspobs=144 ncxy=7 nb=6 nrxy=0 nxcld=10 xy= 0 0 0 0 0 0 0 0` --
+`nrxy=0` exactly like the oracle, `xy` all zeros -- and `regx11` returned
+**false**. The engine detected the singular column. It just had nowhere to say
+so:
+
+```cpp
+if (!regx11(ctx)) return;      // and the run continues to OUTCOME: OK
+```
+
+**The defect is one unported routine, and the reason it was missed is its
+name.** `prterx.f` is 59 lines that resolve the offending column out of
+`Colttl`, write a two-channel diagnostic, optionally reprint the matrix -- and
+call `abend`. It sits in the `prt*` family, which this port defers WHOLESALE and
+by design (there is no `.out` print engine here at all). Deferring the print
+deferred the stop. Every `CALL regx11` in the oracle is followed by
+`IF(.not.Lfatal.and.Armaer.eq.PSNGER)CALL prterx()` -- x11aic.f:171/207/338/465/
+538/597, x11mdl.f:417, rgtdhl.f:63, idotlr.f:878/995 -- so this was not one
+missing guard but the guard missing from all of them.
+
+**THE CLASS IS NOW SWEPT, so nobody has to wonder again.** Eleven `prt*`
+routines call `abend`. Classified by what precedes the call:
+
+| routine | abends | preceded by a save-file open check |
+|---|---|---|
+| prtacf, prtd8b, prtfct, prtmdl, prtmsr, prtrev, prtrts, prtrv2, prtxrg | 1-4 each | **all of them** |
+| `prterr` | 5 | none -- and it IS ported, used across automdl/regarima |
+| `prterx` | 1 | none -- this entry |
+
+Every other `prt*` abend is a save-file-open failure (`locok`/`fcnok`), and this
+port writes no save files at all, so they are structurally unreachable rather
+than deferred. **The two `prt*` routines that are error REPORTERS rather than
+printers are exactly `prterr` and `prterx`, and both are now ported.** The class
+is closed; do not re-derive it.
+
+**What is ported here.** `prterx` + a `prterx_if_singular` helper carrying the
+Fortran's own guard (`!Lfatal && Armaer==PSNGER`) rather than "regx11 returned
+false" -- regx11 also returns false when olsreg already raised a fatal, and
+prterx must not fire on that. Wired at all seven live call sites (rgtdhl is an
+`Xhlnln=F` no-op here). `prterx.f:49-55`'s matrix reprint goes to Mt1 and stays
+deferred with the rest of the print engine; the Mt2 text is byte-identical to
+the oracle's `.err`.
+
+**One test-harness consequence, and it had a mechanism waiting.**
+`test_m1_parse.py::test_outcome_matches_oracle` compares the PARSE harness's
+outcome against the oracle's, keyed on ERROR lines in the golden `.err`. A
+post-parse abend is not a parse verdict, and that file already carved out the
+same case for `edge/log-zero-series.spc` via `_POST_PARSE_FATAL`. The new spec
+joins that set. A second, message-keyed mechanism was written first and thrown
+away: two mechanisms for one concept is the duplicated ownership this repo's own
+docs warn about.
+
+**Gated:** `extra/airline_x11regression-aictest-usersing` (new) via
+`test_x11regression_abend`, which is DISCOVERED -- every x11regression spec whose
+blessed oracle `.err` carries an `ERROR:` line, with a floor assertion. The same
+`_oracle_abended` predicate now also excludes abending specs from `CASES` and
+`AIC_CASES`, which would otherwise have pulled this spec into table gates that
+assert `OUTCOME: OK`.
+
+**Mutation:** making `prterx_if_singular` a no-op fails **2** gates -- the new
+abend gate and `test_m1_parse`. That second one is the interesting half: the
+outcome-parity gate had existed all along and would have caught this defect the
+day it was introduced. What was missing was never a gate. **It was a spec.**
+Entry 61 wrote this spec, measured it, and then REMOVED it rather than gate it.
+
+Suite 6530 -> 6535 passed, 0 failed, 0 xfailed, 681 skipped; ctest 12/12; WALLS
+23 gaps unchanged.

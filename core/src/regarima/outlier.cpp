@@ -15,6 +15,7 @@
                                     // adrgef, dlrgef, eltlen, getstr, copy, setint
 #include "regarima/armafl.hpp"      // armafl
 #include "regarima/estimate.hpp"    // rgarma
+#include "x11/x11reg.hpp"        // regx11, prterx_if_singular (idotlr.f:878/995)
 #include "gen/model.hpp"            // prm::PB, POTLR, AO, LS, TC, RP, TLS, ...
 #include "gen/notset.hpp"           // prm::NOTSET
 #include "gen/srslen.hpp"           // prm::PLEN
@@ -849,6 +850,7 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
         if (lxreg) {
             int nn = 0;
             regx11(ctx, a, &nn, &nefobs);   // rgtdhl is a no-op (Xhlnln=F)
+            prterx_if_singular(ctx);        // idotlr.f:878
             na = nn;
         } else {
             rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs, lautmp);
@@ -882,6 +884,7 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
                 int na = 0;
                 if (lxreg) {
                     regx11(ctx, a, &na, &nefobs);   // rgtdhl no-op (Xhlnln=F)
+                    prterx_if_singular(ctx);        // idotlr.f:995
                 } else {
                     rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs,
                            lautmp);

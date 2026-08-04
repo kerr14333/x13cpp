@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (72
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (73
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -255,6 +255,23 @@ because by the time you would think to look them up, the damage is done.
 - **Reachability arguments are only valid over the options the parser
   honours.** An unreachability proof was wrong once because the route it ruled
   out went through an option that was being silently discarded.
+- **A deferred SUBSYSTEM can swallow a load-bearing routine that merely
+  looks like it belongs to it.** This port defers the whole `.out` print engine
+  by design, and `prterx.f` -- 59 lines that name a singular regression column,
+  write a diagnostic, and **call `abend`** -- went with it. The stop went too:
+  every `CALL regx11` in the oracle is guarded by
+  `IF(.not.Lfatal.and.Armaer.eq.PSNGER)CALL prterx()`, none of the guards were
+  ported, and a singular x11regression design returned `OUTCOME: OK` (entry 73).
+  When you skip something because of the family it is named into, check what it
+  does BESIDES that family's job. That class is now swept to exhaustion: of the
+  eleven `prt*` routines that call `abend`, nine only do so on a save-file-open
+  failure (unreachable -- this port writes no save files), and the two real error
+  reporters are `prterr` and `prterx`. Both are ported. Do not re-derive it.
+- **A gate that has existed for months still needs the SPEC that reaches it.**
+  `test_m1_parse::test_outcome_matches_oracle` would have caught the above on
+  day one. Entry 61 wrote the spec that triggers it, measured the divergence,
+  and then DELETED the spec rather than gate it. Measuring a divergence and not
+  landing a spec leaves nothing behind but prose.
 - **Measure before naming a Census bug.** Two near-CB entries turned out to be
   correct Fortran read against the wrong mode. And a comment documenting a
   Census bug is not the same as code reproducing it — check the code below it

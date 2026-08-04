@@ -113,6 +113,24 @@ def _run(base: str) -> str:
     return r.stdout
 
 
+def _all_specs() -> list[str]:
+    return [os.path.splitext(f)[0] for f in os.listdir(_CORPUS) if f.endswith(".spc")]
+
+
+def _oracle_abended(base: str) -> bool:
+    """True when the BLESSED oracle .err carries a fatal, not just warnings.
+
+    Derived from the golden rather than from a name list, so a spec cannot drift
+    onto the wrong side of it. Passing specs' .err files hold WARNING lines (the
+    spectrum peak canaries); only an abend writes ' ERROR:'.
+    """
+    path = os.path.join(_GOLDEN, base, base + ".err")
+    if not os.path.exists(path):
+        return False
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return any(ln.lstrip().startswith("ERROR:") for ln in f)
+
+
 # AUTO-DISCOVERED, and it was a three-element literal until 2026-08-03 -- the
 # same defect AIC_CASES below already carries a note about, one list over. Six
 # `x11regression{span=}` specs had been added since without ever reaching this
@@ -121,10 +139,9 @@ def _run(base: str) -> str:
 # to AFTER the span restore (132 rows -> 156) both left the whole suite green.
 # A hand-maintained case list is an allowlist that silently stops growing.
 CASES = sorted(
-    b for b in (
-        os.path.splitext(f)[0] for f in os.listdir(_CORPUS) if f.endswith(".spc")
-    )
+    b for b in _all_specs()
     if "x11regression" in b
+    and not _oracle_abended(b)
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".xrm"))
 )
 
@@ -217,10 +234,9 @@ _AICC_WIN = {"noeaster": 0, "easter01": 1, "easter08": 8, "easter15": 15}
 # suite green. A hand-maintained case list is an allowlist that silently stops
 # growing; the floor assertion below is what keeps this one honest.
 AIC_CASES = sorted(
-    b for b in (
-        os.path.splitext(f)[0] for f in os.listdir(_CORPUS) if f.endswith(".spc")
-    )
+    b for b in _all_specs()
     if "x11regression" in b and "aictest" in b
+    and not _oracle_abended(b)
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".udg"))
 )
 
@@ -351,3 +367,57 @@ def test_x11regression_aictest_table(base: str, tag: str) -> None:
             worst, worst_k = rel, k
     assert worst <= RTOL_DTBL, (
         f"{base}.{tag}: max rel err {worst:.3e} at {worst_k} (tol {RTOL_DTBL:.0e})")
+
+
+# --- prterx.f : the singular-design abend -----------------------------------
+# The oracle STOPS when the irregular regression matrix is singular, naming the
+# offending column. Every `CALL regx11` in the Fortran is followed by
+# `IF(.not.Lfatal.and.Armaer.eq.PSNGER)CALL prterx()` -- x11aic.f:171/207/338/
+# 465/538/597, x11mdl.f:417, rgtdhl.f:63, idotlr.f:878/995 -- and none of those
+# guards had been ported. regx11 set Armaer, each caller unwound quietly, and the
+# run finished OUTCOME: OK on an adjustment whose calendar regression never
+# fitted. That is the silent-wrongness class this project exists to catch, so it
+# gets a gate rather than a comment (docs/M5_PORT_NOTES.md entry 73).
+#
+# DISCOVERED, not listed: every x11regression spec whose blessed oracle .err
+# carries a fatal. Today that is one spec; a second one added later joins by
+# itself. The floor below is what makes a shrink to zero visible.
+ABEND_CASES = sorted(b for b in _all_specs()
+                     if "x11regression" in b and _oracle_abended(b))
+
+
+def test_abend_cases_discovered() -> None:
+    """An empty parametrisation passes silently -- this one has a real floor."""
+    assert len(ABEND_CASES) >= 1, "no abending x11regression spec found"
+
+
+@pytest.mark.parametrize("base", ABEND_CASES)
+def test_x11regression_abend(base: str) -> None:
+    spec = os.path.join(_CORPUS, base + ".spc")
+    r = subprocess.run([BIN, spec], cwd=_CORPUS, capture_output=True, text=True)
+
+    # The harness prints OUTCOME: FATAL on stdout and dumps the Mt2/.err channel
+    # to stderr; the oracle writes the same text to <base>.err.
+    assert r.stdout.splitlines()[0].strip() == "OUTCOME: FATAL", (
+        f"{base}: engine did not abend\n{r.stdout[:400]}")
+
+    with open(os.path.join(_GOLDEN, base, base + ".err"),
+              encoding="utf-8", errors="replace") as f:
+        lines = [ln.rstrip() for ln in f]
+    # The ERROR: line plus its continuation (indented, non-blank) -- the whole
+    # block prterx.f:1270 emits, compared verbatim.
+    gold = []
+    for i, ln in enumerate(lines):
+        if ln.lstrip().startswith("ERROR:"):
+            gold.append(ln)
+            for cont in lines[i + 1:]:
+                if not cont.strip():
+                    break
+                gold.append(cont)
+    assert gold, f"{base}: golden .err has no ERROR block"
+
+    produced = [ln.rstrip() for ln in r.stderr.splitlines()]
+    for ln in gold:
+        assert ln in produced, (
+            f"{base}: golden .err line missing from the engine error channel\n"
+            f"  want: {ln!r}\n  got:  {produced}")

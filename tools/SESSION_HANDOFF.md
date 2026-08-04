@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6530<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->681<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6535<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->681<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6530<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6535<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1246,6 +1246,51 @@ this increment cannot reach it. Logged rather than dismissed -- the harness
 carries large stack-resident arrays and this project has hit `0xC00000FD` once
 for that reason.
 
+## This session, part 24: the routine named "print" whose job was `abend`
+
+Entry 73, and it closes board item 2. `x11regression{ variables=(td)
+aictest=(user) }` makes the oracle stop with `ERROR: Irregular regression
+matrix singular because of Mon.`; this engine published a full seasonal
+adjustment at `OUTCOME: OK`.
+
+**Entry 61's hypothesis was wrong on both counts** -- it guessed a duplicated
+user column at the C iteration; the abend is at **B** (`x11mdl.f:253`,
+`Kpart.eq.2`) and the design is EMPTY. Disproving it took one run, which is the
+argument for writing hypotheses down.
+
+**Cause.** With `Xtdtst==0` and `Xeastr==F`, x11aic skips both blocks that call
+`regvar`, so :463-464's `regx11` fits whatever design is resident -- and nothing
+built one (x11mdl's first `regvar` is at :388, after the x11aic call at :253).
+Two row counts diverge and must not be conflated: `prterx.f:52` reprints `Nrxy`
+rows (zero) while `regx11.f:49-50` fits `Nspobs` (144). The singularity is in
+`Xy`'s CONTENT.
+
+**The port already detected it.** Instrumenting showed `nrxy=0`, `xy` all zeros,
+and `regx11` returning **false** -- matching the oracle exactly. It had nowhere
+to say so: `prterx.f` was unported, because it lives in the `prt*` family this
+port defers wholesale. Deferring the print deferred the stop, at all seven live
+`regx11` guard sites.
+
+**The class is swept.** Eleven `prt*` routines call `abend`; nine only on a
+save-file-open failure (unreachable -- no save files here). The two real error
+reporters are `prterr` (already ported) and `prterx`. Closed; entry 73 carries
+the table so nobody re-derives it.
+
+**Gated:** `extra/airline_x11regression-aictest-usersing` (new) via a DISCOVERED
+`test_x11regression_abend` -- any x11regression spec whose blessed oracle `.err`
+carries `ERROR:`, with a floor. The same predicate now excludes abending specs
+from `CASES`/`AIC_CASES`. The spec joins `test_m1_parse`'s existing
+`_POST_PARSE_FATAL` set (a post-parse abend is not a parse verdict); a second,
+message-keyed mechanism was written and thrown away rather than duplicate that
+ownership.
+
+**Mutation:** 2 gates. The instructive half is that one of them,
+`test_m1_parse::test_outcome_matches_oracle`, had existed all along. What was
+missing was never a gate -- **it was a spec.** Entry 61 wrote this spec,
+measured it, then removed it.
+
+Suite 6530 -> 6535 passed, 0 failed, 0 xfailed, 681 skipped.
+
 ## Open, in the order I would take them
 
 1. **`editor.f:1760-1846` -- the "Check options for AIC trading day test"
@@ -1268,16 +1313,11 @@ for that reason.
      AUTOMATIC-AO design (the oracle adds `AO1960.Mar` at t=-5.50), which is
      where the ~7.6 AICC gap lives. Newly walled under that condition. Take it
      as an AO-identification question, not an aictest one.
-2. **`x11regression{ variables=(td) aictest=(user) }`** -- the oracle abends
-   singular at the C iteration (`singular because of Mon`, printed design with
-   six headers and zero rows); this engine returns `OUTCOME: OK`. Hypothesis,
-   unmeasured: the B iteration's `adrgef` restore and the following `regvar`
-   each add a copy of the user column (entry 61).
-3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` —
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-4. **`x11regression{reweight=}` (argidx 32 -> `Lxrneg`) is parsed and
+3. **`x11regression{reweight=}` (argidx 32 -> `Lxrneg`) is parsed and
    DISCARDED** -- found while porting Kswv==3, deliberately not fixed there
    because it is not a one-liner. `Lxrneg` is READ in two ported places
    (`gtinpt.cpp`'s negative-tdprior-weight clamp, `run_history.cpp:591`'s
@@ -1285,9 +1325,9 @@ for that reason.
    `editor.f:1640-1667`'s fixed-coefficient check and `x11mdl.f:575-626`'s
    daily-weight reweighting, neither ported. Wire the parse, port or wall both
    readers, and gate a spec with a NEGATIVE tdprior weight.
-5. **A composite whose components carry a residual peak**, to gate savpk's real
+4. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-6. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+5. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
    `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`

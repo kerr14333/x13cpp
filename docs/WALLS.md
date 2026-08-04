@@ -102,16 +102,16 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:1425`**
   x11pt3 revisions trend store (getrev)
 
-- **`core/src/x11/x11reg.cpp:336`**
+- **`core/src/x11/x11reg.cpp:387`**
   x11ref forcecal= combined calendar factor
 
-- **`core/src/x11/x11reg.cpp:855`**
+- **`core/src/x11/x11reg.cpp:906`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1396`**
+- **`core/src/x11/x11reg.cpp:1447`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1435`**
+- **`core/src/x11/x11reg.cpp:1486`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:43`**
