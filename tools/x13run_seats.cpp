@@ -122,6 +122,14 @@ int main(int argc, char** argv) {
 
     std::printf("OUTCOME: %s\n", ok ? "OK" : "FATAL");
 
+    // The Mt2 channel, in x13run_m2's marker format -- same reason as
+    // x13run_x11: a SEATS spec reaches sspdrv/ssphdr through the same
+    // slidingspans{} path, and the ssphdr NOTEs are the only observable of an
+    // Itd/Ihol demote.
+    std::fputs("===ERR===\n", stdout);
+    std::fputs(ctx.channels_.unit(ctx.units.mt2).str().c_str(), stdout);
+    std::fputs("===END ERR===\n", stdout);
+
     // x11ari.f:277-326's QS + NP savelog blocks. They sit AFTER the Lseats/Lx11
     // branch rejoins, so a SEATS run emits them exactly as an X-11 run does --
     // same two blocks, same formats, shared with x13run_x11 through

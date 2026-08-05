@@ -12,6 +12,7 @@ already paid for once.
 | **7, 11, 12, 18** | seasonal outliers + `centerseasonal`; holiday regressors (`Finhol`); user prior factors; `transform{constant=}` |
 | **79** | `slidingspans{}` + `x11regression{}` — `ssxmdl`'s `fixx11reg=` default (parsed-but-unread), the `Ixreg` demote it has to land WITH, `x11mdl.f:874`'s missing `tds` store, and the sixth span-replay save/restore miss (`b16`/`c16`/`.xrm`) |
 | **80** | the STOCK trading-day nonpositive-factor abend (`x11mdl.f:661-690`) — an unguarded `OUTCOME: OK` where the oracle refuses, and the `ELSE` that pairs with `:546`, not `:541` |
+| **81** | the sliding-spans NOTEs (`ssxmdl.f:35-39`, `ssphdr.f:145-152`) — an `Itd/Ihol` demote whose only observable is a table that is NOT produced, the Mt2 channel the harness threw away on a successful run, and the two gates that now read it |
 | **13, 14, 15, 24, 71, 72, 73, 76, 77** | `x11regression{}` — `tdprior`, the OLS prior TD (`xrgdrv`) on both the model and the no-model path, the Easter aictest sub-engine, the logadd tdprior bug, the `Picktd` half of gtinpt's `restor`, `prterx`'s singular-design abend, the HOLIDAY-ONLY design whose whole prior pass was skipped behind four `Axrgtd` proxies, and `reweight=` (`Lxrneg`) — whose daily-weight rewrite has to run BEFORE `x11ref`, because it writes back into `B` |
 | **19, 20, 21** | x11pt4 — the F2 test battery, the Part-F summary measures + F3 quality statistics, and the Part-E tables |
 | **25** | `x11pt2 tdlom Adjtd==0` — and why the original unreachability proof was invalid |

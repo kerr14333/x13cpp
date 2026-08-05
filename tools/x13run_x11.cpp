@@ -281,6 +281,16 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // The Mt2 channel on a SUCCESSFUL run, in x13run_m2's marker format. The
+    // oracle writes it to <base>.err, and it is where every non-fatal NOTE and
+    // WARNING lands -- including the two that are the only observable of a
+    // sliding-spans Itd/Ihol demote (ssphdr.f:2000/2001), whose whole effect is
+    // that a table is NOT produced. Dumped unconditionally rather than only on
+    // FATAL: a diagnostic nobody can read is a diagnostic nobody gates.
+    std::fputs("===ERR===\n", stdout);
+    std::fputs(ctx.channels_.unit(ctx.units.mt2).str().c_str(), stdout);
+    std::fputs("===END ERR===\n", stdout);
+
     const int sp = ctx.model.sp;
     const int* begspn = ctx.mdldat.begspn.data();
     const int pos1ob = ctx.x11ptr.pos1ob;

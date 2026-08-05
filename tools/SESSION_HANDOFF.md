@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6728<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->711<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6762<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->716<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6728<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6762<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1616,15 +1616,58 @@ first x11regression STOCK trading-day designs in the corpus. ABEND_CASES floor
 
 Suite 6706 -> 6728 passed, 0 failed, 0 xfailed.
 
+## This session, part 32: the sliding-spans NOTEs, and the channel nobody could read
+
+Entry 81. First of the three ssxmdl arms entry 79 walled -- the
+`x11regression{span=}` one (`ssxmdl.f:27-39`), which was PORTED but UNGATED
+because no spec made `Begxrg` later than `Begspn`. New spec
+`extra/airline_slidingspans-x11regression-span`: `sfs` 4.9e-15, `chs` 4.8e-15,
+600 cells each, bit-exact first run.
+
+**The arm's whole observable is an ABSENCE.** `Itd=-1` ("requested but not
+analysed") makes `ssap.f:206-211` write no `tds` and no `ads`. The save-table
+gate skipped an absent golden with "spec does not produce this tag" -- the same
+sentence that hid the missing `tds` producer for months.
+
+Two things fell out of taking that seriously:
+
+1. **The `.err`/Mt2 channel was unreadable on a successful run.** Both harnesses
+   dumped it to stderr only on FATAL, so every non-fatal NOTE and WARNING went
+   into a discarded buffer. They now emit it between `===ERR===` /
+   `===END ERR===`, x13run_m2's format.
+2. **With it readable, `ssphdr.f:145-152` turned out to be unported** -- two
+   NOTEs written to BOTH Mt1 and Mt2 saying the TD statistics are suppressed
+   and why. `ssphdr` is 95% Mt1, i.e. the deferred `.out` print engine, and went
+   with it; the 8 lines that are not have sat in `airline_slidingspans-td`'s
+   blessed `.err` since that spec landed, unread. Same family as `prterx`
+   (entry 73). Ported both arms, written straight to the channel (FORMAT
+   2000/2001's `/` emits EMPTY records; `writln`'s `lblnk` is two characters).
+
+Faithful-scope note recorded, not faked: the Fortran gates `ssphdr` on
+`Prttab(LSSSHD).or.Savtab(LSSSHD)`, and this port has no print-table dictionary
+at all, so the NOTE is emitted whenever the header stage is reached -- exact for
+`print=all` and the default, over-emitting for a `slidingspans{print=}` list
+that excludes the header.
+
+**Both new gates were mutation-tested in both directions**: never-emit fails 2,
+always-emit fails 5 (four of the seven discovered specs are NOTE-free, which is
+what makes the gate able to tell a correct emitter from one that shouts), and a
+`tds` guard that emits while demoted fails 1.
+`test_slidingspans_notes_can_fail` keeps both sides of the corpus non-empty.
+
+Also: `docs/M5_PORT_NOTES.md`'s contents list had stopped at 53 while the file
+ran to 81. Rebuilt from the `## N.` headings themselves.
+
+Suite 6728 -> 6762 passed, 0 failed, 0 xfailed.
+
 ## Open, in the order I would take them
 
-1. **The three ssxmdl arms entry 79 walled**, each wanting one spec: an
-   `x11regression{span=}` under `slidingspans{}` (reaches ssxmdl.f:27-39's
-   NOTE and the Itd/Ihol demote -- PORTED but UNGATED, so its three-line
-   message text is unverified); a fixed `x11regression{b=(... f)}` (Irgxfx>=2,
-   the rvfixd / tdfx-holfx walk); and `slidingspans{x11outlier=no}` with
-   automatic x11regression outliers (rmotss). All three fatal rather than lie
-   today -- but a wall is inventory, not coverage.
+1. **The two ssxmdl arms still walled** (the third is closed by entry 81),
+   each wanting one spec: a fixed `x11regression{b=(... f)}` giving `Irgxfx>=2`
+   (ssxmdl.f:78-136's rvfixd + the tdfx/holfx rtype walk), and
+   `slidingspans{x11outlier=no}` with automatic x11regression outliers
+   (ssxmdl.f:44-76's rmotss). Both fatal rather than lie today -- but a wall is
+   inventory, not coverage.
 2. **The two cheap x11regression siblings still walled in `xrg_editor_setup`**:
    `Xaicst` (editor.f:1802-1808) and `Xaicrg` (:1811-1822), both READ by
    `x11reg.cpp:642/658` and never written except to their gtinpt defaults.

@@ -713,6 +713,62 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
     }
     hid.issap = 3;
 
+    // sspdrv.f:264 -- the summary-measures early return, which sits BEFORE the
+    // header below and before ssap. Reproduced only as a guard on the header:
+    // ssap itself is entered either way here and reads Kfulsm per-branch.
+    const bool kfulsm_ret =
+        ctx.x11opt.kfulsm == 1 ||
+        (ctx.x11opt.kfulsm == 2 && sa.itd == 0 && sa.ihol == 0);
+
+    // ssphdr.f:145-152 -- the Mt2 half of the sliding-spans header. Almost all
+    // of ssphdr is Mt1 (the deferred `.out` print engine), but these two NOTEs
+    // go to BOTH channels, and they are the only observable of an Itd/Ihol
+    // demote to -1: the whole effect of the demote is that the tds (and, for
+    // Itd, the ads) table is NOT produced, which is an absence, not a value.
+    //
+    // The Fortran gates the whole routine on `Prttab(LSSSHD).or.Savtab(LSSSHD)`
+    // and then on Lprt. This port has no print-table dictionary (Prttab/Savtab
+    // are parsed-and-dropped by design, readers_val.cpp:874), so the NOTE is
+    // emitted whenever the header stage is reached. That is exact for
+    // `print=all` / the default, and over-emits for a `slidingspans{print=}`
+    // list that excludes the header -- recorded here rather than faked, since
+    // faking it would need a dictionary this port deliberately does not have.
+    if (!kfulsm_ret) {
+        auto& mt2c = ctx.channels_.unit(ctx.units.mt2);
+        // FORMAT 2000/2001 carry `/` and `//` separators, which emit EMPTY
+        // records -- writln's lblnk blank is `(' ',a)`, two characters, and
+        // would be wrong here (see docs/M5_PORT_NOTES.md entry 80).
+        static const char* const K2000[] = {
+            "",
+            " NOTE: Since the trading day coefficients are fixed in the sliding spans",
+            "       analysis, the trading day statistics of the sliding spans analysis",
+            "       are not printed.",
+            "",
+            "       In addition, the spans statistics for the seasonally adjusted",
+            "       series have the same values as the corresponding statistics",
+            "       for the seasonal factors.  In this case, the statistics for the",
+            "       seasonally adjusted series are not printed.",
+            "",
+        };
+        static const char* const K2001[] = {
+            "",
+            " NOTE: Since the holiday coefficients are fixed in the sliding spans analysis,",
+            "       the spans statistics for the seasonally adjusted series have",
+            "       the same values as the corresponding statistics for the seasonal",
+            "       factors.  In this case, the statistics for the seasonally adjusted",
+            "       series are not printed.",
+            "",
+        };
+        if (sa.itd == -1 && sa.ihol <= 0) {
+            for (const char* ln : K2000) mt2c.put(std::string(ln) + "\n");
+        } else if (sa.ihol == -1 && sa.itd <= 0) {
+            for (const char* ln : K2001) mt2c.put(std::string(ln) + "\n");
+        }
+        // (The Itd/Ihol == -2 arm at ssphdr.f:154-160 is Mt1-only -- the
+        // deferred print engine -- and setssp.f:314 only reaches it on a span
+        // shorter than five years, which no gated spec builds.)
+    }
+
     // ssap.f's cross-span diagnostics, scoped to S (sfs) and c=Sa month-to-
     // month change (chs) -- see hpp for exactly what is/isn't ported.
     const int im = sa.im, sslen = sa.sslen;

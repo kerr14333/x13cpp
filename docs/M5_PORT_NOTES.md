@@ -17,6 +17,11 @@ generated anchors fragile) -- navigate by searching the number, e.g. `## 47.`.
 
 ## Contents
 
+Derived from the `## N.` headings in this file -- regenerate it the
+same way rather than appending by hand. Navigate by searching the
+number, e.g. `## 47.` (the titles carry em dashes and backticks, which
+make generated anchors fragile, so the list is deliberately link-free).
+
 1. `history{estimates=(fcst)}` — the out-of-sample FORECAST-ERROR history — CLOSED (at the per-span floor).
 2. The three MODEL histories `estimates=(aic arma td)` — CLOSED, and `history{}`'s whole `estimates=` surface is now covered.
 3. Model X-11 path — CLOSED.
@@ -70,6 +75,34 @@ generated anchors fragile) -- navigate by searching the number, e.g. `## 47.`.
 51. `pickmdl{}` + `forecast{maxback=}` -- amdfct's BACKCAST arm -- CLOSED, and `bcstlim=` turns out to be INERT (CB-33).
 52. `pickmdl{}` + `regression{aictest=}` -- the PER-CANDIDATE AIC-regressor tests and the Picktd restore -- CLOSED (bit-exact), and it found three silent-wrongness bugs, two of them on paths that have nothing to do with pickmdl.
 53. The SEATS FORECAST decomposition (`ansub3.f:353-678`) -- the `tfd`/`sfd`/ `afd`/`yfd` tables -- PORTED, 13 of 52 specs bit-exact, 39 measurably wrong and asserted as such.
+54. `aictest.xe*` -- `x11aic.f`'s Easter table + `x11mdl.f`'s verdict -- CLOSED (byte-identical, both arms), and it found `x11regression{aicdiff=}` being discarded.
+55. The Picktd-flip corner -- ROOT-CAUSED (not fixed), and the recorded suspect list was wrong.
+56. x11aic.f's TRADING-DAY branch -- and the four silent failures found getting to it.
+57. Setpri moved ahead of the model stage -- the Picktd-flip corner CLOSED.
+58. `ctod` is 1 ulp off on purpose -- the port was already faithful, and now it is pinned.
+59. `x11regression{user=}` -- seven arguments parsed and discarded, found while scouting the aictest USER branch.
+60. `Kswv==3` -- the tdprior + x11regression-TD route, absent from the port entirely.
+61. `x11aic.f`'s USER branch -- the last of the three, and a Census defect that decides it.
+62. The two-column user spec -- one hazard settled, one CENSUS DEFECT, and the extreme-value method was being chosen in the wrong place.
+63. `x11regression{}` with no trading day and no holiday: the oracle refuses, this engine did not.
+64. CB-36 closed -- and the effective regressor type x11ref classifies by is NOT Rgvrtp.
+65. gtxreg.f's whole `IF(Nb.gt.0)` block was missing -- and an aictest with no `variables=` is two divergences deep.
+66. `x11regression{span=}` was parsed and discarded -- and the flag it promotes has no consumer without a model.
+67. The x11regression span narrowing: fit narrow, apply wide -- and the calendar array that is indexed from the BUFFER, not the span.
+68. The x11regression span that ENDS early: a pointer mutation, a deliberately narrow Nofpob, and the gate that named its cases by hand.
+69. Three gates that could not see their specs -- and the SEATS decomposition that had been 8.1e-7 wrong behind them.
+70. The Easter AIC window set was decided in the wrong phase -- and the wall in front of it was guarding the wrong condition.
+71. The no-model OLS prior TD -- and a restore that was compensating for a hoist, on the one path that had not made the move.
+72. A stand-in for `restor` that restored less than `restor` does -- and turned an x11regression `td` into a prior adjustment.
+73. `prterx` -- the Census routine whose name says "print" and whose job is `abend`. An unported error stop, and the class swept to exhaustion.
+74. `Grpx(-1)` is not undefined behaviour -- it is documented COMMON aliasing. And measuring that found a live gap the wall was too narrow to cover.
+75. Porting the alias (option B) -- and finding that the two halves of this front were never separable.
+76. The "auto-AO AICC gap" was neither auto-AO nor an AICC gap -- a holiday-only x11regression skipped its whole prior pass.
+77. `x11regression{reweight=}` was parsed and discarded -- and finding its readers turned up a mis-dispatched argument, a missing `regfix()`, and an ordering that silently ate `b=`.
+78. Two `chs` gaps with one symptom -- and a comment that had merged them. `slidingspans{}` and `x11regression{}` had never met.
+79. `fixx11reg` defaults to YES -- the per-span calendar gap was a parsed-but-unread option, and the fix's partner had already been measured and rejected
+80. The stock-trading-day abend: an unguarded refusal, and an `ELSE` that pairs with a different `IF` than everyone assumed
+81. The sliding-spans NOTEs: a diagnostic whose whole effect is an ABSENCE, and the channel nobody could read
 
 ---
 
@@ -4624,3 +4657,82 @@ The ABEND_CASES floor moves 1 -> 3. A floor left at its original value stops
 detecting a shrink the moment the second case exists.
 
 Suite 6706 -> 6728 passed, 0 failed, 0 xfailed.
+
+## 81. The sliding-spans NOTEs: a diagnostic whose whole effect is an ABSENCE, and the channel nobody could read
+
+Board item 1, first of the three ssxmdl arms entry 79 walled -- the
+`x11regression{span=}` arm at `ssxmdl.f:27-39`. It was PORTED and UNGATED: no
+spec in the corpus made `Begxrg` later than `Begspn`, so the arm's three-line
+NOTE and its `Itd/Ihol` demote to -1 had never been compared to anything.
+`extra/airline_slidingspans-x11regression-span` closes that -- `sfs` 4.9e-15,
+`chs` 4.8e-15, both 600 cells, first run.
+
+**The arm's whole observable is a table that is NOT produced.** `Itd=-1` means
+"trading day requested but not analysed": `ssap.f:206-211` then writes no `tds`
+and no `ads`, and the oracle's save files simply are not there. That is exactly
+the shape the save-table gate cannot see -- `test_slidingspans_table` skipped an
+absent golden with the reassuring message "spec does not produce this tag", the
+same sentence that hid the missing `tds` producer for months (entry 79).
+
+Two things came out of taking that seriously.
+
+**(a) The `.err` channel was unreadable on a successful run, so nothing on it
+was gated.** `x13run_x11` dumped the Mt2 channel to stderr only when the run
+FATALs. Every non-fatal NOTE and WARNING the engine writes went into a buffer
+that was then thrown away. Both the x11 and seats harnesses now dump it between
+`===ERR===` / `===END ERR===`, the format `x13run_m2` has always used.
+
+**(b) With the channel readable, an unported diagnostic fell out of a golden
+that has been committed for months.** `ssphdr.f:145-152` writes two NOTEs to
+BOTH `Mt1` and `Mt2` when `Itd` or `Ihol` is -1 -- the text that says the TD
+statistics are suppressed and why. Almost all of `ssphdr` is `Mt1`, i.e. the
+deferred `.out` print engine, and the routine went with it. But
+`airline_slidingspans-td`'s blessed `.err` has carried that NOTE since the spec
+landed (its `Itd` is demoted by `setssp.f:47`, `fixmdl=` defaulting to yes),
+and nothing read the file. Ported now, both arms, written straight to the
+channel because FORMAT 2000/2001's `/` separators emit EMPTY records while
+`writln`'s `lblnk` blank is `(' ',a)` -- two characters (entry 80, second time
+this has mattered).
+
+Same family as `prterx` (entry 73): a load-bearing routine swallowed by a
+subsystem this port defers wholesale, because of the family it is named into.
+`ssphdr` really is 95% print engine. The 8 lines that are not go to the error
+channel, and they are the only record that a table was suppressed on purpose.
+
+One faithful-scope note attached to it: the Fortran gates `ssphdr` on
+`Prttab(LSSSHD).or.Savtab(LSSSHD)` and then on `Lprt`. This port has no
+print-table dictionary at all (`Prttab`/`Savtab` are parsed-and-dropped by
+design, `readers_val.cpp:874`), so the NOTE is emitted whenever the header
+stage is reached: exact for `print=all` and for the default, over-emitting for
+a `slidingspans{print=}` list that excludes the header. Recorded rather than
+faked -- a fake would need the dictionary this port deliberately does not have.
+
+**Both new gates are proven able to fail, in both directions.** That is the
+point rather than a formality, because an absence-shaped assertion is the one
+most likely to pass vacuously:
+
+| mutation | result |
+|---|---|
+| NOTE guard `sa.itd == -1` -> `== -99` (never emits) | 2 fail (`-td`, `-span`) |
+| NOTE guard -> `!= -99` (always emits) | 5 fail -- the four NOTE-free specs, plus one |
+| `tds` guard `sa.itd == 1` -> `!= 0` (emits when demoted) | 1 fail (`-span`) |
+
+The middle row is the one that matters: four of the seven discovered specs have
+NO note block, so the corpus can tell a correct emitter from one that shouts on
+every run. `test_slidingspans_notes_can_fail` asserts that both sides stay
+non-empty, so a corpus that later drifts to all-one-side fails loudly instead of
+degenerating into a trivially-true comparison.
+
+The absent-golden skip is likewise no longer free: when the SPEC's save list
+names the tag and the oracle still wrote nothing, the engine must produce zero
+cells for it. Conditioned on the save list on purpose -- this harness dumps
+every span table it computed regardless of `save=`, so on a spec that never
+asked, an absent golden says nothing at all.
+
+Scope of the NOTE comparison is `NOTE:` blocks only. The `WARNING:` blocks in
+the same `.err` files come from the spectrum section of the deferred `.out`
+print engine (the peaks themselves are gated through the savelog `spcrsd` /
+`peaks` udg keys), so a whole-file comparison would fail for an unrelated and
+already-tracked reason; that exclusion is stated in the test, not implied.
+
+Suite 6728 -> 6762 passed, 0 failed, 0 xfailed.

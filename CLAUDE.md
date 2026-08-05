@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (80
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (81
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -222,6 +222,21 @@ because by the time you would think to look them up, the damage is done.
   `[...]` ids, and cross them against every golden on disk — both sides
   derived, so it cannot go stale. That probe found three blind gates in one
   pass, one of them hiding an 8.1e-7 engine defect (entry 69).
+- **An ABSENT golden is a claim, and a `skip` never checks it.** Half the
+  diagnostics in this engine act by SUPPRESSING an output — an `Itd/Ihol`
+  demote's entire effect is that the `tds` table is not written. `skip("spec
+  does not produce this tag")` reads like coverage and asserts nothing, which
+  is how the missing `tds` producer survived months (entries 79, 81). When the
+  SPEC asked for the table and the oracle wrote none, assert the engine writes
+  none. Gate the absence on the request, not on the golden: this harness dumps
+  every table it computed regardless of `save=`, so on a spec that never asked,
+  an absent golden says nothing at all.
+- **A channel nobody can read is a channel nobody gates.** `x13run_x11` dumped
+  the Mt2/`.err` buffer only when the run FATALed, so every non-fatal NOTE and
+  WARNING the engine emitted was discarded unread — and the moment it was piped
+  out, an unported diagnostic fell out of a golden committed months earlier
+  (entry 81). Before trusting that message text matches, check the harness
+  surfaces it at all on the path you care about.
 - **Know whether a save/restore mirrors the Fortran or patches a
   rearrangement.** Where this port moves a call to a different phase than the
   oracle runs it in, the compensating state save has no counterpart in the

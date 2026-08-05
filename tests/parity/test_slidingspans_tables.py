@@ -266,6 +266,88 @@ def test_slidingspans_cases_discovered() -> None:
     assert not orphans, f"blessed span tables with no gate case: {orphans}"
 
 
+def _err_block(text: str) -> list[str]:
+    """The Mt2 channel the harness dumps between ===ERR===/===END ERR===."""
+    m = re.search(r"===ERR===\n(.*?)===END ERR===", text, re.S)
+    return m.group(1).splitlines() if m else []
+
+
+def _note_blocks(lines: list[str]) -> list[list[str]]:
+    """Every ` NOTE:` block: the NOTE line plus its continuations, which are
+    indented seven spaces and may contain a blank separator line (FORMAT 2000
+    carries a `//`). Trailing blanks trimmed so the two sides compare equal."""
+    out: list[list[str]] = []
+    for i, ln in enumerate(lines):
+        if not ln.lstrip().startswith("NOTE:"):
+            continue
+        blk = [ln.rstrip()]
+        for cont in lines[i + 1:]:
+            if not cont.strip():
+                blk.append("")
+                continue
+            if cont.startswith("       "):
+                blk.append(cont.rstrip())
+            else:
+                break
+        while blk and not blk[-1]:
+            blk.pop()
+        out.append(blk)
+    return out
+
+
+@pytest.mark.skipif(not CASES, reason="no slidingspans spec ships the sfs/chs goldens")
+@pytest.mark.parametrize("base", CASES)
+def test_slidingspans_notes(base: str) -> None:
+    """The NOTE blocks on the Mt2/.err channel, compared verbatim against the
+    blessed oracle `.err` -- in BOTH directions.
+
+    This is the gate for a diagnostic whose entire effect is an ABSENCE. When
+    ssxmdl.f:27-39 (an `x11regression{span=}`) or setssp.f:47 (`fixmdl=yes`
+    with a regARIMA trading day) demotes Itd/Ihol from 1 to -1, the run simply
+    stops producing the tds -- and, for Itd, the ads -- table. A save-table gate
+    skips an absent golden with a reassuring message, so the only thing that can
+    tell "correctly suppressed" from "silently broken" is the text the oracle
+    prints when it suppresses (ssphdr.f:145-152). It was unported: the blessed
+    `airline_slidingspans-td` golden has carried that NOTE since the spec
+    landed, and nothing read it.
+
+    Both directions matter. Four of the discovered specs have NO note block, so
+    an implementation that emitted the NOTE unconditionally would fail here --
+    without those, this test could not tell a correct emitter from one that
+    shouts on every run.
+
+    Scope: NOTE blocks only. The WARNING blocks in the same `.err` files come
+    from the spectrum section of the deferred `.out` print engine (the peaks
+    themselves are gated through the savelog `spcrsd`/`peaks` udg keys), so a
+    whole-file comparison would fail for an unrelated and already-tracked
+    reason."""
+    goldpath = os.path.join(_GOLDEN, base, base + ".err")
+    if not os.path.exists(goldpath):
+        pytest.skip(f"{base} has no blessed .err")
+    with open(goldpath, encoding="utf-8", errors="replace") as f:
+        gold = _note_blocks([ln.rstrip("\n") for ln in f])
+
+    produced = _note_blocks(_err_block(_run(base)))
+    assert produced == gold, (
+        f"{base}: NOTE blocks differ\n  want: {gold}\n  got:  {produced}")
+
+
+def test_slidingspans_notes_can_fail() -> None:
+    """The corpus must hold at least one spec on each side of the NOTE gate,
+    or the assertion above degenerates: all-empty passes trivially, all-present
+    cannot catch an unconditional emitter."""
+    withnote, without = [], []
+    for base in CASES:
+        p = os.path.join(_GOLDEN, base, base + ".err")
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding="utf-8", errors="replace") as f:
+            (withnote if _note_blocks([ln.rstrip("\n") for ln in f])
+             else without).append(base)
+    assert withnote, "no slidingspans golden carries a NOTE block"
+    assert without, "no slidingspans golden is NOTE-free"
+
+
 @pytest.mark.skipif(not CASES, reason="no slidingspans spec ships the sfs/chs goldens")
 @pytest.mark.parametrize("base", CASES)
 @pytest.mark.parametrize("tag", _TAGS)
@@ -274,6 +356,19 @@ def test_slidingspans_table(base: str, tag: str) -> None:
         pytest.skip(f"KNOWN GAP -- {_KNOWN_GAPS[(base, tag)]}")
     goldpath = os.path.join(_GOLDEN, base, base + "." + tag)
     if not os.path.exists(goldpath):
+        # An ABSENT golden is a claim too, and until now it was the one thing
+        # here that could not fail. When the spec ASKED for the table and the
+        # oracle still wrote none, the engine must write none either -- that is
+        # the whole observable of an Itd/Ihol demote to -1 (ssxmdl.f:31-33,
+        # setssp.f:47). Only assert it when the save list names the tag: the
+        # harness dumps every span table it computed regardless of save=, so on
+        # a spec that never asked, an absent golden says nothing.
+        if re.search(r"save\s*=[^}]*\b" + tag + r"\b", _spec_text(base)):
+            pcells, _ = _read_produced(_run(base), tag)
+            assert not pcells, (
+                f"{base}.{tag}: the oracle produced no {tag} table for a spec "
+                f"that saves it, but the engine produced {len(pcells)} cells")
+            pytest.skip(f"{base}: {tag} correctly suppressed (verified empty)")
         pytest.skip(f"{base} does not produce the {tag} table")
 
     cells, maxdiff = _read_golden(goldpath)
