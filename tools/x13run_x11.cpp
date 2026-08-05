@@ -466,8 +466,8 @@ int main(int argc, char** argv) {
 
     // slidingspans{} sfs (seasonal-factor spans) / chs (month-to-month SA-
     // change spans) / ads (SA-series spans) -- see tools/slidingspans_scope.md.
-    // ads is conditional on ssap.f's mflag gating (a TD / holiday / round /
-    // force option must be live); tds is still not produced.
+    // ads and tds are conditional on ssap.f's mflag gating (a TD / holiday /
+    // round / force option must be live; tds additionally needs Itd==1).
     if (ctx.ssout.ran) {
         const auto& so = ctx.ssout;
         dump_span_table("sfs", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
@@ -477,6 +477,9 @@ int main(int argc, char** argv) {
         if (so.have_ads)
             dump_span_table("ads", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
                              ctx.sspdat.sa.data(), so.dmax_ads.data());
+        if (so.have_tds)
+            dump_span_table("tds", so.iyr, so.im, so.nsea, so.sslen, so.ncol,
+                             ctx.sspdat.td.data(), so.dmax_tds.data());
     }
 
     // spectrum{} sp0/sp1/sp2 periodogram tables -- `<tag> <pos> <freq> <value>`,

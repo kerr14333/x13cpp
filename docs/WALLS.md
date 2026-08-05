@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**23 walls.**
+**26 walls.**
 
 
 ## Automatic model selection
@@ -78,6 +78,18 @@ reproduce.
 
 ## X-11
 
+- **`core/src/x11/slidingspans.cpp:315`**
+  slidingspans{x11outlier=no} with automatic x11regression outlier identification (ssxmdl.f:44-76's rmotss block) is
+  *Fortran:* `ssxmdl.f:44-76`
+
+- **`core/src/x11/slidingspans.cpp:331`**
+  slidingspans{} with FIXED x11regression coefficients (ssxmdl.f:78-136's rvfixd / Irgxfx>=2 arms) is
+  *Fortran:* `ssxmdl.f:78-136`
+
+- **`core/src/x11/slidingspans.cpp:344`**
+  slidingspans{} with x11regression{user=} (ssxmdl.f:142-148's bakusr) is
+  *Fortran:* `ssxmdl.f:142-148`
+
 - **`core/src/x11/x11parts.cpp:231`**
   x11pt1 prior trading-day adjustment (pritd/ssrit)
 
@@ -102,16 +114,16 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:1431`**
   x11pt3 revisions trend store (getrev)
 
-- **`core/src/x11/x11reg.cpp:393`**
+- **`core/src/x11/x11reg.cpp:394`**
   x11ref forcecal= combined calendar factor
 
-- **`core/src/x11/x11reg.cpp:964`**
+- **`core/src/x11/x11reg.cpp:965`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1623`**
+- **`core/src/x11/x11reg.cpp:1641`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1640`**
+- **`core/src/x11/x11reg.cpp:1658`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:49`**

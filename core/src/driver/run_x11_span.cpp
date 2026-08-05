@@ -91,23 +91,33 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     ctx.arima.begmdl(2) = begspn[1];
     ctx.arima.endmdl(1) = endspn[0];
     ctx.arima.endmdl(2) = endspn[1];
-    // ssx11a.f:92-97 -- the IRREGULAR REGRESSION's own span follows the sliding
-    // span. Without it Begxrg/Endxrg keep their parse-time values while
-    // Begspn/Endspn move, so x11reg.cpp:1097-1098 measures this span against the
-    // FULL series and x11mdl.f:115-118 narrows the irregular regression by that
-    // bogus offset.
+    // ssx11a.f:92-97 -- the whole `IF(Ixreg.gt.0)` head, and it is TWO things.
     //
-    // MEASURED INERT on the current corpus, and recorded as such so nobody
-    // reads it as the fix for the `chs` gap below it. On airline +
-    // `x11regression{variables=(td)}` + `slidingspans{}` -- with and without an
-    // `x11regression{span=}` narrow enough to make nbeg positive -- taking this
-    // moves nothing: 408 of 600 `chs` cells are wrong either way. It is here
-    // because it is what ssx11a does, not because it repaired anything; without
-    // it the port is relying on nbeg/nend happening to come out <= 0.
+    // (1) `Ixreg=1; IF(Lmodel)Ixreg=2` demotes the irregular regression back to
+    // its PRIOR-pass mode for this span, so x11ari.f:93's `IF(Ixreg.eq.2...)`
+    // re-runs xrgdrv over the span instead of leaving the main run's Faccal in
+    // place. (sspdrv.f:127 pushes it back to 2 after each span, because
+    // xrgdrv.f:233 bumps it to 3 on the way out; doing it here, before every
+    // span, is the same fixed point.)
     //
-    // ssx11a.f:93-94's `Ixreg=1; IF(Lmodel)Ixreg=2` demote is deliberately NOT
-    // taken with it; see the comment at its site in slidingspans.cpp.
+    // This demote was measured ALONE once and rejected -- it took `sfs` from
+    // bit-exact to 4.1e+0 -- and that measurement was right and the conclusion
+    // was wrong. On its own it makes each span REFIT the daily weights; the
+    // oracle refits nothing, because ssxmdl has already fixed every
+    // x11regression coefficient (slidingspans{fixx11reg=} defaults to YES). The
+    // two are one change: without the demote the span never reloads Bx, without
+    // the fix the reload is overwritten by a per-span OLS. See
+    // docs/M5_PORT_NOTES.md entry 79 -- a feature measured with its partner
+    // missing measures the partner.
+    //
+    // (2) Begxrg/Endxrg follow the sliding span. Without it they keep their
+    // parse-time values while Begspn/Endspn move, so x11reg.cpp:1097-1098
+    // measures this span against the FULL series and x11mdl.f:115-118 narrows
+    // the irregular regression by a bogus offset. Still measured inert on the
+    // corpus (it was inert before the demote landed too); kept because it is
+    // what ssx11a does.
     if (set_xrg_span && ctx.hiddn.ixreg > 0) {
+        ctx.hiddn.ixreg = has_model ? 2 : 1;
         ctx.x11reg.begxrg(1) = begspn[0];
         ctx.x11reg.begxrg(2) = begspn[1];
         ctx.x11reg.endxrg(1) = endspn[0];

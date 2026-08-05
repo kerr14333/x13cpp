@@ -11,12 +11,22 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace x13 {
 
 namespace {
 constexpr int MXCOL = 4;
 constexpr int MXLEN = 276;
+
+// Local clean-fatal, shaped so tools/walls.py inventories it (x11parts.cpp's
+// x11_not_ported is TU-local).
+void ssp_not_ported(X13Context& ctx, const char* what) {
+    errhdr(ctx);
+    writln(ctx, std::string("ERROR: ") + what + " not yet ported (M5 X-11 spine).",
+           stdio::STDERR, ctx.units.mt2, true);
+    abend(ctx);
+}
 }  // namespace
 
 // sfmax.f
@@ -246,6 +256,105 @@ void ssmdl_fix_model(X13Context& ctx) {
     }
 }
 
+// ssxmdl.f -- the x11regression half of ssmdl, called from setssp.f:353 under
+// `IF(Nbx.gt.0)`.
+//
+// THE DEFAULT PATH IS LOAD-BEARING, which is what made skipping this routine
+// expensive. `Ssxint` (slidingspans{fixx11reg=}) DEFAULTS TO YES at
+// gtinpt.f:531 -- getssp.f:257 only ever overrides it -- so the tail below
+// fixes every irregular-regression coefficient before the first span runs. Each
+// span's xrgdrv then loads Bx (the MAIN run's C-iteration weights, saved there
+// by xrgdrv.f:206's loadxr(T)) and x11mdl's Iregfx>=2 rmfix/addfix strikes every
+// fixed column, so the span's OLS has nothing left to estimate and re-applies
+// the main run's daily weights verbatim.
+//
+// Measured on the oracle (airline + slidingspans{} + x11regression{
+// variables=(td)}): with the default the per-span TD factors are byte-identical
+// across all four spans AND equal to the main run's c16; `fixx11reg=no` moves
+// them (99.144951 -> 98.847324 at 1951.Jan). See docs/M5_PORT_NOTES.md entry 79.
+static bool ssxmdl_span(X13Context& ctx) {
+    xrgmdl_cmn& xg = ctx.xrgmdl;
+    sspinp_cmn& si = ctx.sspinp;
+    ssap_cmn& sa = ctx.ssap;
+    const int sp = ctx.model.sp;
+
+    // ssxmdl.f:27-39 -- an `x11regression{span=}` narrower than the series span
+    // forces the fix on whatever fixx11reg= said, says so, and takes the TD and
+    // holiday span analyses down with it (Itd/Ihol -1 = "requested but not
+    // done").
+    int nbeg = 0, nend = 0;
+    dfdate(ctx.x11reg.begxrg.data(), ctx.mdldat.begspn.data(), sp, nbeg);
+    dfdate(ctx.arima.endspn.data(), ctx.x11reg.endxrg.data(), sp, nend);
+    if (nbeg > 0 || nend > 0) {
+        si.ssxint = true;
+        if (sa.itd > 0) sa.itd = -1;
+        if (sa.ihol > 0) sa.ihol = -1;
+        errhdr(ctx);
+        writln(ctx,
+               "NOTE: Since a span is used in the x11regression spec, the "
+               "irregular ",
+               stdio::STDERR, ctx.units.mt2, true);
+        writln(ctx,
+               "      regression coefficient estimates will be held fixed "
+               "during the ",
+               stdio::STDERR, ctx.units.mt2, false);
+        writln(ctx, "      sliding spans analysis.", stdio::STDERR,
+               ctx.units.mt2, false);
+    }
+
+    // ssxmdl.f:41 -- clear the held-back x11regression outlier list.
+    ctx.otxrev.notxtl = 0;
+    for (int i = 0; i <= prm::PB; ++i) ctx.otxrev.otxptr(i) = 1;
+
+    // ssxmdl.f:44-76 -- the per-span outlier re-check (rmotss). Reached only
+    // with slidingspans{x11outlier=no}, and Ssxotl DEFAULTS TO TRUE
+    // (gtinpt.f:530), so the whole block is off unless the user asks for it.
+    // Refuse rather than skip: this decides which x11regression AO columns a
+    // span may keep, and getting it silently wrong is a wrong-numbers OK.
+    if (!si.ssxotl && ctx.x11log.otlxrg) {
+        ssp_not_ported(ctx,
+                       "slidingspans{x11outlier=no} with automatic "
+                       "x11regression outlier identification "
+                       "(ssxmdl.f:44-76's rmotss block) is");
+        return false;
+    }
+
+    // ssxmdl.f:78-136 -- rvfixd's Tdfix/Holfix and the `Irgxfx.ge.2` tdfx/holfx
+    // walk that decides whether an ALREADY-fixed TD or holiday group should
+    // suppress the span analysis for that component (and be recorded in
+    // Ssfxxr). Both arms need a partially-fixed x11regression design --
+    // `x11regression{b=(... f)}` giving Irgxfx>=2, or slidingspans{fixreg=}
+    // giving Nssfxr>0 -- and neither is in the corpus. Refuse on the trigger
+    // rather than on a proxy for it: Irgxfx>=2 is the exact condition the
+    // Fortran tests at ssxmdl.f:85.
+    if (xg.irgxfx >= 2 || si.nssfxx > 0) {
+        ssp_not_ported(ctx,
+                       "slidingspans{} with FIXED x11regression coefficients "
+                       "(ssxmdl.f:78-136's rvfixd / Irgxfx>=2 arms) is");
+        return false;
+    }
+
+    // ssxmdl.f:138-150 -- the tail, and the reason this routine matters.
+    // (The bakusr arm needs x11regression user regressors; Nusxrg==0 in the
+    // corpus and the refusal above already fences the fixed-design cases.)
+    if (si.ssxint) {
+        for (int i = 1; i <= prm::PB; ++i) xg.regfxx(i) = true;
+        if (xg.irgxfx < 3) xg.irgxfx = 3;
+        if (!xg.usrxfx && xg.nusxrg > 0) {
+            ssp_not_ported(ctx,
+                           "slidingspans{} with x11regression{user=} "
+                           "(ssxmdl.f:142-148's bakusr) is");
+            return false;
+        }
+    }
+
+    // ssxmdl.f:152-153 -- with every trading-day weight held fixed there is
+    // nothing left for reweight= to renormalize. Same line as revdrv.f:327,
+    // which run_history already carries.
+    if (ctx.x11log.lxrneg && xg.irgxfx == 3) ctx.x11log.lxrneg = false;
+    return true;
+}
+
 // setssp.f, scoped per the hpp header.
 bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
                   bool lncset, bool lnlset) {
@@ -392,21 +501,8 @@ bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
     // has no fixreg= argument, Nssfxr==0.)
 
     if (lmodel) ssmdl_fix_model(ctx);
-    // setssp.f:353-356's `IF(Nbx.gt.0) CALL ssxmdl(...)` -- NOT ported.
-    //
-    // This used to read "out of scope, Nbx==0 always in this port", which was
-    // true when x11regression{} was unported and false ever since. Nothing
-    // caught it because NO corpus spec combined slidingspans{} with
-    // x11regression{} -- checked 2026-08-04, and that is the whole reason this
-    // stood. extra/airline_slidingspans-x11regression is that spec now.
-    //
-    // What ssxmdl decides, in the order it decides it: whether an
-    // x11regression{span=} forces Ssxint (every coefficient held fixed for the
-    // spans, plus a NOTE); rvfixd's Tdfix/Holfix; whether Itd/Ihol are demoted
-    // to -1 so the TD/holiday span analyses do not run; and ssxmdl.f:153's
-    // Lxrneg reset. On the gated spec every one of those is inert -- no span=,
-    // nothing fixed, Irgxfx==1 -- which is why the spec gates bit-exact on
-    // sfs and every D-table. It is NOT why `chs` is wrong; see below.
+    // setssp.f:353-356 -- `IF(Nbx.gt.0) CALL ssxmdl(...)`.
+    if (ctx.xrgmdl.nbx > 0 && !ssxmdl_span(ctx)) return false;
 
     return true;
 }
@@ -593,39 +689,21 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
                 if (!ctx.model.arimaf(i)) ctx.mdldat.arimap(i) = prm::DNOTST;
             // (Nb==0: the B/Bx DNOTST reset lines are no-ops.)
         }
-        // NOT PORTED, and MEASURED: ssx11a.f:93-95's `Ixreg=1; IF(Lmodel)Ixreg=2`
-        // demote -- the slidingspans twin of revdrv.f:530-532, which run_history
-        // now does. Adding it here makes results WORSE, so the oracle must reach
-        // the same numbers by another route: on airline + x11regression{
-        // variables=(td)} + a regARIMA model, `sfs` is currently BIT-EXACT
-        // (4.7e-15) against the oracle with Ixreg left at 3, and demoting takes it
-        // to 4.1e+0. Whatever ssx11a's demote costs is evidently paid back inside
-        // sspdrv (Ssinit/Ssxint hold the irregular regression across spans), which
-        // is not ported. Do not "fix" this by copying the history change.
-        // Still open and separately wrong on this family: `chs` (5.0e+0) and the
-        // whole MODEL-FREE case (sfs 2.0e+2). Neither moves with the demote, so
-        // neither is this seam.
+        // sspdrv.f:127's `IF(Ixreg.eq.3)Ixreg=2` and ssx11a.f:93-94's demote are
+        // both done inside run_x11_span (its set_xrg_span arm), so the
+        // irregular regression re-runs per span. That demote was once measured
+        // ALONE, found to take `sfs` from bit-exact to 4.1e+0, and rejected --
+        // correct measurement, wrong conclusion. On its own it makes each span
+        // REFIT the daily weights; the oracle refits nothing, because
+        // slidingspans{fixx11reg=} defaults to YES and ssxmdl has already fixed
+        // every x11regression coefficient. The demote and the fix are ONE
+        // change. See docs/M5_PORT_NOTES.md entry 79.
         //
-        // The `chs` half was attributed HERE to "the same per-span prior-phase
-        // problem airline_slidingspans-td already records". That attribution is
-        // WRONG, and cheap-spec-vs-expensive-spec is what showed it: delete
-        // `x11regression{}` and chs goes 0/600 different -- BIT-EXACT -- while
-        // deleting `transform{function=log}`, which is what creates the lom /
-        // leap-year prior the other spec's gap is about, leaves all 408 of 600
-        // wrong cells exactly where they were. The two gaps share a symptom and
-        // not an owner.
-        //
-        // What IS measured about this one: `sfs` is bit-exact and `chs` is not,
-        // so the per-span SEASONAL factors are right and the per-span
-        // SEASONALLY ADJUSTED series is not -- i.e. the per-span calendar
-        // factor. The engine's chs does respond to x11regression (427 of 600
-        // cells move when the spec drops it), so the irregular regression is
-        // running per span; it lands nearer the no-TD answer than the oracle's,
-        // so it is running on the wrong inputs. ssx11a.f:96-97's per-span
-        // Begxrg/Endxrg was the obvious candidate and has been ported (see
-        // run_x11_span's set_xrg_span) -- it is measurably inert, so that is not
-        // it either. Recorded as a KNOWN GAP in test_slidingspans_tables.py with
-        // the golden committed.
+        // The `chs` gap this family carried (408 of 600 cells, attributed here
+        // to a per-span prior phase and then, correctly, to the per-span
+        // calendar factor) is CLOSED by that pair: sfs / chs / ads / tds all
+        // gate bit-exact. The MODEL-FREE case (sfs 2.0e+2) is a separate and
+        // still-open thing; it has no x11regression in it.
         const int lsp = l0 + (j - 1) * ny + sa.im - nbcst2 - 1;
         if (!run_x11_span(ctx, trnsrs_full, has_model, si.nlen, nfcst, nbcst,
                            nbcst2, lsp, /*nend_mdl=*/0, lseats,
@@ -651,6 +729,19 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
               ctx.ssout.dmax_sfs);
     else
         ctx.ssout.dmax_sfs.assign(MXLEN, prm::DNOTST);
+
+    // ssap.f:208 / :218 -- the Td (tds) table, conditional on Itd==1 and sharing
+    // `iobs` with the S call above (ssap.f does not bump iobs until after the Sa
+    // call). The store behind it comes from x11pt2.f:136 on a regARIMA trading
+    // day and from x11mdl.f:874 on an x11regression one.
+    if (muladd == 0 && ctx.agr.iagr < 6 && sa.itd == 1) {
+        mflag(ctx.sspdat.td, /*nop2=*/0, iobs_s, sa.sslen2, si.ncol, ssdiff,
+              ctx.ssout.dmax_tds);
+        ctx.ssout.have_tds = true;
+    } else {
+        ctx.ssout.dmax_tds.assign(MXLEN, prm::DNOTST);
+        ctx.ssout.have_tds = false;
+    }
 
     // ssap.f:209-210 / :219-222 -- the Sa (ads) table. It is NOT unconditional:
     // the seasonal factors alone move every span, but the SA series only picks

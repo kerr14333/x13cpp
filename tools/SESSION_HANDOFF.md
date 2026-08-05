@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6702<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->710<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6706<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->707<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6702<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6706<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1535,20 +1535,51 @@ than the oracle's.
 Suite 6678 -> 6702 passed, 0 failed, 0 xfailed. One new spec,
 `extra/airline_slidingspans-x11regression`.
 
+## This session, part 30: `fixx11reg` defaults to YES, and the fix's partner had already been measured and rejected
+
+Entry 79. Board item 1 closed. The per-span calendar factor entry 78 named was
+`slidingspans{fixx11reg=}` -- an option this port PARSED into `sspinp.ssxint`
+and never read anywhere. It defaults to YES (`gtinpt.f:531`), so it was live on
+every spec that never mentioned it, and entry 78's inertness check enumerated
+only the arms a SPEC can switch on.
+
+**How one run named it.** The spec saved two of the five span tables. Adding
+`tds` and `ads` to the ORACLE's save list showed the per-span trading-day factor
+byte-identical across all four spans and equal to the main run's `c16`: the
+oracle does not re-estimate the irregular regression per span at all.
+`fixx11reg=no` moves it (99.144951 -> 98.847324 at 1951.Jan), so the default is
+load-bearing.
+
+**The rule this earns.** `ssxmdl`'s fix does nothing unless the span re-enters
+the irregular regression, which needs `ssx11a.f:93-94`'s `Ixreg` demote -- and
+that demote was measured ALONE in an earlier session, found to take `sfs` from
+bit-exact to 4.1e+0, and written up as "do not copy this". Correct number,
+wrong conclusion: alone it makes each span REFIT what the oracle RELOADS. **A
+feature measured with its partner missing measures the partner.**
+
+Four more pieces came with it: `x11mdl.f:168-175`'s `B`-from-`Bx` seed;
+`x11mdl.f:874`'s `ssrit` and `ssap.f:208`'s `mflag(Td)`, the ONLY producers of
+the `tds` table on an x11regression run (the engine emitted none, and the gate
+skipped it as "spec does not produce this tag" -- a parametrisation that shrank,
+now floored by a discovery assertion); and, once the demote landed, the SIXTH
+span-replay save/restore miss -- `b16`/`c16`/`.xrm` came out holding the last
+span's 84 rows against the main run's 144.
+
+Three ssxmdl arms are walled on their exact triggers rather than skipped
+(`rmotss`, the `rvfixd`/`Irgxfx>=2` fixed-design arm, `bakusr`); `walls.py`
+learned the new helper name. WALLS 23 -> 26 gaps.
+
+`extra/airline_slidingspans-x11regression` now saves and gates **sfs, chs, ads
+AND tds**, all bit-exact across all four spans. The `chs` KNOWN GAP entry is
+DELETED rather than re-worded. The OTHER `chs` gap
+(`airline_slidingspans-td`, the per-span prior phase) is untouched and still
+open -- which is what entry 78's separation was for.
+
+Suite 6702 -> 6706 passed, 0 failed, 0 xfailed.
+
 ## Open, in the order I would take them
 
-1. **The per-span CALENDAR factor under `slidingspans{}` + `x11regression{}`**
-   -- entry 78's `chs`, 408/600 cells, worst 5.0e+0, golden committed and the
-   gate skipping it by name. Measured: `sfs` bit-exact so the seasonal half is
-   right; the irregular regression IS re-running per span (427/600 cells move
-   when the spec drops x11regression) but on wrong inputs, landing nearer the
-   no-TD answer. `ssx11a.f:96-97`'s Begxrg/Endxrg is ported and ruled out.
-   Next candidates: what `restor(Lmodel,Lx11,Ixreg.gt.0)` at ssx11a.f:160
-   restores that this port's `restor_span` does not, and setssp.f:353's
-   unported `ssxmdl` under a spec that makes it NON-inert (add
-   `x11regression{span=}` or a fixed `b=` and Ssxint/rvfixd start deciding
-   things).
-2. **`x11mdl.f:661-690`'s stock-trading-day abend is UNPORTED and UNGUARDED.**
+1. **`x11mdl.f:661-690`'s stock-trading-day abend is UNPORTED and UNGUARDED.**
    Found in entry 77 while hoisting the `Dx11` build past it -- neither a wall
    nor a gate, the shape entry 76 named as worse than no code at all. Needs a
    spec first. Note the question inside it: `:664` reads the x11reg STORE
@@ -1557,6 +1588,13 @@ Suite 6678 -> 6702 passed, 0 failed, 0 xfailed. One new spec,
    `xrg_editor_setup`: `Xaicst` (editor.f:1802-1808) and `Xaicrg` (:1811-1822),
    both READ by `x11reg.cpp:642/658` and never written except to their gtinpt
    defaults.
+2. **The three ssxmdl arms entry 79 walled**, each wanting one spec: an
+   `x11regression{span=}` under `slidingspans{}` (reaches ssxmdl.f:27-39's
+   NOTE and the Itd/Ihol demote -- ported, ungated, so the message text is
+   UNVERIFIED); a fixed `x11regression{b=(... f)}` (Irgxfx>=2, the rvfixd /
+   tdfx-holfx walk); and `slidingspans{x11outlier=no}` with automatic
+   x11regression outliers (rmotss). All three are walls today, so they fatal
+   rather than lie -- but a wall is inventory, not coverage.
 3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a

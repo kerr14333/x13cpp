@@ -4443,3 +4443,108 @@ answer than the oracle's. That is where the next session starts.
 **Gated:** `extra/airline_slidingspans-x11regression` -- sfs, b16, c16 and the
 D-tables bit-exact; `chs` a KNOWN GAP with the golden committed. Suite 6678 ->
 6702 passed, 0 failed, 0 xfailed.
+
+## 79. `fixx11reg` defaults to YES -- the per-span calendar gap was a parsed-but-unread option, and the fix's partner had already been measured and rejected
+
+Entry 78 closed with `chs` wrong in 408 of 600 cells on
+`airline_slidingspans-x11regression`, `sfs` bit-exact, and the finding named as
+"the per-span CALENDAR factor". That was right. This entry is how it closed, and
+the two rules it cost.
+
+**The measurement that named it.** `slidingspans{}` publishes five per-span
+tables and the spec saved two. Adding `tds` (trading-day spans) and `ads` (SA
+spans) to the ORACLE's save list -- one run -- turned a 408-cell symptom into a
+one-line diagnosis:
+
+| table | oracle span 1..4 at 1951.Jan |
+|---|---|
+| `tds` | 99.144951 / 99.144951 / 99.144951 / 99.144951 |
+| main run's `c16` at 1951.Jan | **99.144951** |
+
+The oracle's per-span trading-day factor is byte-identical across all four spans
+AND equal to the main run's final C-iteration factor. It does not re-estimate the
+irregular regression per span at all. The engine did.
+
+**Why. `Ssxint` is TRUE by default.** `gtinpt.f:531` sets it; `getssp.f:257`
+(`slidingspans{fixx11reg=}`) only ever overrides it. This port parsed the option
+into `sspinp.ssxint` and **never read it anywhere** -- the single most common
+defect shape in this port, and the standing rule says to find the READ, not the
+parse. `ssxmdl.f:140-150`, skipped since entry 78 recorded it as "inert on this
+spec", is that read:
+
+```fortran
+      IF(Ssxint)THEN
+       CALL setlg(T,PB,Regfxx)
+       IF(Irgxfx.lt.3)Irgxfx=3
+```
+
+Entry 78 checked the four decisions ssxmdl makes that are keyed on the SPEC (a
+`span=`, a fixed `b=`, `Irgxfx>=2`) and found all four inert. It did not check
+the one keyed on a DEFAULT. **An inertness proof that enumerates the arms a spec
+can switch on is not a proof about the arms a default switches on.**
+
+Confirmed on the binary rather than by reading: `fixx11reg=no` moves the per-span
+TD factor 99.144951 -> 98.847324 at 1951.Jan. The default is load-bearing.
+
+**THE PARTNER, AND THE RULE THIS EARNS.** With `Irgxfx=3` the fix still does
+nothing unless the span actually re-enters the irregular regression, because the
+factors it would re-apply are loaded by `xrgdrv`'s `loadxr(F)` and `xrgdrv` only
+runs when `Ixreg==2` (`x11ari.f:93`). That demote -- `ssx11a.f:93-94`'s
+`Ixreg=1; IF(Lmodel)Ixreg=2`, plus `sspdrv.f:127`'s `IF(Ixreg.eq.3)Ixreg=2` --
+was **measured alone in an earlier session, found to take `sfs` from bit-exact to
+4.1e+0, and rejected in a comment that told the next reader not to copy it.**
+
+That measurement was correct and the conclusion was wrong. Alone, the demote
+makes every span REFIT its own daily weights, which is strictly worse than
+reusing the main run's. Together with the fix it makes every span RELOAD them:
+`loadxr(F)` brings in `Bx` (the main run's C-iteration coefficients, put there by
+`xrgdrv.f:206`'s `loadxr(T)`), `Iregfx==3` has `x11mdl`'s `rmfix` strike every
+column, and the OLS has nothing left to estimate.
+
+> **A feature measured with its partner missing measures the partner.** The
+> earlier probe's number was real; "makes it worse" was a fact about a half
+> change. When a rejected-by-measurement note sits next to an unported routine,
+> re-measure it with that routine before trusting the note -- and write the note
+> so it says WHAT ELSE WAS MISSING at the time, which the original did not.
+
+**Third piece: the B seed.** `x11mdl.f:168-175`, inside its `IF(Kpart.eq.2)`,
+seeds `B` from `Bx` on any `Issap==2 / Irev==4` replay when any of
+`Nssfxx>0 / Nrvfxr>0 / Ssxint / Revfxx` holds, and zeroes it to `DNOTST`
+otherwise. With everything fixed those seeded values ARE the applied weights, not
+a starting guess.
+
+**Fourth: a table that did not exist.** `tds` has exactly one producer on an
+x11regression run -- `x11mdl.f:874`'s `ssrit(Factd,...,1)`. `x11pt2.f:136`'s
+ssrit is keyed on `Adjtd.eq.1`, the regARIMA trading day, and takes its
+`Itd=0; IF(Axrgtd)Itd=1` else-branch instead. Neither `x11mdl.f:874` nor
+`ssap.f:208`'s `mflag(Td,...)` was ported, so the engine emitted no `tds` at all
+and the parametrised gate skipped it with `"spec does not produce this tag"` --
+**a parametrisation that shrank, reporting green.** `test_slidingspans_tables.py`
+now carries the floor assertion the discovery rule asks for: cross the
+parametrisation against the goldens on disk, both sides derived, and fail on any
+blessed table with no case pointing at it.
+
+**Fifth, and the sixth time this seam has bitten.** Once the demote landed,
+`xrgdrv` runs INSIDE every span -- so `x11mdl`'s own published artefacts became
+span state. `b16`/`c16`/`.xrm` came out of the run holding the LAST SPAN's 84
+rows where the main run has 144. Nothing about a demote looks like it writes
+those, which is the whole argument for taking the save/restore set by the rule
+(whatever a consumer re-derives from) rather than by what a change appears to
+touch. `run_x11.cpp`'s span-replay set now carries `x11reg_b16`, `x11reg_c16`,
+`x11reg_xrm{,_ncol,_begxy}`, `x11reg_tdwt`, `x11reg_combtdwt`, `x11reg_ran`.
+
+**What is walled rather than skipped.** Three arms of ssxmdl are unreachable
+without a spec the corpus does not have, and each now refuses on its exact
+trigger rather than on a proxy: the `rmotss` outlier re-check
+(`slidingspans{x11outlier=no}` + automatic x11regression outliers), the
+`rvfixd` / `Irgxfx>=2` fixed-design arm, and the `bakusr` user-regressor arm.
+`tools/walls.py` learned the new helper name so they are inventoried; WALLS
+23 -> 26 gaps.
+
+**Gated:** `extra/airline_slidingspans-x11regression` now saves and gates
+`sfs`, `chs`, `ads` AND `tds` -- all four bit-exact across all four spans,
+alongside b16/c16/xrm and every D-table. The `chs` KNOWN GAP entry is DELETED
+from `test_slidingspans_tables.py` rather than re-worded; the OTHER `chs` gap
+(`airline_slidingspans-td`, the per-span prior phase) is untouched and still
+open, which is what entry 78's cheap-spec-vs-expensive-spec separation was for.
+Suite 6702 -> 6706 passed, 0 failed, 0 xfailed.

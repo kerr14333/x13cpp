@@ -227,24 +227,43 @@ def _run(base: str) -> str:
 # The golden is blessed and committed, so whoever closes this has the target
 # already. Do not "fix" it by dropping chs from the spec's save list.
 #
-# A SECOND, SEPARATE chs gap, and the separation is the point. On
-# `airline_slidingspans-x11regression` the symptom is identical (sfs bit-exact,
-# chs ~5e+0 out, 408 of 600 cells) and the owner is not: deleting
-# `x11regression{}` from that spec makes chs BIT-EXACT (0/600), while deleting
-# `transform{function=log}` -- which is what creates the lom/leap-year prior the
-# gap above is about -- leaves all 408 wrong cells exactly where they were. Two
-# gaps, one symptom. slidingspans.cpp carried the opposite claim in a comment
-# until that pair of runs was done; measuring cheap-spec-vs-expensive-spec is
-# what separated them.
+# A SECOND chs gap once sat here, on `airline_slidingspans-x11regression`, with
+# the identical symptom (sfs bit-exact, chs ~5e+0 out, 408 of 600 cells) and a
+# different owner: deleting `x11regression{}` made it bit-exact while deleting
+# `transform{function=log}` -- the lom/leap-year prior the gap above is about --
+# moved nothing. It is CLOSED (ssxmdl's fixx11reg default, entry 79); the entry
+# is gone rather than re-worded, because a skip list is the one place a fixed
+# thing must not linger. The separation it recorded still holds: these were two
+# gaps sharing a symptom, and the one below is untouched.
 _KNOWN_GAPS = {
     ("airline_slidingspans-td", "chs"):
         "slidingspans{} + regression{}: the per-span SA change table is still "
         "out of scope (per-span prior phase; see the comment above this map)",
-    ("airline_slidingspans-x11regression", "chs"):
-        "slidingspans{} + x11regression{}: the per-span CALENDAR factor is "
-        "wrong (sfs is bit-exact, so the seasonal half is right). A DIFFERENT "
-        "gap from the one above -- see the comment above this map",
 }
+
+
+def test_slidingspans_cases_discovered() -> None:
+    """Floor assertion: this gate is TWO derived lists (specs x tags) crossed
+    with a per-tag `skip` for an absent golden, which is exactly the shape that
+    can shrink to nothing and still report green. Cross the parametrisation
+    against the goldens ON DISK -- both sides derived, so it cannot go stale --
+    and fail if any blessed span table has no case pointing at it.
+
+    This is the check that would have caught `tds`: the engine produced no tds
+    table for months, the spec did not save one, and the gate skipped it with
+    the reassuring message "spec does not produce this tag"."""
+    assert len(CASES) >= 3, f"slidingspans discovery shrank: {CASES}"
+    on_disk = set()
+    for base in os.listdir(_GOLDEN):
+        gdir = os.path.join(_GOLDEN, base)
+        if not os.path.isdir(gdir):
+            continue
+        for tag in _TAGS:
+            if os.path.exists(os.path.join(gdir, base + "." + tag)):
+                on_disk.add((base, tag))
+    covered = {(b, t) for b in CASES for t in _TAGS}
+    orphans = sorted(on_disk - covered)
+    assert not orphans, f"blessed span tables with no gate case: {orphans}"
 
 
 @pytest.mark.skipif(not CASES, reason="no slidingspans spec ships the sfs/chs goldens")

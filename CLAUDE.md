@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (78
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (79
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -242,7 +242,18 @@ because by the time you would think to look them up, the damage is done.
 - **A parsed-but-unread option is the silent-wrongness class.** The single most
   common defect shape in this port: the parser consumes a documented option,
   writes it nowhere, and the run returns `OUTCOME: OK` with wrong numbers.
-  Before believing an option works, find the read, not just the parse.
+  Before believing an option works, find the read, not just the parse. **And
+  the DEFAULT is the dangerous half**: `slidingspans{fixx11reg=}` defaults to
+  yes, so the option was live on every spec that never mentioned it, and an
+  inertness proof that enumerated only the arms a spec can switch on missed it
+  entirely (entry 79). An inertness argument must cover the defaults.
+- **A feature measured with its partner missing measures the partner.** The
+  `Ixreg` demote was probed alone, made `sfs` 4.1e+0 worse, and was written up
+  as "do not copy this" — a correct number and a wrong conclusion, because
+  alone it makes each span REFIT what the oracle RELOADS (entry 79). When a
+  rejected-by-measurement note sits next to an unported routine, re-measure it
+  with that routine before trusting the note, and write such notes so they say
+  what else was missing at the time.
 - **A comment naming a `.f` line is a claim, not evidence — and the two drift in
   opposite directions.** Twice in one increment (entry 77): a branch labelled
   `// centeruser (gtxreg.f:537-543)` was dispatched on the argidx of

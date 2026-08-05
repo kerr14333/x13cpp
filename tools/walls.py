@@ -44,7 +44,7 @@ OUT = os.path.join(REPO, "docs", "WALLS.md")
 
 # The helpers that mean "declining to run", each taking a human message.
 HELPERS = ("x11_not_ported", "x11reg_not_ported", "seats_not_ported",
-           "xrg_not_ported", "not_ported", "fatal")
+           "xrg_not_ported", "ssp_not_ported", "not_ported", "fatal")
 
 # `<helper>(ctx, "..." "..." ...)` -- the message may be split across lines by
 # the usual C++ adjacent-literal concatenation.
@@ -70,7 +70,7 @@ FREF_RE = re.compile(r"\b([a-z0-9_]+\.f:[\d\-,: ]*\d)")
 # classifying on the message alone filed all 14 of them as faithful. Only the
 # generic `fatal` needs the message inspected, since it is used for both.
 GAP_HELPERS = ("x11_not_ported", "x11reg_not_ported", "seats_not_ported",
-               "xrg_not_ported", "not_ported")
+               "xrg_not_ported", "ssp_not_ported", "not_ported")
 GAP_RE = re.compile(
     r"not (yet )?ported|unported|deferred|not yet supported|is walled|"
     r"not implemented|not (yet )?bit-exact", re.I)

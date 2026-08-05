@@ -22,6 +22,7 @@
 #include "automdl/aictst.hpp"      // addeas
 #include "numeric/numeric.hpp"     // daxpy
 #include "x11/x11filt.hpp"         // divsub
+#include "x11/slidingspans.hpp"    // ssrit (x11mdl.f:874's per-span TD store)
 #include "specparse/specparse.hpp" // addate
 #include "gen/model.hpp"           // PRG* regressor types, PSNGER
 #include "gen/notset.hpp"          // prm::DNOTST
@@ -1129,6 +1130,23 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         endspn_cur[0] = ctx.x11reg.endxrg(1);
         endspn_cur[1] = ctx.x11reg.endxrg(2);
     }
+    // x11mdl.f:168-175, inside the same `IF(Kpart.eq.2)` as the addtd/addeas
+    // pre-build the AICC tests carry: in a sliding-spans or history replay the
+    // irregular regression starts from the x11reg STORE's coefficients rather
+    // than from scratch. With slidingspans{fixx11reg=} (default YES) or
+    // history{fixx11reg=yes} that store holds the MAIN run's C-iteration daily
+    // weights -- xrgdrv.f:206's loadxr(T) put them there -- and Irgxfx==3 then
+    // has rmfix strip every column, so these seeded values ARE the applied
+    // weights, not a starting guess. Without the seed a fixed design would
+    // re-apply whatever B happened to hold.
+    if (kpart == 2 && (ctx.hiddn.issap == 2 || ctx.hiddn.irev == 4)) {
+        const sspinp_cmn& si = ctx.sspinp;
+        if (si.nssfxx > 0 || ctx.rev.nrvfxr > 0 || si.ssxint || ctx.rev.revfxx) {
+            copy(ctx.xrgmdl.bx.data(), prm::PB, 1, md.b.data());
+        } else {
+            for (int i = 1; i <= prm::PB; ++i) md.b(i) = prm::DNOTST;
+        }
+    }
     // x11mdl.f:186-195 -- Nspobs off the (possibly moved) endpoints, and the
     // series-relative pointers only when something actually moved.
     int nspobs = 0;
@@ -1664,6 +1682,17 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         // Kswv==3 arm for the rest of the run).
         ctx.x11opt.kswv = (kpart == 3) ? 4 : 3;
     }
+
+    // x11mdl.f:873-875, inside its `IF(Kpart.eq.3)` -- the sliding-spans store
+    // of the x11regression calendar factor, and the ONLY producer of the `tds`
+    // (trading-day spans) table on an x11regression run. x11pt2.f:132-136's
+    // ssrit is keyed on `Adjtd.eq.1`, the regARIMA trading day, and takes its
+    // `Itd=0; IF(Axrgtd)Itd=1` else-branch here instead. Without this the port
+    // emitted no tds table at all and the parametrised gate skipped it as
+    // "spec does not produce this tag" -- a parametrisation that shrank.
+    if (kpart == 3 && ctx.hiddn.issap == 2 && ctx.ssap.itd == 1)
+        ssrit(ctx, ctx.x11fac.factd.data(), pos1ob, lastpr, 1,
+              ctx.inpt.series.data());
 }
 
 }  // namespace x13

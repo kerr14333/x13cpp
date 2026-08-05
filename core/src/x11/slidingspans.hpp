@@ -108,6 +108,12 @@ struct SlidingSpansOutput {
     // at all, and an absent one is not the same as an all-DNOTST one.
     bool have_ads = false;
     std::vector<double> dmax_ads;     // MXLEN
+    // tds (the trading-day-factor spans), conditional the same way: ssap.f:208
+    // flags Td only when Itd==1, i.e. a trading-day regressor survived into the
+    // span analysis. The store behind it is filled by x11pt2.f:136 (regARIMA TD)
+    // or x11mdl.f:874 (x11regression TD).
+    bool have_tds = false;
+    std::vector<double> dmax_tds;     // MXLEN
 };
 
 }  // namespace x13

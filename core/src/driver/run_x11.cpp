@@ -204,6 +204,22 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // replay currently cannot rewrite it: relying on that would make the
     // save-set correct only by accident, and this seam has bitten the port
     // five times.
+    // ...and the SIXTH time this seam has bitten (entry 79). Once the per-span
+    // Ixreg demote landed, xrgdrv re-runs inside every span, so x11mdl's own
+    // published artefacts -- b16/c16 and the .xrm design-matrix save -- became
+    // span state: the gate saw the LAST SPAN's 84 rows where the main run has
+    // 144. Nothing about the demote LOOKS like it writes these; that is the
+    // point of taking the whole set rather than the fields a change obviously
+    // touches.
+    const auto b16_main = ctx.x11reg_b16;
+    const auto c16_main = ctx.x11reg_c16;
+    const auto xrm_main = ctx.x11reg_xrm;
+    const int xrm_ncol_main = ctx.x11reg_xrm_ncol;
+    const int xrm_begxy_main[2] = {ctx.x11reg_xrm_begxy[0],
+                                   ctx.x11reg_xrm_begxy[1]};
+    const auto tdwt_main = ctx.x11reg_tdwt;
+    const auto combtdwt_main = ctx.x11reg_combtdwt;
+    const bool x11reg_ran_main = ctx.x11reg_ran;
     const auto aicc_xe_main = ctx.x11reg_aicc_xe;
     const int xe_window_main = ctx.x11reg_xe_window;
     const bool xe_accepted_main = ctx.x11reg_xe_accepted;
@@ -245,6 +261,15 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.x11reg.endxrg(1) = endxrg_main[0];
     ctx.x11reg.endxrg(2) = endxrg_main[1];
     ctx.d8bd9a = d8bd9a_main;
+    ctx.x11reg_b16 = b16_main;
+    ctx.x11reg_c16 = c16_main;
+    ctx.x11reg_xrm = xrm_main;
+    ctx.x11reg_xrm_ncol = xrm_ncol_main;
+    ctx.x11reg_xrm_begxy[0] = xrm_begxy_main[0];
+    ctx.x11reg_xrm_begxy[1] = xrm_begxy_main[1];
+    ctx.x11reg_tdwt = tdwt_main;
+    ctx.x11reg_combtdwt = combtdwt_main;
+    ctx.x11reg_ran = x11reg_ran_main;
     ctx.x11reg_aicc_xe = aicc_xe_main;
     ctx.x11reg_xe_window = xe_window_main;
     ctx.x11reg_xe_accepted = xe_accepted_main;
