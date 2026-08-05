@@ -106,8 +106,7 @@ make generated anchors fragile, so the list is deliberately link-free).
 81. The sliding-spans NOTEs: a diagnostic whose whole effect is an ABSENCE, and the channel nobody could read
 82. `slidingspans{fixreg=}` was parsed and dropped, and the ssxmdl wall was keyed on the wrong variable
 83. `slidingspans{}` — CLOSED bit-exact, and each of the three gaps had a different owner than its note said
-
----
+84. `Xaicst` and `Xaicrg` — the two x11regression AIC-test values the oracle recovers from its own group TITLES
 
 ## 0. SEATS decomposition core -- the seasonal front
 
@@ -5037,3 +5036,101 @@ Unchanged, and none of it is reachable from a `fixmdl=`/`fixreg=` spec:
 (`ssxmdl.f:44-76`'s `rmotss`), `slidingspans{}` with `x11regression{user=}`
 (`ssxmdl.f:142-148`'s `bakusr`), and `fixreg=(outlier)` (`sspdrv.f:121`).
 WALLS stays at 26 gaps / 4 faithful.
+
+## 84. `Xaicst` and `Xaicrg` — the two x11regression AIC-test values the oracle recovers from its own group TITLES
+
+The last two walls in `xrg_editor_setup`, and the read-but-never-written half
+of the parsed-but-unread class: both were already READ by this port
+(`x11reg.cpp:642/658` hand them to `mktdlb`/`addtd`) and only ever written to
+their `gtinpt` defaults. **Both ported, both bit-exact, WALLS 26 → 24.**
+
+What makes the pair unusual is where the values come from. Neither is carried
+forward from the spec: `gtxreg` builds a human-readable group title, and the
+editor parses the number back OUT of that title.
+
+### `Xaicst` (`editor.f:1802-1808`)
+
+The day of the month a stock trading-day regressor is measured on.
+
+```fortran
+CALL getstr(Grpttx,Gpxptr,Ngrptx,Stdgrp,igrptl,nchr)
+ipos=index(igrptl(1:nchr),'[')+1
+Xaicst=ctoi(igrptl(1:nchr),ipos)
+```
+
+The title is `Stock Trading Day[15]`; `ctoi` starts one past the `[` and stops
+at the `]`. Default is 31, so **a spec written with `tdstock[31]` agrees whether
+the read happens or not** — the inert-at-its-default trap that hid
+`x11regression{aicdiff=}` (entry 54) and `fixx11reg=` (entry 79). New spec
+`extra/airline_x11regression-aictest-tdstock` uses `[15]`, which nothing else
+in the run can produce.
+
+That spec pins a second thing for free: `aictest=(td)` with a stock group
+present takes `editor.f:1763-1764`'s `Xtdtst 1 -> 2` rewrite, so the oracle
+reports `aictest.xtd.reg: tdstock[15]` for a request that said `td`. Asking for
+`tdstock` directly would arrive at 2 without exercising the rewrite.
+
+### `Xaicrg` (`editor.f:1811-1822`)
+
+The change-of-regime date for the trading-day AIC test, searched for over the
+WHOLE `Grpttx` buffer (up to `Gpxptr(Ngrptx)-1`), not within one group:
+
+```fortran
+ipos=Gpxptr(Ngrptx)-1
+rgmgrp=index(Grpttx(1:ipos),'(before ')+8
+IF(rgmgrp.eq.8)  rgmgrp=index(Grpttx(1:ipos),'(change for before ')+19
+IF(rgmgrp.eq.19) rgmgrp=index(Grpttx(1:ipos),'(starting ')+10
+IF(rgmgrp.eq.10) rgmgrp=index(Grpttx(1:ipos),'(change for after ')+18
+CALL ctodat(Grpttx(1:ipos),Sp,rgmgrp,Xaicrg,argok)
+```
+
+The idiom is `index(...) + k` followed by `IF(rgmgrp.eq.k)` — *k means `index`
+returned 0, i.e. not found* — and it FALLS THROUGH: if the fourth search also
+misses, `ctodat` is called at position 18 regardless and returns `argok=F`,
+which is what turns the run into a parse failure. Transcribed with that
+structure intact.
+
+New spec `extra/airline_x11regression-aictest-tdregime` (`variables=(td/1955.jan/)`).
+Its titles are
+
+```
+Trading Day (after 1955.Jan) + Trading Day (change for before 1955.Jan)
+```
+
+so the FIRST search misses — `'(before '` is not a substring of
+`'(change for before '` — and the SECOND hits. The spec therefore exercises the
+fall-through rather than only the head of the chain, which the mutation table
+below confirms is a real distinction.
+
+### The block structure, checked rather than read
+
+`editor.f:1828`'s `IF(Tdgrp.eq.0.and.Stdgrp.eq.0)` is a SIBLING of the two
+blocks above, inside the same `IF(Readok)` at `:1802` (which closes at `:1847`)
+— so a failed `Xaicrg` does not skip it. Verified by walking `IF`/`ELSE`/
+`END IF` mechanically (`:1803`, `:1812`, `:1828` all at depth 4), per the
+standing rule from entry 80: count the block, never read the indentation. The
+port has no `Readok` re-test there, and says why in a comment, because the
+alternative justification — `xrgmtd` and `no_td_group` are mutually exclusive,
+since a change-of-regime trading day necessarily puts a "Trading Day" group in
+the design — is a reachability argument, and this is transcribed from the
+Fortran instead.
+
+### Measured before porting, both directions
+
+Oracle with the feature: `aictest.xtd.reg: tdstock[15]`, `aicc.notd`
+-771.725427813502, `aicc.td` -1703.82540926957. Engine after the port:
+byte-identical, both specs, including `aictest.xtd.reg: td/1955.Jan/` on the
+regime one.
+
+### Mutations
+
+| gates | mutation |
+|---|---|
+| **26** | `Xaicrg`: keep only the FIRST title shape (drop the fall-through chain) |
+| **25** | drop the `Xaicrg` read entirely |
+| **7** | drop the `Xaicst` read entirely |
+
+The first two differ, which is the point of building a spec whose title needs
+the second shape: a spec on `'(before '` would have made the chain untestable
+and the mutation would have passed. Same family as entry 82's "a passing
+mutation is a claim about WHICH ARM the spec is on".

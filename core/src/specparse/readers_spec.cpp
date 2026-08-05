@@ -3835,22 +3835,59 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
         }
 
         if (inptok) {
-            // editor.f:1802-1808 (Xaicst, the stock-TD day-of-month read out of
-            // the group title) and :1811-1822 (Xaicrg, the change-of-regime
-            // date) are NOT ported. Both are READ by this port already --
-            // x11reg.cpp:642/658 hand them to mktdlb/addtd -- and only ever
-            // WRITTEN to their gtinpt.cpp:226-227 defaults (31 / NOTSET), which
-            // is the read-but-never-written half of the parsed-but-unread
-            // class. Refuse instead of testing the wrong trading day.
-            if (stdgrp > 0)
-                xrg_not_ported(ctx, "x11regression aictest with a tdstock "
-                                    "group: Xaicst is read but never written "
-                                    "(editor.f:1802-1808)");
-            else if (xg.xrgmtd)
-                xrg_not_ported(ctx, "x11regression aictest with a change-of-"
-                                    "regime trading day: Xaicrg is read but "
-                                    "never written (editor.f:1811-1822)");
-            else if (no_td_group) {
+            // editor.f:1802-1808 -- Xaicst, the day of the month a stock
+            // trading-day regressor is measured on. It is NOT carried from the
+            // spec: the editor parses it back out of the GROUP TITLE that
+            // gtxreg built ("Stock Trading Day[15]"), reading from one past the
+            // '[' with ctoi, which stops at the ']'. Both readers are
+            // x11reg.cpp's mktdlb/addtd, and until now the value they read was
+            // always gtinpt's default of 31 -- read-but-never-written, the
+            // half of the parsed-but-unread class that a default hides.
+            if (stdgrp > 0) {
+                std::string igrptl;
+                int nchr = 0;
+                getstr(ctx, xg.grpttx.raw().data(), xg.gpxptr.data(),
+                       xg.ngrptx, stdgrp, igrptl, nchr);
+                if (ctx.error.lfatal) return;
+                int ipos = static_cast<int>(igrptl.find('[')) + 2;  // index()+1
+                ctx.x11reg.xaicst = ctoi(igrptl.substr(0, nchr), ipos);
+            }
+            // editor.f:1811-1822 -- Xaicrg, the change-of-regime date for the
+            // trading-day AIC test, likewise recovered from the title text and
+            // not from the spec. Four title shapes are tried in order, and the
+            // Fortran idiom is `rgmgrp = index(...) + k` followed by
+            // `IF(rgmgrp.eq.k)` -- i.e. "k means index() returned 0, not
+            // found". Transcribed with that structure intact, including the
+            // fall-through: if the fourth search also fails, `ctodat` is called
+            // at position 18 anyway and sets argok=F, which is what turns the
+            // run into a parse failure. Note the search is over the WHOLE
+            // Grpttx buffer up to Gpxptr(Ngrptx)-1, not over one group.
+            if (xg.xrgmtd) {
+                const int ipos = xg.gpxptr(xg.ngrptx) - 1;
+                const std::string_view all(xg.grpttx.raw().data(),
+                                           static_cast<std::size_t>(ipos));
+                auto idx = [&](const char* s) {
+                    const auto p = all.find(s);
+                    return p == std::string_view::npos
+                               ? 0 : static_cast<int>(p) + 1;   // Fortran index()
+                };
+                int rgmgrp = idx("(before ") + 8;
+                if (rgmgrp == 8) rgmgrp = idx("(change for before ") + 19;
+                if (rgmgrp == 19) rgmgrp = idx("(starting ") + 10;
+                if (rgmgrp == 10) rgmgrp = idx("(change for after ") + 18;
+                bool argok = true;
+                ctodat(all, ctx.model.sp, rgmgrp, ctx.x11reg.xaicrg.data(),
+                       argok);
+                inptok = argok && inptok;
+            }
+            // No `Readok` re-test here, deliberately: editor.f:1828's
+            // `IF(Tdgrp.eq.0.and.Stdgrp.eq.0)` is a sibling of the two blocks
+            // above inside the SAME `IF(Readok)` at :1802, so a failed Xaicrg
+            // does not skip it. (It cannot matter today -- a change-of-regime
+            // trading day puts a "Trading Day" group in the design, so
+            // `xrgmtd` and `no_td_group` are mutually exclusive -- but the
+            // reachability argument is not what this is transcribed from.)
+            if (no_td_group) {
                 // editor.f:1828-1845 -- with no TD group the regressors have to
                 // be GENERATED, so the run needs a period and a start date that
                 // can produce them. Note the first arm tests Xtdtst 3/4 (the two

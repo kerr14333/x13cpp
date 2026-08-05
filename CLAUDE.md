@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (83
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (84
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 

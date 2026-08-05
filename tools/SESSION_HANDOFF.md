@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6925<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->751<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6977<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->761<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6925<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6977<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1778,35 +1778,78 @@ entry-62 lesson again -- **assert the build ran, and re-measure after.**
 Suite 6893 -> **6925 passed, 0 failed, 751 skipped**; ctest 12/12. WALLS
 unchanged at 26 gaps / 4 faithful.
 
+## This session, part 35: `Xaicst` and `Xaicrg` -- the last two walls in `xrg_editor_setup`
+
+Board item 1, and it is small because the hard half was already done: both
+values were READ by this port (`x11reg.cpp:642/658` hand them to
+`mktdlb`/`addtd`) and only ever WRITTEN to their `gtinpt` defaults. **Both
+ported, both bit-exact, WALLS 26 -> 24.** Full record in
+`docs/M5_PORT_NOTES.md` entry 84; the durable pieces:
+
+**Neither value is carried forward from the spec.** `gtxreg` builds a
+human-readable group TITLE and the editor parses the number back out of it.
+`Xaicst` is `ctoi` starting one past the `[` in `Stock Trading Day[15]`;
+`Xaicrg` is a four-shape string search over the whole `Grpttx` buffer followed
+by `ctodat`. When you go looking for the writer of an x11regression value, the
+title strings are a place it can be.
+
+**The `index(...)+k` / `IF(rgmgrp.eq.k)` idiom means "k means not found", and it
+FALLS THROUGH.** If all four searches miss, `ctodat` runs at position 18 anyway
+and returns `argok=F`, which is what makes the run a parse failure.
+Transcribed with that structure intact rather than rewritten as a search loop
+with a not-found branch.
+
+**The spec had to pick a NON-default value, and a non-first title shape.**
+`Xaicst`'s default is 31, so a `tdstock[31]` spec agrees whether the read
+happens or not -- the same inert-at-its-default trap as
+`x11regression{aicdiff=}` (entry 54) and `fixx11reg=` (entry 79). The new
+`-aictest-tdstock` spec uses `[15]`. Likewise `-aictest-tdregime`'s titles are
+`Trading Day (after 1955.Jan) + Trading Day (change for before 1955.Jan)`, so
+the FIRST search misses (`'(before '` is not a substring of
+`'(change for before '`) and the second hits: **keeping only the first title
+shape fails 26 gates, and dropping the read entirely fails 25.** A spec whose
+title matched shape 1 would have made those two mutations indistinguishable.
+
+**Block structure checked mechanically, not read.** `editor.f:1828`'s
+`IF(Tdgrp.eq.0.and.Stdgrp.eq.0)` is a SIBLING of the `Xaicst` and `Xaicrg`
+blocks inside the same `IF(Readok)` at `:1802` (closing `:1847`) -- all three at
+depth 4 -- so a failed `Xaicrg` does not skip it. The port has no `Readok`
+re-test there and says so in a comment, because the alternative justification
+(`xrgmtd` implies a Trading Day group, so it and `no_td_group` are mutually
+exclusive) is a reachability argument, and entry 25's lesson is that those
+expire.
+
+**Mutations:** keep only the first `Xaicrg` title shape **26**; drop the
+`Xaicrg` read **25**; drop the `Xaicst` read **7**.
+
+Suite 6925 -> **6977 passed, 0 failed, 761 skipped**; ctest 12/12.
+WALLS **26 -> 24 gaps**, 4 faithful.
+
 ## Open, in the order I would take them
 
-1. **The two cheap x11regression siblings still walled in `xrg_editor_setup`**:
-   `Xaicst` (editor.f:1802-1808) and `Xaicrg` (:1811-1822), both READ by
-   `x11reg.cpp:642/658` and never written except to their gtinpt defaults.
-   Entry 80's stock-TD spec pair is the natural carrier for the `Xaicst` one.
-2. **The three remaining slidingspans walls**, all of which fatal rather than
+1. **The three remaining slidingspans walls**, all of which fatal rather than
    lie: `slidingspans{x11outlier=no}` with automatic x11regression outliers
    (`ssxmdl.f:44-76`'s `rmotss`), `slidingspans{}` with `x11regression{user=}`
    (`ssxmdl.f:142-148`'s `bakusr`), and `fixreg=(outlier)` (whose `otlfix`
    outlives `setssp` and reaches `ssx11a` per span, `sspdrv.f:121`). The rest
    of the subsystem is closed and gated bit-exact -- see part 34 above and
    entry 83 before touching any of it.
-3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-4. **A composite whose components carry a residual peak**, to gate savpk's real
+3. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-5. **Two unported Mt2 NOTEs** (task #43): `arima.f:936-960`'s fixed-coefficient
+4. **Two unported Mt2 NOTEs** (task #43): `arima.f:936-960`'s fixed-coefficient
    NOTE, subtracted from the golden side of the slidingspans note gate by
    `_UNPORTED_NOTES` with `test_unported_notes_still_unported` guarding the
    list; and `prtmdl.f:174-177`'s `Nliter>200` NOTE, unported with no corpus
    carrier and deliberately NOT listed.
-6. `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the uninitialized `Trumlt`,
+5. `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the uninitialized `Trumlt`,
    both recorded in entry 76 as open questions -- they want the Fortran
    instrumented directly (the `tools/ref_*.f` read-only probe pattern), not
    more reasoning. Same for `x11mdl.f:597-602`'s stale `icol` (entry 77).
-7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+6. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
    `x11outlier=no` / `additivesa=`; `pickmdl{aictest=(user)}` (needs
    `usraic.f`/`chkchi.f`); the `!Hvmdl` no-model cleanup
