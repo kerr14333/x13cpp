@@ -235,11 +235,61 @@ def _run(base: str) -> str:
 # is gone rather than re-worded, because a skip list is the one place a fixed
 # thing must not linger. The separation it recorded still holds: these were two
 # gaps sharing a symptom, and the one below is untouched.
+#
+# A THIRD gap arrived with the ssmdl.f:50-121 specs and has a single owner:
+# `slidingspans{fixmdl=no}` together with a `regression{}` group, i.e. spans
+# that RE-ESTIMATE the regARIMA model instead of replaying the main run's
+# converged one. It was isolated the way the rules here require -- by building
+# the spec WITHOUT the feature the divergence was first attributed to.
+# `airline_slidingspans-fixmdl-no` is `airline_slidingspans-td` plus the single
+# line `fixmdl = no`, carries no fixed coefficients and no fixreg=, so none of
+# the arms ported alongside it can run -- and it fails sfs as well as chs. The
+# three ssmdl specs therefore inherit the gap rather than cause it.
+#
+# Why those three are landed anyway: every arm of ssmdl.f:50-121 needs Ssinit/=1
+# to be observable at all (setssp.f:47 demotes Itd first otherwise), so
+# fixmdl=no is not optional for them. What they DO gate today is the demote
+# itself -- which tds/ads tables exist -- and that is the entire observable of
+# the arms in question. Their sfs/chs values are blessed and waiting.
+_FIXMDL_NO = ("slidingspans{fixmdl=no} + regression{}: per-span RE-estimation "
+              "of the regARIMA model is not yet bit-exact -- isolated on "
+              "airline_slidingspans-fixmdl-no, which carries nothing else")
 _KNOWN_GAPS = {
     ("airline_slidingspans-td", "chs"):
         "slidingspans{} + regression{}: the per-span SA change table is still "
         "out of scope (per-span prior phase; see the comment above this map)",
+    **{(b, t): _FIXMDL_NO
+       for b in ("airline_slidingspans-fixmdl-no",
+                 "airline_slidingspans-fixreg-td",
+                 "airline_slidingspans-regfixed",
+                 "airline_slidingspans-regallfixed",
+                 "airline_slidingspans-regpartfixed")
+       for t in ("sfs", "chs")},
+    ("airline_slidingspans-regpartfixed", "tds"): _FIXMDL_NO,
+    ("airline_slidingspans-regpartfixed", "ads"): _FIXMDL_NO,
 }
+
+# NOTE blocks the oracle writes to Mt2 from a routine this port has not ported.
+# Same family as ssphdr (entry 81) and prterx (entry 73) -- a load-bearing Mt2
+# fragment swallowed by a routine skipped for what it MOSTLY does. Here it is
+# arima.f:936-960's fixed-coefficient NOTE (two arms: `istrue(Arimaf,...)` for a
+# fixed ARIMA parameter, `istrue(Regfx,1,Nb)` for a fixed regression one; the
+# specs below reach only the second).
+#
+# Filtered out of the GOLDEN side rather than skipping the spec, so the ssphdr
+# NOTE on the same file is still compared. Porting it makes this gate fail
+# (produced gains a block gold does not have), which is the point: the list
+# cannot outlive the gap.
+#
+# A SIBLING is unported and deliberately NOT listed here: prtmdl.f:174-177's
+# `Nliter > 200` estimation-iteration NOTE. It appeared on an early draft of
+# airline_slidingspans-regfixed whose fixed coefficients (0.39) were so far from
+# the data that the ARMA maximisation ran past the udg's `niter` field width,
+# and it left when the coefficients became plausible. No corpus spec carries it
+# today, so an entry here would fail the freshness check below on day one.
+_UNPORTED_NOTES = (
+    "  NOTE: Fixed values have been assigned to some regression coefficients.",
+)
 
 
 def test_slidingspans_cases_discovered() -> None:
@@ -325,11 +375,32 @@ def test_slidingspans_notes(base: str) -> None:
     if not os.path.exists(goldpath):
         pytest.skip(f"{base} has no blessed .err")
     with open(goldpath, encoding="utf-8", errors="replace") as f:
-        gold = _note_blocks([ln.rstrip("\n") for ln in f])
+        gold = [b for b in _note_blocks([ln.rstrip("\n") for ln in f])
+                if b[0] not in _UNPORTED_NOTES]
 
     produced = _note_blocks(_err_block(_run(base)))
     assert produced == gold, (
         f"{base}: NOTE blocks differ\n  want: {gold}\n  got:  {produced}")
+
+
+def test_unported_notes_still_unported() -> None:
+    """`_UNPORTED_NOTES` subtracts from the golden side of the gate above, so a
+    stale entry would silently excuse a NOTE the engine had started emitting
+    correctly -- or, worse, one it had started emitting WRONG. Require every
+    entry to still appear in some blessed golden, and delete it the day the
+    routine behind it is ported."""
+    seen: set[str] = set()
+    for base in CASES:
+        p = os.path.join(_GOLDEN, base, base + ".err")
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding="utf-8", errors="replace") as f:
+            for blk in _note_blocks([ln.rstrip("\n") for ln in f]):
+                if blk[0] in _UNPORTED_NOTES:
+                    seen.add(blk[0])
+    assert seen == set(_UNPORTED_NOTES), (
+        "_UNPORTED_NOTES is out of date -- no golden carries "
+        f"{sorted(set(_UNPORTED_NOTES) - seen)}")
 
 
 def test_slidingspans_notes_can_fail() -> None:

@@ -14,25 +14,25 @@ stale figure is a build error instead of something a reader finds first.
 
 | Metric | Value |
 |---|---|
-| Parity tests passing | **6762** |
+| Parity tests passing | **6893** |
 | Parity tests failing | **0** |
-| Parity tests skipped | **716** |
+| Parity tests skipped | **759** |
 | Parity tests xfailed | **0** |
 | Unit tests (ctest) | **12/12** |
-| Corpus spec files | **443** |
+| Corpus spec files | **450** |
 | Parity test modules | **31** |
 | Scope / trace docs under tools/ | **32** |
-| C++ non-blank lines (excl. generated) | **48895** |
-| C++ files (excl. generated) | **182** |
+| C++ non-blank lines (excl. generated) | **49152** |
+| C++ files (excl. generated) | **183** |
 | Fortran reference, non-blank lines | **166076** |
 | Fortran reference, files | **712** |
 | Fortran routines ported or gated | **406** |
 | Fortran routines in scope (excl. n-a) | **690** |
 | Percent of routines ported | **58.8** |
 | Census bugs catalogued | **38** |
-| Commits | **413** |
+| Commits | **414** |
 | Active development time | **63h 14m** |
-| Calendar days worked | **18** |
-| Last commit | **2026-08-04** |
+| Calendar days worked | **19** |
+| Last commit | **2026-08-05** |
 
 Metric names for markers: `parity_pass`, `parity_fail`, `parity_skip`, `parity_xfail`, `ctest`, `corpus_specs`, `parity_modules`, `scope_docs`, `cpp_lines`, `cpp_files`, `fortran_lines`, `fortran_files`, `routines_done`, `routines_total`, `routines_pct`, `census_bugs`, `commits`, `active_time`, `calendar_days`, `last_commit`.

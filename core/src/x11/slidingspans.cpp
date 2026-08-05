@@ -3,6 +3,7 @@
 
 #include "common/x13context.hpp"
 #include "driver/run_x11_span.hpp"
+#include "regarima/rvfixd.hpp"       // rvfixd (fixreg= group walk)
 #include "specparse/specparse.hpp"   // dfdate, addate, copy, copylg
 #include "numeric/numeric.hpp"       // dpeq
 #include "gen/notset.hpp"            // prm::NOTSET, prm::DNOTST
@@ -26,6 +27,42 @@ void ssp_not_ported(X13Context& ctx, const char* what) {
     writln(ctx, std::string("ERROR: ") + what + " not yet ported (M5 X-11 spine).",
            stdio::STDERR, ctx.units.mt2, true);
     abend(ctx);
+}
+
+// The group-level regressor-type tests ssmdl.f:76-93 and ssxmdl.f:88-104 walk
+// with. The two lists are NOT the same and the difference is load-bearing, so
+// they are transcribed separately rather than shared:
+//
+//   * ssmdl's GROUP test additionally admits the user-holiday range
+//     (PRGTUH..PRGUH5) and the user-seasonal PRGTUS; ssxmdl's does not.
+//   * ssmdl's INNER holiday test uses the same PRGTUH..PRGUH5 range;
+//     ssxmdl.f:100 spells the single value PRGTUH instead -- and since PRGTUH
+//     cannot pass ssxmdl's group test at all, that arm of it is DEAD. Kept
+//     verbatim; do not "fix" it into the range.
+//
+// Both tests are on the type of the group's FIRST column (Rgvrtp(begcol)).
+bool ss_is_calendar_group(int rtype, bool with_user_hol) {
+    using namespace prm;
+    const bool istd =
+        rtype == PRGTTD || rtype == PRGTST || rtype == PRRTTD ||
+        rtype == PRA1TD || rtype == PRRTST || rtype == PRATTD ||
+        rtype == PRATST || rtype == PRG1TD || rtype == PRR1TD ||
+        rtype == PRA1ST || rtype == PRG1ST || rtype == PRR1ST;
+    const bool islom =
+        rtype == PRGTLM || rtype == PRGTSL || rtype == PRGTLQ ||
+        rtype == PRGTLY || rtype == PRATLQ || rtype == PRRTLM ||
+        rtype == PRRTSL || rtype == PRRTLQ || rtype == PRRTLY ||
+        rtype == PRATLM || rtype == PRATSL || rtype == PRATLY;
+    const bool isusrtd =
+        rtype == PRGUTD || rtype == PRGULM || rtype == PRGULQ ||
+        rtype == PRGULY;
+    const bool ishol =
+        rtype == PRGTEA || rtype == PRGTEC || rtype == PRGTES ||
+        rtype == PRGTLD || rtype == PRGTTH;
+    const bool isusrhol =
+        with_user_hol &&
+        ((rtype >= PRGTUH && rtype <= PRGUH5) || rtype == PRGTUS);
+    return istd || islom || isusrtd || ishol || isusrhol;
 }
 }  // namespace
 
@@ -219,9 +256,105 @@ void restor_span(X13Context& ctx) {
 // ssmdl.f: the Ssinit==1 "fix all model parameters" tail, both halves (ARMA and
 // regression). The earlier Nb==0 scoping was only ever true because no
 // span-replay spec carried a regression{} group.
-void ssmdl_fix_model(X13Context& ctx) {
+void ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
+                     bool usrfix) {
     sspinp_cmn& si = ctx.sspinp;
-    if (ctx.model.nb <= 0) si.nssfxr = 0;
+    ssap_cmn& sa = ctx.ssap;
+    model_cmn& m = ctx.model;
+
+    // ssmdl.f:50-121 -- decide whether the sliding spans may analyse trading
+    // day and holiday AT ALL. Three mutually exclusive arms, and only the
+    // first needs `slidingspans{fixreg=}`:
+    //
+    //   Nssfxr>0   the user named the groups: rvfixd fixes them, and Tdfix /
+    //              Holfix (which the caller then hands to ssxmdl) say so.
+    //   Iregfx==3  every regARIMA coefficient is already fixed -- nothing can
+    //              be re-estimated per span, so the analysis is pointless.
+    //   Iregfx==2  SOME are fixed: walk the groups and demote only the
+    //              component whose columns are fixed to a man.
+    //
+    // `Itd`/`Ihol` == -1 means "requested but not analysed", and its whole
+    // observable is that ssap.f:206-211 then writes no `tds` (and, for Itd, no
+    // `ads`) -- plus the ssphdr NOTE. See docs/M5_PORT_NOTES.md entry 81.
+    if (m.nb > 0) {
+        if (si.nssfxr > 0) {
+            rvfixd(tdfix, holfix, otlfix, usrfix, m.iregfx, m.regfx, m.nb,
+                   m.rgvrtp, ctx.x11adj.nusrrg, ctx.usrreg.usrtyp,
+                   ctx.usrreg.ncusrx, m.userfx);
+            if (sa.itd == 1 && tdfix) sa.itd = -1;
+            if (sa.ihol == 1 && holfix) sa.ihol = -1;
+            // The fix only STICKS if the ssprep SNAPSHOT carries it too:
+            // restor_span resets the live B/Regfx/Iregfx from that snapshot
+            // before every span, so writing only the live model here is undone
+            // by the very first one. Same trap as fixmdl below and as
+            // history{fixreg=} (driver/CLAUDE.md, trap 1).
+            copylg(m.regfx.data(), prm::PB, 1, ctx.ssprep.regfx2.data());
+            ctx.ssprep.irfx2 = m.iregfx;
+        } else if (m.iregfx == 3) {
+            // ssmdl.f:57-70. The Nssfxr/Ssfxrg write-back records the verdict
+            // for the caller, and is skipped when Ssinit==1 because fixmdl=yes
+            // is about to fix everything anyway.
+            if (sa.itd == 1) {
+                sa.itd = -1;
+                if (si.ssinit != 1) {
+                    si.nssfxr = 1;
+                    si.ssfxrg(1) = 1;
+                }
+            }
+            if (sa.ihol == 1) {
+                sa.ihol = -1;
+                if (si.ssinit != 1) {
+                    si.nssfxr += 1;
+                    si.ssfxrg(si.nssfxr) = 2;
+                }
+            }
+        } else if (m.iregfx == 2) {
+            // ssmdl.f:71-119. Tdfix/Holfix start TRUE and are ANDed down over
+            // every column of every calendar group -- so a component is
+            // demoted only when it is fixed in its entirety, and a design with
+            // no group of that kind at all stays TRUE vacuously.
+            tdfix = true;
+            holfix = true;
+            for (int igrp = 1; igrp <= m.ngrp; ++igrp) {
+                const int begcol = m.grp(igrp - 1);
+                const int endcol = m.grp(igrp) - 1;
+                const int rtype = m.rgvrtp(begcol);
+                if (!ss_is_calendar_group(rtype, /*with_user_hol=*/true))
+                    continue;
+                const bool ishol =
+                    rtype == prm::PRGTEA || rtype == prm::PRGTEC ||
+                    rtype == prm::PRGTES || rtype == prm::PRGTLD ||
+                    rtype == prm::PRGTTH ||
+                    (rtype >= prm::PRGTUH && rtype <= prm::PRGUH5);
+                for (int icol = begcol; icol <= endcol; ++icol) {
+                    if (ishol)
+                        holfix = holfix && m.regfx(icol);
+                    else
+                        tdfix = tdfix && m.regfx(icol);
+                }
+            }
+            if (tdfix && sa.itd > 0) {
+                sa.itd = -1;
+                if (si.ssinit != 1) {
+                    si.nssfxr = 1;
+                    si.ssfxrg(1) = 1;
+                }
+            }
+            // ssmdl.f:112 tests `Ihol.eq.1` where its Itd twin tests `.gt.0`.
+            // Transcribed as written -- the two are not interchangeable once
+            // setssp.f:314's short-span demote has put Ihol at -2.
+            if (holfix && sa.ihol == 1) {
+                sa.ihol = -1;
+                if (si.ssinit != 1) {
+                    si.nssfxr += 1;
+                    si.ssfxrg(si.nssfxr) = 2;
+                }
+            }
+        }
+    } else {
+        si.nssfxr = 0;
+    }
+
     if (si.ssotl <= 1) {
         ctx.arima.ltstao = false;
         ctx.arima.ltstls = false;
@@ -272,7 +405,8 @@ void ssmdl_fix_model(X13Context& ctx) {
 // variables=(td)}): with the default the per-span TD factors are byte-identical
 // across all four spans AND equal to the main run's c16; `fixx11reg=no` moves
 // them (99.144951 -> 98.847324 at 1951.Jan). See docs/M5_PORT_NOTES.md entry 79.
-static bool ssxmdl_span(X13Context& ctx) {
+static bool ssxmdl_span(X13Context& ctx, bool tdfix, bool holfix, bool otlfix,
+                        bool usrfix) {
     xrgmdl_cmn& xg = ctx.xrgmdl;
     sspinp_cmn& si = ctx.sspinp;
     ssap_cmn& sa = ctx.ssap;
@@ -319,20 +453,88 @@ static bool ssxmdl_span(X13Context& ctx) {
         return false;
     }
 
-    // ssxmdl.f:78-136 -- rvfixd's Tdfix/Holfix and the `Irgxfx.ge.2` tdfx/holfx
-    // walk that decides whether an ALREADY-fixed TD or holiday group should
-    // suppress the span analysis for that component (and be recorded in
-    // Ssfxxr). Both arms need a partially-fixed x11regression design --
-    // `x11regression{b=(... f)}` giving Irgxfx>=2, or slidingspans{fixreg=}
-    // giving Nssfxr>0 -- and neither is in the corpus. Refuse on the trigger
-    // rather than on a proxy for it: Irgxfx>=2 is the exact condition the
-    // Fortran tests at ssxmdl.f:85.
-    if (xg.irgxfx >= 2 || si.nssfxx > 0) {
-        ssp_not_ported(ctx,
-                       "slidingspans{} with FIXED x11regression coefficients "
-                       "(ssxmdl.f:78-136's rvfixd / Irgxfx>=2 arms) is");
-        return false;
+    // ssxmdl.f:78-83 -- rvfixd on the x11regression design (unconditional here:
+    // this routine is only entered under setssp.f:353's `IF(Nbx.gt.0)`), then
+    // the fixreg= demotes.
+    //
+    // THE STORE WRITES rvfixd MAKES HERE DO NOT SURVIVE THE ROUTINE. ssxmdl
+    // brackets this block with `loadxr(F)` at :42 and `loadxr(T)` at :137: the
+    // first copies Irgxfx/Regfxx/Usrxfx into the regARIMA working model, the
+    // second copies them straight back out of it -- i.e. back to the values
+    // rvfixd was handed, undoing every fix it just made. Only the group walk
+    // immediately below ever reads the modified values. This port makes
+    // neither loadxr call (nor setssp.f:356's compensating `restor` for the
+    // working model those calls trample), so the save/restore below stands in
+    // for that pair; see docs/M5_PORT_NOTES.md entry 82 for what the omitted
+    // half leaves behind.
+    const int irgxfx0 = xg.irgxfx;
+    const auto regfxx0 = xg.regfxx;
+    const bool usrxfx0 = xg.usrxfx;
+
+    bool tdfx = false, holfx = false;
+    rvfixd(tdfix, holfix, otlfix, usrfix, xg.irgxfx, xg.regfxx, xg.nbx,
+           xg.rgxvtp, xg.nusxrg, ctx.usrxrg.usxtyp, xg.nusxrg, xg.usrxfx);
+    if (tdfix && sa.itd > 0) sa.itd = -1;
+    if (holfix && sa.ihol > 0) sa.ihol = -1;
+
+    // ssxmdl.f:85-136 -- the ALREADY-fixed case: an x11regression design whose
+    // calendar coefficients the user fixed with `b=(... f)`. Nothing is left
+    // for a span to re-estimate, so the span analysis of that component is
+    // suppressed. Note the guard runs on the component the x11regression
+    // design owns (Axrgtd/Axrghl) and skips a component fixreg= already
+    // claimed (`.not.Tdfix`), because that arm demoted it four lines up.
+    if (((sa.itd == 1 && ctx.x11log.axrgtd && !tdfix) ||
+         (sa.ihol == 1 && ctx.x11log.axrghl && !holfix)) &&
+        xg.irgxfx >= 2) {
+        tdfx = true;
+        holfx = true;
+        // Irgxfx==3 is "all fixed": the walk is skipped outright and both
+        // flags stay true. Only Irgxfx==2 ("some fixed") has to look.
+        if (xg.irgxfx == 2) {
+            for (int igrp = 1; igrp <= xg.nxgrp; ++igrp) {
+                const int begcol = xg.grpx(igrp - 1);
+                const int endcol = xg.grpx(igrp) - 1;
+                const int rtype = xg.rgxvtp(begcol);
+                if (!ss_is_calendar_group(rtype, /*with_user_hol=*/false))
+                    continue;
+                // ssxmdl.f:100-102's inner test names PRGTUH, which its own
+                // group test above cannot admit -- a dead arm, kept verbatim.
+                const bool ishol =
+                    rtype == prm::PRGTEA || rtype == prm::PRGTEC ||
+                    rtype == prm::PRGTES || rtype == prm::PRGTLD ||
+                    rtype == prm::PRGTTH || rtype == prm::PRGTUH;
+                for (int icol = begcol; icol <= endcol; ++icol) {
+                    if (ishol)
+                        holfx = holfx && xg.regfxx(icol);
+                    else
+                        tdfx = tdfx && xg.regfxx(icol);
+                }
+            }
+        }
+        // ssxmdl.f:120-133. Ssfxxr is DIMENSION(4) and the Fortran increments
+        // Nssfxx without checking it; the store is clamped here because it is
+        // WRITE-ONLY in the whole oracle (Nssfxx is read at x11mdl.f:170, the
+        // array itself nowhere), so the clamp cannot change any result.
+        if (tdfx && sa.itd > 0) {
+            sa.itd = -1;
+            if (!tdfix) {
+                si.nssfxx += 1;
+                if (si.nssfxx <= 4) si.ssfxxr(si.nssfxx) = 1;
+            }
+        }
+        if (holfx && sa.ihol > 0) {
+            sa.ihol = -1;
+            if (!holfix) {
+                si.nssfxx += 1;
+                if (si.nssfxx <= 4) si.ssfxxr(si.nssfxx) = 2;
+            }
+        }
     }
+
+    // ssxmdl.f:137 -- loadxr(T); see the note above the save.
+    xg.irgxfx = irgxfx0;
+    xg.regfxx = regfxx0;
+    xg.usrxfx = usrxfx0;
 
     // ssxmdl.f:138-150 -- the tail, and the reason this routine matters.
     // (The bakusr arm needs x11regression user regressors; Nusxrg==0 in the
@@ -350,8 +552,9 @@ static bool ssxmdl_span(X13Context& ctx) {
 
     // ssxmdl.f:152-153 -- with every trading-day weight held fixed there is
     // nothing left for reweight= to renormalize. Same line as revdrv.f:327,
-    // which run_history already carries.
-    if (ctx.x11log.lxrneg && xg.irgxfx == 3) ctx.x11log.lxrneg = false;
+    // which run_history already carries. `tdfx` is the second trigger: a
+    // b=(... f) design reaches it with Irgxfx==2.
+    if (ctx.x11log.lxrneg && (xg.irgxfx == 3 || tdfx)) ctx.x11log.lxrneg = false;
     return true;
 }
 
@@ -497,12 +700,50 @@ bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
     sa.nsea = ny;
     ctx.lzero.l0 = pos2 - (si.nlen + im - 2 + (si.ncol - 1) * ny);
 
-    // (Nssfxr>0 fixreg=/Ssfxxr bookkeeping: not reachable, the gate corpus
-    // has no fixreg= argument, Nssfxr==0.)
+    // setssp.f:320-341 -- `slidingspans{fixreg=}` (Ssfxrg): which regressor
+    // GROUPS are held fixed for the whole analysis. The four flags are OUTPUTS
+    // of this decode and INPUTS to both ssmdl and ssxmdl -- and ssmdl writes
+    // tdfix/holfix BACK, which is how its Iregfx==2 verdict reaches ssxmdl's
+    // `.not.Tdfix` guard. They are one shared quartet, not two local pairs.
+    //
+    // The predecessor comment here read "not reachable, the gate corpus has no
+    // fixreg= argument" -- true of the corpus, and beside the point: fixreg=
+    // was PARSED into si.ssfxrg and then read by nobody, so a spec that used it
+    // returned OUTCOME: OK with the trading-day span statistics the oracle
+    // suppresses. Measured on airline+slidingspans{fixreg=(td)}: oracle writes
+    // neither tds nor ads, this engine wrote 120 rows of each.
+    bool tdfix = false, holfix = false, otlfix = false, usrfix = false;
+    if (si.nssfxr > 0) {
+        for (int i = 1; i <= si.nssfxr; ++i) {
+            switch (si.ssfxrg(i)) {
+            case 1: tdfix = true; break;
+            case 2: holfix = true; break;
+            case 3: usrfix = true; break;
+            case 4: otlfix = true; break;
+            default: break;
+            }
+        }
+        // setssp.f:338-341.
+        cpyint(si.ssfxrg.data(), 4, 1, si.ssfxxr.data());
+        si.nssfxx = si.nssfxr;
+    }
+    // fixreg=(outlier) alone goes further than the rvfixd walk: `otlfix`
+    // outlives setssp and reaches ssx11a per span (sspdrv.f:121), where it
+    // decides whether a held-back outlier is re-added with its coefficient
+    // fixed. That consumer is unported, so refuse rather than honour half of
+    // the option.
+    if (otlfix) {
+        ssp_not_ported(ctx,
+                       "slidingspans{fixreg=(outlier)} (the per-span otlfix "
+                       "that reaches ssx11a, sspdrv.f:121) is");
+        return false;
+    }
 
-    if (lmodel) ssmdl_fix_model(ctx);
+    if (lmodel) ssmdl_fix_model(ctx, tdfix, holfix, otlfix, usrfix);
     // setssp.f:353-356 -- `IF(Nbx.gt.0) CALL ssxmdl(...)`.
-    if (ctx.xrgmdl.nbx > 0 && !ssxmdl_span(ctx)) return false;
+    if (ctx.xrgmdl.nbx > 0 &&
+        !ssxmdl_span(ctx, tdfix, holfix, otlfix, usrfix))
+        return false;
 
     return true;
 }

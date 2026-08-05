@@ -46,12 +46,18 @@ void ssprep_snapshot(X13Context& ctx);
 // position, before that span's own run_x11_span).
 void restor_span(X13Context& ctx);
 
-// ssmdl.f, scoped to Nb==0 (no regression{}, no outlier{} -- the whole
-// regressor-fixing/change-of-regime/outlier-in-span block is then dead code):
-// when Ssinit==1 (fixmdl=yes, the default), fix every ARIMA parameter
-// (ctx.model.arimaf all true) so run_x11_span's rgarma replay recomputes
-// residuals/likelihood without re-optimizing.
-void ssmdl_fix_model(X13Context& ctx);
+// ssmdl.f, scoped to exclude the change-of-regime and outlier-in-span blocks:
+//
+//  * ssmdl.f:50-121 -- the regressor-fixing block. `tdfix`/`holfix` are IN/OUT:
+//    they arrive carrying slidingspans{fixreg=} and leave carrying this
+//    routine's own verdict on an already-fixed design, which setssp then hands
+//    to ssxmdl. Demotes Itd/Ihol to -1 ("requested but not analysed") when the
+//    component cannot be re-estimated per span.
+//  * ssmdl.f:341-352 -- when Ssinit==1 (fixmdl=yes, the default), fix every
+//    ARIMA parameter (ctx.model.arimaf all true) so run_x11_span's rgarma
+//    replay recomputes residuals/likelihood without re-optimizing.
+void ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
+                     bool usrfix);
 
 // setssp.f, scoped per the file header. Resolves Ncol/Nlen defaults from the
 // main run's Length (ctx.x11opt.length) + Ltmax when the user didn't set

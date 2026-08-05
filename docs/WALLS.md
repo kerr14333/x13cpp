@@ -78,17 +78,17 @@ reproduce.
 
 ## X-11
 
-- **`core/src/x11/slidingspans.cpp:315`**
+- **`core/src/x11/slidingspans.cpp:449`**
   slidingspans{x11outlier=no} with automatic x11regression outlier identification (ssxmdl.f:44-76's rmotss block) is
   *Fortran:* `ssxmdl.f:44-76`
 
-- **`core/src/x11/slidingspans.cpp:331`**
-  slidingspans{} with FIXED x11regression coefficients (ssxmdl.f:78-136's rvfixd / Irgxfx>=2 arms) is
-  *Fortran:* `ssxmdl.f:78-136`
-
-- **`core/src/x11/slidingspans.cpp:344`**
+- **`core/src/x11/slidingspans.cpp:546`**
   slidingspans{} with x11regression{user=} (ssxmdl.f:142-148's bakusr) is
   *Fortran:* `ssxmdl.f:142-148`
+
+- **`core/src/x11/slidingspans.cpp:736`**
+  slidingspans{fixreg=(outlier)} (the per-span otlfix that reaches ssx11a, sspdrv.f:121) is
+  *Fortran:* `sspdrv.f:121`
 
 - **`core/src/x11/x11parts.cpp:231`**
   x11pt1 prior trading-day adjustment (pritd/ssrit)

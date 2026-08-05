@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6762<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->716<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6893<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->759<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6762<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6893<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1660,14 +1660,65 @@ ran to 81. Rebuilt from the `## N.` headings themselves.
 
 Suite 6728 -> 6762 passed, 0 failed, 0 xfailed.
 
+## This session, part 33: `fixreg=` was parsed and dropped, and a mutation that passed
+
+Entry 82. Board item 1's remaining ssxmdl arms -- one closed, one still walled
+-- plus a third thing that was neither.
+
+**`slidingspans{fixreg=}` was a parsed-but-unread option.** The wall meant to
+cover it tested `Nssfxx`, which nothing in this port ever writes; the parser
+fills `Nssfxr`, and that walked straight past. Measured on airline +
+`slidingspans{fixmdl=no fixreg=(td)}`: the oracle writes neither `tds` nor
+`ads`, the engine wrote 120 rows of each, at `OUTCOME: OK`.
+
+Ported: `setssp.f:320-341`'s decode, `ssmdl.f:50-121`'s three arms
+(`Nssfxr>0` / `Iregfx==3` / `Iregfx==2`), `ssxmdl.f:78-136`'s rvfixd + the
+`Irgxfx>=2` group walk. The four flags are ONE quartet shared by both routines
+-- ssmdl writes `Tdfix`/`Holfix` back and ssxmdl reads them -- so
+`ssmdl_fix_model` now takes the pair by reference. `rvfixd` moved out of
+`run_history.cpp`'s anonymous namespace into `core/src/regarima/rvfixd.hpp`,
+unchanged; it has three call sites in the oracle.
+
+**Recorded rather than faked**: `ssxmdl`'s `loadxr(F)`/`loadxr(T)` pair UNDOES
+every store write its `rvfixd` makes -- only the walk twenty lines down reads
+them -- and the same round trip leaves the regARIMA working model overwritten
+by the x11regression design, which `setssp.f:356`'s `restor` only partly puts
+back. This port does neither half and is self-consistent on every gated spec.
+Divergence in waiting, not a defect with a witness.
+
+**The mutation that passed.** Five mutations, one per arm; four failed loudly.
+Disabling `ssmdl`'s `Iregfx==3` arm changed nothing -- on the spec written for
+it, with every coefficient fixed. `Iregfx` was 2: `getreg`'s Leap Year splice
+inserts a column into the `b=` list, `regfix.f:31` finds it valueless, and the
+promotion to 3 never fires. `airline_slidingspans-regallfixed`
+(`variables=(tdnolpyear)`, no leap-year column to splice) reaches the real arm,
+and now mutation five fails on its own spec. New standing rule in `CLAUDE.md`.
+
+**A third gap, isolated the way the rules require.** Four of the six new specs
+fail `sfs`/`chs`. `airline_slidingspans-fixmdl-no` is `airline_slidingspans-td`
+plus one line and fails the same way, so the owner is `fixmdl=no` +
+`regression{}` (per-span RE-estimation), not the arms just ported. Recorded in
+`_KNOWN_GAPS`; the goldens are blessed and waiting.
+
+Also: `arima.f:936-960`'s fixed-coefficient NOTE is unported and now subtracted
+from the golden side of the note gate by `_UNPORTED_NOTES`, with
+`test_unported_notes_still_unported` to make sure the list cannot outlive the
+gap. `prtmdl.f:174-177`'s `Nliter>200` NOTE is unported with no corpus carrier.
+
+Suite 6762 -> 6893 passed, 0 failed, 0 xfailed. WALLS unchanged at 26 gaps --
+one wall removed, one (`fixreg=(outlier)`) added.
+
 ## Open, in the order I would take them
 
-1. **The two ssxmdl arms still walled** (the third is closed by entry 81),
-   each wanting one spec: a fixed `x11regression{b=(... f)}` giving `Irgxfx>=2`
-   (ssxmdl.f:78-136's rvfixd + the tdfx/holfx rtype walk), and
-   `slidingspans{x11outlier=no}` with automatic x11regression outliers
-   (ssxmdl.f:44-76's rmotss). Both fatal rather than lie today -- but a wall is
-   inventory, not coverage.
+1. **`slidingspans{fixmdl=no}` + `regression{}` is not bit-exact** -- the gap
+   entry 82 isolated, and now the one blocking six blessed goldens.
+   `airline_slidingspans-fixmdl-no` carries nothing else and fails `sfs` as
+   well as `chs`, so it is the spec to work on; the other four inherit it.
+   Sibling of the `airline_slidingspans-td` `chs` gap, possibly the same owner.
+   The last ssxmdl wall is `slidingspans{x11outlier=no}` with automatic
+   x11regression outliers (ssxmdl.f:44-76's rmotss), plus the new
+   `fixreg=(outlier)` one (its `otlfix` reaches ssx11a per span,
+   sspdrv.f:121). Both fatal rather than lie.
 2. **The two cheap x11regression siblings still walled in `xrg_editor_setup`**:
    `Xaicst` (editor.f:1802-1808) and `Xaicrg` (:1811-1822), both READ by
    `x11reg.cpp:642/658` and never written except to their gtinpt defaults.

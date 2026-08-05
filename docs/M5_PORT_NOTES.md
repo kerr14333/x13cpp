@@ -103,6 +103,7 @@ make generated anchors fragile, so the list is deliberately link-free).
 79. `fixx11reg` defaults to YES -- the per-span calendar gap was a parsed-but-unread option, and the fix's partner had already been measured and rejected
 80. The stock-trading-day abend: an unguarded refusal, and an `ELSE` that pairs with a different `IF` than everyone assumed
 81. The sliding-spans NOTEs: a diagnostic whose whole effect is an ABSENCE, and the channel nobody could read
+82. `slidingspans{fixreg=}` was parsed and dropped, and the ssxmdl wall was keyed on the wrong variable
 
 ---
 
@@ -4736,3 +4737,160 @@ print engine (the peaks themselves are gated through the savelog `spcrsd` /
 already-tracked reason; that exclusion is stated in the test, not implied.
 
 Suite 6728 -> 6762 passed, 0 failed, 0 xfailed.
+
+## 82. `slidingspans{fixreg=}` was parsed and dropped, and the ssxmdl wall was keyed on the wrong variable
+
+Board item 1's remaining two `ssxmdl` arms. One of them closed; the other is
+still walled; and getting there turned up a third thing that was neither --
+`slidingspans{fixreg=}` returning `OUTCOME: OK` with statistics the oracle
+suppresses.
+
+### What was walled, and what the wall actually tested
+
+`ssxmdl_span` refused on
+
+```cpp
+if (xg.irgxfx >= 2 || si.nssfxx > 0) { ... }
+```
+
+The first disjunct is the real trigger and is exactly what `ssxmdl.f:85`
+tests. **The second is dead in this port**: `Nssfxx` is only ever written by
+`setssp.f:338-341`, a block the port had skipped with the comment "not
+reachable, the gate corpus has no fixreg= argument". So the wall's fixreg=
+half tested an output that nothing produced, while the INPUT it meant to
+guard -- `Nssfxr`, which the parser fills from `fixreg=` and which
+`readers_spec.cpp:2370` had been filling all along -- walked straight past it.
+
+Measured, airline + `slidingspans{fixmdl=no fixreg=(td)}` + `regression{td}`:
+
+| | oracle | engine before |
+|---|---|---|
+| `tds` rows | none written | **120** |
+| `ads` rows | none written | **120** |
+| `.err` NOTE | ssphdr's TD-suppressed block | none |
+| outcome | OK | **OK** |
+
+That is the parsed-but-unread class again, and the same shape as entry 79's
+`fixx11reg=`: the option is documented, the parser honours it, and the read
+does not exist.
+
+### The four flags are ONE quartet, not two pairs
+
+`setssp.f:320-341` decodes `Ssfxrg` into `tdfix/holfix/usrfix/otlfix` and
+passes them to BOTH `ssmdl` (regARIMA design) and `ssxmdl` (x11regression
+design). `ssmdl` writes `Tdfix`/`Holfix` **back** -- its `Iregfx==2` arm sets
+them true and ANDs them down over the groups -- and `ssxmdl` then reads them
+in `.not.Tdfix`. Porting either routine's block alone would have been
+self-consistent and wrong, which is why `ssmdl_fix_model` now takes the pair
+by reference.
+
+`rvfixd` is called from all three sites (`revdrv.f:131-134`, `ssmdl.f:53`,
+`ssxmdl.f:80`), always on the arrays rather than on `model.cmn`, precisely so
+one walk can serve either design. It moved out of `run_history.cpp`'s
+anonymous namespace into `core/src/regarima/rvfixd.hpp` unchanged.
+
+### The store writes `ssxmdl`'s rvfixd makes are UNDONE four lines later
+
+`ssxmdl` brackets its whole body with `loadxr(F)` at :42 and `loadxr(T)` at
+:137. `loadxr(T)` copies `Irgxfx`/`Regfxx`/`Usrxfx` back OUT of the regARIMA
+working model that `loadxr(F)` had just copied them INTO -- so every fix
+`rvfixd` makes to the x11regression store is reverted before the routine
+returns, and the only consumer of those fixes is the group walk twenty lines
+below. The port makes neither `loadxr` call, so the arm is bracketed by an
+explicit save/restore that stands in for the pair.
+
+**What that stand-in does NOT reproduce, recorded rather than faked**: the
+round trip also leaves the regARIMA WORKING model overwritten by the
+x11regression design (`Ngrp`, `Grp`, `Rgvrtp`, `Nb`, `Priadj`, `Begxy`,
+`Userfx`, `Tddate`, `Lma`/`Lar`/`Mxdflg`/... zeroed, and more), and
+`setssp.f:356`'s `IF(Lmodel)CALL restor(Lmodel,F,F)` puts back only the
+`restor` subset. This port does neither half and is therefore self-consistent
+today, on every gated spec. It is a divergence in waiting, not a defect with
+a witness -- and it is the same shape as the `restor`-stand-in family in entry
+72.
+
+### THE MUTATION THAT PASSED, AND WHAT IT MEANT
+
+Five mutations, one per ported arm. Four failed loudly. The fifth --
+disabling `ssmdl`'s `Iregfx==3` arm -- **passed**, on a spec written
+specifically to exercise it: `regression{variables=(td) b=(six fixed)}`, every
+coefficient fixed, which is the definition of `Iregfx==3`.
+
+A debug print settled it: `nb=6`, all six `Regfx` true, `Iregfx=2`. The cause
+is `getreg.f`'s Leap Year splice (ported at `readers_spec.cpp:1101`): with
+`picktd` and a log transform, a Leap Year column is inserted into the `b=`
+list, `regfix.f:31` sees a column whose value is `DNOTST`, `allfix` dies
+there, and `regfix.f:41`'s promotion to 3 never fires -- even though `rmlnvr`
+deletes that column again moments later. The spec was on the `Iregfx==2` arm
+the whole time, and its header comment claimed `ssmdl.f:57-70`.
+
+`airline_slidingspans-regallfixed` reaches the real arm, via
+`variables=(tdnolpyear)`: same six contrasts, no leap-year column to splice.
+With it, mutation five fails on its own spec like the other four.
+
+The general lesson, and it is not the one already written down: **a mutation
+that passes is a claim about WHICH ARM the spec is on.** The existing rule
+says a passing mutation usually means the precondition is saturated. This one
+was subtler -- the precondition was fine, the routine was entered, the
+observable was correct, and the spec simply arrived through a different door
+than its comment said. Mutation-test each ARM, not each routine; a spec that
+reaches the routine is not a spec that reaches the arm.
+
+### Two `.err` NOTEs the newly-readable Mt2 channel exposed
+
+Entry 81 made the Mt2 buffer readable on a successful run. It keeps paying:
+
+* `arima.f:936-960` -- "Fixed values have been assigned to some regression
+  coefficients." Unported. It is on the golden `.err` of every spec here that
+  fixes a regARIMA coefficient, so `_UNPORTED_NOTES` subtracts it from the
+  GOLDEN side of the note gate rather than skipping those specs, and
+  `test_unported_notes_still_unported` fails the day no golden carries it.
+* `prtmdl.f:174-177` -- the `Nliter > 200` NOTE. It appeared on a draft of
+  `airline_slidingspans-regfixed` whose fixed coefficients (0.39) were so far
+  from the data that the ARMA maximisation blew past the `.udg`'s `niter`
+  field width and the oracle wrote `niter: ***`, which no harness can parse.
+  Plausible coefficients (0.001) removed both problems. Still unported, no
+  corpus carrier -- deliberately NOT listed, because a `_UNPORTED_NOTES` entry
+  no golden carries would fail its own freshness check.
+
+A third, `ssap.f:113-116` ("Sliding spans percentages cannot be stored in a
+separate diagonstics file..."), is gated on `Lsumm>0` -- a command-line
+summary-file flag this port does not model at all. It showed up only on the
+transient `mode=add` draft of the regallfixed spec and is out of scope by
+design, not by omission.
+
+### The gap these specs sit on, isolated the way the rules require
+
+Four of the six new specs fail `sfs`/`chs` numerically. The divergence would
+naturally have been attributed to the arms just ported. **Build the spec
+WITHOUT the feature**: `airline_slidingspans-fixmdl-no` is
+`airline_slidingspans-td` plus the single line `fixmdl = no`, carries no fixed
+coefficients and no `fixreg=`, and fails `sfs` as well as `chs`. The owner is
+`slidingspans{fixmdl=no}` + `regression{}` -- per-span RE-estimation of the
+regARIMA model -- and it is a third, independent gap next to the two already
+in `_KNOWN_GAPS`.
+
+Those four specs are landed anyway, because every arm of `ssmdl.f:50-121`
+needs `Ssinit/=1` to be observable at all (`setssp.f:47` demotes `Itd` first
+otherwise), so `fixmdl=no` is not optional for them -- and what they DO gate
+today is the demote itself, which is the entire observable of the arms in
+question.
+
+### Scoreboard
+
+| spec | arm | what it pins |
+|---|---|---|
+| `x11reg-allfixed` | ssxmdl `Irgxfx==3` | walk skipped, `tds`/`ads` suppressed |
+| `x11reg-partfixed` | ssxmdl `Irgxfx==2` | walk runs, one free column, NOT suppressed |
+| `fixreg-td` | ssmdl `Nssfxr>0` | `fixreg=(td)` honoured at all |
+| `regallfixed` | ssmdl `Iregfx==3` | the arm the obvious spec missed |
+| `regfixed` | ssmdl `Iregfx==2` | all columns fixed -> suppressed |
+| `regpartfixed` | ssmdl `Iregfx==2` | one column free -> NOT suppressed |
+| `fixmdl-no` | none | the gap the other four sit on |
+
+Still walled: `slidingspans{x11outlier=no}` with automatic x11regression
+outliers (`ssxmdl.f:44-76`'s `rmotss`), and now `fixreg=(outlier)` -- whose
+`otlfix` outlives `setssp` and reaches `ssx11a` per span (`sspdrv.f:121`),
+where it decides whether a held-back outlier is re-added with its coefficient
+fixed. **The WALLS count did not move**: one wall removed, one added. As in
+entry 74, a gap count is not a coverage measure.

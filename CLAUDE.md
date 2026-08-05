@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (81
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (82
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -309,6 +309,14 @@ because by the time you would think to look them up, the damage is done.
   assert the set is non-empty — a saturated precondition looks like a passing
   gate, not like a zero delta. Same for mutation tests: a mutation that PASSES
   usually means the precondition is saturated, not that the code is right.
+- **A passing mutation is also a claim about WHICH ARM the spec is on.**
+  Mutation-test each ARM of a branch chain, not each routine — a spec that
+  reaches the routine is not a spec that reaches the arm. Disabling `ssmdl`'s
+  `Iregfx==3` arm changed nothing on a spec written for it and named after it:
+  every coefficient was fixed, but `getreg`'s Leap Year splice left one column
+  valueless, `regfix.f:41` never promoted `Iregfx` past 2, and the spec had
+  been entering through the `==2` door all along (entry 82). The observable was
+  correct, the comment was not, and only the mutation could tell them apart.
 - **Reachability arguments are only valid over the options the parser
   honours.** An unreachability proof was wrong once because the route it ruled
   out went through an option that was being silently discarded.
