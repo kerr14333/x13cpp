@@ -16,12 +16,13 @@ already paid for once.
 | **83** | `slidingspans{}` CLOSED bit-exact — `Setpri` is editor-only and must NOT be re-anchored per span (the leap-February `chs` gap), `arima.f:1430`'s per-span `ssprep` re-snapshot (spans CHAIN), `fixreg=` fixes nothing in the oracle because `rvfixd` never writes `Regfx2`, and `fixmdl=clear`'s `Ssinit==2` block |
 | **82** | `slidingspans{fixreg=}` (parsed and dropped, behind a wall keyed on `Nssfxx` instead of `Nssfxr`), `ssmdl.f:50-121` + `ssxmdl.f:78-136`'s Iregfx/Irgxfx arms, the `loadxr` round trip that UNDOES rvfixd's store writes — and the mutation that passed because its spec was on a different arm than its comment claimed |
 | **84** | `Xaicst` / `Xaicrg` — the two x11regression aictest values the editor parses back out of its own GROUP TITLES (`tdstock[15]`, `(change for before 1955.Jan)`), both read by `x11reg.cpp` and never written until now |
+| **85** | the sliding-spans HELD-BACK OUTLIERS (`ssmdl.f:124-280`'s group walk, `rmotss`/`adotss`) — a whole block that was neither ported nor walled, `ssprep`'s dropped `Lx11` argument, and the change-of-regime arm the ORACLE halts on (CB-39) |
 | **13, 14, 15, 24, 71, 72, 73, 76, 77** | `x11regression{}` — `tdprior`, the OLS prior TD (`xrgdrv`) on both the model and the no-model path, the Easter aictest sub-engine, the logadd tdprior bug, the `Picktd` half of gtinpt's `restor`, `prterx`'s singular-design abend, the HOLIDAY-ONLY design whose whole prior pass was skipped behind four `Axrgtd` proxies, and `reweight=` (`Lxrneg`) — whose daily-weight rewrite has to run BEFORE `x11ref`, because it writes back into `B` |
 | **19, 20, 21** | x11pt4 — the F2 test battery, the Part-F summary measures + F3 quality statistics, and the Part-E tables |
 | **25** | `x11pt2 tdlom Adjtd==0` — and why the original unreachability proof was invalid |
 | **39, 40, 41–44, 46** | D8B/D9A, the single-line savelog canaries, and the spectrum / QS / NP / Tukey diagnostic blocks |
 
-## The three traps most likely to bite here
+## The traps most likely to bite here
 
 - **A span replay overwrites the live COMMONs in place.** x11pt1→x11pt3 is a
   full pass, so `/x11srs/`, `/adxser/`, `/x11fac/`, `/x11ptr/`, `/lkhd/`,
@@ -39,6 +40,14 @@ already paid for once.
   `ctx.x11_stc_int`. **Anything new that reads `/x11srs/` after x11pt3 must
   take the snapshot, not the mirror** (entry 43 — it flipped a QS statistic
   categorically, because `calcqs` is a step function in the sign of `r(1)`).
+
+- **An outlier regressor and `slidingspans{}` are not independent.** `ssmdl.f`
+  holds back every outlier column the span INTERSECTION does not cover and each
+  span's `adotss` re-adds the ones its own window does; the store is re-tested
+  per span and stripped after each one (`sspdrv.f:208-219`), unlike `history{}`'s
+  `chkorv`, which drains it. Anything new that deletes or adds a design column
+  between spans has to re-snapshot (`ssmdl.f:358-373`), or the next `restor`
+  undoes it (entry 85).
 
 - **`Muladd` collapses 2→0 at `x11pt1.f:52`** for the whole prior-adjustment
   stage. A guard placed after the collapse tests a different value than one

@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**24 walls.**
+**25 walls.**
 
 
 ## Automatic model selection
@@ -70,15 +70,19 @@ reproduce.
 
 ## X-11
 
-- **`core/src/x11/slidingspans.cpp:479`**
+- **`core/src/x11/slidingspans.cpp:670`**
+  slidingspans{} with a change-of-regime regression variable (ssmdl.f:150-241, which the oracle itself halts on -- see CB-39) is
+  *Fortran:* `ssmdl.f:150-241`
+
+- **`core/src/x11/slidingspans.cpp:902`**
   slidingspans{x11outlier=no} with automatic x11regression outlier identification (ssxmdl.f:44-76's rmotss block) is
   *Fortran:* `ssxmdl.f:44-76`
 
-- **`core/src/x11/slidingspans.cpp:576`**
+- **`core/src/x11/slidingspans.cpp:999`**
   slidingspans{} with x11regression{user=} (ssxmdl.f:142-148's bakusr) is
   *Fortran:* `ssxmdl.f:142-148`
 
-- **`core/src/x11/slidingspans.cpp:766`**
+- **`core/src/x11/slidingspans.cpp:1189`**
   slidingspans{fixreg=(outlier)} (the per-span otlfix that reaches ssx11a, sspdrv.f:121) is
   *Fortran:* `sspdrv.f:121`
 

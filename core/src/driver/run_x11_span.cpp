@@ -27,7 +27,8 @@ namespace x13 {
 
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
-                   int lsp, int nend_mdl, bool lseats, bool set_xrg_span) {
+                   int lsp, int nend_mdl, bool lseats, bool set_xrg_span,
+                   bool ss_outliers, bool ss_otlfix) {
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
 
@@ -154,6 +155,20 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const int norig = ctx.arima.nomnfy;
     for (int i = 0; i < nlen; ++i) ctx.inpt.series(pos1ob + i) = aptr[i];
     for (int i = 0; i < norig; ++i) ctx.inpt.orig(pos1ob + i) = aptr[i];
+
+    // ssx11a.f:220-270 -- the per-span outlier window check. Placed here, after
+    // Begspn/Endspn and the Orig copy and before the regvar below, which is
+    // exactly where ssx11a has it relative to both; run_history reaches the
+    // same machinery through rmotrv/chkorv on its own schedule and passes
+    // ss_outliers=false. Cheap no-op when the store is empty and no outlier
+    // column is in the design, which is every already-gated spec.
+    if (ss_outliers && has_model) {
+        int lastsy = 0;
+        dfdate(ctx.arima.endspn.data(), begsrs, sp, lastsy);
+        lastsy += 1;
+        ssx11a_span_outliers(ctx, lastsy, ss_otlfix);
+        if (ctx.error.lfatal) return false;
+    }
 
     // x11ari.f:88-95 -- the transparent x11regression prior-TD/holiday pass, run
     // on THIS span's data. The caller demoted Ixreg 3->1/2 at the span head

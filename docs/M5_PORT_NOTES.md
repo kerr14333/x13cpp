@@ -107,6 +107,7 @@ make generated anchors fragile, so the list is deliberately link-free).
 82. `slidingspans{fixreg=}` was parsed and dropped, and the ssxmdl wall was keyed on the wrong variable
 83. `slidingspans{}` — CLOSED bit-exact, and each of the three gaps had a different owner than its note said
 84. `Xaicst` and `Xaicrg` — the two x11regression AIC-test values the oracle recovers from its own group TITLES
+85. The sliding-spans held-back outliers — a whole `ssmdl` block that was neither ported nor walled
 
 ## 0. SEATS decomposition core -- the seasonal front
 
@@ -5134,3 +5135,215 @@ The first two differ, which is the point of building a spec whose title needs
 the second shape: a spec on `'(before '` would have made the chain untestable
 and the mutation would have passed. Same family as entry 82's "a passing
 mutation is a claim about WHICH ARM the spec is on".
+
+## 85. The sliding-spans held-back outliers — a whole `ssmdl` block that was neither ported nor walled
+
+Board item 1 was "the three remaining `slidingspans{}` walls". Reading them
+turned up something worse sitting next to them: **`ssmdl.f:124-280`'s group walk
+had no C++ counterpart and no refusal either.** Every `slidingspans{}` spec that
+carried an outlier regressor — user-specified or automatically identified — ran
+to `OUTCOME: OK` with numbers the oracle does not produce. The three walls are
+inventory; this was not.
+
+The rule it belongs to is already in `CLAUDE.md` ("an unported path that returns
+SUCCESS is worse than one that has no code"), and the reason it survived is the
+usual one: **no corpus spec put an outlier and `slidingspans{}` in the same
+file.** Twelve slidingspans specs, every one of them `variables=(td)`.
+
+### Measured first, and isolated before porting
+
+`airline` + `slidingspans{save=(sfs chs)}` + `regression{variables=(...)}`,
+oracle vs engine, worst relative error per span:
+
+| spec | span 1 | span 2 | span 3 | span 4 |
+|---|---|---|---|---|
+| `td` only | 4.5e-15 | 4.1e-15 | 3.7e-15 | 4.7e-15 |
+| `ao1950.feb td` | 4.4e-15 | 4.7e-15 | 4.0e-15 | 4.0e-15 |
+| **`ao1959.nov td`** | 5.0e-15 | 5.0e-15 | **4.3e-03** | **3.6e-03** |
+
+and in `chs` the same spec read **4.6e+0 / 1.2e+1** on spans 3-4. Deleting the
+`ao=` term reproduces nothing, so the owner is the hold-back and not the
+presence of a `regression{}` group — the entry-76 discipline, applied before any
+code was written this time.
+
+The date matters because the span geometry decides the verdict. Airline
+(1949.Jan-1960.Dec) gives four spans 1951-1957, 1952-1958, 1953-1959,
+1954-1960, so `begss`=1951.Jan and the INTERSECTION is 1954.Jan-1957.Dec.
+`rmotss` is a three-way verdict over those two windows:
+
+* dated before `begss` → `dlrgef` outright, never stored. No span can estimate
+  it and none will ever ask for it back.
+* outside the intersection → title, coefficient and fix flag into the store
+  (`otlrev.cmn`), column deleted. Each span's `adotss` re-adds the ones its own
+  window covers.
+* inside the intersection → left alone.
+
+### The machinery, and where each piece goes
+
+Five call sites, and the port had none of them:
+
+| Fortran | what | ported as |
+|---|---|---|
+| `ssmdl.f:124` | clear the store | `intlst` on `ctx.otlrev` |
+| `ssmdl.f:246-278` | the group walk: `rmotss` per outlier column, both the user arm and the automatic one | inside `ssmdl_fix_model` |
+| `ssmdl.f:358-373` | `IF(regchg)` re-snapshot the design | `ss_snapshot_design` |
+| `ssx11a.f:229-270` | per span: delete what this span cannot estimate, then `adotss` re-adds what it can | `ssx11a_span_outliers`, called from `run_x11_span` |
+| `sspdrv.f:208-219` | after the span: strip the re-added columns, `ssprep` | `ssp_strip_span_outliers` |
+
+Two details that are easy to get wrong and were:
+
+**The store is not consumed.** `chkorv` (its `history{}` twin) erases each entry
+as it re-adds it, because a revision history's spans only grow. Sliding spans
+SLIDE, so `adotss` re-tests the whole store every span and `sspdrv.f:208-219`
+takes the columns back out afterwards. Draining the store the way `chkorv` does
+would give span 1 the outlier and no later span.
+
+**`ssmdl.f:345`'s `IF(.not.regchg) CALL copy(B,PB,1,Bb)`.** The `fixmdl=yes`
+tail skips its own `Bb` snapshot exactly when the walk changed the design,
+because `dlrgef` has shifted every coefficient down past the deleted column and
+the regchg store at `:370` is about to take `Bb` again from the NARROWED design.
+Snapshotting unconditionally indexes the next span's `restor` one column out.
+
+### The `Lx11` flag on `ssprep`, and the span-1-exact signature again
+
+First build of the above closed `p_late` from 4.3e-03 only to 8.8e-04, and moved
+the error onto spans **2, 3 and 4 with span 1 still bit-exact** — the exact
+shape entry 83 documented for the missing `arima.f:1430` chain, and the same
+diagnosis applies: something written at the end of span *j* is read by span
+*j+1*.
+
+`sspdrv.f:218` is `CALL ssprep(T,F,F)` — `Lmodel=T`, **`Lx11=F`**. This port's
+`ssprep_snapshot` had no `Lx11` parameter and always wrote `Lt2`/`Ktc2`/`Tc2`,
+which was harmless for its only other post-estimation caller (`arima.f:1430`,
+which sits BEFORE `x11pt2` and therefore snapshots the auto-select `Lter`
+sentinels) and wrong here: `sspdrv.f:218` runs AFTER `x11pt2` has RESOLVED them,
+so span 2 started from a seasonal-filter length chosen for span 1. Adding the
+flag and passing `false` took every probe to ~5e-15.
+
+**The general form is a new one and it is nastier than "add the argument".** The
+port had been getting `arima.f:1430` right by ACCIDENT of placement, not by
+honouring `Lx11=F`; the parameter was omissible for exactly as long as there was
+one caller. That is the same shape as entry 71's `Ksdev` restore — a
+compensation that is correct at one call site and a defect at the next, with
+identical code.
+
+### The change-of-regime arm is walled, and the oracle halts there — CB-39
+
+The other half of the same group walk (`ssmdl.f:150-241`) is NOT ported. It is
+walled, and the wall is honest rather than conservative, because **the oracle
+does not survive that path either**: `ssmdl.f:159` searches the group title for
+`'(change from before '` and *no title producer in the tree writes it* —
+`addlom.f:63`, `addtd.f:88`, `adrgim.f:72/178` all write `'(change for before '`,
+and `regvar.f:334` / `savmdl.f:346` / `editor.f:1816` all SEARCH for `for`. Only
+`ssmdl.f:159` and `rdregm.f:25` spell `from`. Both searches miss, the
+fall-through hands `ctodat` position 20 of the title, the date parse fails, and
+the run prints its NOTE and halts.
+
+Measured: airline + `slidingspans{}` + `regression{variables=(td/1955.jan/)}`
+→ oracle console `Program error(s) halt execution`, no `.sfs`, no `.chs`; this
+port wrote 336 sfs cells and 332 chs cells at `OUTCOME: OK`. Full write-up in
+`tools/census_bugs.md` CB-39.
+
+**That spec could not be gated by any test in this file.** `_discover()` in
+`test_slidingspans_tables.py` requires an `sfs` AND a `chs` golden, so a spec the
+oracle halts on contributes zero cases and reports green by absence — the same
+family as entry 79's `skip("spec does not produce this tag")`, one level up: not
+an absent TABLE but an absent SPEC. The new gate derives its case list from the
+blessed `.stdout.txt` ("Program error(s) halt execution"), asserts the engine
+FATALs, and asserts it produced no span table. It has its own floor assertion,
+because a derived list that shrinks to nothing is green.
+
+**And the assertion it makes was, at first, one that could not fail.**
+`x13run_x11` printed the `.err` buffer and `return 1`-ed on a FATAL without
+dumping anything else, so "the engine produced no span table" was true of a spec
+that produced nothing at all, for any reason. Fixed here rather than worked
+around: on a fatal the harness now dumps everything it computed first, guarded
+on the X-11 pointers actually being set so an EARLY fatal (a parse refusal)
+still prints nothing rather than an uninitialised buffer. Third time this
+lesson has been paid for in this subsystem — entry 81 was the Mt2 channel on a
+SUCCESSFUL run, this is the table channel on a FAILED one.
+
+**A halting spec belongs in `tests/corpus/edge/`, not `extra/`.** Blessed into
+`extra/` it was discovered by a dozen table and diagnostic gates across the
+suite — `d10`-`d16`, F2/F3, QS, spectrum, the bindings — every one of which
+asserts the harness exited 0, which for this spec it cannot and should not.
+That is 14 failures with nothing wrong underneath, and the fix is filing, not
+tolerance: `edge/` is where the specs whose SUBJECT is a refusal already live,
+and no table gate scans it. Note what the 14 failures also proved on the way
+past: the oracle halts LATER than this port refuses — it finishes the whole
+X-11 spine and writes D10-D16 and its `.udg` before dying in the sliding-spans
+setup — so the wall is a real gap and not a faithful refusal, which is how
+`walls.py` records it.
+
+### Specs
+
+* `extra/airline_slidingspans-outlier-heldback` — `ao1950.feb` (rmotss branch 1,
+  deleted outright) **and** `ao1959.nov` (branch 2, held back and re-added in
+  spans 3-4). The first is observationally inert on its own — `Ssinit==1` fixes
+  the coefficient and the column is all zeros inside every span window — and is
+  in the spec to keep the branch executed, which the header says so nobody
+  "simplifies" it away.
+* `extra/airline_slidingspans-outlier-auto` — the automatic arm
+  (`ssmdl.f:259-278`: the `PRGTAA→PRGTAO` / `PRGTAL→PRGTLS` / `PRGTAT→PRGTTC`
+  re-type, and the unconditional `regchg`). `critical = 2.5` is deliberate: at
+  the default the run finds ONE outlier and it lands where every verdict is
+  inert, while at 2.5 the nine finds split across all three verdicts including a
+  late `AO1960.Mar` that only span 4 can take.
+* `extra/airline_slidingspans-outlier-fixmdlno` — `fixmdl = no` with the same
+  held-back `ao1959.nov`, so the spans RE-ESTIMATE and `adotss`'s fix flag is
+  false. Added after the mutation battery, because without it "force the flag
+  true" was a mutation no spec could fail.
+* `edge/airline_slidingspans-regime-td` — the CB-39 halt. In `edge/` on
+  purpose; see above.
+
+### Mutations
+
+| gates | mutation |
+|---|---|
+| **17** | drop the `regchg` design re-snapshot (`ssmdl.f:358-373`) |
+| **5** | drop the whole group walk (no hold-back at all) |
+| **4** | hold back but never re-add (drop `adotss`) |
+| **4** | pass `lx11=true` at `sspdrv.f:218` — the first build's bug |
+| **3** | drop only the AUTOMATIC arm (`ssmdl.f:259-278`) |
+| **1** | drop the change-of-regime wall (the whole arm, refusal included) |
+| **0** | drop the per-span delete of out-of-window columns (`ssx11a.f:229-263`) |
+| **0** | drop the post-span strip (`sspdrv.f:208-219`) |
+| **0** | drop BOTH of the above together |
+| **0** | snapshot `Bb` unconditionally (drop `IF(.not.regchg)`) |
+| **0** | force `adotss`'s fix flag TRUE |
+| **0** | force `adotss`'s fix flag FALSE |
+
+**The re-snapshot is the biggest single line in the increment** (17): without it
+the first `restor` reinstates every held-back column and the whole walk is a
+no-op, so it fails more gates than deleting the walk it protects.
+
+**The first run of this battery reported every number ~14 too high**, because
+the halting spec was still blessed into `extra/` at the time and was failing 14
+gates in the baseline. Both runs agree once that is subtracted, and the
+discrepancy is itself the lesson: **a mutation count is a DELTA and the harness
+never measured the baseline.** It does now, by running against a green suite.
+
+**Five zeros, reported and not acted on.** Each was chased far enough to name
+the saturation rather than shrug at it:
+
+* the per-span delete and the post-span strip are complementary — the strip
+  removes what `adotss` added, the delete removes what this span's window does
+  not cover — so with either live the other has nothing to do. Removing BOTH is
+  still 0, because `restor_span` reinstates the held-back design at the top of
+  every span anyway, and a column left over from a previous span is dated
+  outside this one, i.e. all zeros. Under `fixmdl=yes` its coefficient is fixed
+  and contributes exactly nothing; under `fixmdl=no` it is estimated against a
+  zero column. Kept, for the reason entry 83 kept `Chx2`/`Chg2`/`Acm2`: an
+  incomplete stand-in for `restor` has produced three separate defects in this
+  port and each was invisible until a later phase in a different file read one
+  of the omitted fields.
+* `Bb` unconditional is 0 because nothing between `ssmdl.f:345` and `:370`
+  writes `B`, so the two snapshots take the same array from the same source.
+  It would stop being 0 the moment something did.
+* the fix flag is 0 in BOTH directions, and that is measured on a spec built
+  specifically to sit on the other arm — `extra/airline_slidingspans-outlier-
+  fixmdlno`, whose `fixmdl = no` makes `Otlfix.or.Ssinit.eq.1` false where every
+  other spec makes it true. So this is not entry 82's "the spec was on a
+  different arm than its comment claimed": the arms are covered and the corpus
+  still cannot separate them at 1e-6. Transcribed from the Fortran, and the
+  zero left standing.

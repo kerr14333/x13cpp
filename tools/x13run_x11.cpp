@@ -278,8 +278,25 @@ int main(int argc, char** argv) {
     if (!ok) {
         // Surface the .err channel so a FATAL names its blocking stub.
         std::fputs(ctx.channels_.unit(ctx.units.mt2).str().c_str(), stderr);
-        return 1;
     }
+    // A FATAL raised by a LATE refusal still has a complete main run behind it,
+    // and throwing it away makes that run ungateable. `slidingspans{}` with a
+    // change-of-regime regressor is the worked case: the oracle finishes the
+    // whole X-11 spine, writes D10-D16 and its .udg, and only then halts inside
+    // the sliding-spans setup (CB-39); this port walls the same arm, so the
+    // blessed golden holds tables the engine computed and used to discard. Same
+    // lesson as the Mt2 channel below -- a channel nobody can read is a channel
+    // nobody gates (docs/M5_PORT_NOTES.md entries 81, 85).
+    //
+    // Guarded on the X-11 pointers actually being set, so an EARLY fatal (a
+    // parse refusal, a bad series) still prints nothing rather than dumping an
+    // uninitialised buffer: those specs have no tables to compare anyway, and a
+    // gate that reads garbage is worse than one that skips.
+    const bool reached_x11 =
+        ctx.model.sp > 0 && ctx.x11ptr.pos1ob > 0 &&
+        ctx.x11ptr.posfob >= ctx.x11ptr.pos1ob;
+    if (!ok && !reached_x11) return 1;
+    const int exit_code = ok ? 0 : 1;
 
     // The Mt2 channel on a SUCCESSFUL run, in x13run_m2's marker format. The
     // oracle writes it to <base>.err, and it is where every non-fatal NOTE and
@@ -669,5 +686,5 @@ int main(int argc, char** argv) {
             }
         }
     }
-    return 0;
+    return exit_code;
 }

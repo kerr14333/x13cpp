@@ -3,6 +3,7 @@
 
 #include "common/x13context.hpp"
 #include "driver/run_x11_span.hpp"
+#include "regarima/outlier.hpp"      // rdotlr (rmotss/adotss)
 #include "regarima/rvfixd.hpp"       // rvfixd (fixreg= group walk)
 #include "specparse/specparse.hpp"   // dfdate, addate, copy, copylg
 #include "numeric/numeric.hpp"       // dpeq
@@ -64,6 +65,229 @@ bool ss_is_calendar_group(int rtype, bool with_user_hol) {
         with_user_hol &&
         ((rtype >= PRGTUH && rtype <= PRGUH5) || rtype == PRGTUS);
     return istd || islom || isusrtd || ishol || isusrhol;
+}
+
+// adotss.f's `otypvc`: the Rgvrtp type an outlier of each rdotlr type is re-added
+// as. Indexed 1..9 by otltyp (AO LS TC RP MV TLS SO QI QD). Index 5 (MV) maps to
+// PRGTAO, verbatim -- same DATA statement as chkorv.f's (driver/rev_outlier.cpp).
+int ss_otypvc(int otltyp) {
+    using namespace prm;
+    switch (otltyp) {
+    case 1: return PRGTAO;   // AO
+    case 2: return PRGTLS;   // LS
+    case 3: return PRGTTC;   // TC
+    case 4: return PRGTRP;   // RP
+    case 5: return PRGTAO;   // MV  (as written)
+    case 6: return PRGTTL;   // TLS
+    case 7: return PRGTSO;   // SO
+    case 8: return PRGTQI;   // QI
+    case 9: return PRGTQD;   // QD
+    default: return 0;
+    }
+}
+
+// adotss.f's `opref`: which outlier type WINS when several land on the last
+// observation of a span. DATA opref/1,4,2,0,0,0,3/, indexed 1..7 by otltyp;
+// HIGHER wins and the loser's column is deleted.
+int ss_opref(int otltyp) {
+    static const int pref[8] = {0, 1, 4, 2, 0, 0, 0, 3};
+    return (otltyp >= 1 && otltyp <= 7) ? pref[otltyp] : 0;
+}
+
+// The design-dictionary half of ssprep.f, re-taken after a structural change so
+// the NEXT span's restor keeps it. ssmdl.f:358-373's `IF(regchg)` block and
+// sspdrv.f:218's `CALL ssprep(T,F,F)` are the two callers; both follow a
+// dlrgef/adrgef that moved columns, and without the re-snapshot the very next
+// restor_span would reinstate the main run's Nb/Colttl and undo it.
+//
+// ssmdl's version writes Bb/Irfx2/Regfx2 as well (:370-372); sspdrv.f:218 goes
+// through the full ssprep, which writes those too. So unlike rev_outlier.cpp's
+// pair -- where chkorv.f:189-202 pointedly omits the fix flags -- both callers
+// here want the same set, and it is written in one place.
+void ss_snapshot_design(X13Context& ctx) {
+    ssprep_cmn& p = ctx.ssprep;
+    const model_cmn& m = ctx.model;
+    p.ngr2 = m.ngrp;
+    p.ngrt2 = m.ngrptl;
+    p.ncxy2 = m.ncxy;
+    p.nbb = m.nb;
+    p.nct2 = m.ncoltl;
+    p.cttl = m.colttl.raw();
+    p.gttl = m.grpttl.raw();
+    cpyint(m.colptr.data(), prm::PB + 1, 1, p.clptr.data());
+    cpyint(m.grp.data(), prm::PGRP + 1, 1, p.g2.data());
+    cpyint(m.grpptr.data(), prm::PGRP + 1, 1, p.gptr.data());
+    cpyint(m.rgvrtp.data(), prm::PB, 1, p.rgv2.data());
+    copy(ctx.mdldat.b.data(), prm::PB, 1, p.bb.data());
+    p.irfx2 = m.iregfx;
+    copylg(m.regfx.data(), prm::PB, 1, p.regfx2.data());
+}
+
+// rmotss.f -- decide what happens to ONE outlier column of the design before the
+// sliding-spans loop, and it is a three-way verdict, not a two-way one:
+//
+//   * dated before the FIRST span starts   -> deleted outright, NOT stored. No
+//     span can estimate it and no span will ever want it back.
+//   * undefined in one or more spans       -> its title, coefficient and fix
+//     flag go into the store (ctx.otlrev) and the column is deleted; each span's
+//     adotss re-adds the ones its own window covers.
+//   * defined in every span                -> left exactly where it is.
+//
+// The middle test is per outlier TYPE and the endpoint strictness differs by
+// type (AO/TC use `<`/`>` against starta/enda, LS/SO use `<=`/`>=`, RP wants
+// BOTH endpoints strictly inside) -- transcribed one clause per line.
+//
+// `revchg` is the caller's regchg: set whenever the design changed, so the
+// caller re-snapshots.
+void rmotss(X13Context& ctx, int icol, const int* begxy, int nrxy,
+            const int* strtss, const int* starta, const int* enda, bool otlfix,
+            bool& revchg) {
+    using namespace prm;
+    model_cmn& m = ctx.model;
+    otlrev_cmn& st = ctx.otlrev;
+    const int sp = m.sp;
+    const int nreg = st.notrtl + 1;
+
+    std::string str;
+    int nchr = 0;
+    getstr(ctx, m.colttl.data(), m.colptr.data(), m.ncoltl, icol, str, nchr);
+    if (ctx.error.lfatal) return;
+    int otltyp = 0, begotl = 0, endotl = 0;
+    bool locok = true;
+    rdotlr(ctx, str, begxy, sp, otltyp, begotl, endotl, locok);
+    if (!locok) { abend(ctx); return; }
+
+    // rmotss.f:34-40 -- before the first span, so gone for good.
+    int sspos = 0;
+    dfdate(strtss, begxy, sp, sspos);
+    sspos += 1;
+    if (begotl < sspos) {
+        revchg = true;
+        dlrgef(ctx, icol, nrxy, 1);
+        return;
+    }
+
+    // rmotss.f:46-65 -- starta is the LAST span's start, enda the FIRST span's
+    // end, so [starta,enda] is the intersection of every span. An outlier
+    // outside it is undefined for at least one span.
+    int sspos1 = 0, sspos2 = 0;
+    dfdate(starta, begxy, sp, sspos1);
+    sspos1 += 1;
+    dfdate(enda, begxy, sp, sspos2);
+    sspos2 += 1;
+    const bool undef =
+        (otltyp == AO && (begotl < sspos1 || begotl > sspos2)) ||
+        (otltyp == LS && (begotl <= sspos1 || begotl >= sspos2)) ||
+        (otltyp == SO && (begotl <= sspos1 || begotl >= sspos2)) ||
+        (otltyp == TC && (begotl < sspos1 || begotl > sspos2)) ||
+        (otltyp == RP && !(begotl > sspos1 && begotl < sspos2));
+    if (!undef) return;
+    revchg = true;
+    insstr(ctx, str.substr(0, static_cast<std::size_t>(nchr)), nreg, PB,
+           st.otrttl.data(), static_cast<int>(st.otrttl.size()),
+           st.otrptr.data(), st.notrtl);
+    if (ctx.error.lfatal) return;
+    st.botr(st.notrtl) = ctx.mdldat.b(icol);
+    st.fixotr(st.notrtl) = m.regfx(icol) || otlfix;
+    dlrgef(ctx, icol, nrxy, 1);
+}
+
+// adotss.f -- the per-span counterpart: re-introduce every stored outlier this
+// span's window [Frstsy,Lastsy] can estimate. Unlike chkorv (its history{}
+// twin) it does NOT consume the store -- the same entries are re-tested for
+// every span, and sspdrv.f:208-219 takes the added columns back out afterwards.
+//
+// `otlfix` is the caller's `Otlfix.or.Ssinit.eq.1` / `Otlfix.or.Ssxint`: an
+// outlier re-added into a span whose whole model is held fixed comes back
+// FIXED, at the coefficient the main run estimated for it.
+void adotss(X13Context& ctx, int lastsy, bool otlfix, int nrxy) {
+    using namespace prm;
+    model_cmn& m = ctx.model;
+    otlrev_cmn& st = ctx.otlrev;
+    const int sp = m.sp;
+    const int frstsy = ctx.arima.frstsy;
+    const int endcol = st.notrtl;
+    int nlast = 0;
+    bool lastls = false;
+
+    for (int icol = 1; icol <= endcol; ++icol) {
+        std::string str;
+        int nch = 0;
+        getstr(ctx, st.otrttl.data(), st.otrptr.data(), st.notrtl, icol, str,
+               nch);
+        if (ctx.error.lfatal) return;
+        // adotss.f:35-36 -- skip an entry that is ALREADY a group in the design.
+        // (strinx over Grpttl, not Colttl: a one-column outlier group's title
+        // and its column title are the same string.)
+        if (strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrptl, str) != 0)
+            continue;
+        int otltyp = 0, begotl = 0, endotl = 0;
+        bool locok = true;
+        rdotlr(ctx, str, ctx.arima.begsrs.data(), sp, otltyp, begotl, endotl,
+               locok);
+        // adotss.f:41-49 -- note the bounds are against the SERIES-relative
+        // Frstsy/Lastsy (rdotlr was handed Begsrs above), not the design's
+        // Begxy, and the strictness differs by type exactly as in rmotss.
+        const bool defined =
+            ((otltyp == RP || otltyp == TLS || otltyp == QI || otltyp == QD) &&
+             begotl >= frstsy && endotl <= lastsy) ||
+            ((otltyp == SO || otltyp == LS) && begotl > frstsy &&
+             begotl <= lastsy) ||
+            ((otltyp == AO || otltyp == TC) && begotl >= frstsy &&
+             begotl <= lastsy);
+        if (!defined) continue;
+        const bool fx = st.fixotr(icol) || otlfix;
+        adrgef(ctx, st.botr(icol), str, str, ss_otypvc(otltyp), fx, false);
+        if (ctx.error.lfatal) return;
+        if (m.iregfx == 3 && !fx) m.iregfx = 2;
+        // adotss.f:53-54, transcribed as written -- the same CB-23 shape as
+        // chkorv.f:54-58. Census meant `.not.(RP.or.TLS.or.QI.or.QD)`, but
+        // `.and.` binds tighter than `.or.`, so
+        //   (t/=RP .and. t/=TLS) .or. t/=QI .or. t/=QD
+        // is TRUE for every type and the guard collapses to `begotl==Lastsy`.
+        // Reproduced; writing the intended test would be improving the Fortran.
+        if (begotl == lastsy) {
+            nlast += 1;
+            if (!lastls) lastls = (otltyp == LS);
+        }
+    }
+    (void)lastls;   // adotss.f computes it and never reads it
+    if (nlast <= 1) return;
+
+    // adotss.f:66-101 -- more than one outlier on the final observation is a
+    // singular design, so keep the highest-ranked and delete the rest. Walk the
+    // DESIGN backwards; `opref` decides which of a pair survives.
+    int ltype = 0, ilast = 0, lcol = 0;
+    for (int icol = m.nb; icol >= 1; --icol) {
+        const int rtype = m.rgvrtp(icol);
+        if (!(rtype == PRGTAO || rtype == PRGTAA || rtype == PRGTLS ||
+              rtype == PRGTAL || rtype == PRGTTC || rtype == PRGTAT ||
+              rtype == PRGTSO))
+            continue;
+        std::string str;
+        int nch = 0;
+        getstr(ctx, m.colttl.data(), m.colptr.data(), m.nb, icol, str, nch);
+        if (ctx.error.lfatal) return;
+        int otltyp = 0, begotl = 0, endotl = 0;
+        bool locok = true;
+        rdotlr(ctx, str, ctx.arima.begsrs.data(), sp, otltyp, begotl, endotl,
+               locok);
+        if (ctx.error.lfatal) return;
+        if (begotl != lastsy) continue;   // same collapsed guard as above
+        ilast += 1;
+        if (ilast == 1) {
+            ltype = otltyp;
+            lcol = icol;
+        } else if (ss_opref(ltype) < ss_opref(otltyp)) {
+            dlrgef(ctx, icol, nrxy, 1);            // this one loses
+            if (ctx.error.lfatal) return;
+        } else {
+            dlrgef(ctx, lcol, nrxy, 1);            // the incumbent loses
+            if (ctx.error.lfatal) return;
+            ltype = otltyp;
+            lcol = icol;
+        }
+    }
 }
 }  // namespace
 
@@ -130,13 +354,22 @@ int mdssln(X13Context& ctx, int sp) {
 constexpr int PACM = (prm::PLEN + 2 * prm::PORDER) * prm::PARIMA;
 
 // ssprep.f, scoped to Lx11=true always and Lx11rg=false (see hpp).
-void ssprep_snapshot(X13Context& ctx, bool capture_saved) {
+void ssprep_snapshot(X13Context& ctx, bool capture_saved, bool lx11) {
     ssprep_cmn& p = ctx.ssprep;
     const x11opt_cmn& opt = ctx.x11opt;
 
-    for (int i = 1; i <= 12; ++i) p.lt2(i) = opt.lter(i);
-    p.ktc2 = opt.ktcopt;
-    p.tc2 = opt.tic;
+    // ssprep.f:36-42's `IF(Lx11)`. Every caller in this port passes Lx11=true
+    // except sspdrv.f:218's, and there the distinction is load-bearing rather
+    // than cosmetic: that call fires AFTER the span's x11pt2 has RESOLVED the
+    // auto-select Lter sentinels, so snapshotting them would hand the next
+    // span's restor a filter length already chosen for its predecessor. (The
+    // other post-estimation call, arima.f:1430's, is safe only because it sits
+    // before x11pt2 -- which is an accident of placement, not of the flag.)
+    if (lx11) {
+        for (int i = 1; i <= 12; ++i) p.lt2(i) = opt.lter(i);
+        p.ktc2 = opt.ktcopt;
+        p.tc2 = opt.tic;
+    }
     if (capture_saved) {
     // Runs before the main run's x11int/x11pt2 (run_x11.cpp), so xtrm.ksdev is
     // still the parsed spec/default value -- stash it for each span's fresh
@@ -275,7 +508,7 @@ void restor_span(X13Context& ctx) {
 // ssmdl.f: the Ssinit==1 "fix all model parameters" tail, both halves (ARMA and
 // regression). The earlier Nb==0 scoping was only ever true because no
 // span-replay spec carried a regression{} group.
-void ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
+bool ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
                      bool usrfix) {
     sspinp_cmn& si = ctx.sspinp;
     ssap_cmn& sa = ctx.ssap;
@@ -385,11 +618,98 @@ void ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
         si.nssfxr = 0;
     }
 
+    // ssmdl.f:124-130.
+    intlst(prm::PB, ctx.otlrev.otrptr.data(), ctx.otlrev.notrtl);
     if (si.ssotl <= 1) {
         ctx.arima.ltstao = false;
         ctx.arima.ltstls = false;
         ctx.arima.ltsttc = false;
     }
+
+    // ssmdl.f:134-280 -- the group walk that decides which regressors can
+    // survive into a span. `starta` is the LAST span's start and `enda` the
+    // FIRST span's end, so [starta,enda] is the intersection of all Ncol spans;
+    // a regressor undefined anywhere in it cannot be estimated by every span.
+    //
+    // MEASURED before porting (docs/M5_PORT_NOTES.md entry 85): on airline +
+    // slidingspans{} + regression{variables=(ao1959.nov td)} the oracle holds
+    // the AO back and re-adds it per span, this port did neither, and the
+    // divergence was 4.3e-03 in sfs / 1.2e+01 in chs on spans 3-4 at
+    // `OUTCOME: OK`. Deleting the ao= line reproduces neither (bit-exact), and
+    // an AO inside the intersection (ao1950.feb) is bit-exact too -- so the
+    // owner is the hold-back, not the presence of a regression{} group.
+    bool regchg = false;
+    {
+        int begss[2] = {sa.iyr, sa.im};
+        int starta[2] = {0, 0}, enda[2] = {0, 0};
+        addate(begss, m.sp, (si.ncol - 1) * m.sp, starta);
+        addate(ctx.arima.endspn.data(), m.sp, (1 - si.ncol) * m.sp, enda);
+        for (int igrp = m.ngrp; igrp >= 1; --igrp) {
+            const int begcol = m.grp(igrp - 1);
+            const int endcol = m.grp(igrp) - 1;
+            const int rtype = m.rgvrtp(begcol);
+            using namespace prm;
+            // ssmdl.f:150-241 -- the CHANGE-OF-REGIME arm, walled rather than
+            // ported. The oracle does not survive it either: its date search at
+            // :159 spells `'(change from before '` while EVERY title producer in
+            // the tree (addlom.f:63, addtd.f:88, adrgim.f:72/178) writes
+            // `'(change for before '`, so the second search can never match, the
+            // fall-through hands `ctodat` position 20 of the title, the date
+            // parse fails and the run halts with "Program error(s) halt
+            // execution". Measured on airline + slidingspans{} +
+            // regression{variables=(td/1955.jan/)}: oracle writes no sfs/chs at
+            // all, this port wrote both in full. See CB-39. Refusing here is the
+            // honest floor: it is not the oracle's message, but it is a refusal
+            // where the oracle refuses, instead of numbers where it has none.
+            if (rtype == PRRTST || rtype == PRRTTD || rtype == PRRTSE ||
+                rtype == PRRTTS || rtype == PRRTLM || rtype == PRRTLQ ||
+                rtype == PRRTLY || rtype == PRRTSL || rtype == PRR1TD ||
+                rtype == PRR1ST || rtype == PRATTD || rtype == PRATST ||
+                rtype == PRATSE || rtype == PRATTS || rtype == PRATLM ||
+                rtype == PRATLQ || rtype == PRATLY || rtype == PRATSL) {
+                ssp_not_ported(ctx,
+                               "slidingspans{} with a change-of-regime "
+                               "regression variable (ssmdl.f:150-241, which the "
+                               "oracle itself halts on -- see CB-39) is");
+                return false;
+            }
+            // ssmdl.f:246-253 -- user-specified outliers.
+            if (rtype == PRGTAO || rtype == PRGTLS || rtype == PRGTRP ||
+                rtype == PRGTTC || rtype == PRGTQD || rtype == PRGTQI ||
+                rtype == PRGTSO || rtype == PRGTTL) {
+                for (int icol = endcol; icol >= begcol; --icol) {
+                    rmotss(ctx, icol, ctx.arima.begxy.data(), ctx.arima.nrxy,
+                           begss, starta, enda, otlfix || si.ssinit == 1,
+                           regchg);
+                    if (ctx.error.lfatal) return false;
+                }
+            } else if (rtype == PRGTAA || rtype == PRGTAL ||
+                       rtype == PRGTAT) {
+                // ssmdl.f:259-278 -- AUTOMATICALLY identified outliers. With
+                // Ssotl==1 (`slidingspans{outlier=remove}`, the default) each is
+                // re-typed to its ordinary equivalent and then handed to rmotss
+                // like a user's own; otherwise the column is simply deleted, so
+                // no span carries it. Note `regchg` is set unconditionally by
+                // this loop -- the re-type alone is a change.
+                for (int icol = endcol; icol >= begcol; --icol) {
+                    if (si.ssotl == 1) {
+                        if (m.rgvrtp(icol) == PRGTAA) m.rgvrtp(icol) = PRGTAO;
+                        if (m.rgvrtp(icol) == PRGTAL) m.rgvrtp(icol) = PRGTLS;
+                        if (m.rgvrtp(icol) == PRGTAT) m.rgvrtp(icol) = PRGTTC;
+                        rmotss(ctx, icol, ctx.arima.begxy.data(),
+                               ctx.arima.nrxy, begss, starta, enda,
+                               otlfix || si.ssinit == 1, regchg);
+                        if (ctx.error.lfatal) return false;
+                    } else {
+                        dlrgef(ctx, icol, ctx.arima.nrxy, 1);
+                        if (ctx.error.lfatal) return false;
+                    }
+                    regchg = true;
+                }
+            }
+        }
+    }
+
     if (si.ssinit == 1) {
         // ssmdl.f:343-344 `CALL copy(Arimap,PARIMA,1,Ap2); CALL setlg(T,PARIMA,
         // Fxa)` -- Ap2/Fxa here are ssprep.cmn's SNAPSHOT fields, not the live
@@ -404,11 +724,13 @@ void ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
             ctx.ssprep.fxa(i) = true;
             ctx.model.arimaf(i) = true;
         }
-        // ssmdl.f:345-350 -- the REGRESSION half of the same fix. `regchg` (the
-        // outlier-regressor-changed path) is not reachable here, so the B
-        // snapshot is unconditional. Snapshot AND live copy, for the same reason
-        // as Arimap/Arimaf above.
-        copy(ctx.mdldat.b.data(), prm::PB, 1, ctx.ssprep.bb.data());
+        // ssmdl.f:345-350 -- the REGRESSION half of the same fix. `IF(.not.
+        // regchg) CALL copy(B,PB,1,Bb)`: when the group walk above CHANGED the
+        // design (an outlier held back), Bb is left alone here and rewritten by
+        // the regchg store below instead -- the same array, but taken after
+        // dlrgef has shifted every coefficient down past the deleted column.
+        // Snapshot AND live copy, for the same reason as Arimap/Arimaf above.
+        if (!regchg) copy(ctx.mdldat.b.data(), prm::PB, 1, ctx.ssprep.bb.data());
         for (int i = 1; i <= prm::PB; ++i) ctx.ssprep.regfx2(i) = true;
         if (ctx.model.iregfx < 3) ctx.model.iregfx = 3;
         for (int i = 1; i <= ctx.model.nb; ++i) ctx.model.regfx(i) = true;
@@ -417,6 +739,107 @@ void ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
         // scope excludes.)
         if (!ctx.model.userfx) ctx.model.userfx = ctx.usrreg.ncusrx > 0;
     }
+
+    // ssmdl.f:358-373 -- make the structural change survive. Every span begins
+    // with restor_span(), which reinstates Nb/Colttl/Grp/B/Regfx FROM this
+    // snapshot; without the re-take the first span would put every held-back
+    // outlier column straight back and the hold-back would be a no-op. Note it
+    // runs AFTER the Ssinit==1 block, so on the fixmdl=yes path it overwrites
+    // the all-true Regfx2/Irfx2=3 that block just wrote with the LIVE flags --
+    // which by then are also all-true for columns 1..Nb (:348), but Iregfx is
+    // whatever :347 left, not literal 3. Transcribed in the Fortran's order.
+    if (regchg) ss_snapshot_design(ctx);
+    return true;
+}
+
+// ssx11a.f:220-270, scoped per the hpp header.
+void ssx11a_span_outliers(X13Context& ctx, int lastsy, bool otlfix) {
+    using namespace prm;
+    model_cmn& m = ctx.model;
+    const int sp = m.sp;
+    const int nrxy = ctx.arima.nrxy;
+
+    // ssx11a.f:222-228 -- Begtst/Endtst follow the span when a per-span outlier
+    // re-identification is live. `Ltstso` is commented out in the Fortran's own
+    // `lidotl`; kept that way.
+    const bool lidotl =
+        ctx.arima.ltstao || ctx.arima.ltstls || ctx.arima.ltsttc;
+    if (lidotl) {
+        cpyint(ctx.mdldat.begspn.data(), 2, 1, ctx.arima.begtst.data());
+        cpyint(ctx.arima.endspn.data(), 2, 1, ctx.arima.endtst.data());
+    }
+
+    // ssx11a.f:229-263 -- strike every outlier column this span cannot
+    // estimate. Backwards over the groups so a delete cannot disturb the
+    // columns still to check. RP/TLS are tested on BOTH endpoints and with the
+    // inequalities reversed relative to the point types -- transcribed as
+    // written (`begotl.ge.obeg .or. endotl.le.oend`, which is not the negation
+    // of the other arm and is what the Fortran says).
+    if (m.ngrp > 0) {
+        int obeg = 0, oend = 0;
+        dfdate(ctx.mdldat.begspn.data(), ctx.arima.begxy.data(), sp, obeg);
+        obeg += 1;
+        dfdate(ctx.arima.endspn.data(), ctx.arima.begxy.data(), sp, oend);
+        oend += 1;
+        for (int igrp = m.ngrp; igrp >= 1; --igrp) {
+            const int begcol = m.grp(igrp - 1);
+            const int endcol = m.grp(igrp) - 1;
+            const int rtype = m.rgvrtp(begcol);
+            if (!(rtype == PRGTAA || rtype == PRGTAO || rtype == PRGTAL ||
+                  rtype == PRGTLS || rtype == PRGTAT || rtype == PRGTTC ||
+                  rtype == PRGTQD || rtype == PRGTQI || rtype == PRGTSO ||
+                  rtype == PRGTRP || rtype == PRGTTL))
+                continue;
+            for (int icol = endcol; icol >= begcol; --icol) {
+                std::string str;
+                int nchr = 0;
+                getstr(ctx, m.colttl.data(), m.colptr.data(), m.ncoltl, icol,
+                       str, nchr);
+                if (ctx.error.lfatal) return;
+                int otltyp = 0, begotl = 0, endotl = 0;
+                bool locok = true;
+                rdotlr(ctx, str, ctx.arima.begxy.data(), sp, otltyp, begotl,
+                       endotl, locok);
+                if (!locok) { abend(ctx); return; }
+                const bool span_type = (otltyp == RP || otltyp == TLS);
+                const bool gone =
+                    (span_type && (begotl >= obeg || endotl <= oend)) ||
+                    (!span_type && (begotl < obeg || begotl > oend));
+                if (!gone) continue;
+                dlrgef(ctx, icol, nrxy, 1);
+                if (ctx.error.lfatal) return;
+            }
+        }
+    }
+    // ssx11a.f:268-269.
+    adotss(ctx, lastsy, otlfix, nrxy);
+}
+
+// sspdrv.f:208-219, scoped per the hpp header.
+void ssp_strip_span_outliers(X13Context& ctx) {
+    model_cmn& m = ctx.model;
+    otlrev_cmn& st = ctx.otlrev;
+    if (st.notrtl <= 0) return;
+    for (int i = 1; i <= st.notrtl; ++i) {
+        std::string str;
+        int nchr = 0;
+        getstr(ctx, st.otrttl.data(), st.otrptr.data(), st.notrtl, i, str, nchr);
+        if (ctx.error.lfatal) return;
+        const int otl =
+            strinx(true, m.colttl.raw(), m.colptr.data(), 1, m.nb, str);
+        if (otl > 0) {
+            dlrgef(ctx, otl, ctx.arima.nrxy, 1);
+            if (ctx.error.lfatal) return;
+        }
+    }
+    // sspdrv.f:218's `CALL ssprep(T,F,F)` is the FULL snapshot, not the design
+    // half -- and it has to be, because dlrgef above shifted B and Regfx down
+    // past each deleted column: a design-only re-take would leave Bb indexed
+    // for the WIDER design and every following span would restore coefficients
+    // one column out. Same routine arima.f:1430 calls (entry 83), same
+    // capture_saved=false for the same reason, and lx11=false because
+    // sspdrv.f:218 passes `ssprep(T,F,F)` -- see the note on that parameter.
+    ssprep_snapshot(ctx, /*capture_saved=*/false, /*lx11=*/false);
 }
 
 // ssxmdl.f -- the x11regression half of ssmdl, called from setssp.f:353 under
@@ -769,7 +1192,8 @@ bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
         return false;
     }
 
-    if (lmodel) ssmdl_fix_model(ctx, tdfix, holfix, otlfix, usrfix);
+    if (lmodel && !ssmdl_fix_model(ctx, tdfix, holfix, otlfix, usrfix))
+        return false;
     // setssp.f:353-356 -- `IF(Nbx.gt.0) CALL ssxmdl(...)`.
     if (ctx.xrgmdl.nbx > 0 &&
         !ssxmdl_span(ctx, tdfix, holfix, otlfix, usrfix))
@@ -987,10 +1411,21 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
         // gate bit-exact. The MODEL-FREE case (sfs 2.0e+2) is a separate and
         // still-open thing; it has no x11regression in it.
         const int lsp = l0 + (j - 1) * ny + sa.im - nbcst2 - 1;
+        // ssx11a.f:268's `Otlfix.or.Ssinit.eq.1`. `Otlfix` is setssp's
+        // fixreg=(outlier) flag, which cannot be true here: setssp_span walls
+        // that option and returns false before this loop is reached, so the
+        // disjunction collapses to the fixmdl arm. When that wall lifts, thread
+        // the flag through instead of collapsing it.
+        const bool ss_otlfix = (si.ssinit == 1);
         if (!run_x11_span(ctx, trnsrs_full, has_model, si.nlen, nfcst, nbcst,
                            nbcst2, lsp, /*nend_mdl=*/0, lseats,
-                           /*set_xrg_span=*/true))
+                           /*set_xrg_span=*/true, /*ss_outliers=*/true,
+                           ss_otlfix))
             return false;
+        if (ctx.error.lfatal) return false;
+        // sspdrv.f:208-219 -- take the re-added outlier columns back out before
+        // the next span, so each span starts from the held-back design.
+        ssp_strip_span_outliers(ctx);
         if (ctx.error.lfatal) return false;
     }
     hid.issap = 3;

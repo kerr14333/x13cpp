@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (84
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (85
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -223,6 +223,16 @@ because by the time you would think to look them up, the damage is done.
   re-establishing a value inside a span, find the ORACLE's assignment and check
   which phase owns it — an editor assignment repeated per span is a bug, and a
   per-span assignment hoisted to the editor is the same bug mirrored.
+- **An argument the Fortran passes and this port dropped is a defect waiting
+  for its SECOND call site.** `ssprep(Lmodel,Lx11,Lx11rg)` was ported without
+  `Lx11`, always snapshotting `Lter`/`Ktcopt`/`Tic`. That was right for every
+  caller the port had, because they all sit BEFORE `x11pt2` resolves the
+  auto-select filter sentinels — right by placement, not by the flag. Adding
+  `sspdrv.f:218`'s call, which runs AFTER, made span 2 start from span 1's
+  chosen filter length: span 1 bit-exact, spans 2-4 out (entry 85). Same shape
+  as `xrgdrv`'s `Ksdev` restore (entry 71): identical code, correct at one call
+  site, a defect at the next. When you add a call site to a routine whose
+  signature you narrowed, restore the argument first and ask what it gated.
 - **A trap list is a list of places to LOOK, not a list of things that are
   true.** The trap above it — "a structural change not mirrored into the
   `ssprep` snapshot is undone by the first span's `restor`" — holds for
@@ -257,7 +267,12 @@ because by the time you would think to look them up, the damage is done.
   WARNING the engine emitted was discarded unread — and the moment it was piped
   out, an unported diagnostic fell out of a golden committed months earlier
   (entry 81). Before trusting that message text matches, check the harness
-  surfaces it at all on the path you care about.
+  surfaces it at all on the path you care about. **The mirror of it cost an
+  increment too**: the same harness dumped NO tables on a FATAL, so an assertion
+  that a refused run produced no output was true of any run that produced
+  nothing for any reason — and a wall whose whole subject is a refusal is
+  exactly where that assertion gets written (entry 85). A late refusal has a
+  complete run behind it; throw it away and you cannot gate it.
 - **Know whether a save/restore mirrors the Fortran or patches a
   rearrangement.** Where this port moves a call to a different phase than the
   oracle runs it in, the compensating state save has no counterpart in the

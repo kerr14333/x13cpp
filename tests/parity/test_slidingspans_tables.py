@@ -435,3 +435,88 @@ def test_slidingspans_table(base: str, tag: str) -> None:
         if err > worst_md:
             worst_md, worst_md_key = err, k
     assert worst_md <= RTOL, f"{base}.{tag}: worst Max_%_DIFF rel err {worst_md} at {worst_md_key}"
+
+
+# Specs the ORACLE halts on. `_discover()` above cannot see them -- it requires
+# an sfs AND a chs golden and these ship neither -- which is exactly why they
+# need their own gate: an unported path that produces numbers where the oracle
+# produces none is invisible to every table comparison in this file.
+#
+# They live in tests/corpus/edge/, with the rest of the specs whose subject is a
+# REFUSAL, and not in extra/. That is not filing tidiness: the table gates across
+# this suite discover their cases from tests/golden/extra, so a halting spec
+# blessed there is picked up by a dozen comparisons that each assert the harness
+# exited 0. It cannot, and should not.
+#
+# Derived, not asserted from a list: the blessed `.stdout.txt` is the oracle's
+# console, and only a halted run carries "Program error(s) halt execution".
+_EDGE_CORPUS = os.path.join(_REPO, "tests", "corpus", "edge")
+_EDGE_GOLDEN = os.path.join(_REPO, "tests", "golden", "edge")
+
+
+def _halting_slidingspans_specs() -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for corpus, golden in ((_EDGE_CORPUS, _EDGE_GOLDEN), (_CORPUS, _GOLDEN)):
+        if not os.path.isdir(corpus):
+            continue
+        for fn in sorted(os.listdir(corpus)):
+            if not fn.endswith(".spc"):
+                continue
+            base = fn[:-4]
+            with open(os.path.join(corpus, fn), encoding="utf-8",
+                      errors="replace") as f:
+                if "slidingspans{" not in f.read().lower():
+                    continue
+            p = os.path.join(golden, base, base + ".stdout.txt")
+            if not os.path.exists(p):
+                continue
+            with open(p, encoding="utf-8", errors="replace") as f:
+                if "Program error(s) halt execution" in f.read():
+                    out.append((corpus, base))
+    return out
+
+
+HALTING = _halting_slidingspans_specs()
+
+
+def test_halting_slidingspans_specs_discovered() -> None:
+    """Floor assertion, same reason as `test_slidingspans_cases_discovered`:
+    this list is derived and could shrink to nothing while reporting green."""
+    assert HALTING, (
+        "no slidingspans spec in the corpus halts the oracle -- the "
+        "change-of-regime wall (ssmdl.f:150-241, CB-39) has no gate")
+
+
+@pytest.mark.parametrize("corpus,base", HALTING)
+def test_slidingspans_halt_matches_oracle(corpus: str, base: str) -> None:
+    """Where the oracle halts, the engine must refuse -- not adjust.
+
+    `airline_slidingspans-regime-td` is the case this was written for. Its
+    change-of-regime trading-day group sends ssmdl.f:157-159's date search down
+    a shape no title producer in the tree emits (CB-39), the oracle's own date
+    parse fails and the run stops after printing its NOTE. This port walls that
+    arm; before the wall it wrote 336 sfs cells and 332 chs cells and reported
+    OUTCOME: OK, and nothing in this file could see it, because a spec with no
+    goldens is a spec with no cases.
+
+    The "produced no span table" assertions below are only meaningful because
+    x13run_x11 now dumps what it computed BEFORE a late FATAL (entry 85). Until
+    that change the harness printed nothing at all on a fatal, so asserting an
+    empty table would have passed against an empty stdout no matter what the
+    engine did -- a guardrail that cannot fail."""
+    specpath = os.path.join(corpus, base + ".spc")
+    proc = subprocess.run([BIN, specpath], cwd=corpus,
+                          capture_output=True, text=True, timeout=120)
+    # x13run_x11 exits 1 on a FATAL, 0 otherwise -- so the exit code alone is
+    # already the answer, and is checked as well as the OUTCOME line rather
+    # than instead of it (a crash would give neither).
+    assert proc.returncode in (0, 1), f"{base}: harness exited {proc.returncode}"
+    assert proc.returncode == 1, f"{base}: harness exited 0 on a halting spec"
+    assert "OUTCOME: FATAL" in proc.stdout, (
+        f"{base}: the oracle halts on this spec; the engine reported "
+        f"{proc.stdout.splitlines()[:1]}")
+    for tag in _TAGS:
+        cells, _ = _read_produced(proc.stdout, tag)
+        assert not cells, (
+            f"{base}.{tag}: the oracle halted before writing any span table, "
+            f"but the engine produced {len(cells)} cells")

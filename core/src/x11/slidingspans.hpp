@@ -4,16 +4,14 @@
 // (seasonal-factor spans) and chs (month-to-month SA-change spans) tables --
 // the two tags with committed corpus goldens (see tools/slidingspans_scope.md).
 //
-// Scope (see tools/slidingspans_scope.md S5 for the phased plan this
-// implements): single-series only (no Iagr==5/6 composite/indirect), no
-// SEATS, no x11regression (Nbx==0), and Ssinit==1 (fixmdl=yes, the default --
-// ssmdl.f's tail then FIXES the whole regARIMA model at the main run's
-// converged values for every span, which is what run_x11_span's fixed-
-// coefficient rgarma replay assumes). ads (the SA-series spans) IS produced,
-// but only under ssap.f:209-210's gating -- a trading-day, holiday, round or
-// force option must be live, so most specs legitimately emit no ads table at
-// all. tds/ycs are still not produced; see setssp_span/run_slidingspans doc
-// comments for exactly what is and is not ported.
+// Scope: single-series only (no Iagr==5/6 composite/indirect). SEATS,
+// x11regression, all three `fixmdl=` arms and the outlier hold-back are all
+// live and gated; what is NOT ported is inventoried in docs/WALLS.md and
+// refuses rather than adjusts. ads (the SA-series spans) is produced only
+// under ssap.f:209-210's gating -- a trading-day, holiday, round or force
+// option must be live -- so most specs legitimately emit no ads table at all,
+// and ycs is still not produced. Do not restate the open list here: it goes
+// stale, and `walls.py` derives the real one from the refusals themselves.
 #ifndef X13_X11_SLIDINGSPANS_HPP
 #define X13_X11_SLIDINGSPANS_HPP
 
@@ -44,7 +42,11 @@ int sfmax_span(int lterm, const int* lter, int ny);
 // taken ONCE; a per-span re-snapshot would capture that span's evolved Ksdev
 // and re-open the extreme-value-mode gap it was added to close. Pass false
 // from inside a span replay (arima.f:1430's ssprep), true from the main run.
-void ssprep_snapshot(X13Context& ctx, bool capture_saved = true);
+// `lx11` is ssprep.f's own Lx11 argument, gating the Lter/Ktcopt/Tic third of
+// the snapshot. Only sspdrv.f:218's call passes false, and it matters there:
+// that one runs after x11pt2 has resolved the auto-select filter lengths.
+void ssprep_snapshot(X13Context& ctx, bool capture_saved = true,
+                     bool lx11 = true);
 
 // restor.f, same scope as ssprep_snapshot: reset Lter(1..Ny)/Ktcopt/Tic and
 // (Lmodel) Arimap/Var/Nintvl/.../Lma/Lar from the ctx.ssprep snapshot. Called
@@ -52,7 +54,7 @@ void ssprep_snapshot(X13Context& ctx, bool capture_saved = true);
 // position, before that span's own run_x11_span).
 void restor_span(X13Context& ctx);
 
-// ssmdl.f, scoped to exclude the change-of-regime and outlier-in-span blocks:
+// ssmdl.f, scoped to exclude the change-of-regime block (walled):
 //
 //  * ssmdl.f:50-121 -- the regressor-fixing block. `tdfix`/`holfix` are IN/OUT:
 //    they arrive carrying slidingspans{fixreg=} and leave carrying this
@@ -62,8 +64,33 @@ void restor_span(X13Context& ctx);
 //  * ssmdl.f:341-352 -- when Ssinit==1 (fixmdl=yes, the default), fix every
 //    ARIMA parameter (ctx.model.arimaf all true) so run_x11_span's rgarma
 //    replay recomputes residuals/likelihood without re-optimizing.
-void ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
+//  * ssmdl.f:124-280 -- the group walk: hold back (rmotss) every outlier
+//    regressor the span intersection does not cover, and REFUSE on a
+//    change-of-regime regressor (see the wall's own comment).
+//  * ssmdl.f:358-373 -- re-snapshot the design when the walk changed it.
+//
+// Returns false on the change-of-regime wall; true otherwise.
+bool ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
                      bool usrfix);
+
+// ssx11a.f:220-270 -- the per-span half of the outlier hold-back, called from
+// run_x11_span once this span's Begspn/Endspn are set and BEFORE its regvar:
+//
+//   1. delete every outlier column the span's own window does not cover
+//      (:229-263), and
+//   2. adotss (:268) -- re-add every entry of the ctx.otlrev store that it
+//      DOES cover, at the main run's coefficient.
+//
+// The store is not consumed: each span re-tests the whole of it, and
+// run_slidingspans strips the re-added columns afterwards (sspdrv.f:208-219).
+// `lastsy` is the span end as a 1-based index into the full series (ssx11a.f:
+// 86-87); `otlfix` is `Otlfix.or.Ssinit.eq.1`.
+void ssx11a_span_outliers(X13Context& ctx, int lastsy, bool otlfix);
+
+// sspdrv.f:208-219 -- after a span, take the columns adotss added back out and
+// re-snapshot, so the next span's restor starts from the held-back design
+// again. No-op when the store is empty.
+void ssp_strip_span_outliers(X13Context& ctx);
 
 // setssp.f, scoped per the file header. Resolves Ncol/Nlen defaults from the
 // main run's Length (ctx.x11opt.length) + Ltmax when the user didn't set

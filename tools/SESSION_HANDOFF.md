@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6977<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->761<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7042<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->776<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6977<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7042<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1825,15 +1825,127 @@ expire.
 Suite 6925 -> **6977 passed, 0 failed, 761 skipped**; ctest 12/12.
 WALLS **26 -> 24 gaps**, 4 faithful.
 
+## This session, part 36: the sliding-spans held-back outliers -- a block that was neither ported nor walled
+
+Board item 1 said "the three remaining `slidingspans{}` walls". Reading them
+found something the board could not see, sitting in the same routine:
+**`ssmdl.f:124-280`'s group walk had no C++ counterpart and no refusal.** Any
+`slidingspans{}` spec carrying an outlier regressor ran to `OUTCOME: OK` with
+numbers the oracle does not produce. Full record in `docs/M5_PORT_NOTES.md`
+entry 85; what carries forward:
+
+**It survived because no corpus spec put the two features in the same file.**
+Twelve `slidingspans{}` specs, every one `variables=(td)`. The walls next to it
+were visible in `docs/WALLS.md`; this was in neither the wall list nor the gate
+count, which is the entry-76 `xrgdrv` shape exactly.
+
+**Measured and isolated before porting.** airline + `slidingspans{}` +
+`regression{variables=(ao1959.nov td)}` read **4.3e-03** in `sfs` and **1.2e+1**
+in `chs` on spans 3-4; `td` alone and `ao1950.feb td` are both bit-exact. So the
+owner is the hold-back, not the presence of a `regression{}` group. The span
+geometry decides: airline's four spans intersect on 1954.Jan-1957.Dec, and
+`rmotss` gives a THREE-way verdict -- before the first span (deleted outright,
+never stored), outside the intersection (stored + deleted, re-added per span by
+`adotss`), inside it (untouched).
+
+**The store is NOT consumed, unlike `chkorv`'s.** A revision history's spans
+grow, so `chkorv` erases each entry as it re-adds it; sliding spans SLIDE, so
+`adotss` re-tests the whole store every span and `sspdrv.f:208-219` strips the
+re-added columns afterwards. Draining it would give span 1 the outlier and no
+later span.
+
+**`ssprep`'s `Lx11` argument is load-bearing at exactly one call site, and the
+port had been right by accident everywhere else.** The first build closed the
+gap only from 4.3e-03 to 8.8e-04 and moved it onto spans 2-4 with span 1 still
+exact -- entry 83's chaining signature. `sspdrv.f:218` is `ssprep(T,F,F)`;
+this port's `ssprep_snapshot` had no `Lx11` parameter and always wrote
+`Lt2`/`Ktc2`/`Tc2`. Harmless for `arima.f:1430`, which sits BEFORE `x11pt2` and
+so snapshots the unresolved auto-select sentinels; wrong here, because
+`sspdrv.f:218` runs AFTER `x11pt2` has resolved them and span 2 then starts from
+span 1's chosen filter length. **The parameter was omissible for exactly as long
+as there was one caller** -- same family as entry 71's `Ksdev` restore, where
+identical code is a compensation at one call site and a defect at the next.
+
+**The change-of-regime arm is walled, and the oracle halts there too -- CB-39.**
+`ssmdl.f:159` searches the group title for `'(change from before '` and no title
+producer in the tree writes it (`addlom.f:63`, `addtd.f:88`, `adrgim.f:72/178`
+all write `for`; `regvar.f:334`, `savmdl.f:346`, `editor.f:1816` all SEARCH for
+`for`). Both searches miss, `ctodat` gets position 20 of the title, the date
+parse fails, the run halts. Measured: oracle writes no `.sfs`/`.chs`; this port
+wrote 336 + 332 cells at `OUTCOME: OK`.
+
+**A spec the oracle halts on is invisible to a table gate.** `_discover()` in
+`test_slidingspans_tables.py` needs an `sfs` AND a `chs` golden, so such a spec
+contributes zero cases and reports green by absence -- entry 79's
+`skip("spec does not produce this tag")` one level up: not an absent TABLE but
+an absent SPEC. The new `test_slidingspans_halt_matches_oracle` derives its case
+list from the blessed `.stdout.txt` ("Program error(s) halt execution"), asserts
+the engine FATALs, and asserts it wrote no span table -- with its own floor
+assertion, because a derived list that shrinks to nothing is green.
+
+**Two things had to change for that gate to mean anything.** `x13run_x11`
+printed the `.err` buffer and returned on a FATAL without dumping anything else,
+so "the engine produced no span table" was true of a spec that produced nothing
+at all -- a guardrail that could not fail. It now dumps what it computed before
+a LATE fatal, guarded on the X-11 pointers being set so an early parse refusal
+still prints nothing. And the halting spec lives in **`tests/corpus/edge/`**,
+not `extra/`: blessed into `extra/` it was discovered by a dozen table and
+diagnostic gates that each assert the harness exited 0, which for this spec it
+cannot. Those 14 failures also settled the wall's classification -- the oracle
+finishes the whole X-11 spine and writes D10-D16 and its `.udg` before halting,
+so this port refuses EARLIER, and the wall is a gap rather than a faithful
+refusal.
+
+**A mutation count is a DELTA, and this harness never measured the baseline.**
+The first battery reported every number ~14 too high, because the halting spec
+was still blessed into `extra/` and failing 14 gates in the baseline at the
+time. Re-run against a green suite the two agree exactly. Corrected: the
+`regchg` re-snapshot **17**, dropping the whole walk **5**, dropping `adotss`
+**4**, `lx11=true` **4**, dropping the automatic arm **3**, dropping the wall
+**1**.
+
+**Five zeros, chased far enough to name the saturation.** The per-span delete
+and the post-span strip are complementary, so each alone is 0 -- and BOTH
+together is still 0, because `restor_span` reinstates the held-back design at
+the top of every span and a leftover column is dated outside the span, i.e. all
+zeros. Kept anyway, on entry 83's precedent for `Chx2`/`Chg2`/`Acm2`. `Bb`
+unconditional is 0 because nothing writes `B` between the two snapshots.
+`adotss`'s fix flag is 0 in BOTH directions even measured on a spec built to sit
+on the other arm -- so unlike entry 82 the arms ARE covered and the corpus still
+cannot separate them at 1e-6.
+
+**Specs:** `extra/airline_slidingspans-outlier-heldback` (both `rmotss`
+branches), `extra/airline_slidingspans-outlier-auto` (the automatic arm, at
+`critical = 2.5` so the nine finds split across all three verdicts -- at the
+default the single find lands where every verdict is inert),
+`extra/airline_slidingspans-outlier-fixmdlno` (the `Ssinit != 1` arm of the fix
+flag, added because without it "force the flag true" was a mutation no spec
+could fail), and `edge/airline_slidingspans-regime-td` (the CB-39 halt).
+
 ## Open, in the order I would take them
 
-1. **The three remaining slidingspans walls**, all of which fatal rather than
-   lie: `slidingspans{x11outlier=no}` with automatic x11regression outliers
-   (`ssxmdl.f:44-76`'s `rmotss`), `slidingspans{}` with `x11regression{user=}`
-   (`ssxmdl.f:142-148`'s `bakusr`), and `fixreg=(outlier)` (whose `otlfix`
-   outlives `setssp` and reaches `ssx11a` per span, `sspdrv.f:121`). The rest
-   of the subsystem is closed and gated bit-exact -- see part 34 above and
-   entry 83 before touching any of it.
+1. **The four remaining slidingspans walls**, all of which fatal rather than
+   lie. `rmotss` and `adotss` now EXIST (part 36), so two of these are smaller
+   than they were:
+   * `slidingspans{x11outlier=no}` with automatic x11regression outliers
+     (`ssxmdl.f:44-76`) -- the routine is ported; what is missing is the
+     `loadxr(F)`/`loadxr(T)` bracket it runs inside and `ssx11a.f:104-151`'s
+     x11regression half of the per-span check.
+   * `slidingspans{}` with `x11regression{user=}` (`ssxmdl.f:142-148`'s
+     `bakusr`) -- and note `sspdrv.f:149-174` runs `chusrg`+`bakusr` PER SPAN
+     for both the regARIMA and the x11regression user regressors, with
+     `:223-231` undoing it; none of that is ported, and only the ssxmdl arm is
+     walled.
+   * `fixreg=(outlier)` (whose `otlfix` outlives `setssp` and reaches `ssx11a`
+     per span, `sspdrv.f:121`). Now cheap: `adotss` already takes the flag, and
+     `run_slidingspans` collapses it to `Ssinit==1` with a comment saying where
+     to thread it through.
+   * the change-of-regime arm of `ssmdl.f`'s group walk (`:150-241`), walled in
+     part 36. The oracle HALTS there (CB-39), so porting it means reproducing a
+     failed date parse -- decide whether that is worth doing at all.
+
+   The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
+   36 above and entries 83 and 85 before touching any of it.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a

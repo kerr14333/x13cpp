@@ -1420,3 +1420,75 @@ why this one reads as a typo rather than as a mechanism.
   through `test_m1_parse::test_outcome_matches_oracle`, which compares the
   `ERROR:` block against the blessed `.err` line for line. Rewriting the string
   to `zero when specifying` fails that gate.
+
+## CB-39
+
+**`ssmdl.f:159` searches a change-of-regime group title for `'(change from
+before '`, a string no title producer in the tree ever writes -- so
+`slidingspans{}` plus any change-of-regime regressor halts the oracle.**
+
+- **File:line:** `ssmdl.f:157-160` (and the same typo again at `rdregm.f:25`).
+- **Severity:** `fatal`. The run stops with "Program error(s) halt execution"
+  and writes no sliding-spans table at all.
+
+`ssmdl` needs the regime date to decide whether the change of regime is defined
+over every span, and recovers it from the group TITLE the way the rest of the
+program does (`Xaicrg`, CB-entry-84's family):
+
+```fortran
+idtpos=index(igrptl(1:nchr),'(before ')+8
+IF(idtpos.eq.8)
+&     idtpos=index(igrptl(1:nchr),'(change from before ')+20
+CALL ctodat(igrptl(1:nchr-1),Sp,idtpos,regmdt,Locok)
+```
+
+The idiom is `index(...)+k` with `IF(idtpos.eq.k)` meaning "not found", and it
+FALLS THROUGH: if the second search also misses, `ctodat` runs at position 20
+regardless.
+
+**The second search always misses.** Every producer of a change-of-regime title
+writes `for`, not `from`:
+
+| writer | string |
+|---|---|
+| `addlom.f:63` | `' (change for before '` |
+| `addtd.f:88` | `' (change for before '` |
+| `adrgim.f:72` | `' (change for before '` |
+| `adrgim.f:178` | `'Leap Year (change for before '` |
+
+and every other READER agrees with the producers -- `regvar.f:334`,
+`savmdl.f:346` and `editor.f:1816` all spell `'(change for before '`. Only
+`ssmdl.f:159` and `rdregm.f:25` spell `from`.
+
+So for the common title shape `Trading Day (change for before 1955.Jan)`:
+`'(before '` is not a substring (the `(` is eight characters to the left of
+`before`), the `from` search misses too, `ctodat` is handed position 20 -- the
+space before `for` -- and returns `Locok=.false.` with `Idate` left at whatever
+`ctoi` made of `" for before..."`. `dfdate` then compares a garbage date, the
+`begrgm.le.Sp` arm fires, the change-of-regime NOTE is printed, and the run
+halts.
+
+- **What it does to the result.** No sliding-spans analysis is produced for any
+  spec that combines `slidingspans{}` with a change-of-regime regressor
+  (`regression{variables=(td/1955.jan/)}` and the `lom`/`lpyear`/`seasonal`
+  equivalents). The `.err` carries only the NOTE, not an `ERROR:` line -- the
+  halt shows up on the console and in the ABSENCE of the `.sfs`/`.chs` files.
+
+- **Measured, not inferred.** `oracle/fortran/x13as_ascii_O2.exe` on
+  airline + `slidingspans{save=(sfs chs)}` + `regression{variables=(td/1955.jan/)}`:
+  console ends `Program error(s) halt execution for ....spc`, and the run
+  directory holds `.d10`-`.d16` but neither `.sfs` nor `.chs`.
+
+- **Port:** NOT reproduced. This port walls the arm instead
+  (`ssmdl_fix_model`, `core/src/x11/slidingspans.cpp`) and refuses with its own
+  message, because reproducing the halt faithfully would mean porting the whole
+  change-of-regime block for the sole purpose of arriving at a garbage date.
+  The wall is inventoried in `docs/WALLS.md`; when that block is ported, the
+  fall-through has to be transcribed with the `from` intact or this bug
+  disappears silently.
+
+- **Pinned by:** `tests/corpus/extra/airline_slidingspans-regime-td`, through
+  `test_slidingspans_tables::test_slidingspans_halt_matches_oracle` -- which
+  derives its case list from the blessed `.stdout.txt` ("Program error(s) halt
+  execution") rather than from a name list, and asserts the engine produces no
+  span table where the oracle produced none. Deleting the wall fails it.

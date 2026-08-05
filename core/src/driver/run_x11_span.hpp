@@ -75,10 +75,18 @@ struct X13Context;
 // port did before: Begxrg/Endxrg frozen at their parse-time values while
 // Begspn/Endspn move under them, which makes x11reg.cpp:1097's nbeg/nend --
 // the x11mdl.f:115-118 narrowing -- measure the span against the wrong anchor.
+//
+// ss_outliers (default false): run ssx11a.f:220-270's per-span outlier window
+// check + adotss on the ctx.otlrev store. slidingspans{} only -- history{}
+// reaches the same idea through rmotrv/chkorv (driver/rev_outlier.hpp) on a
+// different schedule and with a different store, and running both would
+// double-delete. ss_otlfix is ssx11a's `Otlfix.or.Ssinit.eq.1`: whether an
+// outlier re-added into this span comes back with its coefficient FIXED.
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
                    int lsp, int nend_mdl = 0, bool lseats = false,
-                   bool set_xrg_span = false);
+                   bool set_xrg_span = false, bool ss_outliers = false,
+                   bool ss_otlfix = false);
 
 }  // namespace x13
 

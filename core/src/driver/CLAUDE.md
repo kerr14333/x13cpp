@@ -13,6 +13,7 @@ already paid for once.
 | **32** | the C / R / Python ABI, and the host floating-point-mode finding |
 | **44** | the model-only diagnostics path (`x11ari` with neither `Lx11` nor `Lseats`) |
 | **83** | `slidingspans{}` CLOSED bit-exact — `Setpri`, the per-span `ssprep` chain, `fixreg=`'s non-effect, and `fixmdl=clear` |
+| **85** | the sliding-spans held-back outliers — `run_x11_span`'s `ss_outliers` hook (`ssx11a.f:229-270`), why `history{}` must NOT take it, and `ssprep`'s `Lx11` argument |
 | **78, 79** | `slidingspans{}` + `x11regression{}` — the pairing no spec had; then the per-span calendar factor it exposed, closed by `ssxmdl`'s `fixx11reg` default TOGETHER with the `Ixreg` demote a previous session had measured alone and rejected |
 | **47, 50–52** | `pickmdl{}` / `automx.f`, amdfct's out-of-sample and backcast arms, and the per-candidate AIC tests |
 
@@ -32,6 +33,14 @@ already paid for once.
   Missing that call leaves span 1 bit-exact and every later span drifting a few
   1e-7 — which reads like an estimation-tolerance floor and is not one
   (entry 83).
+
+- **`ssprep`'s `Lx11` argument was dropped from the port's signature, and it
+  only became a defect when a SECOND caller appeared.** `sspdrv.f:218` passes
+  `ssprep(T,F,F)`; it runs AFTER `x11pt2` has resolved the auto-select `Lter`
+  sentinels, so snapshotting them hands the next span a filter length chosen for
+  its predecessor (span 1 bit-exact, spans 2-4 out — entry 85). Every earlier
+  caller was safe by PLACEMENT, not by the flag. Same family as the `Ksdev`
+  restore below: identical code, correct at one call site, wrong at the next.
 
 - **`Setpri` must NOT be re-established inside a span.** `Setpri=Pos1bk` is
   `editor.f:851` and nothing repeats it; `Adj` stays anchored at the main run's
