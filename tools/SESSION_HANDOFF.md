@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6706<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->707<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6728<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->711<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6706<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6728<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1577,24 +1577,58 @@ open -- which is what entry 78's separation was for.
 
 Suite 6702 -> 6706 passed, 0 failed, 0 xfailed.
 
+## This session, part 31: the stock-TD abend, and an `ELSE` that pairs with a different `IF`
+
+Entry 80. Board item 1 closed. `x11mdl.f:661-690` refuses a run whose STOCK
+trading-day irregular regression would produce nonpositive multiplicative daily
+factors. It was neither ported nor walled. Measured before porting, on airline +
+`x11regression{variables=(tdstock[15]) b=(-1.5f ...)}`: the oracle abends, this
+engine returned `OUTCOME: OK`.
+
+**The finding is the PAIRING.** The first transcription put the block under the
+`ELSE` of `:541`'s `IF(Havxtd.and.(.not.Haveum))` -- what the old handoff note
+said and what the surrounding prose implies -- and produced a guard that COULD
+NOT FIRE (`havxtd=1` on the very spec the oracle refuses). Walking the `END IF`
+chain mechanically settles it: `:660` closes `:578`, **`:661`'s ELSE pairs with
+`:546`'s `IF(igrp.gt.0)`**, `:690` closes `:546`, `:691` closes `:541`. The arm
+means "an x11regression TD is present and the WORKING model has no Trading Day
+group" -- i.e. a STOCK design. Count the block; never read the indentation.
+
+It was caught only because a debug print was added when the branch stayed
+silent. A slightly-off spec instead, and a dead branch ships looking correct.
+
+**Also measured:** FORMAT 1070's `//` pairs emit EMPTY records, while `writln`'s
+`lblnk` blank is `(' ',a)` -- two characters. The first version differed from the
+oracle `.err` on exactly those two lines. Written straight to the channels and
+compared byte for byte.
+
+Two oracle oddities transcribed, not tidied: `:664` looks the group up in the
+x11reg STORE and indexes the WORKING model's `Grp` with the result (same family
+as CB-37, NOT filed as a Census bug -- no spec here reaches a state where they
+disagree); and the `<=` test written as `B < -1 .or. dpeq(B,-1)`.
+
+**Gated on BOTH sides**, which is the point: `extra/airline_x11regression-
+tdstock-abend` fires, `extra/airline_x11regression-tdstock` (same design,
+positive weights) must reach `OUTCOME: OK`. A refusal gated only where it fires
+cannot tell "correctly refused" from "refuses everything". These are also the
+first x11regression STOCK trading-day designs in the corpus. ABEND_CASES floor
+1 -> 3.
+
+Suite 6706 -> 6728 passed, 0 failed, 0 xfailed.
+
 ## Open, in the order I would take them
 
-1. **`x11mdl.f:661-690`'s stock-trading-day abend is UNPORTED and UNGUARDED.**
-   Found in entry 77 while hoisting the `Dx11` build past it -- neither a wall
-   nor a gate, the shape entry 76 named as worse than no code at all. Needs a
-   spec first. Note the question inside it: `:664` reads the x11reg STORE
-   (`Grpttx/Gpxptr/Ngrptx`) where `:545` twenty lines above reads the WORKING
-   model (`Grpttl/Grpptr/Ngrptl`). Cheap siblings still walled in
-   `xrg_editor_setup`: `Xaicst` (editor.f:1802-1808) and `Xaicrg` (:1811-1822),
-   both READ by `x11reg.cpp:642/658` and never written except to their gtinpt
-   defaults.
-2. **The three ssxmdl arms entry 79 walled**, each wanting one spec: an
+1. **The three ssxmdl arms entry 79 walled**, each wanting one spec: an
    `x11regression{span=}` under `slidingspans{}` (reaches ssxmdl.f:27-39's
-   NOTE and the Itd/Ihol demote -- ported, ungated, so the message text is
-   UNVERIFIED); a fixed `x11regression{b=(... f)}` (Irgxfx>=2, the rvfixd /
-   tdfx-holfx walk); and `slidingspans{x11outlier=no}` with automatic
-   x11regression outliers (rmotss). All three are walls today, so they fatal
-   rather than lie -- but a wall is inventory, not coverage.
+   NOTE and the Itd/Ihol demote -- PORTED but UNGATED, so its three-line
+   message text is unverified); a fixed `x11regression{b=(... f)}` (Irgxfx>=2,
+   the rvfixd / tdfx-holfx walk); and `slidingspans{x11outlier=no}` with
+   automatic x11regression outliers (rmotss). All three fatal rather than lie
+   today -- but a wall is inventory, not coverage.
+2. **The two cheap x11regression siblings still walled in `xrg_editor_setup`**:
+   `Xaicst` (editor.f:1802-1808) and `Xaicrg` (:1811-1822), both READ by
+   `x11reg.cpp:642/658` and never written except to their gtinpt defaults.
+   Entry 80's stock-TD spec pair is the natural carrier for the `Xaicst` one.
 3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a

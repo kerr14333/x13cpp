@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (79
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (80
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -254,6 +254,14 @@ because by the time you would think to look them up, the damage is done.
   rejected-by-measurement note sits next to an unported routine, re-measure it
   with that routine before trusting the note, and write such notes so they say
   what else was missing at the time.
+- **Count the block; never read the indentation.** Fortran closes with bare
+  `END IF`, so an `ELSE` seven levels deep looks exactly like a top-level one.
+  `x11mdl.f:661`'s `ELSE` pairs with `IF(igrp.gt.0)` at `:546`, not with the
+  `IF(Havxtd...)` at `:541` that the surrounding prose implies — and the wrong
+  reading produced a guard that could NEVER fire, caught only because a debug
+  print was added when the branch stayed silent (entry 80). A twenty-line
+  script that walks `IF/ELSE/END IF` and prints the pairing takes a minute and
+  cannot lie. Same family as the ARGDIC decode below.
 - **A comment naming a `.f` line is a claim, not evidence — and the two drift in
   opposite directions.** Twice in one increment (entry 77): a branch labelled
   `// centeruser (gtxreg.f:537-543)` was dispatched on the argidx of

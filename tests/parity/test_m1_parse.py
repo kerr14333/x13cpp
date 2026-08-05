@@ -90,6 +90,14 @@ _POST_PARSE_FATAL = {
     # .udg, and only then abends. Gated in
     # test_x11regression_tables.py::test_x11regression_abend.
     "extra/airline_x11regression-reweight-abend.spc",
+    # x11mdl.f:661-690 -- a STOCK trading-day irregular regression whose
+    # coefficients make the multiplicative daily factors nonpositive. Same
+    # post-parse shape as the two above. Its non-firing sibling
+    # (extra/airline_x11regression-tdstock.spc) is NOT listed here: that one must
+    # reach OUTCOME: OK, and it is the half of the pair that proves this refusal
+    # discriminates. Gated in
+    # test_x11regression_tables.py::test_x11regression_abend.
+    "extra/airline_x11regression-tdstock-abend.spc",
 }
 
 

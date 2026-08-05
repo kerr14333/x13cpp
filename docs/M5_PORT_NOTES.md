@@ -4548,3 +4548,79 @@ from `test_slidingspans_tables.py` rather than re-worded; the OTHER `chs` gap
 (`airline_slidingspans-td`, the per-span prior phase) is untouched and still
 open, which is what entry 78's cheap-spec-vs-expensive-spec separation was for.
 Suite 6702 -> 6706 passed, 0 failed, 0 xfailed.
+
+## 80. The stock-trading-day abend: an unguarded refusal, and an `ELSE` that pairs with a different `IF` than everyone assumed
+
+`x11mdl.f:661-690` refuses a run whose STOCK trading-day irregular regression
+would produce nonpositive multiplicative daily factors. It was neither ported
+nor walled -- entry 77 found it while hoisting the `Dx11` build past it and
+recorded it as an open item rather than fixing it. Measured before porting, on
+airline + `x11regression{variables=(tdstock[15]) b=(-1.5f -0.1f ...)}`:
+
+| | |
+|---|---|
+| oracle | `ERROR: At least one of the stock trading day regression coefficient ...` then abend |
+| engine | `OUTCOME: OK` |
+
+The silent-wrongness class, exactly as entry 76 named it: an unported path that
+returns SUCCESS is worse than one with no code.
+
+**THE FINDING IS THE PAIRING.** The first transcription put the block under
+`ELSE` of `:541`'s `IF(Havxtd.and.(.not.Haveum))` -- which is what the handoff
+note said, and what the surrounding prose implies -- guarded it on
+`!havxtd && muladd==0`, and produced a branch that **could not fire**: a probe
+print showed `havxtd=1` on the very spec the oracle refuses.
+
+Decoding the `END IF` chain mechanically settles it:
+
+```
+660 ENDIF closes 578      (the Lxrneg reweight block)
+661 ELSE  pairs with 546  <-- IF(igrp.gt.0), the "Trading Day" group lookup
+690 ENDIF closes 546
+691 ENDIF closes 541      (IF(Havxtd.and.(.not.Haveum)))
+```
+
+So the arm means: an x11regression trading day IS present, and the WORKING model
+has no `Trading Day` group -- which is what a STOCK design looks like. That reads
+as obviously right once seen, and it is the opposite of the first reading. This
+is the same lesson as entry 77's ARGDIC decode, now in its second form:
+
+> **Count the block; do not read the indentation, the comment, or the prose
+> around it.** Fortran has no closing-token names, so an `ELSE` seven levels down
+> looks identical to one at the top. A twenty-line script that walks `IF ... THEN
+> / ELSE / END IF` and prints the pairing takes a minute and cannot lie.
+
+The wrong version was caught only because a debug print was added when the branch
+did not fire. Had the spec merely been slightly off instead, the dead branch
+would have shipped looking correct.
+
+**Two oracle oddities transcribed rather than tidied.** `:664` looks the group up
+in the x11regression STORE (`Grpttx/Gpxptr/Ngrptx`) and then indexes the WORKING
+model's `Grp` with the index it gets back, where `:545` twenty lines above uses
+the working model for both. They are identical whenever nothing has mutated the
+design since `loadxr(F)` -- every spec this corpus can build -- and diverge once
+x11aic has added or struck a column. Same family as CB-37's `Grpx(-1)` alias, and
+deliberately NOT filed as a Census bug: no spec here reaches a state where the two
+disagree, and "measure before naming a Census bug" applies. Second oddity: the
+test is `B < -1 .or. dpeq(B,-1)`, a `<=` written as a disjunction with the
+equality half on `dpeq`; transcribed as the same two comparisons.
+
+**The message is written to the channels directly, not through `writln`.** FORMAT
+1070 carries `//` pairs, which emit EMPTY records; `writln`'s `lblnk` blank is
+`(' ',a)` with a space argument -- two characters, not zero. The first version
+differed from the oracle's `.err` by exactly that, on two lines. Compared byte
+for byte afterwards.
+
+**Gated on BOTH sides.** `extra/airline_x11regression-tdstock-abend` (fires;
+joins `test_x11regression_tables.py`'s discovered ABEND_CASES and
+`test_m1_parse.py`'s `_POST_PARSE_FATAL`) and `extra/airline_x11regression-tdstock`
+(same design, coefficients that stay positive; must reach `OUTCOME: OK`, and
+gates its b16/c16/xrm and D-tables). A refusal gated only on the side that fires
+cannot tell "correctly refused" from "refuses everything" -- the
+saturated-precondition trap in its guard form. These are also the first
+x11regression STOCK trading-day designs in the corpus at all.
+
+The ABEND_CASES floor moves 1 -> 3. A floor left at its original value stops
+detecting a shrink the moment the second case exists.
+
+Suite 6706 -> 6728 passed, 0 failed, 0 xfailed.

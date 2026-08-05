@@ -1591,11 +1591,82 @@ void x11mdl_td(X13Context& ctx, int kpart) {
                     // Prttab(fext) and writes only to Mt1/Mt2, never STDERR.
                 }
             }
+        } else {
+            // x11mdl.f:661-690 -- and the PAIRING is the whole finding. This
+            // `ELSE` belongs to `:546`'s `IF(igrp.gt.0)`, NOT to `:541`'s
+            // `IF(Havxtd.and.(.not.Haveum))`: an x11regression trading day is
+            // present but the WORKING model carries no "Trading Day" group,
+            // which is what a STOCK design looks like. Decoded from the END IF
+            // chain mechanically (`:660` closes `:578`, `:690` closes `:546`,
+            // `:691` closes `:541`) after a first transcription guessed `:541`
+            // and produced a branch that could never fire -- the same lesson as
+            // last increment's ARGDIC decode. Count the block, do not read the
+            // indentation.
+            //
+            // MEASURED BEFORE PORTING: on airline +
+            // `x11regression{variables=(tdstock[15]) b=(-1.5f ...)}` the oracle
+            // abends with the message below and this engine returned
+            // `OUTCOME: OK` -- the silent-wrongness shape the standing rules
+            // call worse than having no code at all.
+            //
+            // Two oracle oddities transcribed rather than tidied:
+            //  * `:664` looks the group up in the x11regression STORE
+            //    (`Grpttx/Gpxptr/Ngrptx`) and then indexes the WORKING model's
+            //    `Grp` with the index it got back, where `:545` uses the working
+            //    model for both. Identical whenever nothing has mutated the
+            //    design since `loadxr(F)`; they diverge once x11aic has added or
+            //    struck a column. Same family as CB-37's `Grpx(-1)` alias, and
+            //    NOT filed as a Census bug -- no spec here reaches a state where
+            //    the two disagree, and "measure before naming a Census bug".
+            //  * The test is `B(icol) < -1 .or. dpeq(B(icol),-1)` -- a `<=`
+            //    written as a disjunction with the equality half on `dpeq`.
+            //    Transcribed as the same two comparisons.
+            dx11[0] = prm::DNOTST;
+            if (muladd == 0) {
+                const int istk = strinx(true, ctx.xrgmdl.grpttx.raw(),
+                                        ctx.xrgmdl.gpxptr.data(), 1,
+                                        ctx.xrgmdl.ngrptx, "Stock Trading Day");
+                if (istk > 0) {
+                    const int begcol = m.grp(istk - 1);
+                    const int endcol = m.grp(istk) - 1;
+                    bool tdneg = false;
+                    for (int icol = begcol; icol <= endcol; ++icol)
+                        if (md.b(icol) < -1.0 || dpeq(md.b(icol), -1.0))
+                            tdneg = true;
+                    if (tdneg) {
+                        // FORMAT 1070, written straight to the channels rather
+                        // than through writln: the `//` pairs emit EMPTY
+                        // records, and writln's `lblnk` blank is `(' ',a)` with
+                        // a space -- two characters, not zero. Measured against
+                        // the oracle's .err byte for byte.
+                        errhdr(ctx);
+                        auto& err = ctx.channels_.unit(stdio::STDERR);
+                        auto& mt2c = ctx.channels_.unit(ctx.units.mt2);
+                        static const char* const K[] = {
+                            " ERROR: At least one of the stock trading day "
+                            "regression coefficient",
+                            "        estimates from the irregular regression "
+                            "model produce",
+                            "        nonpositive trading day factors for "
+                            "multiplicative seasonal",
+                            "        adjustments.",
+                            "",
+                            "        Use the regression spec to estimate the "
+                            "stock trading day effect.",
+                            "",
+                            "",
+                        };
+                        for (const char* ln : K) {
+                            err.put(std::string(ln) + "\n");
+                            mt2c.put(std::string(ln) + "\n");
+                        }
+                        abend(ctx);
+                        return;
+                    }
+                }
+            }
         }
     }
-    // x11mdl.f:661-690's ELSE arm -- the stock-trading-day nonpositive-factor
-    // abend -- is NOT ported. See tools/SESSION_HANDOFF.md; it is an unguarded
-    // path, not a wall, and wants its own spec before anything is claimed.
 
     // Build the TD factor series and copy into Factd/Faccal.
     std::vector<double> fcal(nrxy > 0 ? nrxy : 1, 0.0);

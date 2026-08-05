@@ -388,7 +388,11 @@ ABEND_CASES = sorted(b for b in _all_specs()
 
 def test_abend_cases_discovered() -> None:
     """An empty parametrisation passes silently -- this one has a real floor."""
-    assert len(ABEND_CASES) >= 1, "no abending x11regression spec found"
+    # Floor raised as specs land: prterx's singular design, reweight=yes with no
+    # positive unfixed weight, and x11mdl.f:661-690's stock-TD nonpositive
+    # factor. Raising it is the point -- a floor left at 1 stops detecting a
+    # shrink the moment the second case exists.
+    assert len(ABEND_CASES) >= 3, f"abend discovery shrank: {ABEND_CASES}"
 
 
 @pytest.mark.parametrize("base", ABEND_CASES)
