@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6893<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->759<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->6925<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->751<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->6893<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->6925<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1708,36 +1708,109 @@ gap. `prtmdl.f:174-177`'s `Nliter>200` NOTE is unported with no corpus carrier.
 Suite 6762 -> 6893 passed, 0 failed, 0 xfailed. WALLS unchanged at 26 gaps --
 one wall removed, one (`fixreg=(outlier)`) added.
 
+## This session, part 34: `slidingspans{}` CLOSED bit-exact -- three gaps, three different owners, none where the note said
+
+Board item 1, and it took the whole of it: the five specs entry 82 blessed and
+parked, plus `airline_slidingspans-td`'s `chs`, which had been in `_KNOWN_GAPS`
+for months. **`_KNOWN_GAPS` is now empty** -- all seven slidingspans specs gate
+bit-exact on every table they ship (`sfs`/`chs`/`tds`/`ads`, four spans each,
+worst ~5e-15). Full record in `docs/M5_PORT_NOTES.md` entry 83; the durable
+pieces:
+
+**1. `Setpri` is EDITOR-ONLY, and `run_x11_span` re-anchored it per span.**
+`editor.f:851` is `Setpri=Pos1bk` and nothing repeats it. `x11int.f:53` copies
+`Adj` into `Sprior` POSITIONALLY, and `Adj` is built once by `adjsrs` from the
+editor (its only call site in the oracle) anchored at the MAIN run's `Begadj` --
+so a pinned `Setpri` beside a `Lsp`-slid `Pos1ob` is exactly what keeps the
+prior factors date-aligned. An instrumented `-O2` oracle showed `setpri 1` while
+`p1ob` slid 25/37/49/61. Re-anchoring slid the factor series onto the span,
+putting the leap factor of a February `1949 - span_start_year` away on every
+February: **18 cells, all Feb/Mar, out by exactly 29/28 or 28/29, sign following
+the leap year.** The old note in the test file named the right subsystem and
+then described the defect as the mechanism.
+
+**2. `arima.f:1430`'s `CALL ssprep` is unconditional, so the spans CHAIN.**
+`restor` resets `Arimap` from `Ap2` before each span, and every `arima` call --
+including each span's, via `sspdrv.f:180`'s `x11ari` -- rewrites `Ap2` with what
+that span converged to. The port had the main-run snapshot only, so every span
+restarted from the main model. **Span 1 bit-exact, spans 2-4 out by
+6.2e-07/3.9e-07/3.0e-08**: the signature of a value that is right the first time
+and stale afterwards, and it reads exactly like an estimation-tolerance floor.
+`ssprep_snapshot` gained a `capture_saved` flag because `ctx.saved.ksdev0/
+lterm0/nterm0` are NOT ssprep.cmn fields -- they are parse-time stand-ins for an
+editor block, and re-taking `Ksdev` per span would re-open the 3.45% span-1 gap.
+
+**3. `slidingspans{fixreg=}` fixes NOTHING in the oracle, and entry 82 made it
+work.** `ssmdl.f:53`'s `rvfixd` writes only the live `Iregfx`/`Regfx` -- it does
+not mirror them into `Regfx2`/`Irfx2` the way `ssmdl.f:342-352` mirrors
+`Ap2`/`Fxa` for `fixmdl=yes` -- so `restor` puts the all-free flags straight
+back and no span sees a fixed coefficient. Measured: the instrumented oracle's
+per-span `Arimap` AND `B(1..7)` on `-fixreg-td` are byte-identical to
+`-fixmdl-no`'s, and their two blessed `sfs` goldens differ in ZERO lines. The
+mirror (added by analogy with `fixmdl` and `history{fixreg=}`, both of which DO
+write the snapshot) put `sfs` 8.4e-03 out on span 1. **A trap list is a list of
+places to look, not a list of things that are true.**
+
+**New spec, and it settles a reading rather than adding coverage.**
+`extra/airline_slidingspans-fixmdl-clear` is the only route to `Ssinit==2`
+(`INTDIC` is `'no','yes','clear'`, `Ssinit=ivec(1)-1`), which drives
+`sspdrv.f:130-143`'s `DNOTST` reset. Read as "after the span" that block is dead
+code; read as "before this span's estimation" it is live, and only the call
+order -- it sits between `ssx11a`'s trailing `restor` and `x11ari` at `:180` --
+decides. The spec gates bit-exact, its `sfs` golden differs from `fixmdl=no`'s
+in 240 lines, and moving the block fails 2 gates.
+
+**Mutations, each failing a different set:** drop the per-span `ssprep` **12**;
+re-anchor `Setpri` **7**; mirror `rvfixd` into the snapshot **2**; move the
+`Ssinit==2` block after the span **2**; drop the `Chx2`/`Chg2`/`Acm2` half of
+`ssprep`/`restor` **0**. The zero is REPORTED, not acted on -- those three are
+estimation workspace that every span's `rgarma` rebuilds before reading, so the
+inherited values are dead on this corpus; they stay because an incomplete
+stand-in for `restor` has produced three defects in this port already.
+
+**Harness note.** The mutation harness reverted only the LAST edit when one
+mutation touched two hunks of the same file (each backup re-read the file, so
+the second backup already contained the first mutation). It also raced once:
+a measurement taken right after a build in the same PowerShell pipeline read the
+previous binary and reported a 6.2e-07 gap that did not exist. Both are the
+entry-62 lesson again -- **assert the build ran, and re-measure after.**
+
+Suite 6893 -> **6925 passed, 0 failed, 751 skipped**; ctest 12/12. WALLS
+unchanged at 26 gaps / 4 faithful.
+
 ## Open, in the order I would take them
 
-1. **`slidingspans{fixmdl=no}` + `regression{}` is not bit-exact** -- the gap
-   entry 82 isolated, and now the one blocking six blessed goldens.
-   `airline_slidingspans-fixmdl-no` carries nothing else and fails `sfs` as
-   well as `chs`, so it is the spec to work on; the other four inherit it.
-   Sibling of the `airline_slidingspans-td` `chs` gap, possibly the same owner.
-   The last ssxmdl wall is `slidingspans{x11outlier=no}` with automatic
-   x11regression outliers (ssxmdl.f:44-76's rmotss), plus the new
-   `fixreg=(outlier)` one (its `otlfix` reaches ssx11a per span,
-   sspdrv.f:121). Both fatal rather than lie.
-2. **The two cheap x11regression siblings still walled in `xrg_editor_setup`**:
+1. **The two cheap x11regression siblings still walled in `xrg_editor_setup`**:
    `Xaicst` (editor.f:1802-1808) and `Xaicrg` (:1811-1822), both READ by
    `x11reg.cpp:642/658` and never written except to their gtinpt defaults.
    Entry 80's stock-TD spec pair is the natural carrier for the `Xaicst` one.
+2. **The three remaining slidingspans walls**, all of which fatal rather than
+   lie: `slidingspans{x11outlier=no}` with automatic x11regression outliers
+   (`ssxmdl.f:44-76`'s `rmotss`), `slidingspans{}` with `x11regression{user=}`
+   (`ssxmdl.f:142-148`'s `bakusr`), and `fixreg=(outlier)` (whose `otlfix`
+   outlives `setssp` and reaches `ssx11a` per span, `sspdrv.f:121`). The rest
+   of the subsystem is closed and gated bit-exact -- see part 34 above and
+   entry 83 before touching any of it.
 3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
 4. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-5. `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the uninitialized `Trumlt`,
+5. **Two unported Mt2 NOTEs** (task #43): `arima.f:936-960`'s fixed-coefficient
+   NOTE, subtracted from the golden side of the slidingspans note gate by
+   `_UNPORTED_NOTES` with `test_unported_notes_still_unported` guarding the
+   list; and `prtmdl.f:174-177`'s `Nliter>200` NOTE, unported with no corpus
+   carrier and deliberately NOT listed.
+6. `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the uninitialized `Trumlt`,
    both recorded in entry 76 as open questions -- they want the Fortran
    instrumented directly (the `tools/ref_*.f` read-only probe pattern), not
    more reasoning. Same for `x11mdl.f:597-602`'s stale `icol` (entry 77).
-6. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}` /
-   `x11outlier=no` / `additivesa=`; the slidingspans `chs` per-span prior phase;
-   `pickmdl{aictest=(user)}` (needs `usraic.f`/`chkchi.f`); the `!Hvmdl`
-   no-model cleanup (`arima.f:476-527`).
+   `x11outlier=no` / `additivesa=`; `pickmdl{aictest=(user)}` (needs
+   `usraic.f`/`chkchi.f`); the `!Hvmdl` no-model cleanup
+   (`arima.f:476-527`).
 
 ## Environment notes
 

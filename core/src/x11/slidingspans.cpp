@@ -7,7 +7,8 @@
 #include "specparse/specparse.hpp"   // dfdate, addate, copy, copylg
 #include "numeric/numeric.hpp"       // dpeq
 #include "gen/notset.hpp"            // prm::NOTSET, prm::DNOTST
-#include "gen/model.hpp"             // prm::PARIMA
+#include "gen/model.hpp"             // prm::PARIMA, PXPX, PGPG, PORDER
+#include "gen/srslen.hpp"            // prm::PLEN (PACM below)
 #include "x13/farray.hpp"            // farray2
 
 #include <algorithm>
@@ -125,17 +126,18 @@ int mdssln(X13Context& ctx, int sp) {
     return 19 * sp;
 }
 
-// ssprep.f, scoped to Lx11=true always and Lx11rg=false (see hpp). The
-// Nb>0/Ngrp>0 regression-snapshot fields (Ngr2/Ncxy2/Nbb/Colttl/.../Regfx2/
-// Rgv2) are NOT copied -- out of scope (no regression{} in the gate corpus;
-// a future TD/regression slidingspans spec needs this extended).
-void ssprep_snapshot(X13Context& ctx) {
+// restor.f:24 -- PACM=(PLEN+2*PORDER)*PARIMA, the flat length of Armacm/Acm2.
+constexpr int PACM = (prm::PLEN + 2 * prm::PORDER) * prm::PARIMA;
+
+// ssprep.f, scoped to Lx11=true always and Lx11rg=false (see hpp).
+void ssprep_snapshot(X13Context& ctx, bool capture_saved) {
     ssprep_cmn& p = ctx.ssprep;
     const x11opt_cmn& opt = ctx.x11opt;
 
     for (int i = 1; i <= 12; ++i) p.lt2(i) = opt.lter(i);
     p.ktc2 = opt.ktcopt;
     p.tc2 = opt.tic;
+    if (capture_saved) {
     // Runs before the main run's x11int/x11pt2 (run_x11.cpp), so xtrm.ksdev is
     // still the parsed spec/default value -- stash it for each span's fresh
     // start (run_x11_span). Not an oracle ssprep.cmn field (kept in ctx.saved).
@@ -147,6 +149,7 @@ void ssprep_snapshot(X13Context& ctx) {
     // so capturing them is harmless there.)
     ctx.saved.lterm0 = ctx.x11opt.lterm;
     ctx.saved.nterm0 = ctx.x11opt.nterm;
+    }
 
     if (!ctx.captured.has_model) return;
     const model_cmn& m = ctx.model;
@@ -191,6 +194,18 @@ void ssprep_snapshot(X13Context& ctx) {
     p.nr2 = ctx.arima.nrxy;
     p.nbb = m.nb;
     p.v2 = d.var;
+    // ssprep.f -- Chx2/Chg2/Acm2, the estimation workspace (the Cholesky
+    // factors of X'X and G'G, and the ARMA covariance matrix). Deleting this
+    // pair fails ZERO gates: every span's rgarma rebuilds all three from its
+    // own design before reading them, so the inherited values are dead on this
+    // corpus. Kept anyway, and the zero is recorded rather than treated as
+    // licence to drop it -- an incomplete stand-in for `restor` has produced
+    // three separate defects in this port already (CLAUDE.md), and each was
+    // invisible until a later phase in a different file happened to read one
+    // of the omitted fields.
+    copy(d.chlxpx.data(), prm::PXPX, 1, p.chx2.data());
+    copy(d.chlgpg.data(), prm::PGPG, 1, p.chg2.data());
+    copy(d.armacm.data(), PACM, 1, p.acm2.data());
     p.nintv2 = m.nintvl;
     p.nextv2 = m.nextvl;
     p.mxdfl2 = m.mxdflg;
@@ -243,6 +258,10 @@ void restor_span(X13Context& ctx) {
     cpyint(p.rgv2.data(), prm::PB, 1, m.rgvrtp.data());
     ctx.arima.nrxy = p.nr2;
     d.var = p.v2;
+    // restor.f:96-99 -- the counterpart of the Chx2/Chg2/Acm2 snapshot above.
+    copy(p.chx2.data(), prm::PXPX, 1, d.chlxpx.data());
+    copy(p.chg2.data(), prm::PGPG, 1, d.chlgpg.data());
+    copy(p.acm2.data(), PACM, 1, d.armacm.data());
     m.nintvl = p.nintv2;
     m.nextvl = p.nextv2;
     m.mxdflg = p.mxdfl2;
@@ -283,13 +302,24 @@ void ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
                    ctx.usrreg.ncusrx, m.userfx);
             if (sa.itd == 1 && tdfix) sa.itd = -1;
             if (sa.ihol == 1 && holfix) sa.ihol = -1;
-            // The fix only STICKS if the ssprep SNAPSHOT carries it too:
-            // restor_span resets the live B/Regfx/Iregfx from that snapshot
-            // before every span, so writing only the live model here is undone
-            // by the very first one. Same trap as fixmdl below and as
-            // history{fixreg=} (driver/CLAUDE.md, trap 1).
-            copylg(m.regfx.data(), prm::PB, 1, ctx.ssprep.regfx2.data());
-            ctx.ssprep.irfx2 = m.iregfx;
+            // NOTE what is deliberately NOT done here, because the obvious
+            // reading of this port's own rules says to do it. rvfixd writes
+            // only the LIVE Iregfx/Regfx, and ssmdl.f:53 does not mirror them
+            // into ssprep.cmn's Regfx2/Irfx2 the way ssmdl.f:342-352 mirrors
+            // Arimap/Arimaf for fixmdl=yes -- so the restor inside ssx11a.f:160
+            // puts the main run's all-free flags straight back and NO span ever
+            // sees a fixed coefficient. `slidingspans{fixreg=}` therefore does
+            // not fix anything in the oracle: its entire effect is the Itd/Ihol
+            // demote two lines up (no tds/ads table, plus the ssphdr NOTE).
+            //
+            // Measured, not deduced (docs/M5_PORT_NOTES.md entry 83): an
+            // instrumented oracle dumping Arimap and B(1..7) per span gives
+            // airline_slidingspans-fixreg-td values byte-identical to
+            // airline_slidingspans-fixmdl-no, which is the same spec without
+            // the fixreg= line. Mirroring the flags into the snapshot -- which
+            // this port did, by analogy with fixmdl and history{fixreg=} --
+            // made every span hold the TD coefficients fixed and put sfs 8.4e-03
+            // out on span 1 alone.
         } else if (m.iregfx == 3) {
             // ssmdl.f:57-70. The Nssfxr/Ssfxrg write-back records the verdict
             // for the caller, and is skipped when Ssinit==1 because fixmdl=yes
@@ -925,10 +955,21 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
     for (int j = 1; j <= si.ncol; ++j) {
         ctx.ssft.icol = j;
         restor_span(ctx);
+        // sspdrv.f:130-143, "reset model parameters to original values". It sits
+        // between ssx11a (whose tail is the restor above) and x11ari at :180,
+        // so it runs BEFORE this span's estimation, not after the previous
+        // one's -- the two readings differ and only the call order settles it.
+        // Ssinit is `Intidx = ivec(1)-1` over INTDIC='no','yes','clear'
+        // (getssp.f:50/156), so 2 is `slidingspans{fixmdl=clear}` and no corpus
+        // spec sets it; the B/Bx arms are additionally inert while Iregfx or
+        // Irgxfx is nonzero.
         if (si.ssinit == 2) {
             for (int i = 1; i <= prm::PARIMA; ++i)
                 if (!ctx.model.arimaf(i)) ctx.mdldat.arimap(i) = prm::DNOTST;
-            // (Nb==0: the B/Bx DNOTST reset lines are no-ops.)
+            if (ctx.model.iregfx == 0)
+                for (int i = 1; i <= prm::PB; ++i) ctx.mdldat.b(i) = prm::DNOTST;
+            if (ctx.hiddn.ixreg > 0 && ctx.xrgmdl.irgxfx == 0)
+                for (int i = 1; i <= prm::PB; ++i) ctx.xrgmdl.bx(i) = prm::DNOTST;
         }
         // sspdrv.f:127's `IF(Ixreg.eq.3)Ixreg=2` and ssx11a.f:93-94's demote are
         // both done inside run_x11_span (its set_xrg_span arm), so the

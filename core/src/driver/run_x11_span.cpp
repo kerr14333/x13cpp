@@ -66,7 +66,15 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     setxpt(ctx, nfdrp, lsadj, fctdrp);
     const int pos1ob = ctx.x11ptr.pos1ob;
     const int posfob = ctx.x11ptr.posfob;
-    ctx.adj.setpri = ctx.x11ptr.pos1bk;
+    // Setpri is deliberately NOT re-anchored here. `Setpri=Pos1bk` is an
+    // EDITOR-ONLY assignment (editor.f:851) and no span driver repeats it: the
+    // sub-span's data sits at its own absolute Pos1ob inside the same padded
+    // buffer (Lsp slides it), while Adj stays anchored at the MAIN run's
+    // Begadj, so x11int's `copy(Adj,...,Sprior(Setpri))` is what keeps the
+    // prior factors DATE-aligned across every span. Re-anchoring Setpri to the
+    // span's own Pos1bk slid the whole prior series onto the span, which put
+    // the leap-year factor of the wrong YEAR on every February (see the note
+    // in tests/parity/test_slidingspans_tables.py).
 
     // ssx11a.f: derive this span's calendar Begspn/Endspn from the JUST-SET
     // Pos1ob/Posfob (via the ctx-global Lyr/Ny calendar anchor) + the
@@ -396,6 +404,24 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         const int posfob_b1 = ctx.x11ptr.posfob;
         copy(ctx.orisrs.stcsi.data() + (pos1ob - 1), posfob_b1 - pos1ob + 1, 1,
              ctx.orisrs.stoap.data() + (pos1ob - 1));
+
+        // arima.f:1430 -- "reset model parameters for sliding spans, revisions
+        // history". Unconditional at the END of arima, so it fires on every
+        // span's estimation too, not only the main run's: Ap2/Bb/Fxa/Var/... are
+        // re-snapshotted from what THIS span converged to, and the next span's
+        // restor therefore starts from its predecessor, not from the main run.
+        //
+        // The port had only the main-run call (x11_prestage.cpp), so every span
+        // restarted from the main model. Span 1 was unaffected -- it inherits
+        // the main run's either way -- which is exactly how the gap presented:
+        // `airline_slidingspans-fixmdl-no` span 1 bit-exact, spans 2-4 out by
+        // 6.2e-07/3.9e-07/3.0e-08 in sfs. Only reachable when the spans
+        // re-estimate at all (slidingspans{fixmdl=no}); with the model held
+        // fixed the snapshot is a no-op rewrite of the same values.
+        //
+        // capture_saved=false: ctx.saved.ksdev0/lterm0/nterm0 are NOT ssprep.cmn
+        // fields and are parse-time values -- see the note on the declaration.
+        ssprep_snapshot(ctx, /*capture_saved=*/false);
     }
 
     x11pt2(ctx, lmodel, lx11, lseats, lgraf, lgrfxr);

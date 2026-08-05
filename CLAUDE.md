@@ -181,7 +181,7 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (82
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (83
 numbered entries, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
@@ -212,6 +212,27 @@ because by the time you would think to look them up, the damage is done.
   it publishes.** `history{}` re-estimates per span, so it leaves the last
   span's ARMA coefficients in `Arimap`, and the SEATS harness rebuilds the
   whole decomposition from `ctx` after `run_seats` returns (entry 69).
+- **The mirror image of that rule, and it has now cost as much: some state must
+  NOT be re-derived per span.** The span driver re-runs `setxpt`, so
+  re-assigning `Setpri = Pos1bk` there looks like faithfulness — but
+  `Setpri=Pos1bk` is an EDITOR-ONLY line (`editor.f:851`) and the oracle never
+  repeats it. `Adj` is anchored at the MAIN run's `Begadj` and `x11int` copies
+  it into `Sprior` POSITIONALLY, so a pinned `Setpri` beside a sliding `Pos1ob`
+  is exactly what keeps the prior factors date-aligned. Re-anchoring put the
+  wrong year's leap factor on every February for months (entry 83). Before
+  re-establishing a value inside a span, find the ORACLE's assignment and check
+  which phase owns it — an editor assignment repeated per span is a bug, and a
+  per-span assignment hoisted to the editor is the same bug mirrored.
+- **A trap list is a list of places to LOOK, not a list of things that are
+  true.** The trap above it — "a structural change not mirrored into the
+  `ssprep` snapshot is undone by the first span's `restor`" — holds for
+  `fixmdl` and for `history{fixreg=}`, and is FALSE for
+  `slidingspans{fixreg=}`: `ssmdl.f:53`'s `rvfixd` writes only the live
+  `Iregfx`/`Regfx`, so `restor` undoes it and the option fixes nothing at all
+  (its whole effect is the `Itd`/`Ihol` demote). Adding the "missing" mirror by
+  analogy made the engine work where the oracle does not, 8.4e-03 out on span 1
+  (entry 83). Three sibling features write the snapshot and the fourth does
+  not; only the Fortran says which.
 - **A discovery predicate is a hand-written case list that has learned to
   hide.** `endswith("seats")` and `all(_CORE_TAGS)` read like generic discovery
   and are exactly as brittle as a literal, with none of the visibility — a

@@ -19,7 +19,8 @@ by side, plus a cross-span max-%-difference column. The per-span values
 The indirect/composite variants (sis/cis/ais/yis) are not reachable from a
 single-series spec and are out of scope here.
 
-STATUS: GATED bit-exact (all 4 spans, sfs + chs, ~4-5e-15). The re-entrant
+STATUS: GATED bit-exact (all 4 spans, every table each spec ships --
+sfs/chs/tds/ads -- worst ~5e-15). The re-entrant
 sub-span replay driver (driver/run_x11_span.{hpp,cpp}) + the slidingspans{}
 orchestration (x11/slidingspans.{hpp,cpp} -- setssp.f/sspdrv.f/ssrit.f/ssap.f's
 xchng+mflag+rplus, scoped to sfs/chs) run to completion (Issap 1->2->3). Port
@@ -207,67 +208,32 @@ def _run(base: str) -> str:
     return proc.stdout
 
 
-# KNOWN OPEN GAP, deliberately recorded rather than deleted.
+# _KNOWN_GAPS IS EMPTY, AND IS KEPT SO THE NEXT ONE HAS SOMEWHERE TO GO.
+# Every slidingspans spec in the corpus now gates bit-exact on every table it
+# ships (worst ~5e-15 across sfs/chs/tds/ads, all four spans). The three gaps
+# that lived here are worth keeping a record of, because two of them were
+# mis-attributed for months and the third was mis-attributed within one session:
 #
-# `airline_slidingspans-td` is the spec that pins the Priadj span-replay restore
-# (ssprep.f:56-62 / restor.f:55) and the regression half of ssprep/restor
-# (ssprep.f:81-95, restor.f:66-70) -- both real wrong-numbers bugs it found and
-# both now fixed, which is why its `sfs` gates. Its `chs` does not yet.
+#   1. `airline_slidingspans-x11regression` chs -- CLOSED by ssxmdl's
+#      fixx11reg= default TOGETHER with the Ixreg demote (entry 79).
+#   2. `airline_slidingspans-td` chs -- the Feb/Mar cells, ~3.5 percentage
+#      points, sign following the leap year. The note here blamed "a per-span
+#      phase problem in how the prior series is indexed", which was right, and
+#      then named the wrong half: it said each span "places Adj[0] at its own
+#      Setpri" and treated that as correct. Setpri is an EDITOR-ONLY assignment
+#      (editor.f:851); the oracle leaves it at 1 while Pos1bk slides 25/37/49/61
+#      with the span, which is exactly what keeps Adj date-aligned. The port
+#      re-anchored it per span. Entry 83.
+#   3. `fixmdl=no` + `regression{}` -- span 1 bit-exact, spans 2-4 out by a few
+#      1e-7, because arima.f:1430's unconditional `CALL ssprep` was missing from
+#      the span replay, so every span restarted from the MAIN run's model
+#      instead of from its predecessor's. Entry 83.
 #
-# What is measured: sfs (the seasonal factors) is bit-exact, while chs (the
-# month-to-month change of the per-span SEASONALLY ADJUSTED series, ssap.f:194's
-# `xchng(Sa, c, ...)`) is not. At 1956.Feb -- a LEAP February -- the golden's
-# span columns read -0.264 / +0.284 / +0.680 / +1.396 and the engine gives
-# +3.299 / +3.865 / +0.680 / +5.018: the THIRD span agrees bit-for-bit and the
-# others do not. A uniform missing prior would move every span, so this is a
-# per-span phase problem in how the prior series (anchored at the MAIN run's
-# Begadj) is indexed for a span that starts at a different date -- each span
-# places Adj[0] at its own Setpri -- and NOT a repeat of the Priadj bug.
-#
-# The golden is blessed and committed, so whoever closes this has the target
-# already. Do not "fix" it by dropping chs from the spec's save list.
-#
-# A SECOND chs gap once sat here, on `airline_slidingspans-x11regression`, with
-# the identical symptom (sfs bit-exact, chs ~5e+0 out, 408 of 600 cells) and a
-# different owner: deleting `x11regression{}` made it bit-exact while deleting
-# `transform{function=log}` -- the lom/leap-year prior the gap above is about --
-# moved nothing. It is CLOSED (ssxmdl's fixx11reg default, entry 79); the entry
-# is gone rather than re-worded, because a skip list is the one place a fixed
-# thing must not linger. The separation it recorded still holds: these were two
-# gaps sharing a symptom, and the one below is untouched.
-#
-# A THIRD gap arrived with the ssmdl.f:50-121 specs and has a single owner:
-# `slidingspans{fixmdl=no}` together with a `regression{}` group, i.e. spans
-# that RE-ESTIMATE the regARIMA model instead of replaying the main run's
-# converged one. It was isolated the way the rules here require -- by building
-# the spec WITHOUT the feature the divergence was first attributed to.
-# `airline_slidingspans-fixmdl-no` is `airline_slidingspans-td` plus the single
-# line `fixmdl = no`, carries no fixed coefficients and no fixreg=, so none of
-# the arms ported alongside it can run -- and it fails sfs as well as chs. The
-# three ssmdl specs therefore inherit the gap rather than cause it.
-#
-# Why those three are landed anyway: every arm of ssmdl.f:50-121 needs Ssinit/=1
-# to be observable at all (setssp.f:47 demotes Itd first otherwise), so
-# fixmdl=no is not optional for them. What they DO gate today is the demote
-# itself -- which tds/ads tables exist -- and that is the entire observable of
-# the arms in question. Their sfs/chs values are blessed and waiting.
-_FIXMDL_NO = ("slidingspans{fixmdl=no} + regression{}: per-span RE-estimation "
-              "of the regARIMA model is not yet bit-exact -- isolated on "
-              "airline_slidingspans-fixmdl-no, which carries nothing else")
-_KNOWN_GAPS = {
-    ("airline_slidingspans-td", "chs"):
-        "slidingspans{} + regression{}: the per-span SA change table is still "
-        "out of scope (per-span prior phase; see the comment above this map)",
-    **{(b, t): _FIXMDL_NO
-       for b in ("airline_slidingspans-fixmdl-no",
-                 "airline_slidingspans-fixreg-td",
-                 "airline_slidingspans-regfixed",
-                 "airline_slidingspans-regallfixed",
-                 "airline_slidingspans-regpartfixed")
-       for t in ("sfs", "chs")},
-    ("airline_slidingspans-regpartfixed", "tds"): _FIXMDL_NO,
-    ("airline_slidingspans-regpartfixed", "ads"): _FIXMDL_NO,
-}
+# Rule that survives all three: the observable was the SAME table each time, and
+# the owner was different each time. Isolate by building the spec WITHOUT the
+# feature before believing any attribution -- and do not "fix" one of these by
+# dropping a tag from a spec's save list.
+_KNOWN_GAPS: dict[tuple[str, str], str] = {}
 
 # NOTE blocks the oracle writes to Mt2 from a routine this port has not ported.
 # Same family as ssphdr (entry 81) and prterx (entry 73) -- a load-bearing Mt2

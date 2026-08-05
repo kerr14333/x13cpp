@@ -38,7 +38,13 @@ int sfmax_span(int lterm, const int* lter, int ny);
 // slidingspans{} was not requested) -- calling it any later would snapshot
 // the MAIN run's own resolved/mutated Lter, which is NOT what restor_span
 // needs to reproduce per-span.
-void ssprep_snapshot(X13Context& ctx);
+// `capture_saved` covers the three fields that are NOT ssprep.cmn members --
+// ctx.saved.ksdev0/lterm0/nterm0, which this port stashes here because it has
+// no editor block to read them from. They are parse-time values and must be
+// taken ONCE; a per-span re-snapshot would capture that span's evolved Ksdev
+// and re-open the extreme-value-mode gap it was added to close. Pass false
+// from inside a span replay (arima.f:1430's ssprep), true from the main run.
+void ssprep_snapshot(X13Context& ctx, bool capture_saved = true);
 
 // restor.f, same scope as ssprep_snapshot: reset Lter(1..Ny)/Ktcopt/Tic and
 // (Lmodel) Arimap/Var/Nintvl/.../Lma/Lar from the ctx.ssprep snapshot. Called

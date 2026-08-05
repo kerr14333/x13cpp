@@ -78,15 +78,15 @@ reproduce.
 
 ## X-11
 
-- **`core/src/x11/slidingspans.cpp:449`**
+- **`core/src/x11/slidingspans.cpp:479`**
   slidingspans{x11outlier=no} with automatic x11regression outlier identification (ssxmdl.f:44-76's rmotss block) is
   *Fortran:* `ssxmdl.f:44-76`
 
-- **`core/src/x11/slidingspans.cpp:546`**
+- **`core/src/x11/slidingspans.cpp:576`**
   slidingspans{} with x11regression{user=} (ssxmdl.f:142-148's bakusr) is
   *Fortran:* `ssxmdl.f:142-148`
 
-- **`core/src/x11/slidingspans.cpp:736`**
+- **`core/src/x11/slidingspans.cpp:766`**
   slidingspans{fixreg=(outlier)} (the per-span otlfix that reaches ssx11a, sspdrv.f:121) is
   *Fortran:* `sspdrv.f:121`
 

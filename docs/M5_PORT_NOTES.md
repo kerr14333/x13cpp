@@ -22,6 +22,7 @@ same way rather than appending by hand. Navigate by searching the
 number, e.g. `## 47.` (the titles carry em dashes and backticks, which
 make generated anchors fragile, so the list is deliberately link-free).
 
+0. SEATS decomposition core -- the seasonal front
 1. `history{estimates=(fcst)}` — the out-of-sample FORECAST-ERROR history — CLOSED (at the per-span floor).
 2. The three MODEL histories `estimates=(aic arma td)` — CLOSED, and `history{}`'s whole `estimates=` surface is now covered.
 3. Model X-11 path — CLOSED.
@@ -104,6 +105,7 @@ make generated anchors fragile, so the list is deliberately link-free).
 80. The stock-trading-day abend: an unguarded refusal, and an `ELSE` that pairs with a different `IF` than everyone assumed
 81. The sliding-spans NOTEs: a diagnostic whose whole effect is an ABSENCE, and the channel nobody could read
 82. `slidingspans{fixreg=}` was parsed and dropped, and the ssxmdl wall was keyed on the wrong variable
+83. `slidingspans{}` — CLOSED bit-exact, and each of the three gaps had a different owner than its note said
 
 ---
 
@@ -4894,3 +4896,144 @@ outliers (`ssxmdl.f:44-76`'s `rmotss`), and now `fixreg=(outlier)` -- whose
 where it decides whether a held-back outlier is re-added with its coefficient
 fixed. **The WALLS count did not move**: one wall removed, one added. As in
 entry 74, a gap count is not a coverage measure.
+
+## 83. `slidingspans{}` — CLOSED bit-exact, and each of the three gaps had a different owner than its note said
+
+Entry 82 left five specs sitting behind `_KNOWN_GAPS` and a sixth
+(`airline_slidingspans-td`'s `chs`) that had been there for months. All six
+now gate bit-exact on every table they ship — `sfs`/`chs`/`tds`/`ads`, all
+four spans, worst **~5e-15** — and `_KNOWN_GAPS` is EMPTY. Three separate
+defects, none of them where the surviving prose said to look.
+
+### 1. `Setpri` is an EDITOR-ONLY assignment, and the span driver re-anchored it
+
+`run_x11_span.cpp` opened with `ctx.adj.setpri = ctx.x11ptr.pos1bk;`. It reads
+as obviously right — `editor.f:851` is literally `Setpri=Pos1bk`, and each
+span re-runs `setxpt` — and it is the bug.
+
+`x11int.f:53` copies the prior-adjustment factors as
+`copy(Adj, PLEN-Setpri+1, -1, Sprior(Setpri))`, i.e. POSITIONALLY: `Sprior` at
+data position `i` is `Adj(i-Setpri+1)`, the factor for date
+`Begadj + (i-Setpri)`. `Adj` is built once, by `adjsrs` from the EDITOR
+(`editor.f:849` is its only call site in the whole oracle) and anchored at the
+MAIN run's `Begadj`. What keeps a span's factors aligned is therefore that
+`Setpri` does NOT move while the span's data does: `Lsp` slides `Pos1ob` to the
+span's absolute offset inside the same padded buffer, and the positional copy
+then lands the right date on the right observation for free.
+
+Measured on an instrumented `-O2` oracle (scratchpad copy of the vendored tree;
+the tree itself is never edited), printing at `x11pt2.f:115`:
+
+```
+PROBE issap 1 begspn 1949 1 begadj 1949 1 setpri 1 nadj 156 p1bk  1 p1ob  1
+PROBE issap 2 begspn 1951 1 begadj 1949 1 setpri 1 nadj 156 p1bk 25 p1ob 25
+PROBE issap 2 begspn 1952 1 begadj 1949 1 setpri 1 nadj 156 p1bk 37 p1ob 37
+PROBE issap 2 begspn 1953 1 begadj 1949 1 setpri 1 nadj 156 p1bk 49 p1ob 49
+PROBE issap 2 begspn 1954 1 begadj 1949 1 setpri 1 nadj 156 p1bk 61 p1ob 61
+```
+
+`Setpri` pinned at 1 while `Pos1bk` slides 25/37/49/61, and the dumped
+`Sprior` reads `0.991150` at February 1951 and `1.026549` at February 1952 —
+date-correct in every span.
+
+**The observable.** `Priadj==4` is `lpyear`, so `Adj` is 1.0 everywhere except
+February, where it is `29/28.25` or `28/28.25`; `tdlom.f:32` folds it into
+`Factd`, which divides the SA series. Re-anchoring slid the whole factor series
+onto the span, so each February got the factor of a February `k` years away
+with `k = 1949 - span_start_year`. Where the leap parity happened to match,
+nothing showed; where it did not, the SA value was out by exactly `29/28`
+(leap) or `28/29` (non-leap), and `chs` — a month-to-month percent change —
+moved ~3.5 points at that February and back at the following March.
+**Eighteen cells, all Feb/Mar, sign following the leap year.** The
+three-years-apart pattern WITHIN each span is what identified `Adj`'s anchor
+rather than a missing prior: a missing prior moves every span equally.
+
+The note in `test_slidingspans_tables.py` had called this "a per-span phase
+problem in how the prior series is indexed" — correct — and then described
+"each span places Adj[0] at its own Setpri" as the mechanism rather than as the
+defect. **A comment can name the right subsystem, point at the right line, and
+call it correct.**
+
+### 2. `arima.f:1430`'s `CALL ssprep` is unconditional, so the spans CHAIN
+
+With `slidingspans{fixmdl=no}` each span re-estimates. Span 1 was bit-exact and
+spans 2-4 were out by 6.2e-07 / 3.9e-07 / 3.0e-08 in `sfs` — the signature of a
+value that is right the first time and stale afterwards.
+
+`restor` (`ssx11a.f:160`) copies `Ap2`/`Bb` back over `Arimap`/`B` before each
+span. The port had `Ap2` written ONCE, by the main run. The oracle writes it
+again at the END of every `arima` call — `arima.f:1430`, comment "Reset model
+parameters for sliding spans, revisions history" — and `sspdrv.f:180`'s
+`x11ari` runs `arima` per span. So each span's starting parameters are its
+PREDECESSOR's converged ones, and only span 1 starts from the main run.
+
+Confirmed from both sides before changing anything: the instrumented oracle's
+per-span `Arimap(3..4)` are `0.3026/0.5462`, `0.0506/0.5092`, `0.0376/0.5195`,
+and the engine now prints the same three.
+
+The port's `ssprep_snapshot` also stashes `ctx.saved.ksdev0/lterm0/nterm0`,
+which are NOT `ssprep.cmn` members — they stand in for an editor block this
+port does not have and must be taken at parse time. Hence the `capture_saved`
+parameter: a per-span re-snapshot of `Ksdev` would re-open the
+extreme-value-mode gap that cost 3.45% on span 1.
+
+### 3. `slidingspans{fixreg=}` does not fix anything, and the port made it work
+
+`ssmdl.f:53`'s `rvfixd` writes only the LIVE `Iregfx`/`Regfx`. It does NOT
+mirror them into `ssprep.cmn`'s `Regfx2`/`Irfx2` — unlike `ssmdl.f:342-352`,
+which explicitly writes `Ap2`/`Fxa` for `fixmdl=yes`. So the `restor` inside
+`ssx11a` puts the main run's all-free flags straight back and **no span ever
+sees a fixed coefficient**. `fixreg=`'s entire effect is the `Itd`/`Ihol`
+demote: no `tds`/`ads` table, plus the `ssphdr` NOTE.
+
+Entry 82 had added the mirror, reasoning from this port's own trap list ("a
+structural change not mirrored into the ssprep snapshot is undone by the first
+span's restor" — true for `fixmdl`, true for `history{fixreg=}`, false here).
+Measured, not deduced: the instrumented oracle's per-span `Arimap` AND
+`B(1..7)` on `airline_slidingspans-fixreg-td` are **byte-identical** to
+`airline_slidingspans-fixmdl-no`'s, and the two blessed `sfs` goldens differ in
+**zero** lines. The mirror put `sfs` 8.4e-03 out on span 1 alone.
+
+**The rule this earns:** a trap list is a list of places to LOOK, not a list of
+things that are true. Three sibling features write the snapshot; the fourth
+does not, and only the Fortran says which.
+
+### `fixmdl=clear` — the third value, now carried
+
+`INTDIC` is `'no','yes','clear'` and `Ssinit` is `ivec(1)-1`
+(`getssp.f:50/156`), so `Ssinit==2` is `slidingspans{fixmdl=clear}` and nothing
+else reaches it. It drives `sspdrv.f:130-143`, which resets `Arimap`/`B`/`Bx`
+to `DNOTST` so each span estimates from cold starting values.
+
+PLACEMENT is that block's whole content, and the indentation does not settle
+it: read as "after the span" it is dead code (the next `restor` overwrites it),
+read as "before this span's estimation" it is live. The CALL ORDER decides —
+the block sits between `ssx11a` (whose tail is the `restor`) and `x11ari` at
+`:180` (which runs `arima`). New spec `extra/airline_slidingspans-fixmdl-clear`
+makes the answer observable: it gates bit-exact, its `sfs` golden differs from
+`fixmdl=no`'s in 240 lines, and moving the block after the span fails 2 gates.
+
+### Mutations
+
+| gates | mutation |
+|---|---|
+| **12** | drop `arima.f:1430`'s per-span `ssprep` re-snapshot |
+| **7** | re-anchor `Setpri` to the span's own `Pos1bk` |
+| **2** | mirror `rvfixd`'s `Regfx`/`Iregfx` into the ssprep snapshot |
+| **2** | move `sspdrv.f:130-143` after the span (the "dead code" reading) |
+| **0** | drop the `Chx2`/`Chg2`/`Acm2` half of `ssprep`/`restor` |
+
+The **0** is reported rather than acted on. Those three are the estimation
+workspace and every span's `rgarma` rebuilds them from its own design before
+reading them, so the inherited values are dead on this corpus. They are kept
+because an incomplete stand-in for `restor` has produced three separate defects
+in this port already, each invisible until a later phase in a different file
+read one of the omitted fields.
+
+### What is still walled
+
+Unchanged, and none of it is reachable from a `fixmdl=`/`fixreg=` spec:
+`slidingspans{x11outlier=no}` with automatic x11regression outliers
+(`ssxmdl.f:44-76`'s `rmotss`), `slidingspans{}` with `x11regression{user=}`
+(`ssxmdl.f:142-148`'s `bakusr`), and `fixreg=(outlier)` (`sspdrv.f:121`).
+WALLS stays at 26 gaps / 4 faithful.
