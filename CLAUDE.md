@@ -181,8 +181,8 @@ each session and therefore cannot rot. Do not restate it here.
 ### The archive — read it before you touch a subsystem
 
 Every M5 feature that closed did so with measurements, traps and Census
-defects attached, and those records are in **`docs/M5_PORT_NOTES.md`** (85
-numbered entries, chronological). They used to live in this file and made it
+defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
+(entries 0-86, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -305,6 +305,17 @@ because by the time you would think to look them up, the damage is done.
   rejected-by-measurement note sits next to an unported routine, re-measure it
   with that routine before trusting the note, and write such notes so they say
   what else was missing at the time.
+- **A measured INERTNESS is scoped to the probe spec exactly as much as a
+  measured effect is, and it does not read that way.** "`fixreg=` fixes nothing
+  in the oracle" was derived correctly, from a real instrumented-oracle dump,
+  and stood in a code comment as a claim about the OPTION. It was a claim about
+  a design the `ssmdl` group walk leaves alone: with one held-back outlier in
+  the spec, `regchg` goes true, `ssmdl.f:358-373` re-snapshots the POST-`rvfixd`
+  `Iregfx`/`Regfx`, and every span's `restor` now reinstates the fixings
+  instead of erasing them — 192 `sfs` lines move (entry 86). When a note says a
+  feature does nothing, the question to ask is what the probe spec did NOT
+  have; "no observable effect" and "no effect" differ by whatever the corpus
+  was missing.
 - **Count the block; never read the indentation.** Fortran closes with bare
   `END IF`, so an `ELSE` seven levels deep looks exactly like a top-level one.
   `x11mdl.f:661`'s `ELSE` pairs with `IF(igrp.gt.0)` at `:546`, not with the

@@ -16,6 +16,7 @@ already paid for once.
 | **83** | `slidingspans{}` CLOSED bit-exact — `Setpri` is editor-only and must NOT be re-anchored per span (the leap-February `chs` gap), `arima.f:1430`'s per-span `ssprep` re-snapshot (spans CHAIN), `fixreg=` fixes nothing in the oracle because `rvfixd` never writes `Regfx2`, and `fixmdl=clear`'s `Ssinit==2` block |
 | **82** | `slidingspans{fixreg=}` (parsed and dropped, behind a wall keyed on `Nssfxx` instead of `Nssfxr`), `ssmdl.f:50-121` + `ssxmdl.f:78-136`'s Iregfx/Irgxfx arms, the `loadxr` round trip that UNDOES rvfixd's store writes — and the mutation that passed because its spec was on a different arm than its comment claimed |
 | **84** | `Xaicst` / `Xaicrg` — the two x11regression aictest values the editor parses back out of its own GROUP TITLES (`tdstock[15]`, `(change for before 1955.Jan)`), both read by `x11reg.cpp` and never written until now |
+| **86** | `slidingspans{fixreg=(outlier)}` — `setssp`'s `Otlfix` is the one fixreg flag that OUTLIVES setup (`sspdrv.f:121`, per span), the `ssx11a.f:268` disjunction it feeds is algebraically redundant with `rmotss`'s own store write, and lifting the wall falsified entry 83's "`fixreg=` fixes nothing in the oracle": with a held-back outlier `regchg` re-snapshots the post-`rvfixd` `Iregfx`/`Regfx` and the fixings survive every span |
 | **85** | the sliding-spans HELD-BACK OUTLIERS (`ssmdl.f:124-280`'s group walk, `rmotss`/`adotss`) — a whole block that was neither ported nor walled, `ssprep`'s dropped `Lx11` argument, and the change-of-regime arm the ORACLE halts on (CB-39) |
 | **13, 14, 15, 24, 71, 72, 73, 76, 77** | `x11regression{}` — `tdprior`, the OLS prior TD (`xrgdrv`) on both the model and the no-model path, the Easter aictest sub-engine, the logadd tdprior bug, the `Picktd` half of gtinpt's `restor`, `prterx`'s singular-design abend, the HOLIDAY-ONLY design whose whole prior pass was skipped behind four `Axrgtd` proxies, and `reweight=` (`Lxrneg`) — whose daily-weight rewrite has to run BEFORE `x11ref`, because it writes back into `B` |
 | **19, 20, 21** | x11pt4 — the F2 test battery, the Part-F summary measures + F3 quality statistics, and the Part-E tables |
@@ -47,7 +48,11 @@ already paid for once.
   per span and stripped after each one (`sspdrv.f:208-219`), unlike `history{}`'s
   `chkorv`, which drains it. Anything new that deletes or adds a design column
   between spans has to re-snapshot (`ssmdl.f:358-373`), or the next `restor`
-  undoes it (entry 85).
+  undoes it (entry 85). **And that re-snapshot carries more than the design:**
+  it takes `Iregfx`/`Regfx` with it, so a `fixreg=` fixing that `restor` would
+  otherwise erase becomes permanent the moment the walk deletes one column
+  (entry 86). Anything measured "inert because `restor` puts it back" was
+  measured with `regchg` false.
 
 - **`Muladd` collapses 2→0 at `x11pt1.f:52`** for the whole prior-adjustment
   stage. A guard placed after the collapse tests a different value than one

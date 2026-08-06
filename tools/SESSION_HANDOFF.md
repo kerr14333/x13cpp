@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7042<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->776<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7064<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->779<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7042<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7064<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -1922,11 +1922,61 @@ default the single find lands where every verdict is inert),
 flag, added because without it "force the flag true" was a mutation no spec
 could fail), and `edge/airline_slidingspans-regime-td` (the CB-39 halt).
 
+## This session, part 37: `slidingspans{fixreg=(outlier)}` -- and the sentence it falsified
+
+The cheapest of the four remaining walls, and it was one line of threading:
+entry 85 had already landed `rmotss` and `adotss`, so all that was missing was
+that `Otlfix` never left `setssp`. Full record in `docs/M5_PORT_NOTES.md`
+entry 86; what carries forward:
+
+**`Otlfix` is the one `fixreg=` flag that outlives setup.** `setssp.f:323-334`
+decodes four; `tdfix`/`holfix`/`usrfix` are locals of the caller and die there,
+but `sspdrv.f:66-67` keeps `Otlfix` and hands it to `ssx11a` ONCE PER SPAN
+(`:121`). `setssp_span` now returns it through `bool& otlfix_out`.
+
+**The oracle on-vs-off measurement said "does nothing", and was measuring the
+default.** With `fixmdl` at its default yes (`Ssinit==1`) the
+`ssx11a.f:268` disjunction is already true, so adding `fixreg = (outlier)` to
+`extra/airline_slidingspans-outlier-heldback` moves not one cell. Under
+`fixmdl = no` it moves **192 `sfs` lines and 190 `chs` lines**. The gate spec
+carries both lines for that reason, and saves `tds`/`ads` as well because
+`fixmdl = no` leaves the `Itd`/`Ihol` demote unfired.
+
+**The disjunction that was actually ported is algebraically redundant, and is
+kept anyway.** `adotss` computes `fx = Fixotr.or.Otlfix`; `rmotss` wrote that
+entry as `Fixotr = Regfx.or.Otlfix` from the same run-constant flag. Forcing
+`ss_otlfix` true, forcing it false, and deleting `Otlfix` from `rmotss`'s store
+write are 0 gates each -- an identity, not entry 82's saturated precondition.
+Kept on entry 85's rule: the argument the Fortran passes is the argument this
+port carries.
+
+**WHAT MOVES THE NUMBERS IS `rvfixd`, AND THAT FALSIFIES ENTRY 83's HEADLINE.**
+Entry 83 concluded `fixreg=` "does not fix anything in the oracle" -- `rvfixd`
+writes only the live `Iregfx`/`Regfx`, `ssmdl.f:53` does not mirror them into
+`ssprep.cmn`, and `restor` puts the all-free flags straight back. Every clause
+is true and the conclusion is too broad: **the probe spec had no outlier
+regressor**, so the `ssmdl.f:124-280` walk left `regchg` FALSE and nothing
+re-snapshotted. Add one held-back outlier and `ssmdl.f:358-373` fires,
+`ss_snapshot_design` copies the POST-`rvfixd` `Iregfx`/`Regfx` into
+`Irfx2`/`Regfx2`, and every span's `restor` reinstates the fixings instead of
+erasing them. Mutations: `otlfix` withheld from `ssmdl`'s `rvfixd` **4**; the
+`Irfx2`/`Regfx2` half of the re-snapshot dropped **5**; the three `Otlfix`
+routes above 0. The stale code comment is rewritten in place.
+
+**Standing rule added to `CLAUDE.md`:** a measured INERTNESS is scoped to the
+probe spec exactly as much as a measured effect is, and it does not read that
+way. When a note says a feature does nothing, ask what the probe spec did NOT
+have.
+
+**Spec:** `extra/airline_slidingspans-outlier-fixreg` (`fixmdl = no` +
+`fixreg = (outlier)` + `ao1950.feb ao1959.nov td`, saving `sfs chs tds ads`),
+hand-authored, both measurements in its header. WALLS 25 -> 24 gaps.
+
 ## Open, in the order I would take them
 
-1. **The four remaining slidingspans walls**, all of which fatal rather than
-   lie. `rmotss` and `adotss` now EXIST (part 36), so two of these are smaller
-   than they were:
+1. **The three remaining slidingspans walls**, all of which fatal rather than
+   lie. `rmotss` and `adotss` EXIST (part 36) and `fixreg=(outlier)` is done
+   (part 37), so two of these are smaller than they were:
    * `slidingspans{x11outlier=no}` with automatic x11regression outliers
      (`ssxmdl.f:44-76`) -- the routine is ported; what is missing is the
      `loadxr(F)`/`loadxr(T)` bracket it runs inside and `ssx11a.f:104-151`'s
@@ -1936,16 +1986,13 @@ could fail), and `edge/airline_slidingspans-regime-td` (the CB-39 halt).
      for both the regARIMA and the x11regression user regressors, with
      `:223-231` undoing it; none of that is ported, and only the ssxmdl arm is
      walled.
-   * `fixreg=(outlier)` (whose `otlfix` outlives `setssp` and reaches `ssx11a`
-     per span, `sspdrv.f:121`). Now cheap: `adotss` already takes the flag, and
-     `run_slidingspans` collapses it to `Ssinit==1` with a comment saying where
-     to thread it through.
    * the change-of-regime arm of `ssmdl.f`'s group walk (`:150-241`), walled in
      part 36. The oracle HALTS there (CB-39), so porting it means reproducing a
      failed date parse -- decide whether that is worth doing at all.
 
-   The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
-   36 above and entries 83 and 85 before touching any of it.
+   The rest of the subsystem is closed and gated bit-exact -- see parts 34,
+   36 and 37 above and entries 83, 85 and 86 before touching any of it. Note
+   that entry 86 narrowed entry 83's `fixreg=` conclusion: read them together.
 2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a

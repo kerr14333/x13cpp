@@ -100,8 +100,13 @@ void ssp_strip_span_outliers(X13Context& ctx);
 // not enough data for >=2 spans -- a clean skip (matches the oracle's
 // NOTE-and-RETURN), not a FATAL; the "NOTE:" diagnostic text itself is not
 // ported (deferred print, as elsewhere in this codebase).
+// `otlfix` is setssp.f's OUT argument (setssp.f:323-334, `Ssfxrg(i).eq.4`):
+// sspdrv.f:66-67 declares it as a local, setssp writes it, and sspdrv then
+// passes it on to ssx11a ONCE PER SPAN (:121). It therefore outlives this call
+// and must be threaded out -- collapsing it into the fixmdl arm is only correct
+// while `slidingspans{fixreg=(outlier)}` is refused.
 bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
-                  bool lncset, bool lnlset);
+                  bool lncset, bool lnlset, bool& otlfix);
 
 // ssrit.f, scoped to non-composite (Iagr!=2): stores this span's per-period
 // values (X, over [l1,l2]) into the ctx.sspdat MXLEN x MXCOL accumulator

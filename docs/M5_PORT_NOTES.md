@@ -108,6 +108,7 @@ make generated anchors fragile, so the list is deliberately link-free).
 83. `slidingspans{}` — CLOSED bit-exact, and each of the three gaps had a different owner than its note said
 84. `Xaicst` and `Xaicrg` — the two x11regression AIC-test values the oracle recovers from its own group TITLES
 85. The sliding-spans held-back outliers — a whole `ssmdl` block that was neither ported nor walled
+86. `slidingspans{fixreg=(outlier)}` — the wall was one line, and lifting it falsified entry 83's headline
 
 ## 0. SEATS decomposition core -- the seasonal front
 
@@ -5347,3 +5348,88 @@ the saturation rather than shrug at it:
   different arm than its comment claimed": the arms are covered and the corpus
   still cannot separate them at 1e-6. Transcribed from the Fortran, and the
   zero left standing.
+
+## 86. `slidingspans{fixreg=(outlier)}` — the wall was one line, and lifting it falsified entry 83's headline
+
+The last cheap item on the sliding-spans wall list, and it cost almost no code:
+`rmotss` and `adotss` had landed in entry 85, so the only thing still missing
+was that `Otlfix` never left `setssp`. What the gate then found is that the
+sentence this port had been repeating about `fixreg=` — *it fixes nothing in
+the oracle* — is false on exactly the specs entry 85 added.
+
+**The threading.** `setssp.f:323-334` decodes `Ssfxrg` into four flags.
+Three of them (`tdfix`, `holfix`, `usrfix`) are locals of `setssp`'s caller and
+die there. `Otlfix` does not: `sspdrv.f:66-67` declares it, `setssp` writes it
+through, and `sspdrv.f:121` hands it to `ssx11a` **once per span**. This port's
+`setssp_span` had no out-parameter, so the flag was unreachable past setup and
+the option was refused. It now returns through `bool& otlfix_out` and
+`run_slidingspans` forms `ssx11a.f:268`'s real disjunction,
+`Otlfix.or.Ssinit.eq.1`.
+
+**Oracle on-vs-off, and the arm that makes it observable.** Measured first, per
+the standing rule, and the first measurement said the option does nothing:
+adding `fixreg = (outlier)` to `extra/airline_slidingspans-outlier-heldback`
+changes not one cell of `sfs` or `chs`. That is because `fixmdl` DEFAULTS to
+yes, `Ssinit==1`, and the disjunction is already true. Under `fixmdl = no` it
+separates hard — **192 of the `sfs` lines and 190 of the `chs` lines move**.
+The gate spec therefore carries both lines, and it also saves `tds`/`ads`,
+which `fixmdl = no` leaves un-demoted so all four tables are compared.
+
+### The disjunction this port just ported is provably redundant
+
+`adotss` computes `fx = Fixotr(icol).or.Otlfix`. `rmotss` wrote that same store
+entry as `Fixotr = Regfx(icol).or.Otlfix`, from the **same run-constant flag**.
+So the expression is `Regfx.or.Otlfix.or.Ssinit==1` with or without the
+`Otlfix` on `ssx11a.f:268`. Measured to match, three ways: forcing `ss_otlfix`
+true, forcing it false, and deleting `Otlfix` from `rmotss`'s store write are
+**0 gates each**. This is not entry 82's saturated-precondition zero — the
+corpus has specs on both arms — it is an algebraic identity.
+
+Kept anyway, and the reason is entry 85's rule: the argument the Fortran
+passes is the argument this port carries, because a narrowed signature is a
+defect waiting for its second call site (`ssprep`'s `Lx11`). The redundancy is
+a property of the two writers agreeing today, not of the routine.
+
+### What actually moves the numbers, and why entry 83's claim was too broad
+
+Entry 83 measured `fixreg=` against an instrumented oracle and concluded:
+
+> `rvfixd` writes only the LIVE `Iregfx`/`Regfx`, `ssmdl.f:53` does not mirror
+> them into `ssprep.cmn`, so `restor` inside `ssx11a.f:160` puts the main run's
+> all-free flags back and no span ever sees a fixed coefficient.
+
+Every clause of that is true, and the conclusion drawn from it — that
+`fixreg=` fixes nothing — is not. **The measurement was taken on a spec with no
+outlier regressor.** With no outlier there is nothing to hold back, the
+`ssmdl.f:124-280` group walk leaves `regchg` FALSE, and nothing re-snapshots
+the design. Put one held-back outlier in the same spec and `ssmdl.f:358-373`
+fires: `ss_snapshot_design` copies the **post-`rvfixd`** `Iregfx`/`Regfx` into
+`Irfx2`/`Regfx2`, and from then on every span's `restor` reinstates the fixings
+rather than erasing them. `fixreg=` fixes coefficients after all, by a route
+that belongs to the outlier walk and not to `fixreg=`.
+
+Mutations, which is how this was localised rather than argued:
+
+| mutation | result |
+|---|---|
+| `otlfix` never reaches `ssmdl`'s `rvfixd` | **4** gates fail |
+| the `regchg` re-snapshot stops carrying `Irfx2`/`Regfx2` | **5** gates fail |
+| `rmotss` stores `Fixotr` without the `Otlfix` half | 0 |
+| `ss_otlfix` forced true / forced false / `setssp` drops the out-write | 0, 0, 0 |
+
+So the owner is `rvfixd` plus the re-snapshot, in combination. Neither alone is
+the feature: `rvfixd`'s write is transient, and the re-snapshot only preserves
+whatever happens to be live when the walk ends.
+
+**The standing rule this earns.** A measurement that a feature is INERT is
+scoped to the state the probe spec was in, exactly as much as a measurement
+that it is live. Entry 83's probe could not have shown otherwise — the
+mechanism that makes `fixreg=` bite runs only when another feature has already
+modified the design. When a note says an option does nothing, check what else
+the probe spec did NOT have; "no observable effect" and "no effect" differ by
+whatever the corpus was missing at the time. Same shape as entry 79's rejected
+`Ixreg` demote, measured alone and correct alone, and wrong as a conclusion.
+
+**Gated by** `extra/airline_slidingspans-outlier-fixreg` (`fixmdl = no` +
+`fixreg = (outlier)` + `ao1950.feb ao1959.nov td`, saving `sfs chs tds ads`) —
+hand-authored, header records both measurements. WALLS 25 -> 24 gaps.

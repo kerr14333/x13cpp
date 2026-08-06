@@ -539,11 +539,7 @@ bool ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
             // reading of this port's own rules says to do it. rvfixd writes
             // only the LIVE Iregfx/Regfx, and ssmdl.f:53 does not mirror them
             // into ssprep.cmn's Regfx2/Irfx2 the way ssmdl.f:342-352 mirrors
-            // Arimap/Arimaf for fixmdl=yes -- so the restor inside ssx11a.f:160
-            // puts the main run's all-free flags straight back and NO span ever
-            // sees a fixed coefficient. `slidingspans{fixreg=}` therefore does
-            // not fix anything in the oracle: its entire effect is the Itd/Ihol
-            // demote two lines up (no tds/ads table, plus the ssphdr NOTE).
+            // Arimap/Arimaf for fixmdl=yes.
             //
             // Measured, not deduced (docs/M5_PORT_NOTES.md entry 83): an
             // instrumented oracle dumping Arimap and B(1..7) per span gives
@@ -553,6 +549,19 @@ bool ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
             // this port did, by analogy with fixmdl and history{fixreg=} --
             // made every span hold the TD coefficients fixed and put sfs 8.4e-03
             // out on span 1 alone.
+            //
+            // WHAT THAT MEASUREMENT DOES NOT SAY (entry 86). It was taken on a
+            // spec with no outlier regressor, so the group walk below left
+            // `regchg` FALSE and nothing re-snapshotted the design. Add one
+            // held-back outlier and ssmdl.f:358-373 fires, ss_snapshot_design
+            // copies the POST-rvfixd Iregfx/Regfx into Irfx2/Regfx2, and every
+            // span's restor now reinstates them -- so on that spec fixreg= DOES
+            // fix coefficients, by a route that has nothing to do with fixreg=.
+            // Dropping otlfix from this call fails 4 gates and dropping the
+            // Irfx2/Regfx2 half of the re-snapshot fails 5. The old "fixreg=
+            // fixes nothing in the oracle" line stood here as an unqualified
+            // claim about the option; it was only ever a claim about a design
+            // the walk leaves alone.
         } else if (m.iregfx == 3) {
             // ssmdl.f:57-70. The Nssfxr/Ssfxrg write-back records the verdict
             // for the caller, and is skipped when Ssinit==1 because fixmdl=yes
@@ -1013,7 +1022,8 @@ static bool ssxmdl_span(X13Context& ctx, bool tdfix, bool holfix, bool otlfix,
 
 // setssp.f, scoped per the hpp header.
 bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
-                  bool lncset, bool lnlset) {
+                  bool lncset, bool lnlset, bool& otlfix_out) {
+    otlfix_out = false;
     sspinp_cmn& si = ctx.sspinp;
     ssap_cmn& sa = ctx.ssap;
     hiddn_cmn& hid = ctx.hiddn;
@@ -1183,14 +1193,9 @@ bool setssp_span(X13Context& ctx, int ltmax, bool lmodel, bool lseats,
     // fixreg=(outlier) alone goes further than the rvfixd walk: `otlfix`
     // outlives setssp and reaches ssx11a per span (sspdrv.f:121), where it
     // decides whether a held-back outlier is re-added with its coefficient
-    // fixed. That consumer is unported, so refuse rather than honour half of
-    // the option.
-    if (otlfix) {
-        ssp_not_ported(ctx,
-                       "slidingspans{fixreg=(outlier)} (the per-span otlfix "
-                       "that reaches ssx11a, sspdrv.f:121) is");
-        return false;
-    }
+    // fixed. Hand it back to the caller (see the hpp note) -- unlike tdfix /
+    // holfix / usrfix, which sspdrv never uses again.
+    otlfix_out = otlfix;
 
     if (lmodel && !ssmdl_fix_model(ctx, tdfix, holfix, otlfix, usrfix))
         return false;
@@ -1359,8 +1364,9 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
     // which adjustment routine runs after x11pt2 (seatdg's ssrit store instead
     // of x11pt3's). Nothing else here is X-11-specific.
     const bool lseats = ctx.captured.has_seats && !ctx.captured.has_x11;
+    bool otlfix = false;   // setssp.f's OUT arg; reaches ssx11a per span
     if (!setssp_span(ctx, ltmax, ctx.captured.has_model, lseats,
-                      lncset, lnlset) || hid.issap == 0) {
+                      lncset, lnlset, otlfix) || hid.issap == 0) {
         hid.issap = 0;
         return true;   // "not enough data" -- clean skip, not FATAL
     }
@@ -1411,12 +1417,20 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
         // gate bit-exact. The MODEL-FREE case (sfs 2.0e+2) is a separate and
         // still-open thing; it has no x11regression in it.
         const int lsp = l0 + (j - 1) * ny + sa.im - nbcst2 - 1;
-        // ssx11a.f:268's `Otlfix.or.Ssinit.eq.1`. `Otlfix` is setssp's
-        // fixreg=(outlier) flag, which cannot be true here: setssp_span walls
-        // that option and returns false before this loop is reached, so the
-        // disjunction collapses to the fixmdl arm. When that wall lifts, thread
-        // the flag through instead of collapsing it.
-        const bool ss_otlfix = (si.ssinit == 1);
+        // ssx11a.f:268's `Otlfix.or.Ssinit.eq.1`, both arms live now that
+        // fixreg=(outlier) is no longer refused.
+        //
+        // THE Otlfix HALF IS PROVABLY REDUNDANT, and it is kept anyway. adotss
+        // computes `fx = Fixotr(icol).or.otlfix`, and rmotss wrote that same
+        // entry as `Fixotr = Regfx(icol).or.Otlfix` from the SAME run-constant
+        // flag -- so the disjunction expands to `Regfx.or.Otlfix.or.Ssinit==1`
+        // whether or not this line carries Otlfix. Measured to match: forcing
+        // ss_otlfix true, forcing it false, and dropping Otlfix from rmotss's
+        // store write are all 0 gates. Faithful anyway (the Fortran passes it,
+        // and a dropped argument is a defect waiting for its second call site
+        // -- ssprep's Lx11, entry 85); what actually moves numbers under
+        // fixreg=(outlier) is rvfixd inside ssmdl, see entry 86.
+        const bool ss_otlfix = otlfix || (si.ssinit == 1);
         if (!run_x11_span(ctx, trnsrs_full, has_model, si.nlen, nfcst, nbcst,
                            nbcst2, lsp, /*nend_mdl=*/0, lseats,
                            /*set_xrg_span=*/true, /*ss_outliers=*/true,
