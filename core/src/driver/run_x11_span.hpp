@@ -85,6 +85,12 @@ struct X13Context;
 // double-delete. ss_otlfix is ssx11a's `Otlfix.or.Ssinit.eq.1`: whether an
 // outlier re-added into this span comes back with its coefficient FIXED.
 //
+// lx11_span (default true): revdrv.f:416-427 -- a history span PAST Endsa (and
+// not the final one) runs with Lx11/Lseats FALSE. The span is still estimated,
+// for the model diagnostics, but no adjustment is produced and therefore nothing
+// is captured. That mattered only once getrev moved inside x11pt3: before, the
+// caller simply did not read those spans back.
+//
 // ssusr (default null): sspdrv.f:145-174's per-span user-regressor check. It
 // lives here rather than in the caller because chusrg differences each user
 // column over THIS span -- it needs the Nspobs/Begmdl this function has just
@@ -95,7 +101,8 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
                    int lsp, int nend_mdl = 0, bool lseats = false,
                    bool set_xrg_span = false, bool ss_outliers = false,
-                   bool ss_otlfix = false, ss_user_state* ssusr = nullptr);
+                   bool ss_otlfix = false, ss_user_state* ssusr = nullptr,
+                   bool lx11_span = true);
 
 }  // namespace x13
 

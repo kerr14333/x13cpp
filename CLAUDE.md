@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-88, chronological). They used to live in this file and made it
+(entries 0-89, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -276,6 +276,19 @@ because by the time you would think to look them up, the damage is done.
   nothing for any reason — and a wall whose whole subject is a refusal is
   exactly where that assertion gets written (entry 85). A late refusal has a
   complete run behind it; throw it away and you cannot gate it.
+- **Where this port CAPTURES a result somewhere other than where the oracle
+  does, the equivalence is a claim about WHICH BUFFER and at WHICH MOMENT — and
+  it is only ever tested by the options the corpus happens to carry.** The
+  oracle files a history span's result from inside `x11pt3`, by handing
+  `getrev` the finished component; this port let `x11pt3` finish and re-read
+  `ctx.x11srs` afterwards. Same numbers on 24 history specs, and wrong on three
+  option combinations none of them had: `force{}` stores `Stci2`, `round=yes`
+  stores `Stcirn`, and the TREND store takes `stc2`, the LS-folded published
+  D12, not the internal `Stc` (entry 89). The give-away is that the moved
+  capture reads a COMMON by name while the oracle reads a local by argument.
+  Note also what kept it alive: all four `Irev==4` sites were WALLED, and the
+  wall could not fire because the port never set `Irev` — a wall in front of a
+  rearrangement looks exactly like a wall in front of a gap.
 - **Know whether a save/restore mirrors the Fortran or patches a
   rearrangement.** Where this port moves a call to a different phase than the
   oracle runs it in, the compensating state save has no counterpart in the
@@ -357,7 +370,11 @@ because by the time you would think to look them up, the damage is done.
   quietly take their main-run branch during a replay (entry 87). This is the
   `walls.py` blind spot in state form: nothing refuses, nothing is listed, and
   the guards LOOK ported. When you port a condition on a mode variable, check
-  the port ever writes the mode.
+  the port ever writes the mode. **CLOSED in entry 89** — `Irev` now reaches 4
+  and 5, and the count of what it was hiding is the point: ~40 conditions, five
+  `getrev` sites, four unreachable walls and a stubbed `errhdr` that had been
+  live for `slidingspans{}` all along. Mutating the assignment back fails 171
+  gates. Keep the rule; the next mode variable will be somebody else's.
 - **A BARE `abend` is not a wall — it is a hole with the lights off.**
   `walls.py` derives the inventory from refusal MESSAGES, so a guard that calls
   `abend(ctx)` with no `errhdr`/`writln` is in neither the gap list nor the

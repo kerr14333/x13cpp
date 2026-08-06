@@ -19,6 +19,7 @@
 #include "x11/x11tests.hpp"         // ftest, kwtest, mstest, combft (F2 tests)
 #include "x11/x11force.hpp"         // qmap (force yearly totals)
 #include "x11/slidingspans.hpp"     // ssrit
+#include "x11/getrev.hpp"           // getrev (revisions-history capture)
 #include "x11/shrink.hpp"           // shrink (seasonal-factor shrinkage)
 #include "specparse/specparse.hpp"  // copy, setlg, abend, errhdr, writln, stdio
 #include "transform/transform.hpp"  // invfcn (makadj user-prior inverse transform)
@@ -1006,16 +1007,14 @@ void x11pt3(X13Context& ctx, bool /*lgraf*/, bool lttc) {
     // (x11pt3.f:311). No RETURN here in the oracle -- falls through to the
     // Irev check (and beyond, to D12/D11) regardless.
     if (hid.issap == 2) ssrit(ctx, sts, pos1ob, posfob, 2, series);
-    // x11pt3.f:311-313 -- `IF(Irev.eq.4 .and. Lrvsf)`. The Lrvsf half was
-    // missing, making the wall fire for any Irev==4 even when SEASONAL-factor
-    // revisions were not among `estimates=`. Currently unobservable either way:
-    // Irev only ever takes 0 or 1 in this port (readers_spec.cpp:2271 is the
-    // only assignment; revdrv.f:387's Irev=4 has no counterpart, because
-    // run_history inlines getrev's arithmetic instead of reaching it through
-    // x11pt3). Tightened so the guard says what the Fortran says.
+    // x11pt3.f:311-328 -- the revisions-history counterpart of the ssrit above.
+    // (The Fhsfh seasonal-factor-forecast file at :319-327 is a save FILE and is
+    // not written; this package emits nothing on its own.) Note the RETURN: with
+    // only `estimates=(seasonal)` the oracle stops the pass here, before D12/D11.
     if (hid.irev == 4 && ctx.rev.lrvsf) {
-        x11_not_ported(ctx, "x11pt3 revisions seasonal store (getrev)");
-        return;
+        getrev(ctx, sts, posfob, muladd, 0, ny, ctx.agr.iag, ctx.agr.iagr);
+        if (!(ctx.rev.lrvsa || ctx.rev.lrvch || ctx.rev.lrvtrn || ctx.rev.lrvtch))
+            return;
     }
     opt.muladd = opt.tmpma;  // restore the model's adjustment mode (x11pt3.f:376)
     muladd = opt.tmpma;      // keep the local in sync (logadd: back to 2 for vtc)
@@ -1226,12 +1225,11 @@ vtc(ctx, stc, stci);
         ssrit(ctx, stci, pos1ob, posfob, 3, series);
         return;
     }
-    // x11pt3.f:677-685 -- `IF(Irev.eq.4 .and. (Lrvsa.or.Lrvch) .and.
-    // Iyrt.eq.0)`. See the seasonal-store note above for why the missing
-    // disjunct is unobservable here.
+    // x11pt3.f:684-687 -- the unforced SA store. Unlike the sliding-spans one
+    // above it does not RETURN unconditionally: a trend history still needs D12.
     if (hid.irev == 4 && (ctx.rev.lrvsa || ctx.rev.lrvch) && frc.iyrt == 0) {
-        x11_not_ported(ctx, "x11pt3 revisions SA store (getrev)");
-        return;
+        getrev(ctx, stci, posfob, muladd, 1, ny, ctx.agr.iag, ctx.agr.iagr);
+        if (!(ctx.rev.lrvtrn || ctx.rev.lrvtch)) return;
     }
     // (deferred: D11 forecast-portion table/x11plt.)
 
@@ -1338,10 +1336,13 @@ vtc(ctx, stc, stci);
                 ssrit(ctx, stci2, pos1ob, posfob, 3, series);
                 return;
             }
-            // x11pt3.f:815-829 -- `IF(Irev.eq.4 .and. (Lrvsa.or.Lrvch))`.
+            // x11pt3.f:828-831 -- and the revisions store takes the FORCED
+            // series, which is the whole reason this site cannot be replaced by
+            // a read of Stci after x11pt3 returns.
             if (hid.irev == 4 && (ctx.rev.lrvsa || ctx.rev.lrvch)) {
-                x11_not_ported(ctx, "x11pt3 revisions forced-SA store (getrev)");
-                return;
+                getrev(ctx, stci2, posfob, muladd, 1, ny, ctx.agr.iag,
+                       ctx.agr.iagr);
+                if (!(ctx.rev.lrvtrn || ctx.rev.lrvtch)) return;
             }
         }
 
@@ -1379,10 +1380,24 @@ vtc(ctx, stc, stci);
         // overwrites the forced run's rows in turn (same Lsav).
         ftest(ctx, ctx.adxser.stcirn.data(), pos1ob, posfob, ny, 1);
         if (ctx.error.lfatal) return;
-        // (deferred: rnd table/punch; ssrit/getrev
-        // stores. Rndok==false only on integer overflow -- unreachable for the
-        // ported spans -- so no Lrndsa fallback is needed here.)
+        // (deferred: rnd table/punch. Rndok==false only on integer overflow --
+        // unreachable for the ported spans -- so no Lrndsa fallback is needed
+        // here.)
         (void)rndok;
+        // x11pt3.f:903-906 -- with force{round=yes} the span stores the ROUNDED
+        // series, not Stci2, and this is the third and last of the three ssrit
+        // SA sites. It was in neither the ported set nor the wall list until
+        // getrev came through here.
+        if (hid.issap == 2) {
+            ssrit(ctx, ctx.adxser.stcirn.data(), pos1ob, posfob, 3, series);
+            return;
+        }
+        // x11pt3.f:915-918 -- note this one sits OUTSIDE the rndok branch.
+        if (hid.irev == 4 && (ctx.rev.lrvsa || ctx.rev.lrvch)) {
+            getrev(ctx, ctx.adxser.stcirn.data(), posfob, muladd, 1, ny,
+                   ctx.agr.iag, ctx.agr.iagr);
+            if (!(ctx.rev.lrvtrn || ctx.rev.lrvtch)) return;
+        }
     }
 
     // --- D12 published trend (x11pt3.f:926-932). If a level shift (or a TC, when
@@ -1427,8 +1442,20 @@ vtc(ctx, stc, stci);
         ctx.x11_stc2pc.clear();
     }
     // (deferred: D12 table/prttrn/punch/x11plt of stc2/Stc.)
+    // x11pt3.f:1067-1074 -- the trend store, and the ONE call site that picks
+    // its buffer: the PUBLISHED D12 (stc2, with the level shift folded back in)
+    // when that branch ran, the internal Stc otherwise. Reading ctx.x11srs.stc
+    // after the pass returns the internal one either way, which is why a spec
+    // with an LS and history{estimates=(trend)} was wrong before this. RETURNs
+    // unconditionally -- the trend is the last thing a history span computes.
+    //
+    // NOTE the selector is the LS arm alone, NOT `have_stc2`: stc2 also exists
+    // when only the TC fold or temppriortrend built it, and on those the oracle
+    // hands getrev the INTERNAL Stc. Transcribed as written -- it disagrees with
+    // the published D12 and with the `pub` buffer the constant came out of.
     if (hid.irev == 4) {
-        x11_not_ported(ctx, "x11pt3 revisions trend store (getrev)");
+        const double* rvtrn = ((!adj.finls) && adj.adjls == 1) ? stc2 : stc;
+        getrev(ctx, rvtrn, posfob, muladd, 2, ny, ctx.agr.iag, ctx.agr.iagr);
         return;
     }
     // (deferred: logadd trend bias-correction table -- Tmpma==2 only.)

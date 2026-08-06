@@ -1693,6 +1693,7 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
         return true;   // "not enough data" -- clean skip, not FATAL
     }
     hid.issap = 2;
+    hid.ierhdr = prm::NOTSET;   // sspdrv.f:114 -- no span has opened a banner yet
 
     // Replay loop (sspdrv.f).
     //
@@ -1775,6 +1776,8 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
         if (ctx.error.lfatal) return false;
     }
     hid.issap = 3;
+    // sspdrv.f:237 -- close off the error file's sliding-spans section.
+    if (hid.ierhdr != prm::NOTSET) errhdr(ctx);
 
     // sspdrv.f:250-260 -- the one OBSERVABLE of chusrg. Everything else it does
     // is undone at :223-231, so a user regressor that was undefined in some

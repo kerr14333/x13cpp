@@ -28,6 +28,7 @@
 #include "driver/rev_outlier.hpp"  // rmotrv, chkorv (held-back outliers)
 #include "x11/loadxr.hpp"          // loadxr (regARIMA <-> x11reg model swap)
 #include "regarima/rvfixd.hpp"     // rvfixd (fixreg= group walk, shared with ssmdl/ssxmdl)
+#include "regarima/outlier.hpp"    // wrtdat (errhdr's per-span date string)
 #include "specparse/specparse.hpp"   // dfdate, addate
 #include "gen/model.hpp"            // prm:: regression-type constants (PRG*), AR/MA
 #include "gen/notset.hpp"           // prm::DNOTST (prtrev's "no such estimate yet")
@@ -39,29 +40,6 @@
 namespace x13 {
 
 namespace {
-
-// putrev.f:25-30 -- fold one component's value into the shared INDIRECT
-// accumulator, by that component's series{comptype=} (Iag) and series{compwt=}
-// (W). Iag: 0 add, 1 subtract, 2 multiply, 3 divide.
-//
-// agr1.f:62-63 initializes the accumulator to ZERO for every comptype, so a
-// composite whose FIRST component is mult/div would multiply into 0 and stay
-// there. Measured, that is unreachable rather than a defect: the same zero start
-// applies to agr's aggregation of the ORIGINAL series, so a mult-first metafile
-// hands the total an all-zero series and the oracle refuses the run outright
-// ("All data values read into X-13ARIMA-SEATS are equal to zero"). A mult
-// component AFTER an additive one accumulates from a nonzero base and is
-// reproduced exactly (verified on the oracle). Left verbatim either way.
-inline void ind_fold(double& acc, double v, int iag, double w) {
-    const double x = v * w;
-    switch (iag) {
-    case 0: acc += x; break;
-    case 1: acc -= x; break;
-    case 2: acc *= x; break;
-    case 3: acc /= x; break;
-    default: break;
-    }
-}
 
 // rvtdrg.f -- this span's FREE trading-day / length-of-period / user-TD
 // regression coefficients, in group order, with each TRADING-DAY group followed
@@ -229,9 +207,6 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // Indrev/Indrvs are COMMONs that outlive a spec, so the metafile driver
     // carries them (tools/x13run_composite.cpp) exactly like /mq11/ and /agreg/.
     const int iagr = ctx.agr.iagr;
-    const int iag = ctx.agr.iag;
-    const bool ind_comp = (iagr == 2 && iag >= 0);
-    const bool ind_acc = ind_comp && ctx.rev.indrev > 0 && lrvsa;
     // revchk.f:547-551 -- a component that did not reach getrev (no seasonal
     // adjustment revision history of its own) leaves Nrcomp short of Ncomp, and
     // the indirect analysis is dropped. Ported with its guard: the test is the
@@ -299,6 +274,11 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const int endtbl = endsa;
     const int revnum = endtbl - begrev;            // # of revision-table rows
     if (revnum <= 0) return true;                  // not enough data (clean skip)
+    // revchk.f files these in /revcmn/. They used to stay local here because
+    // nothing downstream read them; getrev, which x11pt3 now calls inside every
+    // span, reads Begrev/Endrev/Revptr from the COMMON.
+    ctx.rev.begrev = begrev;
+    ctx.rev.endrev = endrev;
 
     // --- the alternate revision TARGETS (history{sadjlags=/trendlags=}) -------
     // setrvp.f:26-40: with targets the span loop has to run mxrlag periods
@@ -653,12 +633,6 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     bool addreg = has_model;
 
     const int nspan = endrev - begrev + 1;         // includes the final full span
-    std::vector<double> cncsa(nspan + 1, 0.0), cnctrn(nspan + 1, 0.0);
-    std::vector<double> cncch(nspan + 1, 0.0);     // concurrent SA % change (putrev)
-    std::vector<double> cnctch(nspan + 1, 0.0);    // concurrent trend % change (putrev)
-    std::vector<double> cncsf(nspan + 1, 0.0);     // concurrent seasonal factor (x100)
-    std::vector<double> projsf(revnum + 1, 0.0);   // projected SF, by output revptr
-    const double sfsc = (ctx.x11opt.muladd != 1) ? 100.0 : 1.0;  // putrev Itype=0
     // prtfct.f:613 -- Cncfct(k,Revptr+Rfctlg(k)): the ORIGINAL-scale forecast a
     // span made for the date it lands on. Indexed [k][output revptr].
     std::vector<std::vector<double>> cncfct;
@@ -676,8 +650,18 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const int mdl2[2] = {endmdl_full[0], endmdl_full[1]};
     const bool have_mdl2 = has_model && ctx.arima.ldestm && fixper <= 0;
 
+    // revdrv.f:387 -- the HIDDEN-RUN phase indicator for the span loop, the
+    // history counterpart of sliding spans' Issap=2. It gates ~40 conditions
+    // across the tree (the `Issap.lt.2.and.Irev.lt.4` gudrun family, getrev's
+    // five x11pt3 sites, x11mdl.f:424's outlier-ID arm, x11reg.f's coefficient
+    // seed, errhdr's one-header-per-mode rule); this port left it at 1 for
+    // years, so every one of those took its MAIN-RUN branch during a replay.
+    ctx.hiddn.irev = 4;
+    ctx.hiddn.ierhdr = prm::NOTSET;                // revdrv.f:396
+
     for (int i = beglup; i <= endrev; ++i) {
         const int revptr = i - begrev + 1;         // <=0 for the pre-Begrev spans
+        ctx.rev.revptr = revptr;                   // revdrv.f:524
         // revdrv.f:432-453 -- the pre-Begrev part of the loop is NOT a plain
         // run: only i==Beglup and i==Frstsa are processed, everything between
         // them falls through the ELSE to the loop increment. With Beglup<Frstsa
@@ -713,6 +697,14 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
         }
         const int nlen = i;                        // Length = Posfob - Pos1ob + 1
         const int lsp = 1;                         // Pos1ob = Nbcst2(0) + Lsp = 1
+        // revdrv.f:478 -- this span's end as text, for errhdr's banner.
+        {
+            int endspn_h[2];
+            addate(begspn_full, ny, nlen - 1, endspn_h);
+            const std::string ds = wrtdat(endspn_h, ctx.model.sp);
+            ctx.hiddn.crvend = ds;
+            ctx.hiddn.nrvend = static_cast<int>(ds.size());
+        }
         // revdrv.f:479-497 -- this span's model span end. Endspn = the span's
         // last observation; Endmdl is either the last occurrence of period
         // Fixper at or before it (the "0.per" convention), or mdl2 when the main
@@ -786,30 +778,23 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             loadxr(ctx, true);
             if (has_model) restor_span(ctx);
         }
+        // revdrv.f:416-427 -- past Endsa (and not the final span) no adjustment
+        // is produced at all; the span is estimated for the model diagnostics
+        // only, and therefore captures nothing.
+        const bool lx11_span = (i <= endsa) || (i == endrev);
         if (!run_x11_span(ctx, trnsrs_full, has_model, nlen, nfcst_full,
-                          /*nbcst=*/0, /*nbcst2=*/0, lsp, nend_mdl, lseats))
+                          /*nbcst=*/0, /*nbcst2=*/0, lsp, nend_mdl, lseats,
+                          /*set_xrg_span=*/false, /*ss_outliers=*/false,
+                          /*ss_otlfix=*/false, /*ssusr=*/nullptr, lx11_span))
             return false;
         if (ctx.error.lfatal) return false;
         const int posfob = ctx.x11ptr.posfob;      // = nlen = i
+        // The SA / trend / seasonal captures (Cncsa, Cnctrn, Cncch, Cnctch,
+        // Cncsf, Cncsfp and every alternate-target row) are made by getrev
+        // INSIDE x11pt3, on the buffer the oracle hands it. They used to be
+        // re-derived from ctx.x11srs here, which is the same value only while
+        // nothing after the getrev site rewrites the buffer -- see entry 89.
         if (revptr > 0) {                          // getrev's IF(Revptr.gt.0)
-            cncsa[revptr] = ctx.x11srs.stci(posfob);
-            cnctrn[revptr] = ctx.x11srs.stc(posfob);
-            // putrev.f:25-30 -- this component's contribution to the INDIRECT
-            // concurrent SA.
-            if (ind_acc)
-                ind_fold(ctx.revsrs.cncisa(revptr), ctx.x11srs.stci(posfob),
-                         iag, ctx.agr.w);
-            if (lrvch) {                           // putrev Outch on this span's Stci
-                const double a = ctx.x11srs.stci(posfob);
-                const double b = ctx.x11srs.stci(posfob - 1);
-                cncch[revptr] = ((a - b) / b) * 100.0;  // Muladd!=1 -> percent change
-            }
-            if (lrvsf) cncsf[revptr] = ctx.x11srs.sts(posfob) * sfsc;
-            if (lrvtch) {                          // putrev Outch on this span's Stc
-                const double a = ctx.x11srs.stc(posfob);
-                const double b = ctx.x11srs.stc(posfob - 1);
-                cnctch[revptr] = ((a - b) / b) * 100.0;
-            }
             if (lrvfct) {
                 // prtfct.f:628-641. ctx.forecasts.fcst IS prtfct's untfct: the
                 // original-scale point forecast with the length-of-period /
@@ -839,88 +824,51 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
                                 row.push_back(ctx.mdldat.arimap(ilag));
             }
             if (lrvtdrg) cnctdrg[static_cast<std::size_t>(revptr)] = rvtdrg(ctx);
-            // getrev.f:57-70 (SA) / :86-99 (trend) -- the alternate targets. A
-            // span more than Targ periods past the first revision date is the
-            // "Targ later" estimate for the row Targ periods back: Fin(t,i1)
-            // read at Posfob-Targ. The list is sorted ascending and the Fortran
-            // DO WHILE stops at the first lag this span cannot serve.
-            // `i <= endsa` is the oracle's own cutoff (revdrv.f:416 turns Lx11
-            // off past Endsa, so getrev never runs on those spans); this port
-            // adjusts every span, so the guard has to be explicit.
-            if (i <= endsa) {
-                for (int t = 1; t <= ntarsa; ++t) {
-                    if (revptr <= rt.targsa(t)) break;
-                    const int i1 = revptr - rt.targsa(t);
-                    const int pos = posfob - rt.targsa(t);
-                    if (i1 > revnum) continue;
-                    finsa_t[t][i1] = ctx.x11srs.stci(pos);
-                    if (ind_acc)
-                        ind_fold(ctx.revsrs.finisa(t, i1), ctx.x11srs.stci(pos),
-                                 iag, ctx.agr.w);
-                    if (lrvch) {
-                        const double a = ctx.x11srs.stci(pos);
-                        const double b = ctx.x11srs.stci(pos - 1);
-                        finch_t[t][i1] = ((a - b) / b) * 100.0;
-                    }
-                }
-                for (int t = 1; t <= ntartr; ++t) {
-                    if (revptr <= rt.targtr(t)) break;
-                    const int i1 = revptr - rt.targtr(t);
-                    const int pos = posfob - rt.targtr(t);
-                    if (i1 > revnum) continue;
-                    fintrn_t[t][i1] = ctx.x11srs.stc(pos);
-                    if (lrvtch) {
-                        const double a = ctx.x11srs.stc(pos);
-                        const double b = ctx.x11srs.stc(pos - 1);
-                        fintch_t[t][i1] = ((a - b) / b) * 100.0;
-                    }
-                }
-            }
         }
-        // getrev Itype=0: at a year-boundary span (Posfob a multiple of Ny =
-        // December for this Jan-start series) store the Ny projected factors
-        // Sts(Posfob+k) -- the forecast-region seasonal factors -- into the
-        // output row (revptr+k) they concurrently project. One December span
-        // covers the next 12 months, so rows never collide.
-        if (lrvsf && posfob % ny == 0) {
-            for (int k = 1; k <= ny; ++k) {
-                const int outr = revptr + k;
-                if (outr >= 1 && outr <= revnum)
-                    projsf[outr] = ctx.x11srs.sts(posfob + k) * sfsc;
-            }
-        }
+        (void)posfob;
     }
+    // revdrv.f:761-762 -- leave the span loop, and close off the error file's
+    // hidden-run section if any span opened one.
+    ctx.hiddn.irev = 5;
+    if (ctx.hiddn.ierhdr != prm::NOTSET) errhdr(ctx);
 
-    // Final column: the loop's last iteration was i=Endrev (full data), so
-    // ctx.x11srs.stci/stc now hold the final adjustment. Fin(0,revptr) is the
-    // final estimate at the revision date Begrev+revptr-1 (getrev.f:118-124).
+    // Everything the tables below consume now sits in /revdta/, filed by getrev
+    // from inside the span. Lift it into the local shapes the printing code has
+    // always used; the FINAL column is getrev.f:118-146's, written by the last
+    // span (the one with all the data) out of the same buffer it just captured
+    // its concurrent value from.
+    std::vector<double> cncsa(nspan + 1, 0.0), cnctrn(nspan + 1, 0.0);
+    std::vector<double> cncch(nspan + 1, 0.0), cnctch(nspan + 1, 0.0);
+    std::vector<double> cncsf(nspan + 1, 0.0);
+    std::vector<double> projsf(revnum + 1, 0.0);
     std::vector<double> finsa(revnum + 1, 0.0), fintrn(revnum + 1, 0.0);
     std::vector<double> finch(revnum + 1, 0.0), finsf(revnum + 1, 0.0);
     std::vector<double> fintch(revnum + 1, 0.0);
-    // getrev.f:117 -- this component has now contributed a full SA revision
-    // history; the total compares Nrcomp against Ncomp. Counted whether or not
-    // Indrev survived (the Fortran test is Itype/Iagr/Iag only).
-    if (ind_comp && lrvsa) ctx.rev.nrcomp += 1;
-    for (int revptr = 1; revptr <= revnum; ++revptr) {
-        const int pos = begrev + revptr - 1;
-        finsa[revptr] = ctx.x11srs.stci(pos);
-        fintrn[revptr] = ctx.x11srs.stc(pos);
-        // putrev.f:25-30 via getrev.f:124 -- the INDIRECT FINAL SA.
-        if (ind_acc)
-            ind_fold(ctx.revsrs.finisa(0, revptr), ctx.x11srs.stci(pos), iag,
-                     ctx.agr.w);
-        if (lrvch) {                               // final change from full-data Stci
-            const double a = ctx.x11srs.stci(pos);
-            const double b = ctx.x11srs.stci(pos - 1);
-            finch[revptr] = ((a - b) / b) * 100.0;
-        }
-        if (lrvsf) finsf[revptr] = ctx.x11srs.sts(pos) * sfsc;
-        if (lrvtch) {                              // final trend change from full-data Stc
-            const double a = ctx.x11srs.stc(pos);
-            const double b = ctx.x11srs.stc(pos - 1);
-            fintch[revptr] = ((a - b) / b) * 100.0;
-        }
+    for (int r = 1; r <= nspan; ++r) {
+        cncsa[r] = ctx.revsrs.cncsa(r);
+        cnctrn[r] = ctx.revsrs.cnctrn(r);
+        cncch[r] = ctx.revsrs.cncch(r);
+        cnctch[r] = ctx.revsrs.cnctch(r);
+        cncsf[r] = ctx.revsrs.cncsf(r);
     }
+    for (int r = 1; r <= revnum; ++r) {
+        projsf[r] = ctx.revsrs.cncsfp(r);
+        finsa[r] = ctx.revsrs.finsa(0, r);
+        fintrn[r] = ctx.revsrs.fintrn(0, r);
+        finch[r] = ctx.revsrs.finch(0, r);
+        fintch[r] = ctx.revsrs.fintch(0, r);
+        finsf[r] = ctx.revsrs.finsf(r);
+    }
+    for (int t = 1; t <= ntarsa; ++t)
+        for (int r = 1; r <= revnum; ++r) {
+            finsa_t[t][r] = ctx.revsrs.finsa(t, r);
+            finch_t[t][r] = ctx.revsrs.finch(t, r);
+        }
+    for (int t = 1; t <= ntartr; ++t)
+        for (int r = 1; r <= revnum; ++r) {
+            fintrn_t[t][r] = ctx.revsrs.fintrn(t, r);
+            fintch_t[t][r] = ctx.revsrs.fintch(t, r);
+        }
 
     // --- prtrev.f: revision arithmetic ----------------------------------------
     // Rvper: percent revision for a level table (sadj/trend) whenever Muladd!=1.

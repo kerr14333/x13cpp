@@ -1,9 +1,12 @@
 // errio.cpp -- error/diagnostic output: abend.f, errhdr.f, writln.f, inpter.f.
 // inpter's Ptr argument is a 2-int C array {line, column}.
 #include "specparse/specparse.hpp"
+#include "common/x13context.hpp"
+#include "gen/notset.hpp"
 #include "x13/fformat.hpp"
 
 #include <algorithm>
+#include <string>
 
 namespace x13 {
 
@@ -15,11 +18,48 @@ void abend(X13Context& ctx) {
     ctx.error.lfatal = true;
 }
 
-// errhdr.f -- prints a sliding-spans / revision-history banner into the error
-// file. In M1 no hidden runs are active (Issap<2, Irev<4) so it returns at once.
+// errhdr.f -- prints a banner into the error file to say which HIDDEN RUN
+// produced the messages that follow, once per span. Every writln to Mt2 goes
+// through it, so it is the framing around any warning a sliding-spans or
+// history span emits. `Ierhdr` is the span already announced: the second
+// message from the same span adds no second banner, and the Issap==3 / Irev==5
+// arms close the section off once the loop is over.
 void errhdr(X13Context& ctx) {
-    if (ctx.hiddn.issap < 2 && ctx.hiddn.irev < 4) return;
-    // Hidden-run banners are out of M1 scope; deferred with the SS/history port.
+    hiddn_cmn& hid = ctx.hiddn;
+    if (hid.issap < 2 && hid.irev < 4) return;
+    if ((hid.issap == 2 && hid.ierhdr == ctx.ssft.icol) ||
+        (hid.irev == 4 && hid.ierhdr == ctx.rev.revptr)) return;
+    auto& mt2 = ctx.channels_.unit(ctx.units.mt2);
+    // errhdr.f:1010 -- 40 (star,dash) pairs under FORMAT(80A1).
+    static const std::string rule = [] {
+        std::string s;
+        for (int i = 0; i < 40; ++i) s += "*-";
+        return s;
+    }();
+    if (hid.issap == 2) {
+        mt2.put(rule + "\n");
+        mt2.put(fwrite_fmt("('  Error/Warning Messages for sliding span # ',"
+                           "i1,':')",
+                           ctx.ssft.icol) +
+                "\n");
+        hid.ierhdr = ctx.ssft.icol;
+    } else if (hid.issap == 3 && hid.ierhdr != prm::NOTSET) {
+        mt2.put(rule + "\n");
+        mt2.put(fwrite_fmt("(a)", " ") + "\n");
+        hid.ierhdr = prm::NOTSET;
+    } else if (hid.irev == 4) {
+        mt2.put(rule + "\n");
+        mt2.put(fwrite_fmt("('  Error/Warning Messages for history run ending ',"
+                           "a,':')",
+                           std::string(hid.crvend.raw().substr(
+                               0, static_cast<std::size_t>(hid.nrvend)))) +
+                "\n");
+        hid.ierhdr = ctx.rev.revptr;
+    } else if (hid.irev == 5 && hid.ierhdr != prm::NOTSET) {
+        mt2.put(rule + "\n");
+        mt2.put(fwrite_fmt("(a)", " ") + "\n");
+        hid.ierhdr = prm::NOTSET;
+    }
 }
 
 // writln.f

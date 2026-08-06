@@ -5704,3 +5704,129 @@ on all five probes. Two reasons, both worth carrying:
 `-x11reg-user`, `-x11reg-usertype`, `-reg-user-zerospan` and
 `-reg-user-zerospan-fixmdlno`. Suite 7148 -> 7246 passed, 0 failed, 0 xfailed.
 WALLS 23 gaps (one removed, CB-40's added).
+
+## 89. `Irev` never left 1 — four walls that could not fire, the capture the port had moved out of x11pt3, and the three buffers that made the move wrong
+
+Board item 2. `revdrv.f:387` sets `Irev=4` around the history span loop and
+`:761` sets 5; `run_history` had no counterpart, so **every `Irev`-keyed
+condition in the tree took its main-run branch during a replay** — the
+`Issap.lt.2.and.Irev.lt.4` gudrun family, `x11mdl.f:424`'s outlier-ID arm,
+`x11reg.f`'s coefficient seed, `errhdr`'s one-banner-per-span rule, and the
+five `getrev` sites in `x11pt3`. Entry 87 measured the consequence from the
+other end and could not test it.
+
+### The four walls were unreachable, and they were the design
+
+`docs/WALLS.md` listed four `x11pt3 revisions * store (getrev)` gaps. None had
+ever fired, and none could: they are all guarded by `Irev==4`. That is the same
+shape as entry 88's `Nusxrg` wall and entry 74's aictest proxy — **a wall keyed
+on state the port never produces is not conservative, it is decorative.**
+
+Behind them sat a structural choice nobody had written down as one. The oracle
+CAPTURES a history span's result from inside `x11pt3`, by handing the finished
+component to `getrev`; this port instead let `x11pt3` run to completion and then
+re-read `ctx.x11srs.sts/stci/stc` in `run_history`. Those are the same numbers
+**only while the buffer x11pt3 leaves behind is the buffer getrev was handed.**
+
+### Three places where that is false
+
+* `x11pt3.f:828-831` — with `force{}` on (`Iyrt>0`) the store takes **`Stci2`**,
+  the FORCED SA. The port read `Stci`, the unforced D11, for every row.
+* `x11pt3.f:915-918` — with `force{round=yes}` it takes **`Stcirn`**, the
+  rounded SA. This site was in neither the ported set nor the wall list: the
+  block carried the comment `(deferred: rnd table/punch; ssrit/getrev stores.)`,
+  and a comment is not an inventory entry. **The sliding-spans `ssrit` at
+  `:903-906` was missing with it** — the third of the three SA store sites,
+  absent for as long as `slidingspans{}` + `force{round=yes}` had no spec.
+* `x11pt3.f:1067-1072` — the TREND store picks **`stc2`**, the published D12
+  with the level shift folded back in, when `(.not.Finls).and.Adjls.eq.1`.
+  `ctx.x11srs.stc` is the LS-FREE internal trend. Every trend revision on a spec
+  with an `ls` regressor was taken from the wrong series.
+
+Note the trend selector is that arm ALONE and **not** the port's `have_stc2`:
+`stc2` also exists when only the TC fold or `transform{temppriortrend=}` built
+it, and on those the oracle hands `getrev` the internal `Stc` anyway —
+disagreeing with its own published D12 and with the buffer it had just taken the
+`transform{constant=}` out of. Transcribed at the call site; no carrier.
+
+All three were invisible on the whole corpus because no history spec had
+`force{}`, `round=yes`, or a level shift. Each now has one.
+
+### What was ported
+
+`core/src/x11/getrev.{hpp,cpp}` — `getrev.f` and `putrev.f`, with the composite
+indirect fold, the alternate-target `DO WHILE`, the final-column block, and the
+two "has ceased due to negative values" warnings. The five `x11pt3` sites and
+`seatdg.f:148-181`'s three SEATS ones now call it; `run_history` reads
+`/revdta/` instead of re-deriving it. Two details are load-bearing and easy to
+lose: `putrev` clears the **live COMMON `Lrvch`** for the rest of the run when an
+additive percent change meets a non-positive value, while `Rvdiff` is only
+getrev's LOCAL copy, so the flag persists and the sentinel does not.
+
+Two things came with it because turning `Irev` on made them reachable:
+
+* **`revdrv.f:416-427`** — a span past `Endsa` (and not the final one) runs with
+  `Lx11`/`Lseats` FALSE: estimated for the model diagnostics, no adjustment, no
+  capture. This port ran X-11 on every span, which was equivalent only while
+  nothing read those spans back. `run_x11_span` takes an `lx11_span` argument now.
+* **`errhdr.f`** — the banner naming which hidden run produced the messages that
+  follow. It was a stub ("out of M1 scope") and `writln` routes every Mt2
+  message through it, so the stub was live for `slidingspans{}` too and had been
+  since the sliding-spans port. Ported with `Ierhdr`, `Crvend`/`Nrvend`
+  (`revdrv.f:478`), `sspdrv.f:114/237` and `revdrv.f:396/762`.
+
+### Measurements
+
+The whole corpus stayed **bit-exact** on the first build: 7246 passed, 0 failed
+— so the rearrangement really was equivalent on everything the corpus had, and
+is now faithful rather than accidentally right.
+
+Mutations, against a verified-0 baseline (`-k history`, 612 gates):
+
+| mutation | failures |
+|---|---|
+| `Irev` never advances (the state this entry closes) | **171** |
+| `Revptr` not filed per span | **254** |
+| trend buffer `stc2` -> `stc` always | **4** |
+| forced SA `stci2` -> `stci` | **4** |
+| rounded SA `stcirn` -> `stci2` | **4** |
+| SEATS span getrev dropped | **2** |
+| x11pt3's seasonal-site RETURN dropped | 0 |
+| x11pt3's SA-site RETURN dropped | 0 |
+| `Irev=5` after the loop dropped | 0 |
+| `lx11_span`: run X-11 on every span | 0 |
+| errhdr banner suppressed | 0 |
+
+**The four zeros are not the same kind, and one of them is a proof.**
+
+`lx11_span` is **structurally unobservable, and that is provable rather than
+corpus-limited.** The obvious discriminator is a span past `Endsa` filing an
+alternate-target row the table prints — so a spec with `endtable=` AND
+`sadjlags=` was written for it (`airline_history-endtable-sadjlags`, which is
+also the first spec combining the two). It still measures zero, because
+`setrvp.f:26-40` widens `Endsa` by exactly the largest lag: a span past the
+widened `Endsa` files `Finsa(t,i1)` with `i1 > Revnum` by construction. The
+guard is a Census optimisation, and the port carries it for faithfulness only.
+
+The two dropped RETURNs and `Irev=5` are corpus-limited but in the same
+direction: what the RETURN skips is either not captured (the family was not
+requested) or restored by `run_x11`'s span save/restore set — a zero there is
+incidentally evidence that set is complete over those fields.
+
+The errhdr zero is the honest one: **no gated spec emits a message from inside a
+span**, so the banner is faithful by transcription and untested by measurement.
+A carrier was attempted (`estimate{maxiter=2}` to make every span hit its
+iteration limit) and does not work — the MAIN run fails to converge first and
+the oracle stops before `revdrv` runs at all. Recorded rather than left implied.
+
+### Landed on the side
+
+`regression{savelog = all}` is accepted by this port and REFUSED by the oracle
+("Savelog argument is not defined"), found while writing the LS spec. Not gated
+— `test_m1_parse::test_outcome_matches_oracle` would fail today. It is on the
+board.
+
+**Gated by** four hand-authored specs: `extra/airline_history-force`,
+`-force-round`, `-ls-trend` and `-endtable-sadjlags`. Suite 7246 -> 7363 passed,
+0 failed, 0 xfailed; ctest 12/12. WALLS 23 -> 19 gaps, all four removed by
+porting what they stood in front of.

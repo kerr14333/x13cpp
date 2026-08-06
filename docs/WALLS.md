@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**23 walls.**
+**19 walls.**
 
 
 ## Automatic model selection
@@ -78,29 +78,17 @@ reproduce.
   slidingspans{} with a change-of-regime regression variable (ssmdl.f:150-241, which the oracle itself halts on -- see CB-39) is
   *Fortran:* `ssmdl.f:150-241`
 
-- **`core/src/x11/x11parts.cpp:231`**
+- **`core/src/x11/x11parts.cpp:232`**
   x11pt1 prior trading-day adjustment (pritd/ssrit)
 
-- **`core/src/x11/x11parts.cpp:282`**
+- **`core/src/x11/x11parts.cpp:283`**
   x11pt1 additive/pseudo-additive prior trading-day
 
-- **`core/src/x11/x11parts.cpp:554`**
+- **`core/src/x11/x11parts.cpp:555`**
   x11pt2 user/seasonal/cycle/x11reg factor combine+emit
 
-- **`core/src/x11/x11parts.cpp:760`**
+- **`core/src/x11/x11parts.cpp:761`**
   x11pt2 x11reg Stcsi rebuild with outlier/seasonal/user prior factors
-
-- **`core/src/x11/x11parts.cpp:1017`**
-  x11pt3 revisions seasonal store (getrev)
-
-- **`core/src/x11/x11parts.cpp:1233`**
-  x11pt3 revisions SA store (getrev)
-
-- **`core/src/x11/x11parts.cpp:1343`**
-  x11pt3 revisions forced-SA store (getrev)
-
-- **`core/src/x11/x11parts.cpp:1431`**
-  x11pt3 revisions trend store (getrev)
 
 - **`core/src/x11/x11reg.cpp:394`**
   x11ref forcecal= combined calendar factor

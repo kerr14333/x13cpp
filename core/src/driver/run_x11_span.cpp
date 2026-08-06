@@ -14,6 +14,7 @@
 #include "transform/transform.hpp"   // trnfcn (arima.f:157's estimation input)
 #include "driver/run_seats.hpp"      // seats_restore_mean, seats_decompose
 #include "x11/slidingspans.hpp"      // ssrit (seatdg.f's span store)
+#include "x11/getrev.hpp"            // getrev (seatdg.f's history store)
 #include "x11/x11parts.hpp"          // x11pt1, x11pt2, x11pt3
 #include "x11/xrgdrv.hpp"            // xrgdrv (x11ari.f:88-95, per span)
 #include "x11/x11drv.hpp"            // setxpt, x11int, chkadj, extend, adjreg, regeff
@@ -28,7 +29,10 @@ namespace x13 {
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
                    int lsp, int nend_mdl, bool lseats, bool set_xrg_span,
-                   bool ss_outliers, bool ss_otlfix, ss_user_state* ssusr) {
+                   bool ss_outliers, bool ss_otlfix, ss_user_state* ssusr,
+                   bool lx11_span) {
+    // revdrv.f:416-427 -- Lseats goes off with Lx11 on a past-Endsa span.
+    lseats = lseats && lx11_span;
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
 
@@ -209,7 +213,7 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
     x11int(ctx);
 
     const bool lmodel = has_model, lgraf = false, lgrfxr = false;
-    const bool lx11 = !lseats;   // x11ari.f: the two are alternatives
+    const bool lx11 = lx11_span && !lseats;  // x11ari.f: the two are alternatives
     x11pt1(ctx, lmodel, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
 
@@ -505,19 +509,35 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         const std::vector<double> sa_v = lift(ctx.seats_sa);
         const std::vector<double> tr_v = lift(ctx.seats_trend);
 
-        // seatdg.f:148-181 -- the history store passes Seatsf/Seatsa/Seattr to
-        // the SAME getrev that x11pt3 feeds Sts/Stci/Stc. This port inlines
-        // getrev's arithmetic in run_history, which reads those three x11srs
-        // buffers by padded-buffer position, so a SEATS span publishes its
-        // components there and run_history needs no SEATS branch at all. Scales
-        // already agree: Seatsf is the /100 ratio after seatad.f:33-35, which is
-        // what Sts carries and what getrev's Muladd!=1 x100 (putrev Itype=0)
-        // expects. Safe to clobber -- x11pt3 never runs on this path, and both
-        // span-driver callers save/restore /x11srs/ around the whole loop.
+        // The span's components are published into /x11srs/ as well: several
+        // consumers (and the harness dump) read them there by padded-buffer
+        // position. Scales already agree: Seatsf is the /100 ratio after
+        // seatad.f:33-35, which is what Sts carries and what getrev's Muladd!=1
+        // x100 (putrev Itype=0) expects. Safe to clobber -- x11pt3 never runs on
+        // this path, and both span-driver callers save/restore /x11srs/ around
+        // the whole loop.
         for (int i = 0; i < prm::PLEN; ++i) {
             ctx.x11srs.sts(i + 1) = sf[i];
             ctx.x11srs.stci(i + 1) = sa_v[i];
             ctx.x11srs.stc(i + 1) = tr_v[i];
+        }
+
+        // seatdg.f:148-181 -- the history store passes Seatsf/Seatsa/Seattr to
+        // the SAME getrev that x11pt3 feeds Sts/Stci/Stc, one call per requested
+        // family and no early RETURN between them. (seatdg.f:172-175's Stsarn /
+        // Setsa2 arms -- the rounded and forced SEATS SA -- are not produced by
+        // this port's SEATS path, so the plain Seatsa branch is the only
+        // reachable one; same note as the ssrit pair above.)
+        if (ctx.hiddn.irev == 4) {
+            const int iag = ctx.agr.iag, iagr = ctx.agr.iagr;
+            const int mula = ctx.x11opt.muladd;
+            const int ny_s = ctx.x11opt.ny;
+            if (ctx.rev.lrvsf)
+                getrev(ctx, sf.data(), posfob_s, mula, 0, ny_s, iag, iagr);
+            if (ctx.rev.lrvsa || ctx.rev.lrvch)
+                getrev(ctx, sa_v.data(), posfob_s, mula, 1, ny_s, iag, iagr);
+            if (ctx.rev.lrvtrn || ctx.rev.lrvtch)
+                getrev(ctx, tr_v.data(), posfob_s, mula, 2, ny_s, iag, iagr);
         }
 
         if (ctx.hiddn.issap == 2) {
@@ -525,7 +545,7 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
             ssrit(ctx, sf.data(), pos1ob_s, posfob_s, 2, series);
             ssrit(ctx, sa_v.data(), pos1ob_s, posfob_s, 3, series);
         }
-    } else {
+    } else if (lx11) {
         x11pt3(ctx, lgraf, /*lttc=*/false);
         if (ctx.error.lfatal) return false;
     }
