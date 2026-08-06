@@ -5575,3 +5575,132 @@ run. Recorded here, not fixed.
 column is byte-identical under `fixx11reg=yes` (nothing is refit either way) and
 240 `sfs` lines apart under `fixx11reg=no`; the grid is in the fourth spec's
 header. WALLS 24 -> 23 gaps.
+
+## 88. `slidingspans{}` + user regressors — two BARE abends, a seventh span-replay leak, and an out-of-bounds read in the oracle (CB-40)
+
+Board item 1's last real wall was `slidingspans{}` with `x11regression{user=}`,
+walled at `slidingspans.cpp` on `Nusxrg > 0`. Reading it found three separate
+things, none of which was the wall.
+
+**The wall was keyed on a flag that is not what its name says, and could not
+fire.** `Nusxrg` is NOT the x11regression user-COLUMN count — that is `Ncxusx`.
+`Nusxrg` is the length of `x11regression{usertype=}`, written by `gtxreg.f:265`
+and by nothing else in the tree. An instrumented build of the vendored oracle on
+airline + `slidingspans{}` + `x11regression{user=(u1)}` prints
+
+```
+SSXMDL tail Ssxint= T Usrxfx= F Nusxrg=   0 Ncxusx=   1 Irgxfx=  0
+```
+
+so the arm the wall guarded was skipped and the spec walked straight past. Same
+family as entry 74's `Nbx == 0` proxy: the wall looked conservative, which is
+what hid it.
+
+**What DOES break is one level down, and it had no message at all.**
+`slidingspans{}` is what sets `Userfx` — `ssmdl.f:350`'s
+`IF(.not.Userfx)Userfx=Ncusrx.gt.0`, on the `Ssinit==1` default path — and
+`Userfx` is what turns on `addfix.f:73`'s `addusr` branch. So a
+`regression{user=}` spec reaches `rmfix.f:89`'s `dlusrg` and `addfix.f:74`'s
+`addusr` for the first time. Neither was ported: `automd_finalize.cpp` had a
+BARE `abend(ctx)` on each arm, no `errhdr`, no message. The engine's whole
+`===ERR===` block on such a spec was empty. That is worse than the entry-73
+shape it resembles, because `walls.py` derives its inventory from refusal
+MESSAGES, so neither hole was in the wall count, the gap list, or anywhere else.
+
+Ported, all four leaves, in a new `core/src/regarima/usrbak.{hpp,cpp}`:
+`bakusr.f`, `addusr.f`, `dlusrg.f`, `chusrg.f`. Plus the sliding-spans bracket
+they live in — `ssmdl.f:350-352`, `ssxmdl.f:143-148`, `sspdrv.f:145-174` and its
+undo at `:220-231`, and the `sspdrv.f:250-260` NOTE.
+
+**CB-40: `bakusr.f:50/52` displace the SOURCE of two copies instead of the
+destination.** Three of the five backup writes displace the destination and are
+right; `Userx2` and `Usrty2` do not, so the `Rind=1` call reads
+`Xuserx(PUSERX+1 …)` and `Usxtyp(PUREG+1 …)` — one past the end of each, for a
+whole array's length — and writes what it finds into slot 0. A bounds-checked
+rebuild of the vendored sources traps exactly there:
+
+```
+At line 50 of file bakusr.f
+Fortran runtime error: Index '53041' of dimension 1 of array 'userx'
+above upper bound of 53040
+```
+
+Slot 1, the one `addusr(1)` reads, is never written by any call, so the
+x11regression user regressor is restored with an identically ZERO data matrix
+and type 0. That effect is deterministic (the garbage goes to slot 0, read only
+by `addusr(0)`), so the arm is ported rather than walled, and the one
+combination where the garbage becomes observable — `regression{user=}` AND
+`x11regression{usertype=}` AND a span driver — is refused with its own message.
+Full write-up in `tools/census_bugs.md`; `sspdrv.f`'s shared `bfx2` buffer and
+its `Nb`-sized restore of an `Nbx` array are CB-41 alongside it.
+
+**A seventh instance of the span-replay save/restore seam, and the cleanest one
+yet.** `/orisrs/ Stoap` is the REGRESSION-ADJUSTED original — what `adjreg`
+leaves behind and what the `b1` table is punched from. It was not in
+`run_x11.cpp`'s save set. Every slidingspans spec gated before this one had no
+`regression{}`, so `Stoap` equalled the raw series and a span replay overwriting
+it was invisible; put a user regressor in the spec and `b1` came back as the raw
+`112` against the oracle's adjusted `224.466`, a 5.0e-1 relative error on the
+first observation. Exactly what the standing rule says: **whatever a consumer
+re-derives from joins the set, not only what a change obviously touches.**
+
+**Two build-flag findings, both of which nearly became false bug reports.**
+Instrumenting the oracle needs a rebuild of the vendored sources, and the first
+one disagreed with the vendored binary by 600 lines on the sliding-spans section
+of one probe while matching it byte-for-byte on the main run and on every
+already-gated spec. Two things had to be settled before anything could be
+measured:
+
+- `gfortran -O2` alone is NOT the oracle. **`-fno-automatic` is required** — the
+  f77 convention of static locals is load-bearing somewhere on this path.
+  `-O2 -fno-automatic` reproduces the vendored `_O2` exactly on every probe;
+  plain `-O2` does not. (`-O0` happens to as well, which is how the difference
+  first surfaced as an optimisation-level artefact.)
+- The vendored `_O0` and `_O2` agree with each other on all of these, so
+  "two vendored builds agree" is NOT evidence against an out-of-bounds read;
+  only `-fcheck=bounds` settled CB-40.
+
+The working recipe, for the next time (scratchpad copy — the vendored tree is
+never edited): derive the source list from `makefile.gf`'s `OBJS` block (690
+files, not the 712 `.f` in the directory), compile with
+`-O2 -std=legacy -fallow-argument-mismatch -w -fno-automatic`, and LINK FROM A
+RESPONSE FILE (`gfortran -o x13.exe @objs.rsp`) — 690 objects on one command
+line makes `collect2` fail with "CreateProcess: No such file or directory",
+which reads like a broken toolchain and is not.
+
+**`chusrg` cannot fire on the default path, and the corpus needed a spec that
+says so.** `chusrg.f:45` only looks at columns that are NOT already fixed, and
+`ssmdl.f:348`'s `Ssinit==1` block has just set `Regfx` true for all of them —
+so with `fixmdl` at its default the routine is a guaranteed no-op and the
+`sspdrv.f:250-260` NOTE never appears. Both arms are now gated:
+`-zerospan` (default) and `-zerospan-fixmdlno`, on a user regressor that is
+identically zero through 1958 and a ramp after, so that spans 1-2 see nothing
+and spans 3-4 see the ramp. Measured on the instrumented oracle:
+`bakusr`+`dlusrg`+`addusr` fire in spans 1 and 2 and not in 3 and 4, and the run
+ends with the NOTE, which `test_slidingspans_notes` compares verbatim.
+
+**Mutations**, baseline verified 0 first, against the five new specs: `addfix`'s
+`addusr` **6**; `ssmdl`'s `bakusr(rind=0)` **4**; the `/orisrs/` restore **4**;
+`sspdrv`'s `chusrg` block **3**; `chusrg`'s "fix this column" body **3**;
+`sspdrv`'s undo **2**; the `sspdrv.f:250-260` NOTE **1**.
+
+**Five zeros, and they are one finding rather than five.** Skipping
+`bakusr(rind=1)`, "fixing" CB-40 to write slot 1 correctly, skipping `dlusrg`
+entirely, and both of `addusr`'s transcribed quirks (`addusr.f:40`'s `Nb` where
+`Ncoltl` is meant, `addusr.f:42`'s undisplaced `Usrpt2`) all score 0 gates —
+and, checked the stronger way, leave the engine's ENTIRE STDOUT byte-identical
+on all five probes. Two reasons, both worth carrying:
+
+- `dlusrg`'s whole effect is undone by the `addusr` that always follows it,
+  which reassigns `Ncusrx`, `Userx`, `Usrptr`, `Usrtyp` and `Usrttl` wholesale
+  from the backup. It is a saturated precondition, not dead code.
+- **Nothing downstream of `addfix`'s restore reads the x11regression design
+  again within a span.** So the entire `rind=1` path — including this port's
+  reproduction of CB-40 — is faithful by transcription and untested by
+  measurement. The spec gates the RUN, not the bug. Said plainly in the CB entry
+  rather than left for someone to infer from a green suite.
+
+**Gated by** five hand-authored specs: `extra/airline_slidingspans-reg-user`,
+`-x11reg-user`, `-x11reg-usertype`, `-reg-user-zerospan` and
+`-reg-user-zerospan-fixmdlno`. Suite 7148 -> 7246 passed, 0 failed, 0 xfailed.
+WALLS 23 gaps (one removed, CB-40's added).

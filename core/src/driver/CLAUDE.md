@@ -14,6 +14,7 @@ already paid for once.
 | **44** | the model-only diagnostics path (`x11ari` with neither `Lx11` nor `Lseats`) |
 | **83** | `slidingspans{}` CLOSED bit-exact — `Setpri`, the per-span `ssprep` chain, `fixreg=`'s non-effect, and `fixmdl=clear` |
 | **86, 87** | `slidingspans{fixreg=(outlier)}` (setssp's `Otlfix` is the one fixreg flag that outlives setup) and the x11regression outlier block `run_x11_span` now runs per span (`ssx11a.f:99-154`, inside the `loadxr` swap) |
+| **88** | `slidingspans{}` + user regressors — `bakusr`/`addusr`/`dlusrg`/`chusrg` (new `regarima/usrbak.cpp`), `run_x11_span`'s `ssusr` hook for `sspdrv.f:145-174`, and the SEVENTH span-replay save/restore miss: `/orisrs/ Stoap`, the regression-adjusted original the `b1` table is punched from |
 | **85** | the sliding-spans held-back outliers — `run_x11_span`'s `ss_outliers` hook (`ssx11a.f:229-270`), why `history{}` must NOT take it, and `ssprep`'s `Lx11` argument |
 | **78, 79** | `slidingspans{}` + `x11regression{}` — the pairing no spec had; then the per-span calendar factor it exposed, closed by `ssxmdl`'s `fixx11reg` default TOGETHER with the `Ixreg` demote a previous session had measured alone and rejected |
 | **47, 50–52** | `pickmdl{}` / `automx.f`, amdfct's out-of-sample and backcast arms, and the per-candidate AIC tests |

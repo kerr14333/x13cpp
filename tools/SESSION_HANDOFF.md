@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7148<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->791<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7246<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->816<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7148<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7246<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2045,24 +2045,108 @@ item.
 the fourth one's header. `x11outlier=` is byte-inert under `fixx11reg=yes` and
 240 `sfs` lines apart under `fixx11reg=no`. WALLS 24 -> 23 gaps.
 
+## This session, part 39: `slidingspans{}` + user regressors -- two BARE abends, a seventh span leak, and an out-of-bounds read in the oracle
+
+Board item 1's `x11regression{user=}` wall. Full record in
+`docs/M5_PORT_NOTES.md` entry 88; what carries forward:
+
+**The wall could not fire, because `Nusxrg` is not what its name says.** It is
+the length of `x11regression{usertype=}` (`gtxreg.f:265`), NOT the user-column
+count (`Ncxusx`), and nothing else in the tree assigns it. An instrumented
+oracle on airline + `slidingspans{}` + `x11regression{user=(u1)}` prints
+`Nusxrg= 0 Ncxusx= 1`, so the arm was skipped and the spec walked past. Entry
+74's proxy-wall shape again.
+
+**The real holes were two BARE `abend(ctx)` calls** on `rmfix`'s `dlusrg` arm
+and `addfix`'s `addusr` arm (`automd_finalize.cpp`). No `errhdr`, no message --
+so `walls.py`, which derives the inventory from refusal MESSAGES, could not see
+either, and the run's whole `===ERR===` block came back empty. **New standing
+rule in `CLAUDE.md`: a bare `abend` is a hole with the lights off.**
+
+**`slidingspans{}` is what makes them reachable.** `ssmdl.f:350` is the only
+thing outside `gtxreg.f:865-875` that sets `Userfx`, and `Userfx` is what turns
+on `addfix.f:73`. So `regression{user=}` never met `rmfix`'s user arm until now.
+
+**Ported:** `bakusr.f`, `addusr.f`, `dlusrg.f`, `chusrg.f` in a new
+`core/src/regarima/usrbak.{hpp,cpp}`; plus `ssmdl.f:350-352`,
+`ssxmdl.f:143-148`, `sspdrv.f:145-174` (through a new `ss_user_state` hook on
+`run_x11_span` -- `chusrg` needs THIS span's `Nspobs`/`Begmdl`), the undo at
+`sspdrv.f:220-231`, and the `sspdrv.f:250-260` NOTE.
+
+**CB-40** -- `bakusr.f:50/52` displace the SOURCE of the `Userx2`/`Usrty2`
+copies instead of the destination, so the `Rind=1` call reads
+`Xuserx(PUSERX+1 …)`/`Usxtyp(PUREG+1 …)` and writes slot 0, leaving slot 1 --
+which `addusr(1)` reads -- never written. Confirmed with `-fcheck=bounds` on a
+scratchpad rebuild of the vendored sources. The effect is deterministic (an
+all-zero user matrix, type 0) and is reproduced; the one spec shape where the
+slot-0 garbage becomes observable is refused. **CB-41** is `sspdrv.f`'s single
+`bfx2` buffer serving two saves, plus its `Nb`-sized restore of an `Nbx` array.
+
+**SEVENTH span-replay save/restore miss: `/orisrs/ Stoap`**, the
+regression-ADJUSTED original the `b1` table is punched from. Invisible on every
+earlier slidingspans spec because with no `regression{}` it equals the raw
+series; with a user regressor, `b1` came back as raw `112` against the oracle's
+`224.466`.
+
+**Two build-flag findings worth keeping, both of which nearly became false bug
+reports.** A rebuild of the vendored sources is required to instrument the
+oracle, and `gfortran -O2` alone is NOT it: **`-fno-automatic` is required**
+(f77 static locals are load-bearing somewhere on this path) -- without it one
+probe's sliding-spans section moved by 600 lines while the main run stayed
+byte-exact. And the vendored `_O0`/`_O2` agreeing with each other is NOT
+evidence against an out-of-bounds read; only `-fcheck=bounds` settled CB-40.
+Recipe: source list from `makefile.gf`'s `OBJS` (690 files, not the 712 `.f` on
+disk), `-O2 -std=legacy -fallow-argument-mismatch -w -fno-automatic`, and LINK
+FROM A RESPONSE FILE -- 690 objects on one command line makes `collect2` fail
+with "CreateProcess: No such file or directory", which reads like a broken
+toolchain and is not.
+
+**`chusrg` is a guaranteed no-op under the `fixmdl` default** (`ssmdl.f:348`
+fixes every column first and `chusrg.f:45` only looks at unfixed ones), so both
+arms are gated: `-zerospan` and `-zerospan-fixmdlno`.
+
+**Mutations** (baseline 0 first): `addfix`'s `addusr` **6**; `ssmdl`'s
+`bakusr(rind=0)` **4**; the `/orisrs/` restore **4**; `sspdrv`'s `chusrg` block
+**3**; `chusrg`'s fix-this-column body **3**; the undo **2**; the NOTE **1**.
+**Five zeros, and they are one finding:** the whole `rind=1` path -- including
+this port's reproduction of CB-40 -- leaves the engine's ENTIRE stdout
+byte-identical on all five probes, because nothing downstream of `addfix`'s
+restore reads the x11regression design again within a span. The spec gates the
+RUN, not the bug; said so in the CB entry rather than left to be inferred.
+(`dlusrg`'s zero is a saturated precondition: the `addusr` that always follows
+reassigns everything it touched.)
+
+**Specs:** `extra/airline_slidingspans-reg-user`, `-x11reg-user`,
+`-x11reg-usertype`, `-reg-user-zerospan`, `-reg-user-zerospan-fixmdlno`.
+Suite 7148 -> 7246 passed, 0 failed, 0 xfailed. WALLS 23 gaps (one removed, one
+added).
+
 ## Open, in the order I would take them
 
-1. **The two remaining slidingspans walls.** Parts 36-38 closed the other
-   three; what is left:
-   * `slidingspans{}` with `x11regression{user=}` (`ssxmdl.f:142-148`'s
-     `bakusr`) -- and note `sspdrv.f:149-174` runs `chusrg`+`bakusr` PER SPAN
-     for both the regARIMA and the x11regression user regressors, with
-     `:223-231` undoing it; none of that is ported, and only the ssxmdl arm is
-     walled. This is ALSO the case that would expose the unswap compensation
-     part 38 added (`ss_save_working`/`ss_restore_working` restores more than
-     `restor.f` does, invisibly, because the two designs agree on every gated
-     spec -- entry 87).
-   * the change-of-regime arm of `ssmdl.f`'s group walk (`:150-241`), walled in
-     part 36. The oracle HALTS there (CB-39), so porting it means reproducing a
-     failed date parse -- decide whether that is worth doing at all.
+1. **One slidingspans wall left, and it is a judgement call, not a port.**
+   Parts 36-39 closed the other four. What remains is the change-of-regime arm
+   of `ssmdl.f`'s group walk (`:150-241`), walled in part 36: the ORACLE HALTS
+   there (CB-39, a typo'd `index` search for a string no title producer
+   writes), so porting it means transcribing the whole change-of-regime block
+   for the sole purpose of arriving at a garbage date. Decide whether that is
+   worth doing at all; the halt itself is already gated
+   (`test_slidingspans_halt_matches_oracle`).
+
+   Two things part 39 left DELIBERATELY, both scoped in entry 88:
+   * the `rind=1` `bakusr`/`addusr` path (CB-40) is faithful by transcription
+     and UNTESTED by measurement -- every mutation of it leaves the engine's
+     whole stdout byte-identical, because nothing downstream of `addfix`'s
+     restore reads the x11regression design again within a span. A spec that
+     can tell the two apart would need a consumer that does.
+   * `regression{user=}` + `x11regression{usertype=}` + a span driver is
+     refused (the CB-40 slot-0 clobber). That refusal is currently SHADOWED by
+     two older walls -- `xrgdrv`'s `Ncusrx==0` and x11pt2's user/seasonal/cycle
+     factor combine -- which is measured, not assumed: relaxing the xrgdrv
+     guard makes the next wall fire, not this one. Lifting either surfaces
+     CB-41 as well.
 
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
-   36-38 above and entries 83 and 85-87 before touching any of it. Note that
+   36-39 above and entries 83 and 85-88 before touching any of it. Note that
    entry 86 narrowed entry 83's `fixreg=` conclusion: read them together.
 2. **`ctx.hiddn.irev` is never advanced past 1 in this port** (entry 87).
    `revdrv.f:387` sets `Irev=4` around the history span loop and `:761` sets 5;

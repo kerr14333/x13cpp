@@ -28,7 +28,7 @@ namespace x13 {
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
                    int lsp, int nend_mdl, bool lseats, bool set_xrg_span,
-                   bool ss_outliers, bool ss_otlfix) {
+                   bool ss_outliers, bool ss_otlfix, ss_user_state* ssusr) {
     const int sp = ctx.model.sp;
     const int* begsrs = ctx.arima.begsrs.data();
 
@@ -180,6 +180,15 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         // disjunction from the same flag (`Otlfix.or.Ssxint`, ssx11a.f:150).
         ssx11a_span_outliers(ctx, lastsy,
                              ss_otlfix || ctx.sspinp.ssinit == 1);
+        if (ctx.error.lfatal) return false;
+    }
+
+    // sspdrv.f:145-174 -- the per-span user-regressor check, between ssx11a and
+    // x11ari, and it must be HERE: chusrg differences each user column over
+    // Nspobs starting at Begmdl, both of which this function has just moved
+    // onto the span. Its undo is back in run_slidingspans (sspdrv.f:220-231).
+    if (ssusr != nullptr) {
+        ssp_user_span_check(ctx, *ssusr);
         if (ctx.error.lfatal) return false;
     }
 

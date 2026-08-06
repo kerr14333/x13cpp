@@ -58,6 +58,10 @@ reproduce.
 - **`core/src/regarima/regvar.cpp:315`**
   regression variable type
 
+- **`core/src/regarima/usrbak.cpp:143`**
+  regression{user=} together with x11regression{usertype=} under slidingspans{}/history{} (bakusr.f:50 has already overwritten the regARIMA backup slot with out-of-bounds storage -- CB-40) is
+  *Fortran:* `bakusr.f:50`
+
 
 ## Spec parser
 
@@ -70,13 +74,9 @@ reproduce.
 
 ## X-11
 
-- **`core/src/x11/slidingspans.cpp:761`**
+- **`core/src/x11/slidingspans.cpp:762`**
   slidingspans{} with a change-of-regime regression variable (ssmdl.f:150-241, which the oracle itself halts on -- see CB-39) is
   *Fortran:* `ssmdl.f:150-241`
-
-- **`core/src/x11/slidingspans.cpp:1253`**
-  slidingspans{} with x11regression{user=} (ssxmdl.f:142-148's bakusr) is
-  *Fortran:* `ssxmdl.f:142-148`
 
 - **`core/src/x11/x11parts.cpp:231`**
   x11pt1 prior trading-day adjustment (pritd/ssrit)

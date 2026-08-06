@@ -1492,3 +1492,135 @@ halts.
   derives its case list from the blessed `.stdout.txt` ("Program error(s) halt
   execution") rather than from a name list, and asserts the engine produces no
   span table where the oracle produced none. Deleting the wall fails it.
+
+
+## CB-40
+
+**`bakusr.f:50` and `:52` displace the SOURCE of the two backup copies instead
+of the destination, so the `Rind=1` call reads `Xuserx`/`Usxtyp` past the end of
+both arrays and writes what it finds into slot 0 -- leaving slot 1, the one
+`addusr(1)` reads, never written by anything.**
+
+- **File:line:** `bakusr.f:49-52`.
+- **Severity:** `wrong-numbers` (plus an out-of-bounds READ). The
+  x11regression user regressors are restored with an identically ZERO data
+  matrix and type 0 instead of their own values.
+
+`bakusr` keeps two slots of everything, indexed by `Rind` -- 0 for the regARIMA
+design, 1 for the x11regression one. Three of the five writes displace the
+DESTINATION and are right:
+
+```fortran
+      disp=((PUREG+1)*Rind)+1
+      CALL cpyint(Usrptr(0),PUREG+1,1,Usrpt2(disp))
+      Ncusx2(Rind)=Ncusrx
+      Usrtt2(Rind)=Usrttl
+```
+
+The other two displace the SOURCE:
+
+```fortran
+      disp=(PUSERX*Rind)+1
+      CALL copy(Userx(disp),PUSERX,1,Userx2)
+      disp=(PUREG*Rind)+1
+      CALL cpyint(Usrtyp(disp),PUREG,1,Usrty2)
+```
+
+`Userx` and `Usrtyp` here are the DUMMY arguments, dimensioned `PUSERX` and
+`PUREG`. For `Rind=0` the two readings coincide (`disp` is 1 either way) and
+nothing is wrong. For `Rind=1` -- `ssxmdl.f:146`, `sspdrv.f:159`,
+`revdrv.f:317`, `revdrv.f:626` and `editor.f:1543`, i.e. any
+`x11regression{usertype=}` under `slidingspans{}` or `history{}` -- it reads
+`Xuserx(PUSERX+1 …)` and `Usxtyp(PUREG+1 …)`, one element past the end of each,
+for a whole array's length, and writes the result over SLOT 0.
+
+- **Measured, not inferred.** A bounds-checked build of the vendored sources
+  (`gfortran -fcheck=bounds`, scratchpad copy -- the vendored tree is never
+  edited) on airline + `slidingspans{}` + `x11regression{user=(u1)
+  usertype=(user)}`:
+
+  ```
+  At line 50 of file bakusr.f
+  Fortran runtime error: Index '53041' of dimension 1 of array 'userx'
+  above upper bound of 53040
+  ```
+
+  and an instrumented build prints the source displacement and the values it
+  picks up (`/cx11rd/` places `Cvxalf`/`Cvxrdc` after `Xuserx`):
+
+  ```
+  BAKUSR Rind= 1 Ncusrx=  1 nstored=  1 Buser= -0.5810479
+  BAKUSR src Userx(disp..) disp=   53041  0.5000000E-01  0.5000000  0.000000
+  BAKUSR src Usrtyp(disp..) disp=      53        1        3        0
+  ADDUSR Rind= 1 Ncusx2=  1 disp=   53041   0.000000  0.000000  0.000000
+  ADDUSR after Rind= 1 Ncusrx=  1 Usrtyp= 0 0 0 Userx= 0.000000 …
+  ```
+
+  `Buser`/`Fxuser` (displaced correctly) come back right; `Userx` and `Usrtyp`
+  come back as zeros, because slot 1 was never written.
+
+- **What it does to the result.** The restored x11regression user column is
+  identically zero and lands in the generic `User-defined` group whatever its
+  `usertype=` said. That is DETERMINISTIC -- the garbage goes to slot 0, which
+  only `addusr(0)` reads -- so the observable is reproducible and the oracle's
+  own `_O0` and `_O2` binaries agree on it, as does a fresh
+  `gfortran -O2 -fno-automatic` rebuild.
+
+- **Port:** the EFFECT is reproduced (`bakusr` in
+  `core/src/regarima/usrbak.cpp` leaves slot 1 alone for `rind==1`, so
+  `addusr(1)` restores zeros), and the one combination where the slot-0 garbage
+  becomes observable -- `regression{user=}` AND `x11regression{usertype=}` AND
+  a span driver, so that an `addusr(0)` follows a `bakusr(1)` -- is refused with
+  its own message rather than guessed at.
+
+- **Pinned by:** `tests/corpus/extra/airline_slidingspans-x11reg-usertype`.
+  **Read the caveat with it:** that spec gates the RUN bit-exact, not the bug.
+  Every mutation of the `rind=1` path -- skipping `bakusr(1)` entirely, or
+  "fixing" it to write slot 1 correctly -- leaves the engine's whole stdout
+  BYTE-IDENTICAL on all five probes, because nothing downstream of
+  `addfix`'s restore in a span reads the x11regression design again. So the
+  reproduction above is faithful to the Fortran by transcription, and untested
+  by measurement; the corpus has no spec that can tell the two apart.
+
+## CB-41
+
+**`sspdrv.f`'s per-span user-regressor undo uses ONE buffer for TWO saves and
+restores the wrong array's length.**
+
+- **File:line:** `sspdrv.f:154`, `:165`, `:229`.
+- **Severity:** `wrong-numbers`, and unreachable in the corpus (see below).
+
+The per-span block saves the fix flags before `chusrg` may change them and puts
+them back after the span:
+
+```fortran
+       IF(Nusxrg.gt.0)THEN
+        CALL copylg(Regfxx,Nbx,1,bfx2)      ! :154  x11regression design
+        ...
+       IF(Ncusrx.gt.0)THEN
+        CALL copylg(Regfx,Nb,1,bfx2)        ! :165  regARIMA design -- SAME bfx2
+...
+       IF(upusrx)THEN
+        CALL copylg(bfx2,Nb,1,Regfxx)       ! :229  Nb, not Nbx
+```
+
+Two defects in three lines:
+
+1. `bfx2` is a single `PB`-sized local and both saves write it. A spec carrying
+   user regressors in BOTH designs has its x11regression flags overwritten by
+   the regARIMA ones before either is restored, so `:229` reinstates the
+   regARIMA design's `Regfx` into `Regfxx`.
+2. `:229` copies `Nb` elements where the array it is writing is `Nbx` long. The
+   two counts are unrelated once the two designs differ in width.
+
+- **Port:** transcribed verbatim -- the shared buffer is modelled by the single
+  `ss_user_state::bfx2` member and the restore is sized `nb`
+  (`ssp_user_span_undo`, `core/src/x11/slidingspans.cpp`).
+
+- **NOT pinned by a spec, and here is why.** Reaching either defect needs
+  `Nusxrg > 0` (an `x11regression{usertype=}`) at the same time as
+  `Ncusrx > 0`, and that combination is behind CB-40's refusal plus two older
+  walls (`xrgdrv`'s `Ncusrx==0` and x11pt2's user-factor combine). When those
+  lift, `tests/corpus/extra/airline_slidingspans-x11reg-usertype` plus a
+  `regression{user=}` block is the spec that reaches it -- built and measured
+  as scratchpad `probeD` while this entry was written.

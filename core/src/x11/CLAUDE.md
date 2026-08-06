@@ -18,6 +18,7 @@ already paid for once.
 | **84** | `Xaicst` / `Xaicrg` — the two x11regression aictest values the editor parses back out of its own GROUP TITLES (`tdstock[15]`, `(change for before 1955.Jan)`), both read by `x11reg.cpp` and never written until now |
 | **87** | `slidingspans{}` + AUTOMATIC x11regression outliers — `ssx11a.f:99-154`'s whole `loadxr(F)…loadxr(T)` block (absent, and only its `x11outlier=no` arm was walled), `ssxmdl.f:44-77`'s `rmotss` walk into the `otxrev` store, and the TWO clauses `x11mdl.f:424-425` had lost — without which `x11outlier=no` re-identified per span and blew `PB=80` |
 | **86** | `slidingspans{fixreg=(outlier)}` — `setssp`'s `Otlfix` is the one fixreg flag that OUTLIVES setup (`sspdrv.f:121`, per span), the `ssx11a.f:268` disjunction it feeds is algebraically redundant with `rmotss`'s own store write, and lifting the wall falsified entry 83's "`fixreg=` fixes nothing in the oracle": with a held-back outlier `regchg` re-snapshots the post-`rvfixd` `Iregfx`/`Regfx` and the fixings survive every span |
+| **88** | `slidingspans{}` + USER REGRESSORS — the wall was keyed on `Nusxrg`, which is the `usertype=` count and not the user-column count, so it could not fire; the real holes were two BARE `abend`s on `rmfix`/`addfix`'s user arms; `bakusr.f:50/52` read past the end of `Xuserx`/`Usxtyp` (CB-40) and `sspdrv.f`'s `bfx2` is one buffer for two saves (CB-41); `chusrg` is a guaranteed no-op under the `fixmdl` default |
 | **85** | the sliding-spans HELD-BACK OUTLIERS (`ssmdl.f:124-280`'s group walk, `rmotss`/`adotss`) — a whole block that was neither ported nor walled, `ssprep`'s dropped `Lx11` argument, and the change-of-regime arm the ORACLE halts on (CB-39) |
 | **13, 14, 15, 24, 71, 72, 73, 76, 77** | `x11regression{}` — `tdprior`, the OLS prior TD (`xrgdrv`) on both the model and the no-model path, the Easter aictest sub-engine, the logadd tdprior bug, the `Picktd` half of gtinpt's `restor`, `prterx`'s singular-design abend, the HOLIDAY-ONLY design whose whole prior pass was skipped behind four `Axrgtd` proxies, and `reweight=` (`Lxrneg`) — whose daily-weight rewrite has to run BEFORE `x11ref`, because it writes back into `B` |
 | **19, 20, 21** | x11pt4 — the F2 test battery, the Part-F summary measures + F3 quality statistics, and the Part-E tables |
@@ -28,8 +29,8 @@ already paid for once.
 
 - **A span replay overwrites the live COMMONs in place.** x11pt1→x11pt3 is a
   full pass, so `/x11srs/`, `/adxser/`, `/x11fac/`, `/x11ptr/`, `/lkhd/`,
-  `Begspn`, `ctx.x11_f2tests` and `ctx.d8bd9a` all need save/restoring around
-  the span drivers. The oracle punches its tables during the main pass, before
+  `Begspn`, `ctx.x11_f2tests`, `ctx.d8bd9a` and `/orisrs/` all need
+  save/restoring around the span drivers. The oracle punches its tables during the main pass, before
   `sspdrv`/`revdrv` run; this harness dumps at exit. **Any new `ctx` field
   written from inside x11pt1/x11pt2/x11pt3 joins that set** — this has bitten
   the port four separate times.

@@ -10,6 +10,7 @@
 #include "automdl/chkmu.hpp"          // genrtt
 #include "numeric/numeric.hpp"        // dpeq, dpmpar, dppdi, daxpy, eltfcn
 #include "regarima/regvar.hpp"        // regvar, td7var, gtrgpt
+#include "regarima/usrbak.hpp"        // dlusrg, addusr (rmfix/addfix's user arm)
 #include "transform/transform.hpp"    // trnfcn
 #include "specparse/specparse.hpp"    // strinx, adrgef, dlrgef, getstr, insstr,
                                        // insptr, delstr, intlst, copy, copylg,
@@ -25,8 +26,7 @@ namespace {
 constexpr int PACM = (PLEN + 2 * PORDER) * PARIMA;
 
 // True when Rgvrtp(begcol) is one of the "user regressor" family codes that
-// rmfix/addfix special-case via dlusrg/addusr. Not reachable by the
-// td/easter/Constant aictest corpus.
+// rmfix/addfix special-case via dlusrg/addusr (regarima/usrbak.cpp).
 bool is_user_rgvr(int rt) {
     return (rt >= PRGTUH && rt <= PRGUH5) || rt == PRGTUS || rt == PRGTUD ||
            rt == PRGUAO || rt == PRGULS || rt == PRGUSO || rt == PRGUTD ||
@@ -235,10 +235,11 @@ void rmfix(X13Context& ctx, double* trnsrs, int nbcst, int nrxy, int fxindx) {
                 }
 
                 if (is_user_rgvr(m.rgvrtp(icol))) {
-                    // dlusrg not ported: unreachable for the td/easter/Constant
-                    // aictest corpus (no user-defined regressor types).
-                    abend(ctx);
-                    return;
+                    // rmfix.f:82-90 -- a user column's DATA lives in Userx, not
+                    // in Xy, so the user matrix is compressed alongside the
+                    // design. `addfix`'s addusr rebuilds both.
+                    dlusrg(ctx, icol - begcol + 1);
+                    if (ctx.error.lfatal) return;
                 }
                 dlrgef(ctx, icol, nrxy, 1);
                 if (ctx.error.lfatal) return;
@@ -268,7 +269,6 @@ void rmfix(X13Context& ctx, double* trnsrs, int nbcst, int nrxy, int fxindx) {
 }
 
 void addfix(X13Context& ctx, double* trnsrs, int nbcst, int rind, int fxindx) {
-    (void)rind;
     auto& m = ctx.model;
     auto& d = ctx.mdldat;
     auto& fx = ctx.fxreg;
@@ -312,10 +312,12 @@ void addfix(X13Context& ctx, double* trnsrs, int nbcst, int rind, int fxindx) {
         }
     }
 
+    // addfix.f:73-76. `Userfx` is what slidingspans{} sets (ssmdl.f:350 /
+    // ssxmdl.f:144), which is why this arm was dead until the span drivers met
+    // regression{user=}.
     if (m.userfx || (fxindx == 2 && nu > 0)) {
-        // addusr not ported: unreachable for the td/easter/Constant corpus.
-        abend(ctx);
-        return;
+        addusr(ctx, rind, fxindx);
+        if (ctx.error.lfatal) return;
     }
 
     if (fxindx == 2) {

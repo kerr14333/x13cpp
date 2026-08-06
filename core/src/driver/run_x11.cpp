@@ -172,6 +172,14 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // and slidingspans{} together: saa/ffc came back as 84 rows starting seven
     // years late.) Same discipline as the ctx.x11_f2tests snapshot above.
     const auto x11srs_main = ctx.x11srs;
+    // ...and the SEVENTH (entry 88). /orisrs/ Stoap is the REGRESSION-ADJUSTED
+    // original -- what adjreg leaves behind and what the b1 table is punched
+    // from. Every slidingspans spec gated before this one had no regression{},
+    // so Stoap equalled the raw series and a span replay overwriting it with
+    // the span's own copy was invisible; put regression{user=} in the spec and
+    // b1 came back as the RAW 112 against the oracle's adjusted 224.47. Exactly
+    // the shape the rule above states: whatever a consumer re-derives from.
+    const auto orisrs_main = ctx.orisrs;
     const auto adxser_main = ctx.adxser;
     const auto x11fac_main = ctx.x11fac;
     const auto x11ptr_main = ctx.x11ptr;
@@ -249,6 +257,7 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
 
     ctx.lkhd = lkhd_main;
     ctx.x11srs = x11srs_main;
+    ctx.orisrs = orisrs_main;
     ctx.adxser = adxser_main;
     ctx.x11fac = x11fac_main;
     ctx.x11ptr = x11ptr_main;

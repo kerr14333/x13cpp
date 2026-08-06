@@ -18,6 +18,10 @@
 #include <string>
 #include <vector>
 
+#include "gen/model.hpp"   // prm::PB, prm::PUREG, prm::PCOLCR
+#include "x13/farray.hpp"
+#include "x13/fstring.hpp"
+
 namespace x13 {
 
 struct X13Context;
@@ -102,6 +106,35 @@ void ssx11a_span_xrg_outliers(X13Context& ctx, bool otlfix);
 // re-snapshot, so the next span's restor starts from the held-back design
 // again. No-op when the store is empty.
 void ssp_strip_span_outliers(X13Context& ctx);
+
+// sspdrv.f's USER-REGRESSOR bracket: its per-span locals (`upuser`, `upusrx`,
+// `lastfx`, `lstxfx`, `bfx2`) plus the run-long "held fixed for at least one
+// span" title list (`usfxtl`/`nusfx`/`nusftl`/`usfptr`) that :250-260 prints
+// once at the end. Lives in the caller because :149-174 and :223-231 bracket
+// the whole span -- the check runs inside run_x11_span (it needs THIS span's
+// Nspobs/Begmdl) and the undo runs after it, in run_slidingspans.
+struct ss_user_state {
+    bool upuser = false;
+    bool upusrx = false;
+    bool lastfx = false;
+    bool lstxfx = false;
+    x13::farray1<bool, prm::PB> bfx2{};
+    x13::fstring<prm::PCOLCR * prm::PUREG> usfxtl{};
+    x13::farray1lb<int, 0, prm::PUREG> usfptr{};
+    int nusfx = 0;
+    int nusftl = 0;
+};
+
+// sspdrv.f:145-174 -- per span, ask chusrg whether each user regressor is still
+// well defined over the shortened span; anything that is not gets fixed for
+// this span and re-snapshotted (bakusr, and for the regARIMA design a full
+// ssprep) so the fixing survives x11ari's rmfix/addfix round trip.
+void ssp_user_span_check(X13Context& ctx, ss_user_state& s);
+
+// sspdrv.f:220-231 -- undo it. NOTE what the Fortran restores: `bfx2` is ONE
+// buffer shared by both saves, and the Regfxx restore at :229 is sized `Nb`,
+// not `Nbx` (CB-41).
+void ssp_user_span_undo(X13Context& ctx, ss_user_state& s);
 
 // setssp.f, scoped per the file header. Resolves Ncol/Nlen defaults from the
 // main run's Length (ctx.x11opt.length) + Ltmax when the user didn't set

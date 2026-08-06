@@ -5,6 +5,7 @@
 #include "driver/run_x11_span.hpp"
 #include "regarima/outlier.hpp"      // rdotlr (rmotss/adotss)
 #include "regarima/rvfixd.hpp"       // rvfixd (fixreg= group walk)
+#include "regarima/usrbak.hpp"       // bakusr, chusrg (the user-regressor bracket)
 #include "x11/loadxr.hpp"            // loadxr (regARIMA <-> x11reg model swap)
 #include "specparse/specparse.hpp"   // dfdate, addate, copy, copylg
 #include "numeric/numeric.hpp"       // dpeq
@@ -828,9 +829,15 @@ bool ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
         if (ctx.model.iregfx < 3) ctx.model.iregfx = 3;
         for (int i = 1; i <= ctx.model.nb; ++i) ctx.model.regfx(i) = true;
         ctx.ssprep.irfx2 = 3;
-        // (bakusr/Userfx needs user-defined regressors, which this driver's
-        // scope excludes.)
+        // ssmdl.f:350-352. THIS is what turns on `addfix.f:73`'s addusr branch
+        // for the whole run: outside the span drivers `Userfx` is set only by
+        // `gtxreg.f:865-875`, so `regression{user=}` never reached rmfix's
+        // dlusrg or addfix's addusr until slidingspans{} met it.
         if (!ctx.model.userfx) ctx.model.userfx = ctx.usrreg.ncusrx > 0;
+        if (ctx.model.userfx) {
+            bakusr(ctx, usr_design_reg(ctx), /*rind=*/0, /*is1st=*/true);
+            if (ctx.error.lfatal) return false;
+        }
     }
 
     // ssmdl.f:358-373 -- make the structural change survive. Every span begins
@@ -1031,6 +1038,70 @@ void ssp_strip_span_outliers(X13Context& ctx) {
     // capture_saved=false for the same reason, and lx11=false because
     // sspdrv.f:218 passes `ssprep(T,F,F)` -- see the note on that parameter.
     ssprep_snapshot(ctx, /*capture_saved=*/false, /*lx11=*/false);
+}
+
+// sspdrv.f:145-174, scoped per the hpp header.
+void ssp_user_span_check(X13Context& ctx, ss_user_state& s) {
+    s.upuser = false;
+    s.upusrx = false;
+    s.lastfx = ctx.model.userfx;
+    s.lstxfx = ctx.xrgmdl.usrxfx;
+
+    // sspdrv.f:153-163 -- the x11regression design. Keyed on `Nusxrg`, the
+    // `x11regression{usertype=}` COUNT, not on the user-column count `Ncxusx`
+    // (see the note in ssxmdl_span's tail).
+    //
+    // Two Census defects sit in this pair of blocks, both recorded as CB-41:
+    // (a) `bfx2` is ONE PB-sized buffer and BOTH saves write it, so when a spec
+    //     carries user regressors in both designs the second save (:165) wipes
+    //     the first and :229 restores the regARIMA flags into `Regfxx`;
+    // (b) :229 copies `Nb` elements, not `Nbx`.
+    // Transcribed verbatim -- the shared buffer is modelled by the single
+    // `s.bfx2` member, which is exactly what the Fortran has.
+    if (ctx.xrgmdl.nusxrg > 0) {
+        copylg(ctx.xrgmdl.regfxx.data(), ctx.xrgmdl.nbx, 1, s.bfx2.data());
+        chusrg(ctx, s.upusrx, s.usfxtl.data(),
+               static_cast<int>(s.usfxtl.raw().size()), s.nusfx, s.nusftl,
+               &s.usfptr(0));
+        if (ctx.error.lfatal) return;
+        if (s.upusrx) {
+            if (!ctx.xrgmdl.usrxfx) ctx.xrgmdl.usrxfx = true;
+            bakusr(ctx, usr_design_xrg(ctx), /*rind=*/1, /*is1st=*/!s.lstxfx);
+            if (ctx.error.lfatal) return;
+        }
+    }
+
+    // sspdrv.f:164-174 -- the regARIMA design. The `ssprep(T,F,F)` at :172 is
+    // the same FULL re-snapshot ssp_strip_span_outliers takes, and for the same
+    // reason: chusrg has just written `Regfx`/`Iregfx`, and without the re-take
+    // the next span's restor puts the old flags straight back.
+    if (ctx.usrreg.ncusrx > 0) {
+        copylg(ctx.model.regfx.data(), ctx.model.nb, 1, s.bfx2.data());
+        chusrg(ctx, s.upuser, s.usfxtl.data(),
+               static_cast<int>(s.usfxtl.raw().size()), s.nusfx, s.nusftl,
+               &s.usfptr(0));
+        if (ctx.error.lfatal) return;
+        if (s.upuser) {
+            if (!ctx.model.userfx) ctx.model.userfx = true;
+            bakusr(ctx, usr_design_reg(ctx), /*rind=*/0, /*is1st=*/!s.lastfx);
+            if (ctx.error.lfatal) return;
+            ssprep_snapshot(ctx, /*capture_saved=*/false, /*lx11=*/false);
+        }
+    }
+}
+
+// sspdrv.f:220-231, scoped per the hpp header.
+void ssp_user_span_undo(X13Context& ctx, ss_user_state& s) {
+    if (s.upuser) {
+        copylg(s.bfx2.data(), ctx.model.nb, 1, ctx.model.regfx.data());
+        ctx.model.userfx = s.lastfx;
+        ssprep_snapshot(ctx, /*capture_saved=*/false, /*lx11=*/false);
+    }
+    if (s.upusrx) {
+        // CB-41(b): `Nb`, not `Nbx`. Verbatim.
+        copylg(s.bfx2.data(), ctx.model.nb, 1, ctx.xrgmdl.regfxx.data());
+        ctx.xrgmdl.usrxfx = s.lstxfx;
+    }
 }
 
 // ssxmdl.f -- the x11regression half of ssmdl, called from setssp.f:353 under
@@ -1243,17 +1314,23 @@ static bool ssxmdl_span(X13Context& ctx, bool tdfix, bool holfix, bool otlfix,
         xg.usrxfx = usrxfx0;
     }
 
-    // ssxmdl.f:138-150 -- the tail, and the reason this routine matters.
-    // (The bakusr arm needs x11regression user regressors; Nusxrg==0 in the
-    // corpus and the refusal above already fences the fixed-design cases.)
+    // ssxmdl.f:138-149 -- the tail, and the reason this routine matters.
+    //
+    // `Nusxrg` is NOT the x11regression user-COLUMN count (that is `Ncxusx`):
+    // it is the length of `x11regression{usertype=}`, and nothing else in the
+    // oracle ever assigns it. So this arm -- and `sspdrv.f:153-163`'s -- fire
+    // only when `usertype=` is given, which is why a plain
+    // `x11regression{user=}` spec walks straight past both. A wall keyed on
+    // this flag would have been a wall keyed on a proxy for the wrong trigger.
     if (si.ssxint) {
         for (int i = 1; i <= prm::PB; ++i) xg.regfxx(i) = true;
         if (xg.irgxfx < 3) xg.irgxfx = 3;
-        if (!xg.usrxfx && xg.nusxrg > 0) {
-            ssp_not_ported(ctx,
-                           "slidingspans{} with x11regression{user=} "
-                           "(ssxmdl.f:142-148's bakusr) is");
-            return false;
+        if (!xg.usrxfx) {
+            xg.usrxfx = xg.nusxrg > 0;
+            if (xg.usrxfx) {
+                bakusr(ctx, usr_design_xrg(ctx), /*rind=*/1, /*is1st=*/true);
+                if (ctx.error.lfatal) return false;
+            }
         }
     }
 
@@ -1617,10 +1694,15 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
     }
     hid.issap = 2;
 
-    // Replay loop (sspdrv.f). The gate corpus has no fixreg{}/regression{}/
-    // outlier{}, so the user-regressor deletion/restore (chusrg/bakusr) and
-    // automatic-outlier removal (dlrgef/ssprep) blocks sspdrv.f runs between
-    // spans are all dead code here (Ncusrx==Nusxrg==Notrtl==0) -- not ported.
+    // Replay loop (sspdrv.f).
+    //
+    // sspdrv.f:53-54 -- the run-long "held fixed for at least one span" list
+    // chusrg appends to and :250-260 prints once at the end. It is initialised
+    // ONCE, outside the loop.
+    ss_user_state ssusr;
+    intlst(prm::PUREG, &ssusr.usfptr(0), ssusr.nusftl);
+    ssusr.nusfx = ssusr.nusftl + 1;
+
     const bool has_model = ctx.captured.has_model;
     const int nfcst = ctx.extend.nfcst;
     const int nbcst = ctx.extend.nbcst;
@@ -1681,15 +1763,39 @@ bool run_slidingspans(X13Context& ctx, const std::vector<double>& trnsrs_full) {
         if (!run_x11_span(ctx, trnsrs_full, has_model, si.nlen, nfcst, nbcst,
                            nbcst2, lsp, /*nend_mdl=*/0, lseats,
                            /*set_xrg_span=*/true, /*ss_outliers=*/true,
-                           ss_otlfix))
+                           ss_otlfix, &ssusr))
             return false;
         if (ctx.error.lfatal) return false;
         // sspdrv.f:208-219 -- take the re-added outlier columns back out before
         // the next span, so each span starts from the held-back design.
         ssp_strip_span_outliers(ctx);
         if (ctx.error.lfatal) return false;
+        // sspdrv.f:220-231 -- and put back whatever chusrg fixed for this span.
+        ssp_user_span_undo(ctx, ssusr);
+        if (ctx.error.lfatal) return false;
     }
     hid.issap = 3;
+
+    // sspdrv.f:250-260 -- the one OBSERVABLE of chusrg. Everything else it does
+    // is undone at :223-231, so a user regressor that was undefined in some
+    // span leaves no trace in any table; this list is the trace. Emitted on the
+    // Mt2 channel (writln with Mt1/Mt2), which the harness pipes out.
+    if (ssusr.nusftl > 0) {
+        writln(ctx,
+               "NOTE: The user defined regressors listed below were held fixed",
+               stdio::STDERR, ctx.units.mt2, true);
+        writln(ctx,
+               "      for at least one span during the sliding spans analysis:",
+               stdio::STDERR, ctx.units.mt2, false);
+        for (int igrp = 1; igrp <= ssusr.nusftl; ++igrp) {
+            std::string outstr;
+            int ipos = 0;
+            getstr(ctx, ssusr.usfxtl.data(), &ssusr.usfptr(0), ssusr.nusfx,
+                   igrp, outstr, ipos);
+            if (ctx.error.lfatal) return false;
+            writln(ctx, "    " + outstr, stdio::STDERR, ctx.units.mt2, false);
+        }
+    }
 
     // sspdrv.f:264 -- the summary-measures early return, which sits BEFORE the
     // header below and before ssap. Reproduced only as a guard on the header:

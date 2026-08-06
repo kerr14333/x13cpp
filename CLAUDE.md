@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-87, chronological). They used to live in this file and made it
+(entries 0-88, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -207,9 +207,12 @@ because by the time you would think to look them up, the damage is done.
   live COMMONs in place; the oracle punches its tables before the span drivers
   run, this harness dumps at exit. This seam has bitten the port five times
   (`/x11srs/`, `/lkhd/`, `ctx.x11_f2tests`, `ctx.d8bd9a`, `/mdldat/`'s
-  `Arimap`) — check it by default, not per feature. The fifth one generalises
-  the rule: the set needs **whatever a consumer re-derives from, not only what
-  it publishes.** `history{}` re-estimates per span, so it leaves the last
+  `Arimap`, `/orisrs/`'s `Stoap`) — check it by default, not per feature. The
+  fifth one generalises the rule: the set needs **whatever a consumer
+  re-derives from, not only what it publishes.** The seventh shows what that
+  costs: `Stoap` is the regression-ADJUSTED original behind the `b1` table, and
+  it equals the raw series on every spec with no `regression{}` — so the miss
+  was invisible until one spec had both (entry 88, `b1` off by 5.0e-1). `history{}` re-estimates per span, so it leaves the last
   span's ARMA coefficients in `Arimap`, and the SEATS harness rebuilds the
   whole decomposition from `ctx` after `run_seats` returns (entry 69).
 - **The mirror image of that rule, and it has now cost as much: some state must
@@ -355,6 +358,13 @@ because by the time you would think to look them up, the damage is done.
   `walls.py` blind spot in state form: nothing refuses, nothing is listed, and
   the guards LOOK ported. When you port a condition on a mode variable, check
   the port ever writes the mode.
+- **A BARE `abend` is not a wall — it is a hole with the lights off.**
+  `walls.py` derives the inventory from refusal MESSAGES, so a guard that calls
+  `abend(ctx)` with no `errhdr`/`writln` is in neither the gap list nor the
+  count, and the run's whole `===ERR===` block comes back EMPTY. Two of them
+  sat on `rmfix`/`addfix`'s user-regressor arms for months (entry 88). Every
+  refusal goes through a `*_not_ported` helper; if you write `abend` directly,
+  give it a message first.
 - **An unported path that returns SUCCESS is worse than one that has no code.**
   Walls are inventory — `walls.py` lists them and deleting one leaves the list.
   A silent `return true` guard is in neither the wall list nor the gate count,

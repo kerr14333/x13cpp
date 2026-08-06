@@ -23,6 +23,8 @@
 
 #include <vector>
 
+#include "x11/slidingspans.hpp"   // ss_user_state (sspdrv.f's per-span locals)
+
 namespace x13 {
 
 struct X13Context;
@@ -82,11 +84,18 @@ struct X13Context;
 // different schedule and with a different store, and running both would
 // double-delete. ss_otlfix is ssx11a's `Otlfix.or.Ssinit.eq.1`: whether an
 // outlier re-added into this span comes back with its coefficient FIXED.
+//
+// ssusr (default null): sspdrv.f:145-174's per-span user-regressor check. It
+// lives here rather than in the caller because chusrg differences each user
+// column over THIS span -- it needs the Nspobs/Begmdl this function has just
+// set -- while its undo (:220-231) is after the whole span, back in
+// run_slidingspans. Null on every other call site: revdrv.f runs `chusrg` on
+// its own schedule (:620-640, once, outside the span loop).
 bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
                    bool has_model, int nlen, int nfcst, int nbcst, int nbcst2,
                    int lsp, int nend_mdl = 0, bool lseats = false,
                    bool set_xrg_span = false, bool ss_outliers = false,
-                   bool ss_otlfix = false);
+                   bool ss_otlfix = false, ss_user_state* ssusr = nullptr);
 
 }  // namespace x13
 
