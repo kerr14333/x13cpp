@@ -81,9 +81,10 @@
 //     `history{x11outlier=}` (Rvxotl) applies the same pair to the
 //     x11regression design (revdrv.f:336-338/:601-603, via loadxr). The DEFAULT
 //     (yes -- delete the automatically identified x11reg outliers so each span
-//     re-identifies its own) gates, bit-exact on a model-free spec; the `no`
-//     branch is measured wrong and ungated. It needs x11regression{critical=},
-//     which is what puts automatic outliers in the x11reg store at all.
+//     re-identifies its own) gates bit-exact on a model-free spec, and so does
+//     `no` since entry 89 made `Irev` reach 4 (entry 90). Both need
+//     x11regression{critical=}, which is what puts automatic outliers in the
+//     x11reg store at all.
 //   * Without
 //     fixmdl the model is re-estimated each span (restor_span resets Arimap to
 //     the main run's converged snapshot as the per-span starting values, then

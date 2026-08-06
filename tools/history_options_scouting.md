@@ -252,9 +252,8 @@ next person does not re-derive it.
 2. ~~`endtable=`~~ — DONE, and it needed no port at all: the engine already
    honoured it and only lacked a gate. See the section above.
 3. ~~`fixx11reg=`~~ — DONE, together with the per-span `xrgdrv` the default path
-   needed. `x11outlier=` (`Rvxotl`) shares the `revdrv.f:309-350` `Ixreg` block
-   and is still open; it needs `rmatot.f` (as `outlier=` does) on top of what
-   landed here.
+   needed. ~~`x11outlier=`~~ (`Rvxotl`), which shares the `revdrv.f:309-350`
+   `Ixreg` block, is DONE too — see the section below.
 4. ~~`sadjlags=`/`trendlags=`/`target=`~~ — DONE. See the section below.
 5. ~~`outlier=`/`outlierwin=`~~ — mostly DONE, and the ranking here ("the
    default is already right, so this is the least urgent") was **wrong, for the
@@ -320,7 +319,7 @@ sar 1.2e+0.
 
 Gated by `extra/airline_history-outlier-{reg,pre,auto-keep,remove}`.
 
-### `x11outlier=` — DEFAULT closed; the blocker was in `x11regression{}`
+### `x11outlier=` — CLOSED, both arms; the blocker was in `x11regression{}`
 
 `revdrv.f:336-338` (pre-loop) and `:601-603` (per span) run the same
 rmatot/rmotrv/chkorv machinery on the X11REGRESSION design, with
@@ -352,16 +351,30 @@ The main run is bit-exact after it, and the history family then falls out:
 | --- | --- | --- |
 | `x11outlier=yes` (DEFAULT), with a model | sar 5.15e-1 | **4.73e-4** (per-span floor) |
 | model-free | sar 5.30e-1 | **5.33e-15** (bit-exact) |
-| `x11outlier=no` | sar 7.50e-1 | 7.48e-1 — STILL OPEN |
+| `x11outlier=no` | sar 7.50e-1 | 7.48e-1 — then **bit-exact**, see below |
 
-**`no` is measured and left open**, deliberately, with what is known written
-down: the engine produces the DEFAULT (delete-and-re-identify) numbers where the
-oracle keeps the main run's outliers and accumulates. The deletion path is the
-one that WORKS, so it is not the `rmatot` call that is wrong; and on this corpus
-every x11reg outlier is dated before the revision start, so `rmotrv` holds none
-back and `chkorv` never runs — both branches should be doing nothing, and the
-difference is in how the per-span `x11mdl` re-identifies against a design that
-already carries AO columns. Not this seam.
+**`no` was open for three increments, and the seam this section ruled out was
+the right one to rule out — the guard was in `x11regression{}`.** The reasoning
+recorded here held: on this corpus every x11reg outlier is dated before the
+revision start, so `rmotrv` holds none back and `chkorv` never runs, and both
+branches really were doing nothing. What the engine was doing instead was
+re-identifying a fresh AO set inside every span, because `x11mdl.f:424`'s guard
+is `Otlxrg .and. (Irev.lt.4.or.(Irev.eq.4.and.Rvxotl)) .and. (Issap.lt.2.or.
+(Issap.eq.2.and.Ssxotl))` and this port had ported `Otlxrg` alone. Entry 87
+restored the clause and measured **no change**, which is the trap worth keeping:
+`ctx.hiddn.irev` was still 1 for the whole span loop, so the fix was correct and
+unobservable at the same time. Entry 89 advanced `Irev` to 4, and entry 90 found
+this arm already bit-exact — nothing was changed to close it.
+
+Gated by `extra/airline_history-x11outlier-no` and `-no-nomodel`. The two arms
+are 708 (with a model) / 714 (model-free) oracle output lines apart, so the
+option is not inert on either spec. Mutations, against a verified-0 baseline of
+639 `-k history` gates: dropping the `Irev` clause again **8**; forcing the
+per-span `Rvxotl` arm either way **8** each; `rmotrv`'s hold-back flag pinned
+false **8**. One zero, and it is structural rather than a corpus gap: the
+head-of-analysis `rmatot` at `revdrv.f:336-338` is redundant with the per-span
+one, whose `else if (Rvxotl)` arm has no `i>Begrev` guard and so strips the same
+columns again on span 1.
 
 Gated by `extra/airline_x11regression-critical` and
 `extra/airline_x11regression-sigma` (the main run: xrm, b16/c16, d10-d13) and

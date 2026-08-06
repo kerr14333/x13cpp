@@ -5830,3 +5830,78 @@ board.
 `-force-round`, `-ls-trend` and `-endtable-sadjlags`. Suite 7246 -> 7363 passed,
 0 failed, 0 xfailed; ctest 12/12. WALLS 23 -> 19 gaps, all four removed by
 porting what they stood in front of.
+
+## 90. `history{x11outlier=no}` — closed by two increments ago, and nobody had re-measured
+
+Board item 2. The port needed **no code**: the arm was already bit-exact, and
+the whole increment is two specs, one mutation sweep, and the deletion of three
+paragraphs of prose that had been wrong since the moment entry 89 landed.
+
+**The chain, and why it hid.** `x11mdl.f:424`'s outlier-identification arm is
+
+```fortran
+IF(Otlxrg .and. (Irev.lt.4 .or. (Irev.eq.4 .and. Rvxotl))
+   .and. (Issap.lt.2 .or. (Issap.eq.2 .and. Ssxotl)))
+```
+
+and this port had ported `Otlxrg` alone, so during a `history{}` replay every
+span re-identified a fresh AO set on its own data no matter what
+`x11outlier=` said. Entry 87 found that omission from the SLIDING-SPANS side,
+restored both clauses, and measured the history probe **both ways**: sar 4.6e+0
+either way, no change. That measurement was correct and its conclusion —
+recorded in a code comment as "the obvious candidate is NOT the cause" — was
+not, because `ctx.hiddn.irev` was 1 for the whole span loop and the clause it
+had just restored could not evaluate. Entry 89 advanced `Irev` to 4. Nothing in
+entry 89 was about `x11outlier=`; it closed this as a side effect, and the board
+item stayed open for an increment because closure was assumed to need work.
+
+This is the standing "a null measured under the wrong preconditions is not a
+null" rule arriving from the RE-MEASUREMENT direction, which reads differently
+and is worth naming: **a candidate fix that measures zero while one of its own
+preconditions is known dead has not been tested, it has been skipped.** Entry
+87 wrote the precondition down in the same comment as the exculpation — the
+information needed to void the measurement was already on the page.
+
+**What was actually done here.** Two hand-authored specs, mirroring the pair
+that already gate the DEFAULT: `extra/airline_history-x11outlier-no` (airline,
+`transform{log}` + `arima{(0 1 1)(0 1 1)}` + `x11regression{variables=(td)
+critical=3.0}` + `history{estimates=(sadj trend) start=1955.jan
+x11outlier=no}`) and `-no-nomodel`, the model-free twin where nothing
+re-estimates per span so the x11regression outlier bookkeeping is the only thing
+moving. Both gate bit-exact on the first run.
+
+**The option is not inert on either spec**, which is the check that makes the
+gates worth having: the `yes` and `no` goldens are **708** output lines apart
+with a model and **714** apart model-free.
+
+**Mutations**, against a verified-0 baseline of 639 `-k history` gates:
+
+| mutation | gates failed |
+|---|---|
+| `x11mdl.f:424`'s `Irev` clause dropped again (`Otlxrg` alone) | 8 |
+| per-span `Rvxotl` forced TRUE (always `rmatot`) | 8 |
+| per-span `Rvxotl` forced FALSE (never `rmatot`) | 8 |
+| `rmotrv`'s hold-back flag pinned false | 8 |
+| head-of-analysis `rmatot` (`revdrv.f:336-338`) skipped | **0** |
+
+Eight is four gated tags (`sar sae trr tre`) times the two new specs, and the
+arms are discriminated in both directions: forcing TRUE moves only the `no`
+specs, forcing FALSE only the `yes` ones.
+
+**The zero is structural, not a corpus gap, and that distinction is the reason
+to write it down.** `revdrv.f:336-338`'s pre-loop `rmatot` deletes the
+automatically identified x11reg columns once before the span loop; the per-span
+block at `:731-741` runs `else if (Rvxotl) rmatot(...)` with **no `i>Begrev`
+guard**, so span 1 strips the same columns again on a design the pre-loop call
+has already stripped. No spec can tell the two apart because none can exist —
+the second call is unconditionally reached whenever the first one is. It stays
+transcribed because the oracle makes it, and the comment above it now says so,
+so the next mutation sweep does not re-derive this.
+
+**Prose deleted or corrected:** `run_history.cpp`'s 22-line "STILL OPEN and
+measured" block (which named the right guard and then ruled it out),
+`run_history.hpp:81-86`'s "the `no` branch is measured wrong and ungated", and
+`tools/history_options_scouting.md`'s `x11outlier=` section, whose ranking table
+still read `7.48e-1 — STILL OPEN`. All three were true when written; all three
+became false the day entry 89 landed, and none of them is the kind of thing a
+tool can check.

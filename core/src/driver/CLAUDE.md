@@ -14,6 +14,7 @@ already paid for once.
 | **44** | the model-only diagnostics path (`x11ari` with neither `Lx11` nor `Lseats`) |
 | **83** | `slidingspans{}` CLOSED bit-exact — `Setpri`, the per-span `ssprep` chain, `fixreg=`'s non-effect, and `fixmdl=clear` |
 | **86, 87** | `slidingspans{fixreg=(outlier)}` (setssp's `Otlfix` is the one fixreg flag that outlives setup) and the x11regression outlier block `run_x11_span` now runs per span (`ssx11a.f:99-154`, inside the `loadxr` swap) |
+| **90** | `history{x11outlier=no}` — CLOSED with no code: entry 87 restored `x11mdl.f:424`'s two missing clauses and measured zero because `Irev` was still 1, entry 89 set `Irev`, and the arm has been bit-exact since. Both arms gated; the head-of-analysis `rmatot` is provably redundant with the per-span one |
 | **89** | `history{}` — `Irev` finally advances to 4/5 (`revdrv.f:387/761`), so `getrev` runs where the oracle runs it (inside `x11pt3`/`seatdg`) instead of `run_history` re-reading `/x11srs/` afterwards; `revdrv.f:416-427`'s past-`Endsa` `Lx11=F` (`run_x11_span`'s `lx11_span`); `errhdr` |
 | **88** | `slidingspans{}` + user regressors — `bakusr`/`addusr`/`dlusrg`/`chusrg` (new `regarima/usrbak.cpp`), `run_x11_span`'s `ssusr` hook for `sspdrv.f:145-174`, and the SEVENTH span-replay save/restore miss: `/orisrs/ Stoap`, the regression-adjusted original the `b1` table is punched from |
 | **85** | the sliding-spans held-back outliers — `run_x11_span`'s `ss_outliers` hook (`ssx11a.f:229-270`), why `history{}` must NOT take it, and `ssprep`'s `Lx11` argument |

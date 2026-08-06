@@ -578,28 +578,18 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // 5.3e-15) -- nothing re-estimates there, so the only thing moving is the
     // per-span identification, which is exactly what this pins.
     //
-    // STILL OPEN and measured: `x11outlier=no` sits at sar 7.5e-1, i.e. the
-    // engine produces the DEFAULT (delete-and-re-identify) numbers where the
-    // oracle keeps the main run's outliers and accumulates. Note the deletion
-    // path is the one that works, so it is not the rmatot call that is wrong;
-    // on this corpus every x11reg outlier is dated BEFORE the revision start, so
-    // rmotrv holds none back and chkorv never runs -- both branches should be
-    // doing nothing, and the difference is somewhere in how the per-span x11mdl
-    // re-identifies against a design that already carries AO columns. Ungated.
-    //
-    // RE-MEASURED 2026-08-05 (entry 87), on airline + x11regression{critical=
-    // 3.0} + history{estimates=(sadj trend) start=1955.jan x11outlier=no}:
-    // sar 4.6e+0, trr 1.3e+1. Still open, and the obvious candidate is NOT the
-    // cause. `x11mdl.f:424`'s guard is `Otlxrg .and. (Irev.lt.4.or.(Irev.eq.4
-    // .and.Rvxotl)) .and. (Issap.lt.2.or.(Issap.eq.2.and.Ssxotl))`; this port
-    // had ported only `Otlxrg`, and the sliding-spans half of that omission WAS
-    // the sliding-spans bug. Restoring the Irev half changes this probe by
-    // exactly nothing, measured both ways, because **`ctx.hiddn.irev` is never
-    // advanced past 1 in this port**: `revdrv.f:387` sets `Irev=4` for the span
-    // loop and `run_history` has no counterpart, so every Irev-keyed guard in
-    // the tree is inert -- this one, `x11reg.cpp:1142`'s x11reg coefficient
-    // seed, and `errio.cpp:21`'s error-header suppression. That is its own
-    // board item; do not chase this divergence before it is settled.
+    // `x11outlier=no` is CLOSED and gated bit-exact (entry 90). It had been
+    // open at sar 7.5e-1, re-measured at sar 4.6e+0 / trr 1.3e+1, and the whole
+    // divergence was `x11mdl.f:424`'s guard -- `Otlxrg .and. (Irev.lt.4.or.
+    // (Irev.eq.4.and.Rvxotl)) .and. (Issap.lt.2.or.(Issap.eq.2.and.Ssxotl))`,
+    // of which this port had ported `Otlxrg` alone, so every span re-identified
+    // its own AO set on top of the ones rmotrv had held back. The clause was
+    // restored in entry 87 and measured to change NOTHING, because
+    // `ctx.hiddn.irev` was still 1 for the whole span loop; entry 89 advanced it
+    // to 4, and the guard has been live -- and this arm bit-exact -- ever since.
+    // Nothing here changed to close it. Gated by extra/airline_history-
+    // x11outlier-no and -no-nomodel; the two arms are 708/714 oracle lines
+    // apart, and 8 gates each fall to a mutation of either.
     RevOtlStore otx;
     // revdrv.f:246 -- `mdl2x`, the MAIN run's Endxrg, the x11reg counterpart of
     // mdl2. Each span's Endxrg is its own end unless the main run's x11reg span
@@ -607,6 +597,12 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     const int mdl2x[2] = {ctx.x11reg.endxrg(1), ctx.x11reg.endxrg(2)};
     if (ctx.hiddn.ixreg > 0) {
         loadxr(ctx, false);
+        // This rmatot is REDUNDANT with the per-span one at :731-741 and
+        // measures zero: that block's `else if (Rvxotl)` arm has no `i>Begrev`
+        // guard, so span 1 deletes the same automatic columns again on a design
+        // this call has already stripped. Mutating it out fails no gate, and
+        // that is structural rather than a corpus gap -- transcribed because the
+        // oracle makes the call, not because anything depends on it.
         if (rev.rvxotl) {
             rmatot(ctx, 1, ctx.arima.nrxy);
             if (ctx.error.lfatal) return false;

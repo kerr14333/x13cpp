@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-89, chronological). They used to live in this file and made it
+(entries 0-90, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -392,6 +392,16 @@ because by the time you would think to look them up, the damage is done.
   assert the set is non-empty — a saturated precondition looks like a passing
   gate, not like a zero delta. Same for mutation tests: a mutation that PASSES
   usually means the precondition is saturated, not that the code is right.
+  **The re-measurement direction reads differently and cost an increment on its
+  own: a candidate FIX that measures zero while one of its own preconditions is
+  known dead has not been tested, it has been skipped.** Entry 87 restored the
+  two missing clauses of `x11mdl.f:424`, measured the history probe both ways at
+  sar 4.6e+0, and wrote "the obvious candidate is NOT the cause" into the code —
+  in the same comment that recorded `Irev` never leaving 1, which is exactly why
+  the restored clause could not evaluate. Entry 89 set `Irev`; the arm was
+  bit-exact from that moment and the board item sat open for an increment
+  (entry 90). When a fix measures zero, name its preconditions before believing
+  the number.
 - **A passing mutation is also a claim about WHICH ARM the spec is on.**
   Mutation-test each ARM of a branch chain, not each routine — a spec that
   reaches the routine is not a spec that reaches the arm. Disabling `ssmdl`'s
