@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-86, chronological). They used to live in this file and made it
+(entries 0-87, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -346,6 +346,15 @@ because by the time you would think to look them up, the damage is done.
   pass. Note also that an inseparability proof ("every spec reaching A also
   reaches B") tells you two features co-occur; it never tells you which one owns
   the delta, and entry 75 used one to justify NOT building the cheaper spec.
+- **A PHASE INDICATOR the port never advances turns every guard keyed on it
+  into dead code, silently and in bulk.** `revdrv.f:387` sets `Irev=4` around
+  the history span loop; `run_history` has no counterpart, so `ctx.hiddn.irev`
+  is 1 for the whole run and three separate guards — the x11regression
+  outlier-ID gate, its coefficient seed, and the error-header suppression —
+  quietly take their main-run branch during a replay (entry 87). This is the
+  `walls.py` blind spot in state form: nothing refuses, nothing is listed, and
+  the guards LOOK ported. When you port a condition on a mode variable, check
+  the port ever writes the mode.
 - **An unported path that returns SUCCESS is worse than one that has no code.**
   Walls are inventory — `walls.py` lists them and deleting one leaves the list.
   A silent `return true` guard is in neither the wall list nor the gate count,

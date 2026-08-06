@@ -606,6 +606,20 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     // rmotrv holds none back and chkorv never runs -- both branches should be
     // doing nothing, and the difference is somewhere in how the per-span x11mdl
     // re-identifies against a design that already carries AO columns. Ungated.
+    //
+    // RE-MEASURED 2026-08-05 (entry 87), on airline + x11regression{critical=
+    // 3.0} + history{estimates=(sadj trend) start=1955.jan x11outlier=no}:
+    // sar 4.6e+0, trr 1.3e+1. Still open, and the obvious candidate is NOT the
+    // cause. `x11mdl.f:424`'s guard is `Otlxrg .and. (Irev.lt.4.or.(Irev.eq.4
+    // .and.Rvxotl)) .and. (Issap.lt.2.or.(Issap.eq.2.and.Ssxotl))`; this port
+    // had ported only `Otlxrg`, and the sliding-spans half of that omission WAS
+    // the sliding-spans bug. Restoring the Irev half changes this probe by
+    // exactly nothing, measured both ways, because **`ctx.hiddn.irev` is never
+    // advanced past 1 in this port**: `revdrv.f:387` sets `Irev=4` for the span
+    // loop and `run_history` has no counterpart, so every Irev-keyed guard in
+    // the tree is inert -- this one, `x11reg.cpp:1142`'s x11reg coefficient
+    // seed, and `errio.cpp:21`'s error-header suppression. That is its own
+    // board item; do not chase this divergence before it is settled.
     RevOtlStore otx;
     // revdrv.f:246 -- `mdl2x`, the MAIN run's Endxrg, the x11reg counterpart of
     // mdl2. Each span's Endxrg is its own end unless the main run's x11reg span

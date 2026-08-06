@@ -13,6 +13,7 @@ already paid for once.
 | **32** | the C / R / Python ABI, and the host floating-point-mode finding |
 | **44** | the model-only diagnostics path (`x11ari` with neither `Lx11` nor `Lseats`) |
 | **83** | `slidingspans{}` CLOSED bit-exact — `Setpri`, the per-span `ssprep` chain, `fixreg=`'s non-effect, and `fixmdl=clear` |
+| **86, 87** | `slidingspans{fixreg=(outlier)}` (setssp's `Otlfix` is the one fixreg flag that outlives setup) and the x11regression outlier block `run_x11_span` now runs per span (`ssx11a.f:99-154`, inside the `loadxr` swap) |
 | **85** | the sliding-spans held-back outliers — `run_x11_span`'s `ss_outliers` hook (`ssx11a.f:229-270`), why `history{}` must NOT take it, and `ssprep`'s `Lx11` argument |
 | **78, 79** | `slidingspans{}` + `x11regression{}` — the pairing no spec had; then the per-span calendar factor it exposed, closed by `ssxmdl`'s `fixx11reg` default TOGETHER with the `Ixreg` demote a previous session had measured alone and rejected |
 | **47, 50–52** | `pickmdl{}` / `automx.f`, amdfct's out-of-sample and backcast arms, and the per-candidate AIC tests |
@@ -26,6 +27,12 @@ already paid for once.
   live `Iregfx`/`Regfx`, the oracle's own `restor` undoes it, and the option
   therefore fixes no coefficient at all — its entire effect is the `Itd`/`Ihol`
   demote. Find the snapshot write in the Fortran; do not infer it (entry 83).
+  **And now read the rest of that sentence (entry 86): "no coefficient at all"
+  holds only while the design is unchanged.** One held-back outlier sets
+  `regchg`, `ssmdl.f:358-373` re-snapshots, and the re-snapshot carries the
+  POST-`rvfixd` `Iregfx`/`Regfx` into `Irfx2`/`Regfx2` — so `restor` reinstates
+  the fixings instead of erasing them, and 192 `sfs` lines move. A measured
+  inertness is scoped to the probe spec exactly as much as a measured effect is.
 
 - **`arima.f:1430`'s `CALL ssprep` is unconditional, so span replays CHAIN.**
   Every span's estimation re-snapshots `Ap2`/`Bb`/`Var`, and the next span's

@@ -131,6 +131,15 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         ctx.x11reg.begxrg(2) = begspn[1];
         ctx.x11reg.endxrg(1) = endspn[0];
         ctx.x11reg.endxrg(2) = endspn[1];
+        // (3) ssx11a.f:99-154 -- the x11regression design's own per-span
+        // outlier bookkeeping, inside the loadxr(F)/loadxr(T) swap. It belongs
+        // HERE and not next to the regARIMA call below: the Fortran runs this
+        // block BEFORE restor and the other one AFTER, on two different model
+        // stores. run_history reaches neither (set_xrg_span is false there).
+        if (ss_outliers) {
+            ssx11a_span_xrg_outliers(ctx, ss_otlfix);
+            if (ctx.error.lfatal) return false;
+        }
     }
 
     // history{} Fixper (revdrv.f:481-489): the model span ends `nend_mdl`
@@ -166,7 +175,11 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
         int lastsy = 0;
         dfdate(ctx.arima.endspn.data(), begsrs, sp, lastsy);
         lastsy += 1;
-        ssx11a_span_outliers(ctx, lastsy, ss_otlfix);
+        // ssx11a.f:269's `Otlfix.or.Ssinit.eq.1`. `ss_otlfix` is setssp's RAW
+        // fixreg=(outlier) flag; the x11regression call above forms the OTHER
+        // disjunction from the same flag (`Otlfix.or.Ssxint`, ssx11a.f:150).
+        ssx11a_span_outliers(ctx, lastsy,
+                             ss_otlfix || ctx.sspinp.ssinit == 1);
         if (ctx.error.lfatal) return false;
     }
 

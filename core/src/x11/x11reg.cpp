@@ -1336,7 +1336,20 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     // the extreme-value method; editor.f:1727-1747 chose it at spec-read (see
     // xrg_editor_setup). AO-only, add-one, over the full model span, with the
     // critical value derived from the outlier-span length when none was given.
-    if (ctx.x11log.otlxrg && ctx.xclude.nxcld == 0) {
+    //
+    // The two span guards on x11mdl.f:424-425 are what stop the design growing
+    // without bound during a replay. `Issap==2` is the sliding-spans loop and
+    // `Irev==4` the history one; on either, a re-identification is done only
+    // when the user asked for one per span (`slidingspans{x11outlier=}` /
+    // `history{x11outlier=}`, both defaulting to yes). Without the Issap arm,
+    // `x11outlier=no` still identified a fresh AO set for every span on top of
+    // the ones ssxmdl had held back, and airline + x11regression{critical=3.5}
+    // died at "Adding AO1958.Jan exceeds the number of regression effects
+    // allowed in the model (80)" where the oracle finishes.
+    const bool span_reid =
+        (ctx.hiddn.irev < 4 || (ctx.hiddn.irev == 4 && ctx.rev.rvxotl)) &&
+        (ctx.hiddn.issap < 2 || (ctx.hiddn.issap == 2 && ctx.sspinp.ssxotl));
+    if (ctx.x11log.otlxrg && span_reid && ctx.xclude.nxcld == 0) {
         int begxot[2] = {md.begspn(1), md.begspn(2)};
         int endxot[2];
         addate(begxot, sp, nspobs - 1, endxot);

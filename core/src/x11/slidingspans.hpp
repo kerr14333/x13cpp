@@ -87,6 +87,17 @@ bool ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
 // 86-87); `otlfix` is `Otlfix.or.Ssinit.eq.1`.
 void ssx11a_span_outliers(X13Context& ctx, int lastsy, bool otlfix);
 
+// ssx11a.f:99-154 -- the same job for the X11REGRESSION design, and it runs
+// EARLIER in the span (before restor, before the Orig copy) and on the other
+// model store. Called from run_x11_span's set_xrg_span arm once Begxrg/Endxrg
+// are set. With `slidingspans{x11outlier=yes}` (the default) it strikes the
+// previous span's automatically identified AO columns so this span's x11mdl
+// re-identifies from a clean design; the `x11outlier=no` arm needs the
+// ssxmdl store; `otlfix` is setssp's RAW fixreg=(outlier) flag, which this
+// routine combines with `Ssxint` (ssx11a.f:150) exactly as run_x11_span
+// combines it with `Ssinit==1` for the regARIMA store (ssx11a.f:269).
+void ssx11a_span_xrg_outliers(X13Context& ctx, bool otlfix);
+
 // sspdrv.f:208-219 -- after a span, take the columns adotss added back out and
 // re-snapshot, so the next span's restor starts from the held-back design
 // again. No-op when the store is empty.
