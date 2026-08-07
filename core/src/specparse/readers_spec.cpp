@@ -142,6 +142,14 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     bool pr_multi = false;               // more than one prior set (Nprtyp>1)
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 16) {
+            getsvl(ctx, svllog::LSLADJ, svllog::NSLADJ, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // Capture the value tokens for the args whose state we set here:
         //   6 = adjust, 8 = power, 9 = function, 11 = save, 17 = aicdiff,
         //   1 = data, 2 = start, 4 = file, 5 = format, 12 = mode, 14 = type
@@ -401,6 +409,14 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 19) {
+            getsvl(ctx, svllog::LSLX11, svllog::NSLX11, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         if (argidx == 2) {
             // sigmalim -> Sigml/Sigmu (getx11.f:200-224). The extreme-value
             // weighting (xtrm/wtxtrm) already honours Sigml/Sigmu.
@@ -810,6 +826,14 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 16) {
+            getsvl(ctx, svllog::LSLREG, svllog::NSLREG, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         if (argidx == 1) {           // variables -> gtpdrg (build the groups)
             // getreg.f: the '=' was consumed by gtarg; gtpdrg reads the list.
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
@@ -1367,6 +1391,14 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
     int a_idx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, a_idx, arglog0, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (a_idx == 8) {
+            getsvl(ctx, svllog::LSLAUM, svllog::NSLAUM, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         const int* ep = ctx.lex.errpos.data() + 1;
         int ivec[2]; double dvec[1]; int nelt = 0; bool argok = true;
         switch (a_idx) {
@@ -1612,6 +1644,14 @@ void gt_estimate(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 10) {
+            getsvl(ctx, svllog::LSLEST, svllog::NSLEST, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         const int* ep = ctx.lex.errpos.data() + 1;
         int ivec[1]; double dvec[1]; int nelt = 0; bool argok = true;
         switch (argidx) {
@@ -1752,6 +1792,14 @@ void gt_outlier(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 12) {
+            getsvl(ctx, svllog::LSLOTL, svllog::NSLOTL, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // Capture value tokens for the args we act on: 1 types, 2 method,
         // 3 critical, 9 criticalalpha.
         bool want = (argidx == 1 || argidx == 2 || argidx == 3 || argidx == 8 ||
@@ -1840,6 +1888,14 @@ void gt_seats(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 3) {
+            getsvl(ctx, svllog::LSLSET, svllog::NSLSET, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         const int* ep = ctx.lex.errpos.data() + 1;
         std::vector<std::string> cap;
         // 2=save captured for the shared save-table list; 17=tabtables is a
@@ -2260,6 +2316,14 @@ void gt_slidingspans(X13Context& ctx, bool& havesp, bool& inptok) {
     bool argok = true;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 11) {
+            getsvl(ctx, svllog::LSLSSP, svllog::NSLSSP, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         const int* ep = ctx.lex.errpos.data() + 1;
         int ivec[4] = {0, 0, 0, 0};
         double dvec[1] = {0.0};
@@ -2485,6 +2549,14 @@ void gt_history(X13Context& ctx, bool& havesp, bool& inptok) {
     bool argok = true;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 15) {
+            getsvl(ctx, svllog::LSLREV, svllog::NSLREV, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         const int* ep = ctx.lex.errpos.data() + 1;
         int ivec[4] = {0, 0, 0, 0};
         int estidx[9] = {0};
@@ -2761,7 +2833,7 @@ void gt_check(X13Context& ctx, bool& inptok) {
             break;
         case 2: getprt(ctx, 0, 11, inptok); break;
         case 3: getsav(ctx, 0, 11, inptok); break;
-        case 4: getsvl(ctx, 0, 11, inptok); break;
+        case 4: getsvl(ctx, svllog::LSLCHK, svllog::NSLCHK, inptok); break;
         case 5:   // acflimit (getchk.f:109-119)
             gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
             if (ctx.error.lfatal) return;
@@ -2926,7 +2998,7 @@ void gt_composite(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr,
                 }
                 break;
             case 8:  // savelog
-                getsvl(ctx, 0, 10, locok);
+                getsvl(ctx, svllog::LSLCMP, svllog::NSLCMP, locok);
                 break;
             case 9:  // yr2000 (getcmp.f:151-158)
                 gtdcvc(ctx, LPAREN, true, 1, YSNDIC, ysnptr, 2,
@@ -3237,6 +3309,14 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 12) {
+            getsvl(ctx, svllog::LSLSPC, svllog::NSLSPC, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // Capture the value tokens for the options run_spectrum needs; the rest
         // are consumed token-faithfully without application. Still parsed and
         // NOT applied: `siglevel` (arg 5), `axis` (9), `localpeak` (15),
@@ -3363,6 +3443,14 @@ void gt_pickmdl(X13Context& ctx, bool& inptok) {
     int a_idx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, a_idx, arglog0, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (a_idx == 11) {
+            getsvl(ctx, svllog::LSLAXM, svllog::NSLAXM, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         const int* ep = ctx.lex.errpos.data() + 1;
         int ivec[1] = {0};
         double dvec[1] = {0.0};
@@ -4014,6 +4102,14 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getsvl.f -- savelog is VALIDATED against this spec's slice of
+        // SVLDIC, not merely consumed; dispatched here rather than from the
+        // switch below because the readers do not share a dispatch shape.
+        if (argidx == 29) {
+            getsvl(ctx, svllog::LSLXRG, svllog::NSLXRG, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         if (argidx == 1) {           // variables -> gtpdrg (x11reg=true)
             if (L.nxtktp == lexprm::EQUALS) lex(ctx);
             bool locok = true;

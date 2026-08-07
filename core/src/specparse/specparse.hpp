@@ -216,6 +216,28 @@ void getvec(X13Context& ctx, int grpchr, bool flgnul, int pelt, std::string& chr
 // table-dictionary application is stubbed (see notes).
 void getprt(X13Context& ctx, int lspsrs, int nspsrs, bool& locok);
 void getsav(X13Context& ctx, int lspsrs, int nspsrs, bool& locok);
+// svllog.i -- each spec owns a slice of SVLDIC: LSL<spec> is its displacement
+// in TABLES (getsvl doubles it, since every table has a long and a short name)
+// and NSL<spec> the number of tables. A savelog name outside the calling spec's
+// slice is a parse ERROR -- which is why `savelog = all` is legal in eight
+// specs and refused in the six whose slice has no `alldiagnostics`/`all` pair.
+namespace svllog {
+constexpr int LSLADJ =  0, NSLADJ =  1;   // transform{}   (getadj.f:403)
+constexpr int LSLAUM =  1, NSLAUM =  6;   // automdl{}     (gtauto.f:281)
+constexpr int LSLAXM =  7, NSLAXM =  1;   // pickmdl{}     (gtautx.f:217)
+constexpr int LSLEST =  8, NSLEST =  8;   // estimate{}    (gtestm.f:218)
+constexpr int LSLREG = 16, NSLREG =  2;   // regression{}  (getreg.f:433)
+constexpr int LSLOTL = 18, NSLOTL =  1;   // outlier{}     (gtotlr.f:292)
+constexpr int LSLCHK = 19, NSLCHK =  9;   // check{}       (getchk.f:104)
+constexpr int LSLX11 = 28, NSLX11 = 20;   // x11{}         (getx11.f:548)
+constexpr int LSLXRG = 48, NSLXRG =  1;   // x11regression{} (gtxreg.f:523)
+constexpr int LSLREV = 49, NSLREV =  9;   // history{}     (gtrvst.f:334)
+constexpr int LSLSSP = 58, NSLSSP =  2;   // slidingspans{} (getssp.f:210)
+constexpr int LSLSPC = 60, NSLSPC = 14;   // spectrum{}    (gtspec.f:228)
+constexpr int LSLCMP = 74, NSLCMP = 20;   // composite{}   (getcmp.f:147)
+constexpr int LSLSET = 94, NSLSET = 15;   // seats{}       (gtseat.f:98)
+}  // namespace svllog
+
 void getsvl(X13Context& ctx, int lsvsrs, int nsvsrs, bool& locok);
 
 // --------------------------------------------------------------------------

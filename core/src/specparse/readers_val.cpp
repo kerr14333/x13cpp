@@ -899,9 +899,131 @@ void getsav(X13Context& ctx, int lspsrs, int nspsrs, bool& locok) {
     (void)lspsrs; (void)nspsrs;
     consume_prtsav(ctx, locok);
 }
+// ---------------------------------------------------------------------------
+// getsvl.f -- the SAVELOG reader, and unlike getprt/getsav above it is NOT a
+// token-faithful consumer: it looks every name up in SVLDIC and a name outside
+// the calling spec's own slice is a parse ERROR. That matters for OUTCOME, not
+// just for output: `savelog = all` is legal in eight specs and REFUSED in six
+// (transform, pickmdl, regression, outlier, x11regression, slidingspans),
+// because `alldiagnostics`/`all` is simply not in those six slices of the
+// dictionary. This port used to accept everything everywhere, so
+// `regression{savelog = all}` returned OUTCOME: OK where the oracle stops.
+//
+// SVLDIC / svlptr are svltbl.prm + svltbl.var verbatim; each name has a LONG
+// and a SHORT form, written adjacent, so entries 2i-1 and 2i both map to table
+// i (svllog.prm). getsvl passes svlptr(2*Spcdsp) as its local element 0 and
+// 2*Nspctb entries, i.e. exactly this spec's names -- so the slice IS the
+// validation, and there is no global lookup to fall back on.
+//
+// The `Svltab(tblidx)=T` store is still deferred with the rest of the table
+// selection (this harness dumps everything and the goldens compare stdout);
+// only the lookup is ported, which is the half that decides whether the run
+// happens at all.
+// ---------------------------------------------------------------------------
+static const char SVLDIC[] =
+    "autotransformatrautomodelamdautodiffadfbestfivemdlb5mmeanmufinalunit"
+    "rootfuralldiagnosticsallautomodelamdaicaicaiccaccbicbichannanquinnhq"
+    "eiceicaveragefcsterrafcrootsrtsalldiagnosticsallaictestatschi2testct"
+    "sidentifiedidnormalitytestnrmseasonalacfsacljungboxqlbqboxpierceqbpq"
+    "seasftestsfttdftesttftdurbinwatsondwfriedmantestfrtalldiagnosticsall"
+    "m1m1m2m2m3m3m4m4m5m5m6m6m7m7m8m8m9m9m10m10m11m11qqq2q2movingseasrati"
+    "omsricratioicrfstableb1fb1fstabled8fd8movingseasfmsfidseasonalidsall"
+    "diagnosticsallaictestatsaveabsrevsaasaaveabsrevchngachaveabsrevindsa"
+    "iaaaveabsrevtrendatraveabsrevtrendchngatcaveabsrevsfasfaveabsrevsfpr"
+    "ojaspavesumsqfcsterrafealldiagnosticsallpercentpctpercentspcspeakssp"
+    "kdirpeaksdpkindpeaksipktukeypeakstpkdirtukeypeaksdtpindtukeypeaksitp"
+    "qsqsdirqsdqsindqsiqsqcheckqchnpsanpadirnpsadnpindnpsainpalldiagnosti"
+    "csallindm1im1indm2im2indm3im3indm4im4indm5im5indm6im6indm7im7indm8im"
+    "8indm9im9indm10imtindm11imeindqiqindq2iq2indmovingseasratioisrindicr"
+    "atioiirindfstabled8id8indmovingseasfisfindidseasonaliidindtestittall"
+    "diagnosticsallseatsmodelsmdx13modelxmdx12modelx2mnormalitytestnrmtot"
+    "alsquarederrortsecomponentvariancecvrconcurrentesterrorceepercentred"
+    "uctionseprsaverageabsdiffannualaadoverunderestimationoueoverundersta"
+    "tisticsousseasonalsignifssgdurbinwatsondwsfriedmanfrsalldiagnosticsa"
+    "ll";
+
+static const int svlptr[219] = {
+    1, 14, 17, 26, 29, 37, 40, 51, 54, 58, 60, 73, 76, 90, 93, 102, 105,
+    108, 111, 115, 118, 121, 124, 135, 137, 140, 143, 157, 160, 165, 168,
+    182, 185, 192, 195, 203, 206, 216, 218, 231, 234, 245, 248, 257, 260,
+    270, 273, 282, 285, 292, 295, 307, 309, 321, 324, 338, 341, 343, 345,
+    347, 349, 351, 353, 355, 357, 359, 361, 363, 365, 367, 369, 371, 373,
+    375, 377, 380, 383, 386, 389, 390, 391, 393, 395, 410, 413, 420, 423,
+    432, 435, 444, 447, 458, 461, 471, 474, 488, 491, 498, 501, 512, 515,
+    528, 531, 545, 548, 562, 565, 583, 586, 597, 600, 615, 618, 633, 636,
+    650, 653, 660, 663, 671, 674, 679, 682, 690, 693, 701, 704, 714, 717,
+    730, 733, 746, 749, 751, 753, 758, 761, 766, 769, 775, 778, 782, 785,
+    792, 795, 802, 805, 819, 822, 827, 830, 835, 838, 843, 846, 851, 854,
+    859, 862, 867, 870, 875, 878, 883, 886, 891, 894, 900, 903, 909, 912,
+    916, 918, 923, 926, 944, 947, 957, 960, 972, 975, 989, 992, 1005, 1008,
+    1015, 1018, 1032, 1035, 1045, 1048, 1056, 1059, 1067, 1070, 1083, 1086,
+    1103, 1106, 1123, 1126, 1144, 1147, 1165, 1168, 1188, 1191, 1210, 1213,
+    1232, 1235, 1249, 1252, 1264, 1267, 1275, 1278, 1292, 1295
+};
+
+// getsvl.f:34-46 / :80-96 -- the lookup, and its two-line refusal. The Fortran
+// tests only tblidx, so a non-NAME token (which leaves gtdcnm's argok false and
+// tblidx 0) takes the same arm: `savelog = -all` is refused as an undefined
+// argument, not as a syntax error.
+static void svl_lookup(X13Context& ctx, int lsvsrs, int nsvsrs, bool& locok) {
+    LexState& L = ctx.lex;
+    int tblidx = 0;
+    bool argok = true;
+    gtdcnm(ctx, SVLDIC, &svlptr[2 * lsvsrs], 2 * nsvsrs, tblidx, argok);
+    if (tblidx == 0) {
+        inpter(ctx, PERROR, L.lstpos.data() + 1,
+               "Savelog argument is not defined.");
+        writln(ctx, "        Check the available diagnostics for this spec.",
+               stdio::STDERR, ctx.units.mt2, false);
+        lex(ctx);
+        locok = false;
+    }
+    // else: Svltab(Spcdsp+(tblidx+1)/2) = T -- deferred with table selection.
+}
+
 void getsvl(X13Context& ctx, int lsvsrs, int nsvsrs, bool& locok) {
-    (void)lsvsrs; (void)nsvsrs;
-    consume_prtsav(ctx, locok);
+    LexState& L = ctx.lex;
+    if (L.nxtktp == EOFTOK) {
+        locok = false;
+    } else if (L.nxtktp != LPAREN) {
+        svl_lookup(ctx, lsvsrs, nsvsrs, locok);
+    } else {
+        // getsvl.f:50-115 -- the list arm, with its own NULL-element checks.
+        bool opngrp = true, hvcmma = false;
+        lex(ctx);
+        while (true) {
+            if (L.nxtktp == EOFTOK) {
+                inpter(ctx, PERROR, L.lstpos.data() + 1, "Unexpected EOF");
+                locok = false;
+                return;
+            }
+            if (L.nxtktp != RPAREN) {
+                if (L.nxtktp == COMMA) {
+                    if (hvcmma || opngrp) {
+                        inpter(ctx, PERROR, L.lstpos.data() + 1,
+                               "Found a NULL value; check your commas.");
+                        locok = false;
+                    }
+                    lex(ctx);
+                    hvcmma = true;
+                    opngrp = false;
+                    continue;
+                }
+                svl_lookup(ctx, lsvsrs, nsvsrs, locok);
+                if (ctx.error.lfatal) return;
+                hvcmma = false;
+                opngrp = false;
+            } else {
+                if (hvcmma) {
+                    inpter(ctx, PERROR, L.lstpos.data() + 1,
+                           "Found a NULL value; check your commas.");
+                    locok = false;
+                }
+                lex(ctx);
+                return;
+            }
+        }
+    }
 }
 
 } // namespace x13

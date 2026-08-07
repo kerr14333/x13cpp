@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7390<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->846<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7394<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->846<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7390<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7394<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2222,6 +2222,77 @@ landed:** `run_history.cpp`'s 22-line "STILL OPEN and measured" block,
 `run_history.hpp`'s "the `no` branch is measured wrong and ungated", and
 `tools/history_options_scouting.md`'s ranking table (`7.48e-1 — STILL OPEN`).
 
+## This session, part 42: `savelog =` was never validated — and the two call sites that existed passed placeholder arguments
+
+Board item 2 (entry 90 closed the previous one). Full record in
+`docs/M5_PORT_NOTES.md` entry 91; what carries forward:
+
+**One dictionary, fourteen slices, and the slice IS the option.** `SVLDIC`
+(`svltbl.prm`, 1294 chars) is carved by `svllog.i`'s `LSL<spec>`/`NSL<spec>`
+pairs; `getsvl` hands `gtdcnm` `svlptr(2*Spcdsp)` with `2*Nspctb` entries and
+there is **no global lookup to fall back on**. So `savelog = all` is legal in
+eight specs (automdl, estimate, check, x11, history, spectrum, composite, seats)
+and an ERROR in six (transform, pickmdl, **regression**, outlier, x11regression,
+slidingspans), purely because `alldiagnostics`/`all` is not in those six slices.
+Nothing about the word says which — only the table does.
+
+**This port accepted everything, and two of the fourteen call sites proved
+why that is invisible.** `getsvl` was `consume_prtsav`, the same token-faithful
+consumer as `getprt`/`getsav`. Twelve readers never called it at all; `check{}`
+and `composite{}` did, with **placeholder slice arguments** —
+`getsvl(ctx, 0, 11, ...)` and `getsvl(ctx, 0, 10, ...)` — into a routine whose
+first two lines were `(void)lsvsrs; (void)nsvsrs;`. A parameter that is passed
+and unread is indistinguishable from one that is wrong.
+
+**Ported:** `getsvl.f` in full (both arms, the NULL-comma checks, the two-line
+refusal), `SVLDIC`/`svlptr` verbatim, `svllog.i`'s fourteen pairs into
+`namespace svllog`, and all fourteen call sites. The `Svltab` store stays
+deferred with the rest of table selection — only the LOOKUP is ported, which is
+the half that decides `OUTCOME`.
+
+**Wiring note:** the fourteen readers have four different dispatch shapes, so
+the savelog arm was inserted right after each reader's argument-loop head (the
+one line they all share) rather than into twelve switch bodies. The two that
+already dispatched from their switch keep doing so, with corrected slices.
+
+**No corpus spec used an illegal savelog name** — the suite stayed at 7390
+passed / 0 failed across the change. The validation had never been reached.
+
+**Mutations** (verified-0 baseline, full suite `-n 8`): verdict discarded **3**;
+`regression{}` through `estimate{}`'s slice **1**; slice ignored, all 218 names
+**2**; list arm loses its lookup **1**; **`check{}`'s placeholder restored
+0 → 1**. That last one is the increment's own finding turned back on itself:
+with three specs the placeholder failed NOTHING, because the corpus's only
+`check{}` savelog value is `all` and `all` sits inside the placeholder window
+too (entries 11-12 are `automdl`'s `alldiagnostics`/`all`). The fourth spec,
+`savelog-wrong-slice-check`, was written for exactly that and makes it 1. **A
+wrong slice containing the one name the corpus uses is as invisible as an unread
+parameter.**
+
+**Mutation-method caution, learned expensively:** deleting the whole refusal
+branch — `lex()` included — makes the engine **spin forever** on
+`savelog = (aic bogus)`, because that `lex()` is what advances past a name the
+dictionary did not consume. Ten CPU-minutes in a background run before it was
+noticed. A mutation that HANGS measures the harness timeout, not the code;
+narrow it to "discard the verdict, keep the lex".
+
+**Gated** by four hand-authored `edge/` specs: `savelog-all-regression`,
+`savelog-list-undefined` (`estimate{savelog = (aic bogus)}` — a spec where `all`
+IS legal, so it pins the lookup rather than the slice, and covers the list arm),
+`savelog-all-slidingspans` (a second refusing spec, so the gate is not a claim
+about `regression{}` alone) and `savelog-wrong-slice-check`
+(`check{savelog = aic}` — a real name from the wrong slice). Byte-exact
+including the caret column and the `Check the available diagnostics for this
+spec.` continuation.
+
+**Found and NOT closed — new board item:** `getprt.f`/`getsav.f` have the
+identical gap over FOUR dictionaries (`TB1DIC`..`TB4DIC`, split by displacement
+at `BRKDSP`/`BRKDS2`/`BRKDS3`) plus a five-entry `LVLDIC`
+(`default none brief all tables`), refusing with `Print or level argument is not
+defined.` and `Check the available table names and levels for this spec.` This
+port consumes both without looking, so `print = bogus` returns `OUTCOME: OK`
+everywhere. Same shape as this increment, four times the table.
+
 ## Open, in the order I would take them
 
 1. **One slidingspans wall left, and it is a judgement call, not a port.**
@@ -2249,12 +2320,18 @@ landed:** `run_history.cpp`'s 22-line "STILL OPEN and measured" block,
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
    36-39 above and entries 83 and 85-88 before touching any of it. Note that
    entry 86 narrowed entry 83's `fixreg=` conclusion: read them together.
-2. **`regression{savelog = all}` is accepted here and REFUSED by the oracle**
-   ("Savelog argument is not defined"), found in part 40 while writing
-   `airline_history-ls-trend`. An `edge/` spec for it would fail
-   `test_m1_parse::test_outcome_matches_oracle` today, so the fix has to come
-   first: find which savelog dictionary `regression{}` is routed through and
-   why `all` is not in it. Same family as the three parse refusals in task #30.
+2. **`print =` / `save =` accept undefined table names** (task #53), the
+   sibling of the savelog gap part 42 closed and found while closing it.
+   `getprt.f`/`getsav.f` validate against FOUR per-spec dictionaries
+   (`TB1DIC`..`TB4DIC`, split by displacement at `BRKDSP`/`BRKDS2`/`BRKDS3`)
+   plus a five-entry `LVLDIC` (`default none brief all tables`), refusing with
+   `Print or level argument is not defined.` + `Check the available table names
+   and levels for this spec.` This port consumes both without looking, so
+   `print = bogus` returns `OUTCOME: OK` everywhere; `getprt`'s `+`/`-` prefix
+   arm and its `Prefix must be "+", "-", or nothing.` error are unported too.
+   Same shape as part 42, four times the table -- and note the trap that
+   increment hit: the discriminating spec is one with a REAL name from the
+   WRONG slice, not one with a nonsense name.
 3. **`x11regression{outlierspan=}` is parsed and dropped** (entry 87).
    `gtxreg.f:666-673` writes the COMMON `Begxot`/`Endxot` from `spnotl`;
    `x11reg.cpp:1340-1342` re-derives that pair locally from `Begspn`/`Nspobs`

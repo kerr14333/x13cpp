@@ -5905,3 +5905,103 @@ measured" block (which named the right guard and then ruled it out),
 still read `7.48e-1 — STILL OPEN`. All three were true when written; all three
 became false the day entry 89 landed, and none of them is the kind of thing a
 tool can check.
+
+## 91. `savelog =` was never validated — one spec's dictionary slice is the whole option
+
+Board item 2 (after part 41 closed the previous one). `regression{savelog =
+all}` was found in entry 90 while writing an unrelated spec: this port accepts
+it and returns `OUTCOME: OK`, the oracle stops with `ERROR: Savelog argument is
+not defined.` The single instance was the visible end of a systematic gap.
+
+**What `getsvl.f` actually does.** `SVLDIC` (`svltbl.prm`, 1294 chars) is ONE
+dictionary carved into fourteen per-spec slices by `svllog.i`'s
+`LSL<spec>`/`NSL<spec>` pairs. Every table has a LONG and a SHORT name written
+adjacent, so entries 2i-1 and 2i map to table i, and `getsvl` hands `gtdcnm`
+`svlptr(2*Spcdsp)` as its element 0 with `2*Nspctb` entries — **the slice is the
+validation, and there is no global lookup to fall back on.** Decoding the table:
+
+| slice | `alldiagnostics`/`all`? | names |
+|---|---|---|
+| transform, pickmdl, **regression**, outlier, x11regression, slidingspans | **no** | 1-2 tables each |
+| automdl, estimate, check, x11, history, spectrum, composite, seats | yes | 6-20 tables |
+
+So `savelog = all` is legal in eight specs and refused in six, and nothing about
+the *word* says which — only the slice does.
+
+**What this port did.** `getsvl` was `consume_prtsav`, the same token-faithful
+consumer as `getprt`/`getsav`: it accepted any NAME, any list, and `+`/`-`
+prefixes the Fortran does not allow here. Of the fourteen call sites, twelve did
+not exist at all (each reader consumed its own savelog value), and the two that
+did — `check{}` and `composite{}` — passed placeholder slice arguments
+(`getsvl(ctx, 0, 11, ...)`, `getsvl(ctx, 0, 10, ...)`) into a routine that
+ignored them. **A parameter that is passed and unread is indistinguishable from
+a parameter that is wrong**, which is why the placeholders survived: nothing
+could observe them.
+
+**Ported:** `getsvl.f` in full (both arms, the NULL-comma checks, the two-line
+refusal), `SVLDIC`/`svlptr` verbatim, `svllog.i`'s fourteen `LSL`/`NSL` pairs
+into `namespace svllog`, and every one of the fourteen call sites. The
+`Svltab(tblidx)=T` store stays deferred with the rest of the table selection —
+only the LOOKUP is ported, which is the half that decides whether the run
+happens.
+
+**How the call sites were wired, and why not through the switch.** The fourteen
+readers have four different dispatch shapes (capture-then-switch,
+switch-then-consume, if-chain, and a nested `if (gtarg(...))`), so the savelog
+arm was inserted immediately after each reader's argument-loop head — the one
+line they all share — rather than into twelve different switch bodies. The two
+readers that already dispatched from their switch keep doing so with corrected
+slice arguments.
+
+**No corpus spec used an illegal savelog name**, so the whole suite stayed at
+7390 passed / 0 failed across the change: the 218 `estimate{savelog = all}`, 193
+`x11{}`, 56 `seats{}`, 37 `history{}`, 15 `automdl{}`, 2 `spectrum{}` and 1
+`check{}` uses are all inside their own slices. That is the shape of this defect
+class — the validation had never once been reached in anger.
+
+**Mutations**, against a verified-0 baseline (full suite, `-n 8`):
+
+| mutation | gates failed |
+|---|---|
+| the lookup's verdict discarded (token still consumed) | 3 |
+| `regression{}` routed through `estimate{}`'s slice | 1 |
+| the slice ignored — every spec gets all 218 names | 2 |
+| the list arm loses its lookup | 1 |
+| **`check{}`'s placeholder `getsvl(ctx, 0, 11, …)` restored** | **0 → 1** |
+
+**That last row is the increment's own finding turned back on itself.** With the
+first three specs, restoring the placeholder failed NOTHING: the only `check{}`
+savelog value in 473 specs is `all`, and `all` falls inside the placeholder
+window too, because entries 11-12 are `automdl`'s `alldiagnostics`/`all` pair. A
+wrong slice that happens to contain the one name the corpus uses is exactly as
+invisible as an unread parameter. `edge/savelog-wrong-slice-check`
+(`check{savelog = aic}` — a REAL name, from `estimate{}`'s slice) was written for
+that and makes it 1.
+
+**A caution about the mutation method, learned the expensive way.** The first
+version of the "accept everything again" mutation deleted the whole refusal
+branch, `lex()` included — and the engine **spun forever** on
+`savelog = (aic bogus)`: the `CALL lex()` inside `getsvl.f`'s error arm is what
+advances past a name the dictionary did not consume, so without it the list loop
+re-reads the same token. It burned ten CPU-minutes in a background run before
+being noticed. The mutation had to be narrowed to "discard the verdict, keep the
+lex" to measure anything. A mutation that makes the program HANG measures the
+harness's timeout, not the code.
+
+**Gated** by four hand-authored `edge/` specs: `savelog-all-regression` (the
+single-name arm and the found case), `savelog-list-undefined`
+(`estimate{savelog = (aic bogus)}` — a spec where `all` IS legal, so it pins the
+lookup rather than the slice, and exercises the list arm),
+`savelog-all-slidingspans` (a second refusing spec, so the gate is not a claim
+about `regression{}` alone) and `savelog-wrong-slice-check`
+(`check{savelog = aic}` — a real name from the wrong slice, the only one of the
+four that can see a mis-set displacement). All four match the oracle
+byte-for-byte including the caret column and the `Check the available
+diagnostics for this spec.` continuation.
+
+**The sibling gap, found and NOT closed:** `getprt.f`/`getsav.f` do the same
+thing with four dictionaries (`TB1DIC`..`TB4DIC`, split by displacement at
+`BRKDSP`/`BRKDS2`/`BRKDS3`) plus a five-entry `LVLDIC`
+(`default none brief all tables`), and refuse with `Print or level argument is
+not defined.` This port still consumes both without looking. Same shape, four
+times the table; on the board as its own item.

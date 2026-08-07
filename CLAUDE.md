@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-90, chronological). They used to live in this file and made it
+(entries 0-91, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -314,6 +314,16 @@ because by the time you would think to look them up, the damage is done.
   yes, so the option was live on every spec that never mentioned it, and an
   inertness proof that enumerated only the arms a spec can switch on missed it
   entirely (entry 79). An inertness argument must cover the defaults.
+  **Its quieter twin: an ARGUMENT that is passed and unread.** `getsvl` ignored
+  its `(displacement, count)` pair for years, so the two call sites that existed
+  passed placeholders — `getsvl(ctx, 0, 11, …)` — and nothing could tell. When
+  the read was finally wired, the placeholder STILL failed no gate, because the
+  corpus's only `check{savelog=}` value is `all` and `all` fell inside the wrong
+  window too (entry 91). **A wrong dictionary slice that happens to contain the
+  one name the corpus uses is as invisible as an unread parameter, and the spec
+  that discriminates it carries a REAL name from the WRONG slice, never a
+  nonsense one.** Any `(void)param;` at the head of a ported routine is this
+  defect waiting for its first caller who cares.
 - **A feature measured with its partner missing measures the partner.** The
   `Ixreg` demote was probed alone, made `sfs` 4.1e+0 worse, and was written up
   as "do not copy this" — a correct number and a wrong conclusion, because
