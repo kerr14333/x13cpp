@@ -171,10 +171,16 @@ void getsrs(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr, bool ldata,
                 if (argok && nelt == 1) { eltlen(ctx, 1, tmpptr, nelt, nfmtch); if (ctx.error.lfatal) return; havfmt = true; }
                 break;
             case 8:  // print
-                getprt(ctx, 0, 10, locok);
+                getprt(ctx, tbllog::LSPSRS, tbllog::NSPSRS, locok);
                 break;
             case 9:  // save
-                getsav(ctx, 0, 10, locok);
+                // No capture: series{save=} was NOT collected into
+                // captured.save_tables before this validation landed, and
+                // adding it here would switch on `a1` output that the M2
+                // driver's wants_save() currently never sees. Behaviour
+                // preserved deliberately; if series{save=(a1)} should reach
+                // wants_save, that is its own change with its own gate.
+                getsav(ctx, tbllog::LSPSRS, tbllog::NSPSRS, locok);
                 break;
             case 10:  // name
                 gtnmvc(ctx, LPAREN, true, 1, srsnam, tmpptr, nelt, 64, argok, locok);

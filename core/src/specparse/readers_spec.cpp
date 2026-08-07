@@ -142,6 +142,18 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     bool pr_multi = false;               // more than one prior set (Nprtyp>1)
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 10) {
+            getprt(ctx, tbllog::LSPTRN, tbllog::NSPTRN, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 11) {
+            getsav(ctx, tbllog::LSPTRN, tbllog::NSPTRN, inptok, &ctx.captured.save_tables);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -360,6 +372,18 @@ void gt_forecast(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 4) {
+            getprt(ctx, tbllog::LSPFOR, tbllog::NSPFOR, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 5) {
+            getsav(ctx, tbllog::LSPFOR, tbllog::NSPFOR, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         std::vector<std::string> cap;
         // gtfcst.f: 1 exclude->Fctdrp, 2 maxlead->Nfcst, 3 probability->Ciprob,
         // 6 maxback->Nbcst, 7 lognormal->Lognrm.
@@ -409,6 +433,18 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 17) {
+            getprt(ctx, tbllog::LSPX11, tbllog::NSPX11, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 18) {
+            getsav(ctx, tbllog::LSPX11, tbllog::NSPX11, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -826,6 +862,18 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 8) {
+            getprt(ctx, tbllog::LSPREG, tbllog::NSPREG, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 9) {
+            getsav(ctx, tbllog::LSPREG, tbllog::NSPREG, inptok, &ctx.captured.save_tables);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -1391,6 +1439,13 @@ void gt_automdl(X13Context& ctx, bool& inptok) {
     int a_idx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, a_idx, arglog0, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (a_idx == 7) {
+            getprt(ctx, tbllog::LSPAUM, tbllog::NSPAUM, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -1644,6 +1699,18 @@ void gt_estimate(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 8) {
+            getprt(ctx, tbllog::LSPEST, tbllog::NSPEST, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 9) {
+            getsav(ctx, tbllog::LSPEST, tbllog::NSPEST, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -1792,6 +1859,18 @@ void gt_outlier(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 6) {
+            getprt(ctx, tbllog::LSPOTL, tbllog::NSPOTL, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 7) {
+            getsav(ctx, tbllog::LSPOTL, tbllog::NSPOTL, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -1888,6 +1967,18 @@ void gt_seats(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 1) {
+            getprt(ctx, tbllog::LSPSET, tbllog::NSPSET, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 2) {
+            getsav(ctx, tbllog::LSPSET, tbllog::NSPSET, inptok, &ctx.captured.save_tables);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -2111,6 +2202,18 @@ void gt_force(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 8) {
+            getprt(ctx, tbllog::LSPFRC, tbllog::NSPFRC, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 9) {
+            getsav(ctx, tbllog::LSPFRC, tbllog::NSPFRC, inptok, &ctx.captured.save_tables);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         const int* ep = ctx.lex.errpos.data() + 1;
         int ivec[1]; int nelt = 0; bool argok = true;
         switch (argidx) {
@@ -2316,6 +2419,18 @@ void gt_slidingspans(X13Context& ctx, bool& havesp, bool& inptok) {
     bool argok = true;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 7) {
+            getprt(ctx, tbllog::LSPSSP, tbllog::NSPSSP, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 8) {
+            getsav(ctx, tbllog::LSPSSP, tbllog::NSPSSP, inptok, &ctx.captured.save_tables);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -2549,6 +2664,18 @@ void gt_history(X13Context& ctx, bool& havesp, bool& inptok) {
     bool argok = true;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 13) {
+            getprt(ctx, tbllog::LSPREV, tbllog::NSPREV, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 14) {
+            getsav(ctx, tbllog::LSPREV, tbllog::NSPREV, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -2831,8 +2958,8 @@ void gt_check(X13Context& ctx, bool& inptok) {
                 }
             }
             break;
-        case 2: getprt(ctx, 0, 11, inptok); break;
-        case 3: getsav(ctx, 0, 11, inptok); break;
+        case 2: getprt(ctx, tbllog::LSPCHK, tbllog::NSPCHK, inptok); break;
+        case 3: getsav(ctx, tbllog::LSPCHK, tbllog::NSPCHK, inptok); break;
         case 4: getsvl(ctx, svllog::LSLCHK, svllog::NSLCHK, inptok); break;
         case 5:   // acflimit (getchk.f:109-119)
             gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
@@ -2890,7 +3017,23 @@ void gt_identify(X13Context& ctx, bool& inptok) {
     constexpr int PARG = 5;
     static const char ARGDIC[] = "diffsdiffmaxlagprintsave";
     static const int argptr[PARG + 1] = {1, 5, 10, 16, 21, 25};
-    gt_generic(ctx, ARGDIC, argptr, PARG, inptok);
+    // diff/sdiff/maxlag are still consumed and dropped (the identify{} ACF/PACF
+    // front is deferred), but print/save are VALIDATED against the spec's own
+    // slice of the table dictionary, so this one cannot go through gt_generic.
+    int arglog[2 * PARG];
+    for (auto& v : arglog) v = prm::NOTSET;
+    int argidx;
+    while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
+        if (ctx.error.lfatal) return;
+        if (argidx == 4) {
+            getprt(ctx, tbllog::LSPIDN, tbllog::NSPIDN, inptok);
+        } else if (argidx == 5) {
+            getsav(ctx, tbllog::LSPIDN, tbllog::NSPIDN, inptok);
+        } else {
+            consume_value(ctx, nullptr);
+        }
+        if (ctx.error.lfatal) return;
+    }
 }
 
 // ---- composite{} (getcmp.f) ----------------------------------------------
@@ -2957,10 +3100,10 @@ void gt_composite(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr,
                 if (ctx.error.lfatal) return;
                 break;
             case 3:  // print
-                getprt(ctx, 0, 10, locok);
+                getprt(ctx, tbllog::LSPCMP, tbllog::NSPCMP, locok);
                 break;
             case 4:  // save
-                getsav(ctx, 0, 10, locok);
+                getsav(ctx, tbllog::LSPCMP, tbllog::NSPCMP, locok);
                 break;
             case 5:  // decimals (getcmp.f:104-116)
                 getivc(ctx, LPAREN, true, 1, ivec, nelt, argok, locok);
@@ -3309,6 +3452,18 @@ void gt_spectrum(X13Context& ctx, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 10) {
+            getprt(ctx, tbllog::LSPSPC, tbllog::NSPSPC, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 11) {
+            getsav(ctx, tbllog::LSPSPC, tbllog::NSPSPC, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -3443,6 +3598,13 @@ void gt_pickmdl(X13Context& ctx, bool& inptok) {
     int a_idx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, a_idx, arglog0, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (a_idx == 7) {
+            getprt(ctx, tbllog::LSPAXM, tbllog::NSPAXM, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.
@@ -4102,6 +4264,18 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
         if (ctx.error.lfatal) return;
+        // getprt.f / getsav.f -- print= and save= are VALIDATED against this
+        // spec's slice of the table dictionary, not merely consumed.
+        if (argidx == 8) {
+            getprt(ctx, tbllog::LSPXRG, tbllog::NSPXRG, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
+        if (argidx == 9) {
+            getsav(ctx, tbllog::LSPXRG, tbllog::NSPXRG, inptok);
+            if (ctx.error.lfatal) return;
+            continue;
+        }
         // getsvl.f -- savelog is VALIDATED against this spec's slice of
         // SVLDIC, not merely consumed; dispatched here rather than from the
         // switch below because the readers do not share a dispatch shape.

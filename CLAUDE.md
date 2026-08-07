@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-91, chronological). They used to live in this file and made it
+(entries 0-92, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -323,7 +323,10 @@ because by the time you would think to look them up, the damage is done.
   one name the corpus uses is as invisible as an unread parameter, and the spec
   that discriminates it carries a REAL name from the WRONG slice, never a
   nonsense one.** Any `(void)param;` at the head of a ported routine is this
-  defect waiting for its first caller who cares.
+  defect waiting for its first caller who cares. Entry 92 found the same thing
+  one file over in `getprt`/`getsav` — 30 of 36 call sites missing, two more
+  passing placeholders — so when one dictionary reader turns out to be a
+  consumer, check its siblings in the same breath.
 - **A feature measured with its partner missing measures the partner.** The
   `Ixreg` demote was probed alone, made `sfs` 4.1e+0 worse, and was written up
   as "do not copy this" — a correct number and a wrong conclusion, because
@@ -349,7 +352,12 @@ because by the time you would think to look them up, the damage is done.
   reading produced a guard that could NEVER fire, caught only because a debug
   print was added when the branch stayed silent (entry 80). A twenty-line
   script that walks `IF/ELSE/END IF` and prints the pairing takes a minute and
-  cannot lie. Same family as the ARGDIC decode below.
+  cannot lie. Same family as the ARGDIC decode below. **And the mirror: two
+  arms that read as symmetric can differ by one statement.** `getprt.f`'s list
+  arm ends its bad-prefix branch with `GO TO 10`; the single-value arm twenty
+  lines up has no jump and FALLS THROUGH into the table lookup, so the oracle
+  emits two errors where the port emitted one (entry 92). Their messages differ
+  by one character too. Diff the arms; do not assume the pair.
 - **A comment naming a `.f` line is a claim, not evidence — and the two drift in
   opposite directions.** Twice in one increment (entry 77): a branch labelled
   `// centeruser (gtxreg.f:537-543)` was dispatched on the argidx of

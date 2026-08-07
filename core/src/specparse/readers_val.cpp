@@ -869,35 +869,147 @@ void gtdcvc(X13Context& ctx, int grpchr, bool flgnul, int pelt, std::string_view
     inptok = inptok && locok;
 }
 
-// --- print / save / savelog consumers ------------------------------------
-// M1 consumes the print/save value token-faithfully; applying the selection to
-// the table dictionaries (Prttab/Savtab/Svltab) is deferred to the output
-// milestone.
-static void consume_prtsav(X13Context& ctx, bool& locok) {
+// --- print / save / savelog readers --------------------------------------
+// All three VALIDATE against the calling spec's own slice of a shared
+// dictionary; applying the selection (Prttab/Savtab/Svltab, and getprt's
+// level() fill at getprt.f:205-209) stays deferred to the output milestone.
+// The lookup is the half that decides OUTCOME, and it is ported.
+//
+// getprt.f:28 -- the five print LEVELS, tried BEFORE the table dictionary and
+// shared by every spec. `alltables` and `all` are distinct levels here, unlike
+// savelog's single `all`.
+static const char LVLDIC[] = "defaultnonebriefalltablesall";
+static const int lvlptr[6] = {1, 8, 12, 17, 26, 29};
+constexpr int NLVL = 5;
+
+// getprt.f:75-91 / getsav.f:35-46 -- one table name, already known not to be a
+// level. Reports the spec-appropriate refusal and consumes the token.
+static void tbl_lookup(X13Context& ctx, bool save, int lsp, int nsp,
+                       bool& locok, std::vector<std::string>* cap = nullptr) {
     LexState& L = ctx.lex;
-    if (L.nxtktp == EOFTOK) { locok = false; return; }
-    if (L.nxtktp == LPAREN || L.nxtktp == LBRAKT) {
-        skplst(ctx, clsgrp(L.nxtktp));
-    } else if (L.nxtktp == MINUS || L.nxtktp == PLUS) {
-        lex(ctx);
-        if (L.nxtktp == NAME || L.nxtktp == QUOTE) lex(ctx);
-    } else if (L.nxtktp == NAME || L.nxtktp == QUOTE) {
-        lex(ctx);
+    // The name has to be taken BEFORE the lookup: gtdcnm consumes the token on
+    // a hit. `run_pre_model`'s wants_save() reads this list, so validating the
+    // save argument must not cost the capture the old consumer provided.
+    if (cap && (L.nxtktp == NAME || L.nxtktp == QUOTE)) {
+        std::string s = cur_tok(ctx);
+        if (L.nxtktp == NAME)
+            for (char& c : s)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        cap->push_back(std::move(s));
+    }
+    if (tbldic_lookup(ctx, save, lsp, nsp) != 0) return;   // Prttab/Savtab store deferred
+    if (save) {
+        inpter(ctx, PERROR, L.lstpos.data() + 1, "Save argument is not defined.");
+        writln(ctx, "        Check the available table names for this spec.",
+               stdio::STDERR, ctx.units.mt2, false);
     } else {
         inpter(ctx, PERROR, L.lstpos.data() + 1,
-               "Expected a table name or list, not \"" + cur_tok(ctx) + "\"");
+               "Print or level argument is not defined.");
+        writln(ctx,
+               "        Check the available table names and levels for this spec.",
+               stdio::STDERR, ctx.units.mt2, false);
+    }
+    lex(ctx);
+    locok = false;
+}
+
+// getprt.f:52-101 / :131-182 -- one print element: a LEVEL, or a table name
+// with an optional +/- prefix. Returns false only when the LIST arm bailed --
+// getprt.f:151's `GO TO 10` skips to the next element there, and the
+// single-value arm at :60-71 has NO such jump: it reports the bad prefix,
+// consumes the token, and FALLS THROUGH into the table lookup, which then runs
+// against whatever came next. That produces the oracle's characteristic
+// two-error cascade on `print = 7` (the prefix error, then "Print or level
+// argument is not defined." pointing at the closing brace) and it is the whole
+// reason edge/print-prefix-bad exists.
+//
+// PORTED CENSUS INCONSISTENCY: the two prefix messages differ by one character.
+// getprt.f:67 (single value) ends `or nothing.` and getprt.f:148 (inside a
+// list) ends `or nothing` with no period.
+static bool prt_element(X13Context& ctx, int lsp, int nsp, bool inlist,
+                        bool& locok) {
+    LexState& L = ctx.lex;
+    int itmp = 0;
+    bool argok = true;
+    gtdcnm(ctx, LVLDIC, lvlptr, NLVL, itmp, argok);
+    if (argok && itmp > 0) return true;                     // lvlidx = itmp, deferred
+    if (!argok) {
+        if (L.nxtktp == MINUS || L.nxtktp == PLUS) {
+            lex(ctx);                                       // addtbl = (tok != MINUS)
+        } else {
+            inpter(ctx, PERROR, L.lstpos.data() + 1,
+                   inlist ? "Prefix must be \"+\", \"-\", or nothing"
+                          : "Prefix must be \"+\", \"-\", or nothing.");
+            lex(ctx);
+            locok = false;
+            if (inlist) return false;
+        }
+    }
+    tbl_lookup(ctx, /*save=*/false, lsp, nsp, locok);
+    return true;
+}
+
+// getprt.f / getsav.f -- one routine for both, because the list arm, the
+// NULL-comma checks and the EOF handling are identical; only the element
+// reader differs (getsav has no levels and no +/- prefix).
+static void read_prtsav(X13Context& ctx, bool save, int lsp, int nsp,
+                        bool& locok, std::vector<std::string>* cap) {
+    LexState& L = ctx.lex;
+    if (L.nxtktp == EOFTOK) {
         locok = false;
-        lex(ctx);
+        return;
+    }
+    if (L.nxtktp != LPAREN) {
+        if (save) tbl_lookup(ctx, true, lsp, nsp, locok, cap);
+        else      prt_element(ctx, lsp, nsp, /*inlist=*/false, locok);
+        return;
+    }
+    bool opngrp = true, hvcmma = false;
+    lex(ctx);
+    while (true) {
+        if (L.nxtktp == EOFTOK) {
+            inpter(ctx, PERROR, L.lstpos.data() + 1, "Unexpected EOF");
+            locok = false;
+            return;
+        }
+        if (L.nxtktp != RPAREN) {
+            if (L.nxtktp == COMMA) {
+                if (hvcmma || opngrp) {
+                    inpter(ctx, PERROR, L.lstpos.data() + 1,
+                           "Found a NULL value; check your commas.");
+                    locok = false;
+                }
+                lex(ctx);
+                hvcmma = true;
+                opngrp = false;
+                continue;
+            }
+            if (save) {
+                tbl_lookup(ctx, true, lsp, nsp, locok, cap);
+            } else if (!prt_element(ctx, lsp, nsp, /*inlist=*/true, locok)) {
+                continue;   // getprt.f:151's GO TO 10 -- hvcmma/opngrp unchanged
+            }
+            if (ctx.error.lfatal) return;
+            hvcmma = false;
+            opngrp = false;
+        } else {
+            if (hvcmma) {
+                inpter(ctx, PERROR, L.lstpos.data() + 1,
+                       "Found a NULL value; check your commas.");
+                locok = false;
+            }
+            lex(ctx);
+            return;
+        }
     }
 }
 
 void getprt(X13Context& ctx, int lspsrs, int nspsrs, bool& locok) {
-    (void)lspsrs; (void)nspsrs;
-    consume_prtsav(ctx, locok);
+    read_prtsav(ctx, /*save=*/false, lspsrs, nspsrs, locok, nullptr);
 }
-void getsav(X13Context& ctx, int lspsrs, int nspsrs, bool& locok) {
-    (void)lspsrs; (void)nspsrs;
-    consume_prtsav(ctx, locok);
+void getsav(X13Context& ctx, int lspsrs, int nspsrs, bool& locok,
+            std::vector<std::string>* cap) {
+    read_prtsav(ctx, /*save=*/true, lspsrs, nspsrs, locok, cap);
 }
 // ---------------------------------------------------------------------------
 // getsvl.f -- the SAVELOG reader, and unlike getprt/getsav above it is NOT a

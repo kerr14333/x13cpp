@@ -6005,3 +6005,100 @@ thing with four dictionaries (`TB1DIC`..`TB4DIC`, split by displacement at
 (`default none brief all tables`), and refuse with `Print or level argument is
 not defined.` This port still consumes both without looking. Same shape, four
 times the table; on the board as its own item.
+
+## 92. `print =` / `save =` were never validated either — and PRINT and SAVE are different dictionaries over the same table slots
+
+Board item 2, the sibling entry 91 found while closing the savelog gap. Same
+shape, four times the table, and one twist the savelog case did not have.
+
+**The arrangement.** `getprt.f`/`getsav.f` look every name up in a per-spec
+slice, exactly as `getsvl` does, but the dictionary is split in FOUR at
+`BRKDSP=118` / `BRKDS2=267` / `BRKDS3=348` — `table.prm` says why: to keep each
+literal "under 2000 characters, a requirement for the VAX/VMS Fortran". Each
+spec's displacement (`tbllog.i`'s `LSP<spec>`/`NSP<spec>`, 18 pairs over 396
+table slots) is relative to whichever piece it lands in. `getprt` additionally
+tries a five-entry `LVLDIC` (`default none brief alltables all`) FIRST, and
+accepts a `+`/`-` prefix on a table name.
+
+**The twist: PRINT and SAVE are different dictionaries.** `table.prm` and
+`stable.prm` are parallel — same 396 slots, same pointer counts — and
+`stable.prm` holds an EMPTY STRING wherever a table can be printed but not
+saved (`check{}`'s `acfplot`/`acp`, `history{}`'s `header`/`hdr`). An empty
+entry can never match, because `gtdcnm` only looks anything up for a NAME
+token, **so the emptiness IS the refusal.** A port that used one dictionary for
+both would be wrong only on those slots.
+
+**What this port did.** `getprt`/`getsav` were `consume_prtsav` — accept any
+name, any list, any `+`/`-`. Of the 36 call sites, 30 did not exist (each
+reader consumed its own value); of the six that did, `check{}` passed
+`(0, 11)` and `composite{}` passed `(0, 10)` — placeholders again, the same
+shape entry 91 found — and only `series{}`'s `(0, 10)` was right, by
+coincidence, because `LSPSRS/NSPSRS` really is `0, 10`.
+
+**Ported:** `core/src/specparse/tbldic.cpp` (the eight dictionaries and pointer
+arrays, 11k characters, transcribed by generator from the four `.prm`/`.var`
+files with every declared length asserted), `tbllog.i`'s 18 displacement pairs
+into `namespace tbllog`, `getprt.f` and `getsav.f` in full — the level arm, the
+prefix arm, the list arm, the NULL-comma checks — and all 36 call sites.
+`Prttab`/`Savtab` and `getprt.f:205-209`'s `level()` fill stay deferred.
+
+**A CENSUS INCONSISTENCY, ported: the two prefix errors differ by one
+character.** `getprt.f:67` (single value) ends `or nothing.` and `getprt.f:148`
+(inside a list) ends `or nothing` with no period.
+
+**And a control-flow trap that the first transcription got wrong.** The list
+arm's prefix error is followed by `GO TO 10` — skip to the next element. The
+single-value arm at `:60-71` has **no such jump**: it reports the bad prefix,
+consumes the token, and FALLS THROUGH into the table lookup, which then runs
+against whatever came next. On `print = 7` the oracle therefore emits *two*
+errors — the prefix one, then `Print or level argument is not defined.` with
+its caret on the closing brace. The port bailed from both arms, which reads
+like the obvious symmetry and is not what the Fortran does. Same family as
+"count the block; never read the indentation": the two arms look identical and
+differ by one statement.
+
+**Decode verified before a line was written.** A script re-derived every spec's
+slice from the four dictionaries and cross-checked it against **12,840**
+`print=`/`save=` values in the corpus: all resolve. The first run of that check
+reported 33 violations and every one was the CHECKER's fault — a
+`(\w+)\s*\{(.*?)\n\s*\}` block regex merged a one-line `x11{ }` with the
+`slidingspans{ save = (sfs chs) }` after it. A validation harness that reads
+spec blocks needs a depth-tracking scan, not a regex.
+
+**Mutations**, against a verified-0 baseline (full suite, `-n 8`):
+
+| mutation | gates failed |
+|---|---|
+| the lookup's verdict discarded (token still consumed) | 4 |
+| `save` routed through the PRINT dictionary | 1 |
+| the per-spec displacement off by ONE TABLE | **3526** |
+| the single-value prefix arm bails like the list arm | 1 |
+| the `LVLDIC` level arm disabled | **5141** (+16 errors) |
+
+The two four-figure numbers are the reassurance that this data is load-bearing;
+the three ones and fours are the four new specs, each failing exactly the
+mutation it was written for.
+
+**A weak mutation, recorded because it looked strong.** The displacement probe
+was first written as "widen the slice by 42 names" and measured **0** —
+`x11{}`'s window grew into `force{}` and the head of `x11regression{}`, and the
+spec's `chs` (a `slidingspans{}` table, 60 slots further on) still was not in
+it. Widening a slice is not the same as shifting it; only the shift moved
+anything.
+
+**Gated** by four hand-authored `edge/` specs:
+`print-undefined-x11` (a name in no dictionary at all — the LVLDIC-then-table
+path and the print-specific two-line message), `save-wrong-slice-x11`
+(`x11{save = chs}` — a REAL table name from a neighbouring slice, the shape
+entry 91 had to learn to write), `save-printonly-check`
+(`check{print = acfplot save = acfplot}` — printable, not savable; **the only
+spec in the corpus that distinguishes `table.prm` from `stable.prm`**), and
+`print-prefix-bad` (both prefix arms, pinning the one-character message
+difference and the fall-through cascade).
+
+**Deliberately NOT changed:** `series{save=}` still does not feed
+`ctx.captured.save_tables`. It never did — the five readers that captured
+(transform, regression, seats, force, slidingspans) still do, now through
+`getsav`'s new out-parameter — and adding `series{}` would switch on `a1`
+output that `run_pre_model`'s `wants_save()` has never seen. That is its own
+change with its own gate, and the comment at the call site says so.

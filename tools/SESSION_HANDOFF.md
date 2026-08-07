@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7394<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->846<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7398<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->846<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7394<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7398<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2293,6 +2293,59 @@ defined.` and `Check the available table names and levels for this spec.` This
 port consumes both without looking, so `print = bogus` returns `OUTCOME: OK`
 everywhere. Same shape as this increment, four times the table.
 
+## This session, part 43: `print =` / `save =` were never validated either — and PRINT and SAVE are different dictionaries
+
+Board item 2, the sibling part 42 found on its way out. Full record in
+`docs/M5_PORT_NOTES.md` entry 92; what carries forward:
+
+**Same arrangement as savelog, four times the table.** `getprt.f`/`getsav.f`
+look every name up in a per-spec slice; the dictionary is split in FOUR at
+`BRKDSP=118`/`BRKDS2=267`/`BRKDS3=348` (`table.prm`: to keep each literal
+"under 2000 characters, a requirement for the VAX/VMS Fortran"), and each
+spec's `tbllog.i` displacement is relative to its piece. `getprt` also tries a
+five-entry `LVLDIC` (`default none brief alltables all`) FIRST and accepts a
+`+`/`-` prefix.
+
+**The twist savelog did not have: PRINT and SAVE are DIFFERENT dictionaries**
+over the same 396 slots. `stable.prm` holds an EMPTY STRING wherever a table is
+printable but not savable (`check{}`'s `acfplot`, `history{}`'s `header`), and
+since `gtdcnm` only looks up NAME tokens, **the emptiness is the refusal**. One
+corpus spec now distinguishes the two files; before it, a port using one
+dictionary for both gated green.
+
+**Placeholders again.** 30 of the 36 call sites did not exist; of the six that
+did, `check{}` passed `(0, 11)` and `composite{}` `(0, 10)` into a routine that
+ignored them. `series{}`'s `(0, 10)` was right only by coincidence.
+
+**A control-flow trap the first transcription got wrong.** The list arm's
+prefix error is followed by `GO TO 10`; the single-value arm at `getprt.f:60-71`
+has **no jump** and FALLS THROUGH into the table lookup, so `print = 7` emits
+TWO oracle errors — the prefix one, then `Print or level argument is not
+defined.` with its caret on the closing brace. The port bailed from both arms,
+which reads like the obvious symmetry. And the two prefix messages differ by
+ONE CHARACTER (`:67` ends `or nothing.`, `:148` ends `or nothing`) — ported.
+
+**Decode verified before a line was written**, against **12,840** corpus
+`print=`/`save=` values: all resolve. The check's FIRST run reported 33
+violations, all of them the checker's own fault — a `(\w+)\s*\{(.*?)\n\s*\}`
+regex merged a one-line `x11{ }` with the `slidingspans{ save = (sfs chs) }`
+after it. **Scan spec blocks with a depth counter, never a regex.**
+
+**Mutations** (verified-0 baseline, full suite): verdict discarded **4**; save
+routed through the PRINT dictionary **1**; displacement off by one table
+**3526**; single-value prefix arm bails **1**; `LVLDIC` disabled **5141**. A
+weak mutation worth remembering: "widen the slice by 42 names" measured **0**,
+because `x11{}`'s window grew into `force{}` and `chs` is 60 slots further on.
+Widening a slice is not shifting it.
+
+**Gated** by `edge/print-undefined-x11`, `save-wrong-slice-x11`,
+`save-printonly-check` and `print-prefix-bad`.
+
+**Deliberately NOT changed:** `series{save=}` still does not feed
+`ctx.captured.save_tables` — it never did, and adding it would switch on `a1`
+output `run_pre_model`'s `wants_save()` has never seen. Its own change, its own
+gate; the call site says so.
+
 ## Open, in the order I would take them
 
 1. **One slidingspans wall left, and it is a judgement call, not a port.**
@@ -2320,40 +2373,28 @@ everywhere. Same shape as this increment, four times the table.
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
    36-39 above and entries 83 and 85-88 before touching any of it. Note that
    entry 86 narrowed entry 83's `fixreg=` conclusion: read them together.
-2. **`print =` / `save =` accept undefined table names** (task #53), the
-   sibling of the savelog gap part 42 closed and found while closing it.
-   `getprt.f`/`getsav.f` validate against FOUR per-spec dictionaries
-   (`TB1DIC`..`TB4DIC`, split by displacement at `BRKDSP`/`BRKDS2`/`BRKDS3`)
-   plus a five-entry `LVLDIC` (`default none brief all tables`), refusing with
-   `Print or level argument is not defined.` + `Check the available table names
-   and levels for this spec.` This port consumes both without looking, so
-   `print = bogus` returns `OUTCOME: OK` everywhere; `getprt`'s `+`/`-` prefix
-   arm and its `Prefix must be "+", "-", or nothing.` error are unported too.
-   Same shape as part 42, four times the table -- and note the trap that
-   increment hit: the discriminating spec is one with a REAL name from the
-   WRONG slice, not one with a nonsense name.
-3. **`x11regression{outlierspan=}` is parsed and dropped** (entry 87).
+2. **`x11regression{outlierspan=}` is parsed and dropped** (entry 87).
    `gtxreg.f:666-673` writes the COMMON `Begxot`/`Endxot` from `spnotl`;
    `x11reg.cpp:1340-1342` re-derives that pair locally from `Begspn`/`Nspobs`
    every time, so the option is silently ignored on the MAIN run. It coincides
    with `ssx11a.f:105-106`'s per-span value, which is why the span path did not
    need it.
-4. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-5. **A composite whose components carry a residual peak**, to gate savpk's real
+4. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
-6. **Two unported Mt2 NOTEs** (task #43): `arima.f:936-960`'s fixed-coefficient
+5. **Two unported Mt2 NOTEs** (task #43): `arima.f:936-960`'s fixed-coefficient
    NOTE, subtracted from the golden side of the slidingspans note gate by
    `_UNPORTED_NOTES` with `test_unported_notes_still_unported` guarding the
    list; and `prtmdl.f:174-177`'s `Nliter>200` NOTE, unported with no corpus
    carrier and deliberately NOT listed.
-7. `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the uninitialized `Trumlt`,
+6. `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the uninitialized `Trumlt`,
    both recorded in entry 76 as open questions -- they want the Fortran
    instrumented directly (the `tools/ref_*.f` read-only probe pattern), not
    more reasoning. Same for `x11mdl.f:597-602`'s stale `icol` (entry 77).
-8. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
+7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}`
    (`x11outlier=no` closed in part 41) /
    `additivesa=`; `pickmdl{aictest=(user)}` (needs

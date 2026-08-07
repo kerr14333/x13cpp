@@ -212,10 +212,45 @@ void gtdcvc(X13Context& ctx, int grpchr, bool flgnul, int pelt, std::string_view
 void getvec(X13Context& ctx, int grpchr, bool flgnul, int pelt, std::string& chrvec,
             int* ptrvec, int& nelt, int maxchr, bool& locok, bool& inptok);
 
-// print/save table selection (getprt.f/getsav.f) -- M1 consumes tokens; the
-// table-dictionary application is stubbed (see notes).
+// print/save table selection (getprt.f/getsav.f). The per-spec dictionary
+// LOOKUP is ported -- an undefined table name is a parse error, as in the
+// oracle; applying the selection (Prttab/Savtab and getprt's level() fill) is
+// still deferred. `cap`, when given, collects the save names getsav consumed
+// (lower-cased for NAME tokens, verbatim for QUOTE) -- run_pre_model's
+// wants_save() reads them.
 void getprt(X13Context& ctx, int lspsrs, int nspsrs, bool& locok);
-void getsav(X13Context& ctx, int lspsrs, int nspsrs, bool& locok);
+void getsav(X13Context& ctx, int lspsrs, int nspsrs, bool& locok,
+            std::vector<std::string>* cap = nullptr);
+// tbllog.i -- the same arrangement for the PRINT and SAVE table dictionaries:
+// LSP<spec> is the spec's displacement in TABLES and NSP<spec> its table count
+// (getprt/getsav double both, since every table has a long and a short name).
+// BRKDSP/BRKDS2/BRKDS3 are where table.prm splits the dictionary in four.
+namespace tbllog {
+constexpr int BRKDSP = 118, BRKDS2 = 267, BRKDS3 = 348;
+constexpr int LSPSRS =   0, NSPSRS = 10;   // series{}
+constexpr int LSPTRN =  10, NSPTRN = 11;   // transform{}
+constexpr int LSPREG =  21, NSPREG = 14;   // regression{}
+constexpr int LSPIDN =  35, NSPIDN =  5;   // identify{}
+constexpr int LSPAUM =  40, NSPAUM = 13;   // automdl{}
+constexpr int LSPAXM =  53, NSPAXM =  4;   // pickmdl{}
+constexpr int LSPEST =  57, NSPEST = 14;   // estimate{}
+constexpr int LSPOTL =  71, NSPOTL =  5;   // outlier{}
+constexpr int LSPCHK =  76, NSPCHK = 11;   // check{}
+constexpr int LSPFOR =  87, NSPFOR =  5;   // forecast{}
+constexpr int LSPSPC =  92, NSPSPC = 26;   // spectrum{}
+constexpr int LSPX11 = 118, NSPX11 = 90;   // x11{}
+constexpr int LSPFRC = 208, NSPFRC =  9;   // force{}
+constexpr int LSPXRG = 217, NSPXRG = 22;   // x11regression{}
+constexpr int LSPREV = 239, NSPREV = 28;   // history{}
+constexpr int LSPSSP = 267, NSPSSP = 21;   // slidingspans{}
+constexpr int LSPCMP = 288, NSPCMP = 60;   // composite{}
+constexpr int LSPSET = 348, NSPSET = 48;   // seats{}
+}  // namespace tbllog
+
+// tbldic.cpp -- 1-based index within the spec's slice, 0 if the current token
+// is not one of its table names. `save` picks stable.* over table.*.
+int tbldic_lookup(X13Context& ctx, bool save, int lsp, int nsp);
+
 // svllog.i -- each spec owns a slice of SVLDIC: LSL<spec> is its displacement
 // in TABLES (getsvl doubles it, since every table has a long and a short name)
 // and NSL<spec> the number of tables. A savelog name outside the calling spec's
