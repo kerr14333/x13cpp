@@ -6105,6 +6105,7 @@ change with its own gate, and the comment at the call site says so.
 
 ## 93. `x11regression{outlierspan=}` — parsed and dropped, and the critical value it silently owned
 94. `force{}` on an X-11 composite -- agr3's forced/rounded tail, and the F-test channel that could not report it missing
+95. Pseudo-additive composite — one `IF/ELSE` arm, and the three things probing it fell over
 
 Board item 2, and the third parsed-but-unread option in a row (entries 91, 92).
 `gtxreg.f:487-497` parses the argument into `spnotl`; `:665-674` resolves it into
@@ -6315,3 +6316,138 @@ Note the bless path: `run_parity.py --update` runs each `.spc` STANDALONE, which
 for a `composite{}` total produces no components and therefore no indirect
 tables. Metafile goldens are raw `x13as_ascii_O2 -m composite -s` output, as the
 older composite cases are.
+
+## 95. Pseudo-additive composite — one `IF/ELSE` arm, and the three things probing it fell over
+
+Board item 2's remainder, and the smallest port in the increment by far: two
+lines of `agr3.f`. Everything else here was found by trying to measure them.
+
+### The arm
+
+`agr3.f:266-276` is an `IF(Psuadd)`/`ELSE` pair. The ELSE was ported with the
+rest of agr3 and the Psuadd arm was not, so a pseudo-additive composite returned
+`OUTCOME: OK` with a wrong `isf` and no `isd`.
+
+**Oracle on-vs-off, composite-fixed with the log transform dropped, mult vs
+pseudoadd:** every other indirect table is already bit-exact — d10-d13, isa,
+itn, iir, id8, ie1, i18 at ~5e-15 — and `isf` alone is **1.6e-06** out. The two
+formulas are numerically close on a well-behaved series, which is exactly how an
+unported arm of a two-arm branch survives a corpus that never sets the option.
+`isd` (the seasonal DIFFERENCES, table D10B) exists on this arm only.
+
+Three details the multiplicative line does not predict: the numerator is `O2`,
+not `O5`; the denominator is `Stc`, the raw filter output, and NOT the `stc2in`
+that `:258`'s `Sti` was formed against; and it subtracts that `Sti` back out.
+
+Note the comparison arm. Pseudo-additive is incompatible with a log, so the
+baseline had to be the SAME corpus with `mode=mult`, not `composite-fixed` as
+committed — otherwise the diff measures the transform.
+
+### The oracle refused the probe, and the port did not
+
+Trying to make the `Stc`-vs-`stc2in` mutation testable meant putting a level
+shift on a component. The oracle refused the whole run:
+`editor.f:2508-2545`, four arms — three ERRORs and a WARNING — **none of them
+ported**. `mode=pseudoadd` with an outlier regressor adjusted happily at
+`OUTCOME: OK`.
+
+What was resting on that block while it was absent: `run_spectrum.cpp:436`
+argues spcdrv's Psuadd branch is provably inert BECAUSE `editor.f:2508-2523`
+refuses exactly the configurations that would make it observable. The reasoning
+was right about the ORACLE, and the engine did not implement its premise.
+
+Placement cost a round trip. The first version sat in `x11_prestage.cpp` beside
+the `Gudval` loop that `editor.f:2500` shares — faithful by line number, and all
+three edge specs still reported `OUTCOME: OK`, because **the M1 gate drives a
+parse-only harness that never reaches the X-11 prestage**. It belongs in
+`gtinpt`'s tail. And there it needed moving a second time: the fourth arm keys
+on `Nfcst==0`, and `gtinpt.f:1142-1167` does not resolve `Nfcst` until later, so
+above that point it is `NOTSET` and the WARNING silently never fires.
+
+**The arm-3 spec then exposed a second unported block.** Reaching
+`Priadj>1` needs `transform{adjust=lom}`, which on a non-log run trips
+`editor.f:788-847` first — six more refusals about leap-year / length-of-period
+prior adjustments, also entirely unported, and the M1 gate compares the WHOLE
+ERROR list. Ported with it. Note its shape: two sibling arms on `Priadj`, then
+an INDEPENDENT `IF(Axrgtd)` that can fire on top of either and MUTATES
+(`Priadj=1`, `Picktd=F`) alongside its refusal.
+
+### A channel nobody reads, again
+
+`x13run_composite` dumped its Mt2 buffer only on FATAL — entry 81's exact trap,
+fixed for `x13run_x11` and still open here. Every non-fatal NOTE and WARNING a
+composite emitted was discarded, which is why the pseudo-additive forecast
+WARNING (live on composite-psuadd's total) had no gate. Now dumped per spec,
+`===ERR <base>===` framed. Buffered into `out` rather than printed: this harness
+prints `OUTCOME:` first and a direct write lands ahead of it. Wiring it also
+showed the harness had been passing `base` where genfor.f prints the spec
+filename, so every `.err` header said `region_north:` for the oracle's
+`region_north.spc:` — invisible for as long as nobody read the channel.
+
+### `Lindot` was never written, and four guards were dead
+
+`gtinpt.f:311` sets `Lindot=T` unconditionally. `agr_cmn` declares
+`bool lindot;` and only `getcmp.f:165`'s parse arm assigned it, so on every run
+that did not spell `composite{indoutlier=}` out it was FALSE — and
+`agr3.f:200`'s indirect outlier-factor build, `:222`'s level-shift refold into
+the published trend, `:227`'s AO factor and `:298`'s D8 divide all took their
+false branch.
+
+Invisible because every consumer is a CONJUNCTION with `Lindls`/`Lindao`, and no
+composite in the corpus carried an outlier, so both readings agreed. Put a level
+shift on one component of the ordinary MULTIPLICATIVE composite and
+`itn`/`iir`/`id8`/`id9` come back **3.5e-04** out at `OUTCOME: OK`; writing the
+default takes them to ~5e-15. **Second instance of entry 87's class** — a flag
+the port never advances turns every guard on it into dead code, silently and in
+bulk, with nothing refusing and nothing walled. Mutating it back fails 5 gates.
+
+### Two mutations are inert BY CONSTRUCTION, and that is different from saturated
+
+- **`Stc` vs `stc2in`, in either line of the arm.** They differ only when
+  `Lindot && Lindls`, and `Lindls` needs `AdjLS`, which arm 1 of the block above
+  now refuses on a pseudo-additive run. Not measured; argued, and the argument
+  is the refusal.
+- **`O2` vs `O5` (the numerator).** Measured 0, then chased rather than
+  believed. `O5` is `O2` less the calendar factor, so they coincide when
+  `Faccal == 1` — and `Faccal` came back **exactly** 1 on this corpus. Four
+  routes to a calendar factor tried against the oracle, all refused under
+  pseudo-additive: regARIMA TD/holiday (arm 1), an x11regression TD or holiday
+  group (arm 2), `x11regression{tdprior=}` (its own prior-weights refusal), and
+  `x11{x11easter=yes}` (arm 1 again, via `Adjhol`).
+
+The distinction is worth keeping: a SATURATED precondition is a gap in the
+corpus and the fix is a better spec, while an inert-by-construction one is a
+theorem about the program and the fix is to write the theorem down. Entry 94's
+`indforce=` was the first kind; both of these are the second.
+
+### Mutations (verified-0 baseline, full suite `-n 8`)
+
+| mutation | fails |
+|---|---|
+| A the Psuadd arm never taken (the pre-increment behaviour) | 3 |
+| C the numerator `O5` instead of `O2` | 0 — inert by construction, above |
+| E `isd` emitted on every mode, not only under Psuadd | 3 |
+| F the whole `editor.f:2508-2545` feasibility block disabled | 5 |
+| G only its WARNING arm disabled | 1 |
+| H `editor.f:788-847`'s prior-adjustment consistency block disabled | 1 |
+| I the harness stops dumping Mt2 on a successful run | 1 |
+| J `Lindot` back to its unwritten `false` | 5 |
+
+### Gated by
+
+`census-examples/composite-psuadd/` (`tests/parity/test_composite_psuadd.py` —
+the twelve indirect tables, the direct four, both components, `isd` distinct
+from `isf`, `isd` ABSENT on the three non-pseudo-additive composites gated on
+the MODE rather than on which goldens exist, the forecast WARNING against the
+oracle's own `.err`, and the components' `.err` staying clean because the arm is
+keyed on `Nfcst`);
+`census-examples/composite-outlier/` (`test_composite_outlier.py` — the Lindot
+case, plus an assertion that the level shift stays on ONE component, since a
+symmetric design would let the refold cancel and quiet the whole file);
+and `edge/psuadd-regarima-preadj`, `-irregular-calendar`, `-prioradj`, one per
+ERROR arm, each written so the other two arms are FALSE — through
+`test_m1_parse::test_outcome_matches_oracle`, which compares the ERROR text and
+not just the outcome.
+
+`test_composite_force.py`'s F-test-row gate picked the two new corpora up with
+no edit: it discovers every composite golden carrying an `id11.f` row.

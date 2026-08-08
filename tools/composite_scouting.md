@@ -201,7 +201,53 @@ of the component — optimizer path noise, not aggregation. The indirect
 adjustment is the sum of the component SA series, so it would land there
 undiluted.
 
-Still genuinely open for composite: pseudo-additive (`Psuadd`).
+## Pseudo-additive — agr3.f:267-272
+
+Closed. An `IF(Psuadd)`/`ELSE` pair whose ELSE was ported and whose Psuadd arm
+was not. Measured mult-vs-pseudoadd on the ORACLE (same corpus, transform
+dropped — a log and pseudo-additive are incompatible, so `composite-fixed` is
+NOT the comparison arm): every other indirect table already bit-exact, `isf`
+alone **1.6e-06** out, and `isd` (D10B, the seasonal DIFFERENCES) absent
+entirely. The arm's numerator is `O2`, not `O5`; its denominator is `Stc`, not
+the `stc2in` the same line's `Sti` was formed against.
+
+Two mutations on it are inert BY CONSTRUCTION rather than for want of a spec,
+and the difference matters: `Stc` vs `stc2in` differ only when `Lindls`, which
+pseudo-additive refuses; `O2` vs `O5` differ only when `Faccal != 1`, and all
+four routes to a calendar factor (regARIMA TD/holiday, an x11regression TD or
+holiday group, `x11regression{tdprior=}`, `x11{x11easter=yes}`) were tried
+against the oracle and refused.
+
+Gated by `census-examples/composite-psuadd/`.
+
+## Two refusal blocks the pseudo-additive probe exposed
+
+Neither is composite-specific; both were entirely unported and both returned
+`OUTCOME: OK` where the oracle refuses.
+
+- **`editor.f:2508-2545`** — can pseudo-additive be done at all. Three ERRORs
+  (regARIMA-derived preadjustment factors; irregular-component calendar
+  adjustment; prior adjustment factors) and a WARNING when `Nfcst==0`.
+- **`editor.f:788-847`** — leap-year / length-of-period prior adjustments
+  against the transform and the mode. Two sibling `Priadj` arms plus an
+  INDEPENDENT `IF(Axrgtd)` that fires on top of either and mutates `Priadj=1`,
+  `Picktd=F`.
+
+Both live in `gtinpt`'s tail, not beside the `editor.f:2500` Gudval loop in
+`x11_prestage`: the oracle refuses at SPEC READ and the M1 gate drives a
+parse-only harness. The pseudo-additive block additionally has to sit BELOW
+`gtinpt.f:1142-1167`, because its WARNING arm keys on `Nfcst` and `Nfcst` is
+NOTSET above it.
+
+## `Lindot` — a default the port never wrote
+
+`gtinpt.f:311` sets `Lindot=T`; this port assigned it only in `getcmp.f:165`'s
+parse arm, so it was false unless `composite{indoutlier=}` was spelled out, and
+`agr3.f:200/222/227/298` were all dead. Invisible because every consumer is a
+conjunction with `Lindls`/`Lindao`. One component-level shift: `itn`/`iir`/
+`id8`/`id9` **3.5e-04** out at `OUTCOME: OK`. Gated by
+`census-examples/composite-outlier/`, whose north component carries the shift
+and whose south deliberately does not.
 
 ## `force{}` on an X-11 composite — agr3.f:404-547
 

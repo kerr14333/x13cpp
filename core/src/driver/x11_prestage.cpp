@@ -319,6 +319,12 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
             ctx.goodob.gudval(i) = false;
     }
 
+    // (editor.f:2508-2545's pseudo-additive feasibility block is NOT here. It
+    // reads the same parse-time Adj*/Fin* this point does, but the oracle
+    // refuses at SPEC READ -- so a check placed here is invisible to the
+    // parse-only harness the M1 gate drives, and measured so: all three edge
+    // specs still reported OUTCOME: OK. It lives in gtinpt.cpp's tail.)
+
     // arima.f:1433-1441 -- overlay the UNTRANSFORMED forecasts (and backcasts)
     // onto Orig2's extension region. Only the composite path reads this far out:
     // it is what makes the aggregated O2/O5 (hence the indirect seasonal factors)

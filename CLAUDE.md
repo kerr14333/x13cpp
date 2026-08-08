@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-94, chronological). They used to live in this file and made it
+(entries 0-95, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -286,7 +286,13 @@ because by the time you would think to look them up, the damage is done.
   DATES that broke the rule — and this port had the `inpter` half at all sixteen
   and none of `cvrerr`, so a refusal came out one third the size the oracle
   writes it (entry 93). No corpus spec reached one, which is exactly why it
-  survived. When you port a refusal, port the lines UNDER it.
+  survived. When you port a refusal, port the lines UNDER it. **And the trap
+  recurs per harness**: `x13run_composite` still dumped Mt2 on FATAL only, long
+  after `x13run_x11` was fixed, so every non-fatal diagnostic a composite run
+  emitted was discarded (entry 95). Wiring it also showed the harness passing a
+  bare basename where genfor.f prints the spec FILENAME — a header nobody read
+  had been wrong for as long as it was unread. Fixing a channel fixes one
+  harness; check the siblings in the same breath.
 - **Where this port CAPTURES a result somewhere other than where the oracle
   does, the equivalence is a claim about WHICH BUFFER and at WHICH MOMENT — and
   it is only ever tested by the options the corpus happens to carry.** The
@@ -364,6 +370,12 @@ because by the time you would think to look them up, the damage is done.
   fix ("use the nonlinear option") also fails nothing. What separates them is
   making the COMPONENTS differ — force one and not the other, 1.4e-05 (entry
   94). Ask what identity the probe is sitting on, not just which option it set.
+  **And distinguish SATURATED from INERT-BY-CONSTRUCTION** (entry 95): a
+  saturated precondition is a gap in the corpus and the fix is a better spec; an
+  inert-by-construction one is a theorem about the program — `O2` equals `O5`
+  under pseudo-additive because the oracle refuses all four routes to a calendar
+  factor — and the fix is to write the theorem down, having actually tried the
+  routes. Both look identical from a mutation that measures zero.
 - **Count the block; never read the indentation.** Fortran closes with bare
   `END IF`, so an `ELSE` seven levels deep looks exactly like a top-level one.
   `x11mdl.f:661`'s `ELSE` pairs with `IF(igrp.gt.0)` at `:546`, not with the
@@ -411,7 +423,18 @@ because by the time you would think to look them up, the damage is done.
   and 5, and the count of what it was hiding is the point: ~40 conditions, five
   `getrev` sites, four unreachable walls and a stubbed `errhdr` that had been
   live for `slidingspans{}` all along. Mutating the assignment back fails 171
-  gates. Keep the rule; the next mode variable will be somebody else's.
+  gates. Keep the rule; the next mode variable will be somebody else's. **It
+  was: `Lindot` (entry 95.)** `gtinpt.f:311` defaults `composite{indoutlier=}`
+  to yes; the port assigned the flag only in the parse arm, so it was false on
+  every run that did not spell the option out, and four `agr3` guards were dead
+  — the indirect outlier-factor build, the level-shift refold into the
+  published trend, the AO factor and the D8 divide. Hidden because every
+  consumer is a CONJUNCTION with `Lindls`/`Lindao` and no composite carried an
+  outlier, so both readings agreed; one component-level shift and
+  `itn`/`iir`/`id8`/`id9` were 3.5e-04 out at `OUTCOME: OK`. **Generalised
+  form: a DEFAULT that lives only in the Fortran's initialisation block is the
+  same defect as an unadvanced mode variable.** When you port a `cmn` flag,
+  find its `gtinpt.f` default, not just its reader.
 - **A BARE `abend` is not a wall — it is a hole with the lights off.**
   `walls.py` derives the inventory from refusal MESSAGES, so a guard that calls
   `abend(ctx)` with no `errhdr`/`writln` is in neither the gap list nor the

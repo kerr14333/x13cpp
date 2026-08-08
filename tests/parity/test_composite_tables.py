@@ -45,11 +45,13 @@ second x11pt4 pass at x11ari.f:341 -- the whole if2.*/if3.* savelog block and th
 sixteen id8/id9/ie*/ip*/iee/i18/ita save tables. See the two increment-4 sections
 at the bottom of this file.
 
-Still deferred (tools/composite_scouting.md): cmpchi's chi-square/F diagnostics,
-the aggregate-composition header table, and pseudo-additive. The SEATS branch
-(agr3s.f) is gated by test_composite_seats.py and the forced/rounded indirect
-series by test_composite_force.py -- which also carries the residual-seasonality
-F-test savelog rows (d11.f / id11.f) for every composite case, this one included.
+Still deferred (tools/composite_scouting.md): cmpchi's chi-square/F diagnostics
+and the aggregate-composition header table. The SEATS branch (agr3s.f) is gated
+by test_composite_seats.py, the forced/rounded indirect series by
+test_composite_force.py -- which also carries the residual-seasonality F-test
+savelog rows (d11.f / id11.f) for every composite case, this one included --
+pseudo-additive by test_composite_psuadd.py, and the indirect outlier factors
+(`Lindot`) by test_composite_outlier.py.
 
 Run:  python -m pytest tests/parity/test_composite_tables.py -q
 """
@@ -230,7 +232,10 @@ def test_composite_savelog_canaries(run_output: str) -> None:
                 k, _, v = ln.partition(":")
                 udg[k.strip()] = v.split()
 
-    lines = {p[0]: p[1:] for p in (ln.split() for ln in run_output.splitlines())}
+    # `if p` because the harness now emits the Mt2 `===ERR ...===` blocks, whose
+    # blank records split to []. Nothing else in the run produces an empty line.
+    lines = {p[0]: p[1:]
+             for p in (ln.split() for ln in run_output.splitlines()) if p}
     assert lines.get("indtrendma") == udg["indtrendma"], "indirect Henderson length"
     for key in ("r1mse", "r1rmse", "r2mse", "r2rmse"):
         assert key in udg, f"{key} missing from total.udg"

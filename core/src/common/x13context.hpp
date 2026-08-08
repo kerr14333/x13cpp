@@ -302,6 +302,11 @@ struct X13Context {
     // oracle, like x11pt3's ststd above.
     std::vector<double> agr_stc2in;
     std::vector<double> agr_ststd;
+    // agr3.f's `stsb`, another such local: the PSEUDO-ADDITIVE seasonal
+    // DIFFERENCES (table D10B, the `isd` save tag). Empty on every other mode --
+    // agr3.f:389 punches it only under Psuadd, so an empty vector here is the
+    // faithful "no such table", not a missing computation.
+    std::vector<double> agr_stsb;
     // The composite total's own DIRECT d10-d13, snapshotted before agr3
     // overwrites those buffers with the indirect adjustment. Not an oracle step:
     // the oracle has already emitted them by then, while this port hands all

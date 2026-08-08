@@ -98,6 +98,18 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.missng.mvval = 1000000000.0;
     ctx.agr.iag = prm::NOTSET;
     ctx.agr.w = 1.0;
+    // gtinpt.f:311 -- `composite{indoutlier=}` defaults YES, and this port never
+    // wrote the flag at all: `agr_cmn` declares `bool lindot;` and only
+    // getcmp.f:165's parse arm assigned it, so it was false on every run that
+    // did not spell the option out. Every guard keyed on it was therefore dead
+    // -- agr3.f:200's indirect outlier-factor build, :222's level-shift refold
+    // into the published trend, :227's AO factor and :298's D8 divide. Same
+    // shape as entry 87's Irev: nothing refuses, nothing is walled, the guards
+    // LOOK ported. Invisible until a COMPONENT carried an outlier, because
+    // Lindls/Lindao are false without one and every consumer is a conjunction;
+    // with a level shift on one component itn/iir/id8/id9 came back 3.5e-04 out
+    // at OUTCOME: OK.
+    ctx.agr.lindot = true;
     ctx.arima.fcntyp = prm::NOTSET;
     ctx.arima.lam = 1.0;
     ctx.picktd.picktd = false;
@@ -742,6 +754,81 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             }
         }
 
+        // editor.f:788-847 -- are the `transform{adjust=}` prior adjustments
+        // consistent with the transform and the adjustment mode? Six refusals,
+        // none of them ported: `adjust=lom` with no log transform returned
+        // OUTCOME: OK where the oracle writes ERROR and does no adjustment.
+        // Found because the pseudo-additive arm-3 spec below needs
+        // `transform{adjust=lom}` to reach it, and pseudo-additive forbids a
+        // log -- so every spec that can reach arm 3 trips this block first, and
+        // the M1 gate compares the WHOLE ERROR list.
+        //
+        // Structure is two sibling arms on Priadj (4 == lpyear, 2/3 == lom/loq)
+        // and then an INDEPENDENT `IF(Axrgtd)` that can fire on top of either;
+        // the lpyear arm's messages differ from the lom/loq arm's by more than
+        // the variable name, so they are transcribed separately rather than
+        // parameterised.
+        {
+            const double lam0 = ctx.arima.lam;
+            const int pa = ctx.prior.priadj;
+            const bool addmode = (ctx.x11opt.muladd == 1 && lx11);
+            auto err2 = [&](const char* a, const char* b) {
+                writln(ctx, a, stdio::STDERR, ctx.units.mt2, true);
+                writln(ctx, b, stdio::STDERR, ctx.units.mt2, false);
+                inptok = false;
+            };
+            if (pa == 4) {
+                if (!dpeq(lam0, 0.0))
+                    err2("ERROR: Leap Year prior adjustment (adjust=lpyear) "
+                         "can only be specified",
+                         "       when a log transformation is specified in the "
+                         "transform spec.");
+                else if (addmode)
+                    err2("ERROR: Leap Year prior adjustment (adjust=lpyear) "
+                         "can only be specified",
+                         "       when a multiplicative seasonal adjustment is "
+                         "specified in the x11 spec.");
+            } else if (pa > 1) {
+                const bool lom = (pa == 2);
+                if (!dpeq(lam0, 0.0))
+                    err2(lom ? "ERROR: Length of month prior adjustment "
+                               "(adjust=lom) can only be specified"
+                             : "ERROR: Length of quarter prior adjustment "
+                               "(adjust=loq) can only be specified",
+                         "       when a log transformation is specified in the "
+                         "transform spec.");
+                else if (addmode)
+                    err2(lom ? "ERROR: Length of month prior adjustment "
+                               "(adjust=lom) cannot be specified"
+                             : "ERROR: Length of quarter prior adjustment "
+                               "(adjust=loq) cannot be specified",
+                         "       when an additive seasonal adjustment is "
+                         "specified in the x11 spec.");
+            }
+            // editor.f:828-847 -- and this one is a separate IF, not an ELSE of
+            // the chain above: an x11regression trading day plus ANY of the
+            // three prior adjustments refuses again, with a third message. It
+            // also MUTATES: Priadj back to 1 and Picktd off, both of which
+            // outlive the refusal in the oracle.
+            if (ctx.x11log.axrgtd) {
+                if (ctx.prior.priadj > 1) {
+                    const int p = ctx.prior.priadj;
+                    err2(p == 2 ? "ERROR: Length of month prior adjustment "
+                                  "(adjust=lom) cannot be specified"
+                         : p == 3 ? "ERROR: Length of quarter prior adjustment "
+                                    "(adjust=loq) cannot be specified"
+                                  : "ERROR: Leap year prior adjustment "
+                                    "(adjust=lpyear) cannot be specified",
+                         "       when td or td1coef is specified in the "
+                         "variables argument of the");
+                    writln(ctx, "       x11regression spec.", stdio::STDERR,
+                           ctx.units.mt2, false);
+                    ctx.prior.priadj = 1;
+                }
+                if (ctx.picktd.picktd) ctx.picktd.picktd = false;
+            }
+        }
+
         // gtinpt.f:1282-1286 / gtspec.f:324-327 -- resolve Bgspec, the start of
         // the spectrum/QS diagnostic span: eight years (95 periods) back from
         // the end of the series span, clamped forward to the series start. The
@@ -838,6 +925,86 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
         // The parse-tail rules above (gtinpt.f:1151) can still ARM Ldestm after
         // the dispatch loop has made its last copy, so re-publish it here.
         ctx.arima.ldestm = ldestm;
+
+        // NB the placement: this sits below gtinpt.f:1142-1167 because its
+        // fourth arm keys on Nfcst==0 and Nfcst is NOTSET until there. Put it
+        // where editor.f:2508 reads (right after the Adj* clear) and the
+        // WARNING never fires -- measured, the composite-psuadd total emitted
+        // an empty .err against the oracle's nine lines.
+        // editor.f:2508-2545 -- can pseudo-additive adjustment be done at all?
+        // Four arms, three refusals and a WARNING, and this port had none of
+        // them: `mode=pseudoadd` with an outlier regressor returned
+        // OUTCOME: OK and adjusted, where the oracle writes ERROR and
+        // "No seasonal adjustment this run". Found by probing pseudo-additive
+        // on a composite -- the oracle refused the probe spec outright.
+        //
+        // Note what was resting on this while it was absent:
+        // run_spectrum.cpp:436 argues spcdrv's Psuadd branch is provably inert
+        // BECAUSE editor.f:2508-2523 refuses exactly the configurations that
+        // would make it observable. The reasoning was right about the ORACLE,
+        // and the engine did not implement its premise.
+        //
+        // Placement: the oracle tests the PARSE-TIME Adj*/Fin*, which is why
+        // this sits after gtinpt.f:1242-1257's clear just above and BEFORE
+        // chkadj (arima.f:1256) re-derives them from the fitted model. It has
+        // to be in the parse phase and not in x11_prestage beside the Gudval
+        // loop that editor.f:2500 shares: measured, all three edge specs still
+        // reported OUTCOME: OK from there, because the M1 gate drives a
+        // parse-only harness that never reaches the X-11 prestage.
+        if (ctx.x11msc.psuadd) {
+            const x11adj_cmn& xa = ctx.x11adj;
+            auto err2 = [&](const char* a, const char* b) {
+                writln(ctx, a, stdio::STDERR, ctx.units.mt2, true);
+                writln(ctx, b, stdio::STDERR, ctx.units.mt2, false);
+                inptok = false;
+            };
+            if (xa.adjtd == 1 || xa.adjls == 1 || xa.adjhol == 1 ||
+                xa.adjao == 1 || xa.adjtc == 1 || xa.adjusr == 1 ||
+                xa.adjsea == 1 || xa.finhol || xa.finao || xa.finls ||
+                xa.fintc || xa.finusr) {
+                err2("ERROR: Pseudo-additive seasonal adjustment cannot be "
+                     "performed when",
+                     "       preadjustment factors are derived from a REGARIMA "
+                     "model.");
+            } else if (ctx.x11log.axrgtd || ctx.x11log.axrghl) {
+                err2("ERROR: Pseudo-additive seasonal adjustment and irregular "
+                     "component",
+                     "       calendar adjustment cannot be specified in the "
+                     "same run.");
+            } else if (ctx.prior.priadj > 1 || ctx.priusr.nuspad > 0 ||
+                       ctx.priusr.nustad > 0) {
+                err2("ERROR: Cannot use prior adjustment factors in a "
+                     "pseudo-additive seasonal",
+                     "       adjustment.");
+            } else if (ctx.extend.nfcst == 0) {
+                // The fourth arm is a WARNING, not a refusal, and it is LIVE on
+                // composite-psuadd's total -- which is how the whole block was
+                // found missing. Two `lblnk` records, exactly where the Fortran
+                // puts them.
+                writln(ctx, "WARNING: Pseudo-additive seasonal adjustment will "
+                            "not produce forecasts",
+                       stdio::STDERR, ctx.units.mt2, true);
+                writln(ctx, "         of the final seasonal difference unless "
+                            "regARIMA forecasts are",
+                       stdio::STDERR, ctx.units.mt2, false);
+                writln(ctx, "         used to extend the series.",
+                       stdio::STDERR, ctx.units.mt2, false);
+                writln(ctx, "         The regARIMA model used to extend the "
+                            "series cannot include",
+                       stdio::STDERR, ctx.units.mt2, true);
+                writln(ctx, "         regressors that result in preadjustment "
+                            "factors (such as outlier,",
+                       stdio::STDERR, ctx.units.mt2, false);
+                writln(ctx, "         trading day or holiday regressors) when "
+                            "pseudo-additive seasonal",
+                       stdio::STDERR, ctx.units.mt2, false);
+                writln(ctx, "         adjustment is used.  If your model has "
+                            "such regressors, use the",
+                       stdio::STDERR, ctx.units.mt2, false);
+                writln(ctx, "         noapply argument of the regression spec.",
+                       stdio::STDERR, ctx.units.mt2, false);
+            }
+        }
 
         // gtinpt.f:1203-1216 -- resolve the two out-of-sample switches. Each spec
         // supplies at most one (`estimate{outofsample=}` -> outest,

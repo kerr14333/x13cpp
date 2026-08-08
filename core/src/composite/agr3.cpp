@@ -190,9 +190,33 @@ void agr3(X13Context& ctx, const int* begspn) {
     divsub(ctx.mq5a_stime.data(), ctx.x11srs.sti.data(), stexx, pos1ob, posfob, muladd);
 
     // agr3.f:266-280 -- the indirect seasonal factors, plus the total/calendar
-    // adjustment factors. (Psuadd -- pseudo-additive -- is increment 3.)
-    divsub(ctx.x11srs.sts.data(), as.o5.data(), ctx.x11srs.stci.data(),
-           pos1bk, posffc, muladd);
+    // adjustment factors.
+    //
+    // The PSEUDO-ADDITIVE arm (:267-272) was the last unported piece of
+    // composite. Measured on the oracle, composite-fixed with the log transform
+    // dropped, mult vs pseudoadd: every other indirect table is bit-exact
+    // without it and `isf` alone is 1.6e-06 out -- the two formulas are close,
+    // which is exactly why an unported arm survived behind OUTCOME: OK.
+    //
+    // Three things the arm is NOT, all worth reading off the Fortran rather
+    // than inferred from the multiplicative line below it: the numerator is
+    // `O2` (the calendar-adjusted aggregate), not `O5`; the denominator is
+    // `Stc` -- the raw filter output -- and NOT the `stc2in` that :258's Sti
+    // was formed against; and it subtracts that Sti back out. `stsb`, the
+    // seasonal DIFFERENCES table D10B (`isd`), exists only on this arm.
+    if (ctx.x11msc.psuadd) {
+        ctx.agr_stsb.assign(PLEN, 0.0);
+        for (int i = pos1bk; i <= posffc; ++i) {
+            ctx.x11srs.sts(i) = (as.o2(i) / ctx.x11srs.stc(i)) -
+                                ctx.x11srs.sti(i) + 1.0;
+            ctx.agr_stsb[static_cast<std::size_t>(i - 1)] =
+                ctx.x11srs.stc(i) * (ctx.x11srs.sts(i) - 1.0);
+        }
+    } else {
+        ctx.agr_stsb.clear();
+        divsub(ctx.x11srs.sts.data(), as.o5.data(), ctx.x11srs.stci.data(),
+               pos1bk, posffc, muladd);
+    }
     ctx.agr_ststd.assign(PLEN, 0.0);
     divsub(ctx.agr_ststd.data(), as.o2.data(), ctx.x11srs.stci.data(),
            pos1bk, posffc, muladd);

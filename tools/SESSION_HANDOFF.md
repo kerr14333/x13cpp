@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots; then `x11regression{outlierspan=}`, which took `cvrerr.f` with it; and `force{}` on an X-11 COMPOSITE, unported behind OUTCOME: OK -- found because the composite harness emitted no residual-seasonality F-test row at all, which was also hiding a ninth span-replay save/restore miss)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots; then `x11regression{outlierspan=}`, which took `cvrerr.f` with it; and `force{}` on an X-11 COMPOSITE, unported behind OUTCOME: OK -- found because the composite harness emitted no residual-seasonality F-test row at all, which was also hiding a ninth span-replay save/restore miss; and PSEUDO-ADDITIVE, which closes composite{} -- two lines of agr3, and behind them two entirely unported refusal blocks, a second Mt2 channel nobody read, and `Lindot`, a gtinpt DEFAULT the port never wrote that had four agr3 guards dead)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7524<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->864<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7592<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->865<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -424,7 +424,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7524<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7592<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2468,6 +2468,77 @@ disk with a floor assertion. Metafile goldens are raw
 `.spc` standalone, which for a `composite{}` total produces no components and so
 no indirect tables at all.
 
+## This session, part 46: pseudo-additive composite — two lines of port, and three defects found trying to measure them
+
+Board item 2's remainder, which closes `composite{}`. `agr3.f:266-276` is an
+`IF(Psuadd)`/`ELSE`; the ELSE was ported and the Psuadd arm was not.
+
+**Oracle on-vs-off**, same corpus with the log dropped (pseudo-additive and a
+log are incompatible, so `composite-fixed` is NOT the comparison arm), mult vs
+pseudoadd: every other indirect table already bit-exact and `isf` alone
+**1.6e-06** out, with `isd` — D10B, the seasonal DIFFERENCES, produced on this
+arm only — absent entirely. The arm's numerator is `O2` not `O5`, and its
+denominator is `Stc`, not the `stc2in` that the same line's `Sti` was formed
+against.
+
+Then three things fell out of trying to mutation-test it.
+
+**`editor.f:2508-2545` was unported** — four arms, three ERRORs and a WARNING,
+deciding whether pseudo-additive can run at all. Found because making the
+`Stc`/`stc2in` mutation testable needs a level shift on a component, and the
+oracle refused the probe spec outright while the engine adjusted at
+`OUTCOME: OK`. `run_spectrum.cpp:436` had been resting on this block: it argues
+spcdrv's Psuadd branch is provably inert BECAUSE `editor.f:2508-2523` refuses
+the configurations that would expose it — correct about the oracle, and the
+engine did not implement the premise. Placement cost two moves: beside the
+`editor.f:2500` Gudval loop in `x11_prestage` all three edge specs still
+reported OK, because **the M1 gate drives a parse-only harness**; and in
+`gtinpt` it had to go BELOW `gtinpt.f:1142-1167`, because the WARNING arm keys
+on `Nfcst` and `Nfcst` is NOTSET above that.
+
+**`editor.f:788-847` was unported too** — six refusals on leap-year /
+length-of-period prior adjustments. Found because the arm-3 spec needs
+`transform{adjust=lom}` to reach `Priadj>1`, which on a non-log run trips this
+block first and the M1 gate compares the WHOLE ERROR list. Note its shape: two
+sibling `Priadj` arms, then an INDEPENDENT `IF(Axrgtd)` that fires on top of
+either and MUTATES (`Priadj=1`, `Picktd=F`).
+
+**`x13run_composite` dumped Mt2 only on FATAL** — entry 81's trap, fixed for
+`x13run_x11` and still open in this harness, so every non-fatal NOTE and WARNING
+a composite emitted was discarded. Now per spec, `===ERR <base>===` framed, and
+buffered into `out` rather than printf'd (this harness prints `OUTCOME:` first).
+Reading it also showed the harness passing a bare basename where genfor.f prints
+the spec FILENAME — a header that had been wrong for as long as it was unread.
+
+**`Lindot` was never written.** `gtinpt.f:311` defaults `composite{indoutlier=}`
+to yes; the port assigned the flag only in the parse arm, so four `agr3` guards
+were dead — the indirect outlier-factor build, the level-shift refold into the
+published trend, the AO factor, the D8 divide. Invisible because every consumer
+is a CONJUNCTION with `Lindls`/`Lindao` and no composite carried an outlier. One
+component-level shift and `itn`/`iir`/`id8`/`id9` came back **3.5e-04** out at
+`OUTCOME: OK`; ~5e-15 with the default written. Second instance of entry 87's
+class, and the generalisation is that a DEFAULT living only in `gtinpt.f`'s
+initialisation block is the same defect as an unadvanced mode variable.
+
+**Two mutations are inert BY CONSTRUCTION, which is not the same as saturated.**
+`Stc` vs `stc2in` differ only when `Lindls`, which pseudo-additive now refuses.
+`O2` vs `O5` differ only when `Faccal != 1`, and all four routes to a calendar
+factor were tried against the oracle and refused (regARIMA TD/holiday; an
+x11regression TD or holiday group; `x11regression{tdprior=}`;
+`x11{x11easter=yes}`). A saturated precondition wants a better spec; a theorem
+wants writing down.
+
+Mutations, verified-0 baseline, full suite: Psuadd arm never taken **3**;
+`isd` on every mode **3**; the feasibility block disabled **5**; its WARNING arm
+alone **1**; the prior-adjustment block **1**; the harness Mt2 dump **1**;
+`Lindot` back to false **5**.
+
+Gated by `census-examples/composite-psuadd/` and `composite-outlier/` (new files
+`test_composite_psuadd.py`, `test_composite_outlier.py`) plus three `edge/`
+specs, one per ERROR arm, each written so the other two arms are false.
+`test_composite_force.py`'s F-test-row gate picked both new corpora up with no
+edit — it discovers every composite golden carrying an `id11.f` row.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -2497,12 +2568,10 @@ no indirect tables at all.
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
    36-39 above and entries 83 and 85-88 before touching any of it. Note that
    entry 86 narrowed entry 83's `fixreg=` conclusion: read them together.
-2. **What is left of `composite{}`: pseudo-additive (`Psuadd`), and nothing
-   else.** The forced/rounded indirect series closed in part 45 -- both arms of
-   `agr3.f:436`, both F-test writers, two corpora. `Psuadd` on the composite
-   path has never been probed: start with the oracle on-vs-off, because
-   `x11pt1.f:52` collapses `Muladd` 2->0 for the whole prior-adjustment stage
-   and a guard placed either side of that tests a different value (entry 24).
+2. **`composite{}` is CLOSED** as of part 46 -- pseudo-additive was the last
+   piece. What remains under that heading is not composite work: `cmpchi`'s
+   chi-square/F diagnostics and the aggregate-composition header table, both
+   part of the deferred `.out` print engine. See `tools/composite_scouting.md`.
 3. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
 4. **`ssx11a.f:105-106`'s per-span outlier window is ported and UNGATED**

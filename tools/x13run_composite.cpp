@@ -164,8 +164,12 @@ int main(int argc, char** argv) {
         const bool lseats = spec_wants_seats(text);
         bool ok;
         try {
-            ok = lseats ? x13::run_seats(ctx, text, base)
-                        : x13::run_x11(ctx, text, base);
+            // `spec`, not `base`: this string is the name genfor.f prints in the
+            // .err header, and the oracle prints it WITH the extension. The
+            // harness passed the bare base for as long as nobody read the
+            // channel.
+            ok = lseats ? x13::run_seats(ctx, text, spec)
+                        : x13::run_x11(ctx, text, spec);
         } catch (const std::exception& e) {
             std::fprintf(stderr, "x13run_composite: %s: exception: %s\n",
                          base.c_str(), e.what());
@@ -192,6 +196,23 @@ int main(int argc, char** argv) {
         // gate reads it like any other single-series run; components print with a
         // `<base>:` prefix so one invocation covers the whole metafile.
         const std::string prefix = last ? std::string() : base + ":";
+
+        // The Mt2 channel on a SUCCESSFUL run, per spec of the metafile. This
+        // harness dumped it only on FATAL (:177) -- entry 81's trap, still open
+        // here: every non-fatal NOTE and WARNING a composite run emits was
+        // discarded unread. editor.f:2528's pseudo-additive forecast WARNING is
+        // live on composite-psuadd's total and is what made the omission
+        // visible. Markers are per-spec so a component's block cannot be read
+        // as the total's.
+        // Buffered into `out` like every table, NOT printf'd: this harness
+        // prints `OUTCOME:` first and flushes `out` after it, so a direct write
+        // here lands ahead of the outcome line and breaks every gate that reads
+        // stdout's first line.
+        out += "===ERR ";
+        out += prefix.empty() ? std::string("total") : base;
+        out += "===\n";
+        out += ctx.channels_.unit(ctx.units.mt2).str();
+        out += "===END ERR===\n";
         const int sp = ctx.model.sp;
         const int* begspn = ctx.mdldat.begspn.data();
         const int pos1ob = ctx.x11ptr.pos1ob;
@@ -396,6 +417,16 @@ int main(int argc, char** argv) {
                      ctx.x11_e18.data(), pos1ob);
                 dump(out, prefix, "ita", begspn, sp, e18_frst, e18_last,
                      ctx.x11_eb.data(), pos1ob);
+            }
+            // agr3.f:389-400 -- the PSEUDO-ADDITIVE seasonal differences
+            // (D10B). Punched only under Psuadd, and over the forecast span
+            // when the spec saves forecasts.
+            if (!ctx.agr_stsb.empty()) {
+                const int isd_last =
+                    (ctx.tbllog.savfct && ctx.extend.nfcst > 0) ? ctx.x11ptr.posffc
+                                                                : posfob;
+                dump(out, prefix, "isd", begspn, sp, pos1ob, isd_last,
+                     ctx.agr_stsb.data());
             }
             // The FORCED / ROUNDED indirect series (agr3.f:426-547), and the
             // `indforce:` savelog line beside them. Same three tags the agr3s

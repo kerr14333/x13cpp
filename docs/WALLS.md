@@ -35,11 +35,11 @@ reproduce.
 
 ## Composite
 
-- **`core/src/composite/agr3.cpp:330`**
+- **`core/src/composite/agr3.cpp:354`**
   agr3 sliding-spans store of the FORCED indirect SA (agr3.f:497's ssrit)
   *Fortran:* `agr3.f:497`
 
-- **`core/src/composite/agr3.cpp:359`**
+- **`core/src/composite/agr3.cpp:383`**
   agr3 sliding-spans store of the ROUNDED indirect SA (agr3.f:540's ssrit)
   *Fortran:* `agr3.f:540`
 
