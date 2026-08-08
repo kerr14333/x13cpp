@@ -152,6 +152,10 @@ void abend(X13Context& ctx);
 void errhdr(X13Context& ctx);
 void writln(X13Context& ctx, std::string_view oline, int flhdnl, int flhdn2, bool lblnk);
 void inpter(X13Context& ctx, int errtyp, const int* ptr, std::string_view errmsg);
+// cvrerr.f -- the two-date detail lines that follow a failed chkcvr.
+void cvrerr(X13Context& ctx, std::string_view srsttl, const int* begsrs,
+            int nobs, std::string_view spnttl, const int* begspn, int nspobs,
+            int sp);
 
 // --------------------------------------------------------------------------
 // Input buffer + lexer.

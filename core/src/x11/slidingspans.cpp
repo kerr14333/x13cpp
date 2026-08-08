@@ -933,15 +933,24 @@ void ssx11a_span_xrg_outliers(X13Context& ctx, bool otlfix) {
     const ss_working_save saved = ss_save_working(ctx);
     loadxr(ctx, /*toxreg=*/false);
 
-    // ssx11a.f:105-106 writes Begspn/Endspn into the COMMON Begxot/Endxot.
-    // Not reproduced: this port's x11mdl outlier-ID arm (x11reg.cpp:1340-1342)
-    // derives its own begxot/endxot LOCALLY from Begspn and Nspobs, which is
-    // the same pair for a span. The Fortran's COMMON also carries
-    // `x11regression{outlierspan=}` (gtxreg.f:666-673) and this port drops
-    // that option -- a separate gap, and the reason the two are not merged
-    // here.
-
     if (si.ssxotl) {
+        // ssx11a.f:105-106 -- the span's own window replaces whatever
+        // `x11regression{outlierspan=}` left in the COMMON, and note WHERE
+        // this sits: inside the Ssxotl arm, so a span that is NOT re-doing
+        // the identification keeps the main run's pair.
+        //
+        // UNGATED, and deliberately kept: deleting all four writes leaves the
+        // whole suite byte-identical. Half of that is structural -- idotlr
+        // clamps ibgtst/iedtst to the span (idotlr.f:207-212), so a main
+        // window that brackets the span collapses onto it -- and the other
+        // half is a measured null on the one spec that gets past the clamp
+        // (extra/airline_slidingspans-x11reg-outlierspan, whose header records
+        // what was tried). Transcription, not measurement, is what holds this
+        // up; see entry 93.
+        ctx.x11reg.begxot(1) = ctx.mdldat.begspn(1);
+        ctx.x11reg.begxot(2) = ctx.mdldat.begspn(2);
+        ctx.x11reg.endxot(1) = ctx.arima.endspn(1);
+        ctx.x11reg.endxot(2) = ctx.arima.endspn(2);
         // ssx11a.f:107-118 -- automatic AO identification is redone for every
         // span, so the PREVIOUS span's automatically identified columns come
         // out first. Without this the engine appends a fresh AO set per span

@@ -6102,3 +6102,95 @@ difference and the fall-through cascade).
 `getsav`'s new out-parameter — and adding `series{}` would switch on `a1`
 output that `run_pre_model`'s `wants_save()` has never seen. That is its own
 change with its own gate, and the comment at the call site says so.
+
+## 93. `x11regression{outlierspan=}` — parsed and dropped, and the critical value it silently owned
+
+Board item 2, and the third parsed-but-unread option in a row (entries 91, 92).
+`gtxreg.f:487-497` parses the argument into `spnotl`; `:665-674` resolves it into
+the COMMON `Begxot`/`Endxot`; `x11mdl.f:441` hands that pair to `idotlr` as the
+window the AUTOMATIC AO identification inside the irregular regression searches.
+This port consumed the value and re-derived the pair LOCALLY from
+`Begspn`/`Nspobs` at the `idotlr` call, so the option was ignored on the main
+run at `OUTCOME: OK`. Oracle on-vs-off first, as the rule says: on airline with
+`variables=(td) critical=3.0` the oracle identifies **203** AO columns over the
+full span, **9** with `outlierspan=(1955.1, )` and **28** with
+`outlierspan=(1952.1,1957.12)`.
+
+**The default is not what the local derivation computed.** `gtxreg.f:671`
+defaults `Endxot` to `Begsrs + Nobs - 1` — the end of the SERIES — while
+`Begxot` defaults to `Begspn`, the start of the span. A `series{span=}` that
+stops short therefore leaves the oracle's outlier window running past the span
+end, with no `outlierspan=` in the spec at all. This is the half a port fixes
+without noticing it existed.
+
+**And that difference is invisible in the obvious place.** `idotlr.f:207-212`
+clamps its own test range (`ibgtst = max(..,1)`, `iedtst = min(..,Nspobs)`), so
+a window ending past the span tests exactly the same points. The observable is
+the CRITICAL VALUE: `editor.f:1749-1757` derives `Critxr` from the outlier-span
+LENGTH when no `critical=` was given. So the port's Critxr derivation had to
+move out of `x11reg.cpp` and into the editor, where the oracle does it — which
+also fixes a second thing nothing had noticed: computed at the `idotlr` call, it
+tracked the SPAN on a sliding-spans or history replay, where the oracle fixes it
+once at spec-read from the main run's window.
+
+**A first draft of the default-window spec measured a ZERO for a mutation that
+really does change `Critxr`.** `span=(1950.1,1958.12)` puts the derived value at
+3.87 against the span's 3.83, and the resulting adjustment is bit-identical:
+the three AO lines the difference adds appear only in the iteration listing, and
+the final model is the same. Two hours went into "the mutation must not be
+compiling" before the answer turned out to be that the two verdicts agree. The
+spec now uses `span=(1951.1,1954.12)` — 120 months to the series end against the
+span's 48 — where d11 moves 1.8e-2 relative. **A parameter change that changes
+no verdict gates nothing, and it looks exactly like a dead code path.**
+
+**Ported:** the `outlierspan=` arm (note it differs from the `span=` arm twenty
+lines up in two Census ways: `gtdtvc` is called with a hardcoded `T` for
+`Havesp`, and `hvotsp` is set on the bare `ELSE`, so a date vector that failed
+to parse still switches the coverage checks on); the `Begxot`/`Endxot`
+resolution with both defaults; `gtxreg.f:678-695`'s two `chkcvr` refusals;
+`editor.f:1749-1757`'s `Critxr` derivation, including the `Cvxtyp` arm — which
+meant exposing `setcvl` from its anonymous namespace, where it had been
+file-local since it was written; `ssx11a.f:105-106`'s per-span window; and
+**`cvrerr.f`**, which turned out to be missing entirely.
+
+**`cvrerr` is the second half of every coverage refusal in the program, and the
+port had none of it.** Sixteen `CALL cvrerr` sites in the Fortran, each one
+following an `inpter` that names the rule with a pair of lines that name the two
+DATES that broke it. Not one of them is reached by a spec in the corpus, so
+nothing failed; a coverage refusal simply came out one third the size the oracle
+writes it. Same family as entry 81's unread Mt2 channel: an absent diagnostic on
+an error path is invisible until a spec asks for the error. Its three arms are
+independent `IF`s, not a chain — a span that both starts early and overruns
+prints two of them.
+
+**Mutations**, against a verified-0 baseline (full suite, `-n 8`):
+
+| mutation | gates failed |
+|---|---|
+| the parsed `outlierspan=` dates discarded (both defaults taken) | 44 |
+| the default END back to the span end | 20 |
+| the second coverage check (against the irregular-regression span) dropped | 1 |
+| `cvrerr`'s detail lines suppressed, `inpter` half kept | 2 |
+| `editor.f:1749`'s `Critxr` derivation disabled | **225** |
+| `ssx11a.f:105-106`'s per-span window write removed | **0** |
+
+**The zero is real and is kept anyway.** `idotlr`'s own clamp means a main-run
+window that brackets a span collapses onto that span, so the write can only
+matter where the main window starts INSIDE a span —
+`extra/airline_slidingspans-x11reg-outlierspan` is built to do exactly that, and
+even so no span identifies an AO in the restricted region either way, so the
+verdict is unchanged. Forcing one by dropping `critical=` to 2.0 kills the
+ORACLE too, on the design-size limit, before any table is written; 2.8 finds
+nothing new. The assignment stands on transcription, and its absence would be a
+divergence waiting for a spec with a span-local outlier. Written up in the spec
+header and at the call site so the next reader does not re-derive it.
+
+**Gated** by six new specs: `extra/airline_x11regression-outlierspan`
+(start-only, so one default arm still runs), `-outlierspan-both` (both dates,
+neither default), `-outlierspan-default` (no `outlierspan=` at all — the
+series-end default, via the critical value), `extra/airline_slidingspans-x11reg-outlierspan`
+(the pairing, ungated on the per-span write as above), and two `edge/` refusals:
+`x11regression-outlierspan-notinseries` (the first `chkcvr` and `cvrerr`'s
+start-date arm) and `-notinmodel` (the second — a window inside the series but
+outside the irregular regression's own `span=`, a different pair of dates and a
+different message, which a port that wired only the first arm passes).

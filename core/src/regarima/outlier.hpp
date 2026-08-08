@@ -38,6 +38,10 @@ void rdotlr(X13Context& ctx, const std::string& otlttl, const int* begspn,
 // solved (lassol) and extrapolated. Returns prm::DNOTST on internal failure.
 double setcv(int nspobs, double cvalfa);
 
+// setcvl.f: the large-sample (Ljung) variant of the same critical value, chosen
+// by Cvxtyp at editor.f:1752. Returns prm::DNOTST for a 1-point span.
+double setcvl(int nspobs, double cvalfa);
+
 // idotlr.f: automatic outlier identification driver. Forward-addition (add the
 // largest AO/LS/TC over the per-type critical value, re-estimate, repeat) then
 // backward-deletion (drop any auto-outlier whose non-robust t falls below the

@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-92, chronological). They used to live in this file and made it
+(entries 0-93, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -209,7 +209,9 @@ because by the time you would think to look them up, the damage is done.
   (`/x11srs/`, `/lkhd/`, `ctx.x11_f2tests`, `ctx.d8bd9a`, `/mdldat/`'s
   `Arimap`, `/orisrs/`'s `Stoap`) — check it by default, not per feature. The
   fifth one generalises the rule: the set needs **whatever a consumer
-  re-derives from, not only what it publishes.** The seventh shows what that
+  re-derives from, not only what it publishes.** (Eighth: `/x11reg/`'s
+  `Begxot`/`Endxot`, once `x11regression{outlierspan=}` stopped being dropped —
+  entry 93.) The seventh shows what that
   costs: `Stoap` is the regression-ADJUSTED original behind the `b1` table, and
   it equals the raw series on every spec with no `regression{}` — so the miss
   was invisible until one spec had both (entry 88, `b1` off by 5.0e-1). `history{}` re-estimates per span, so it leaves the last
@@ -275,7 +277,13 @@ because by the time you would think to look them up, the damage is done.
   that a refused run produced no output was true of any run that produced
   nothing for any reason — and a wall whose whole subject is a refusal is
   exactly where that assertion gets written (entry 85). A late refusal has a
-  complete run behind it; throw it away and you cannot gate it.
+  complete run behind it; throw it away and you cannot gate it. **A third form:
+  a diagnostic ROUTINE nobody calls.** `cvrerr.f` is the second half of every
+  coverage refusal in the program — sixteen call sites, each naming the two
+  DATES that broke the rule — and this port had the `inpter` half at all sixteen
+  and none of `cvrerr`, so a refusal came out one third the size the oracle
+  writes it (entry 93). No corpus spec reached one, which is exactly why it
+  survived. When you port a refusal, port the lines UNDER it.
 - **Where this port CAPTURES a result somewhere other than where the oracle
   does, the equivalence is a claim about WHICH BUFFER and at WHICH MOMENT — and
   it is only ever tested by the options the corpus happens to carry.** The
@@ -419,7 +427,15 @@ because by the time you would think to look them up, the damage is done.
   the restored clause could not evaluate. Entry 89 set `Irev`; the arm was
   bit-exact from that moment and the board item sat open for an increment
   (entry 90). When a fix measures zero, name its preconditions before believing
-  the number.
+  the number. **And the third direction: a probe SPEC whose parameter change
+  changes no VERDICT gates nothing, and reads exactly like a dead code path.**
+  Entry 93's first default-outlier-window spec moved the derived critical value
+  3.87 → 3.83 and produced a bit-identical adjustment, because the three
+  outliers between those thresholds appear only in the iteration listing — so a
+  mutation that genuinely rewrites that value measured 0, and hours went into
+  "the mutation must not be compiling." Pick the probe parameters so the
+  DOWNSTREAM DECISION flips, then confirm the flip in the oracle before writing
+  the spec.
 - **A passing mutation is also a claim about WHICH ARM the spec is on.**
   Mutation-test each ARM of a branch chain, not each routine — a spec that
   reaches the routine is not a spec that reaches the arm. Disabling `ssmdl`'s

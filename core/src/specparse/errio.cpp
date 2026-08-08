@@ -3,6 +3,7 @@
 #include "specparse/specparse.hpp"
 #include "common/x13context.hpp"
 #include "gen/notset.hpp"
+#include "regarima/outlier.hpp"      // wrtdat (cvrerr's date rendering)
 #include "x13/fformat.hpp"
 
 #include <algorithm>
@@ -59,6 +60,54 @@ void errhdr(X13Context& ctx) {
         mt2.put(rule + "\n");
         mt2.put(fwrite_fmt("(a)", " ") + "\n");
         hid.ierhdr = prm::NOTSET;
+    }
+}
+
+// cvrerr.f -- the DETAIL lines behind a failed chkcvr. Every `chkcvr` refusal in
+// the Fortran is a pair: an `inpter` naming the rule, then this, naming the two
+// dates that broke it. The port had the first half at every call site and none
+// of the second, so a coverage refusal came out one third the size the oracle
+// writes it. Not one of the sixteen call sites is reached by a spec in the
+// corpus today, which is why nothing failed -- an absent diagnostic on an error
+// path is invisible until a spec asks for the error.
+//
+// The three arms are independent IFs, not a chain: a span that both starts
+// early and is longer than the series prints two of them.
+void cvrerr(X13Context& ctx, std::string_view srsttl, const int* begsrs,
+            int nobs, std::string_view spnttl, const int* begspn, int nspobs,
+            int sp) {
+    const int STDERR = stdio::STDERR;
+    const int Mt2 = ctx.units.mt2;
+    auto& err = ctx.channels_.unit(STDERR);
+    auto& mt2 = ctx.channels_.unit(Mt2);
+    auto emit = [&](const std::string& rec) { err.put(rec); mt2.put(rec); };
+    int idif = 0;
+    dfdate(begspn, begsrs, sp, idif);
+    if (idif < 0) {
+        emit(fwrite_fmt("(' ERROR: ',a,' start date, ',a,"
+                        "', must begin on or after ',/,'        ',a,"
+                        "' start date, ',a,'.',/)",
+                        std::string(spnttl), wrtdat(begspn, sp),
+                        std::string(srsttl), wrtdat(begsrs, sp)) + "\n");
+    }
+    if (nobs - idif < nspobs) {
+        int idate[2];
+        addate(begspn, sp, nspobs - 1, idate);
+        const std::string d1 = wrtdat(idate, sp);
+        addate(begsrs, sp, nobs - 1, idate);
+        emit(fwrite_fmt("(' ERROR: ',a,' end date, ',a,"
+                        "', must end on or before ',/,'        ',a,"
+                        "' end date, ',a,'.',/)",
+                        std::string(spnttl), d1, std::string(srsttl),
+                        wrtdat(idate, sp)) + "\n");
+    }
+    if (nspobs <= 0) {
+        int idate[2];
+        addate(begsrs, sp, nobs - 1, idate);
+        emit(fwrite_fmt("(' ERROR: ',a,' end date, ',a,', must end after ',/,"
+                        "'        its own start date, ',a,'.',/)",
+                        std::string(spnttl), wrtdat(idate, sp),
+                        wrtdat(begsrs, sp)) + "\n");
     }
 }
 

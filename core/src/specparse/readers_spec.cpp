@@ -13,6 +13,7 @@
 #include "srslen.hpp"
 #include "model.hpp"   // prm::POTLR
 #include "x11/loadxr.hpp"   // loadxr, xrg_clear_working (x11regression model store)
+#include "regarima/outlier.hpp"   // setcv / setcvl (editor.f:1749's Critxr derivation)
 #include "composite/agr.hpp"   // agr1 (composite{} hands the aggregate over as the series)
 
 #include <cctype>
@@ -3979,9 +3980,24 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                stdio::STDERR, ctx.units.mt2, false);
         inptok = false;
     }
-    // (editor.f:1748-1757's Critxr derivation from the outlier-span length is
-    // left where this port already does it, at the idotlr call in x11mdl_td --
-    // same inputs, same setcv, and Begxot/Endxot are not resolved here.)
+    // editor.f:1749-1757 -- derive Critxr from the OUTLIER-SPAN length, once,
+    // here. It used to be done at the idotlr call in x11reg.cpp, which was the
+    // same arithmetic only because Begxot/Endxot did not exist yet and that
+    // site re-derived the pair from Begspn/Nspobs. Two things made the moved
+    // capture wrong once `outlierspan=` became real: the window is no longer
+    // the model span, and x11mdl runs again for every sliding-spans/history
+    // span, so the derived value tracked the SPAN length where the oracle
+    // fixes it at spec-read time from the main run's.
+    if (ctx.x11log.otlxrg && dpeq(ctx.x11reg.critxr, prm::DNOTST)) {
+        int nobxot = 0;
+        dfdate(ctx.x11reg.endxot.data(), ctx.x11reg.begxot.data(), ctx.model.sp,
+               nobxot);
+        nobxot += 1;
+        ctx.x11reg.critxr = ctx.x11log.cvxtyp
+                                ? setcvl(nobxot, ctx.xrgmdl.cvxalf)
+                                : setcv(nobxot, ctx.xrgmdl.cvxalf);
+        if (dpeq(ctx.x11reg.critxr, prm::DNOTST)) inptok = false;
+    }
     //
     // editor.f:1760-1846's "Check options for AIC trading day test" block is
     // NOT ported: the td/tdstock agreement refusals, the Xtdtst 1->3 rewrite
@@ -4230,6 +4246,10 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // Column-major [YR/MO][1..2], NOTSET until parsed.
     int spnxrg[4] = {prm::NOTSET, prm::NOTSET, prm::NOTSET, prm::NOTSET};
     bool hvmdsp = false;
+    // gtxreg.f:163 -- outlierspan= (the window the automatic AO identification
+    // searches). Same [YR/MO][1..2] layout, its own NOTSET sentinel.
+    int spnotl[4] = {prm::NOTSET, prm::NOTSET, prm::NOTSET, prm::NOTSET};
+    bool hvotsp = false;
     std::string xrfile(static_cast<std::size_t>(stdio::PFILCR), ' ');
     std::string xrfmt(static_cast<std::size_t>(stdio::PFILCR), ' ');
     int nflchr = 0, nfmtch = 0;
@@ -4497,6 +4517,30 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                 inptok = false;
             } else if (argok) {
                 hvmdsp = true;
+            }
+        } else if (argidx == 26) {   // outlierspan -> spnotl (gtxreg.f:487-497)
+            // Note the two ways this arm differs from span= twenty lines up,
+            // both of them Census's and neither of them symmetric: gtdtvc is
+            // called with a HARDCODED `T` for havesp rather than the reader's
+            // own `Havesp`, and `hvotsp` is set on the bare ELSE -- so a date
+            // vector that failed to parse (argok false) still turns the
+            // coverage checks on, where span= requires argok.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            bool argok = true;
+            int nelt = 0;
+            // gtdtvc.f takes Havesp by reference and can clear it; the Fortran
+            // passes the literal `T` here, so give it a local to write on.
+            bool otlhsp = true;
+            gtdtvc(ctx, otlhsp, ctx.model.sp, LPAREN, false, 2, spnotl,
+                   nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt == 1) {
+                inpter(ctx, PERROR, L.errpos.data() + 1,
+                       "Need two dates for the span or use a comma as a place "
+                       "holder.");
+                inptok = false;
+            } else {
+                hvotsp = true;
             }
         } else if (argidx == 24) {   // forcecal -> Calfrc (gtxreg.f:463-468)
             // Was falling through to the discard arm below -- parsed and thrown
@@ -4809,7 +4853,73 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                 inpter(ctx, PERRNP, L.errpos.data() + 1,
                        "Irregular component regression span not within the "
                        "span of available data.");
+                cvrerr(ctx, "span", ctx.mdldat.begspn.data(),
+                       ctx.mdldat.nspobs,
+                       "irregular component regression span",
+                       xr.begxrg.data(), nxrg, sp);
+                if (ctx.error.lfatal) return;
                 inptok = false;
+            }
+        }
+        // gtxreg.f:662-695 -- resolve `outlierspan=` into Begxot/Endxot, the
+        // window x11mdl's automatic AO identification searches. Parsed and
+        // DISCARDED until now: x11reg.cpp re-derived the pair locally from
+        // Begspn/Nspobs on every call, so the option was silently ignored on
+        // the main run. Measured on airline + x11regression{variables=(td)
+        // critical=3.0}, where the oracle identifies 203 AO columns over the
+        // full span: `outlierspan=(1955.1, )` takes it to 9 and
+        // `outlierspan=(1952.1,1957.12)` to 28, while this engine returned the
+        // unrestricted 203 at OUTCOME: OK.
+        //
+        // Note the DEFAULT end date, which is not the one the local derivation
+        // used: `Begsrs + Nobs - 1` is the end of the SERIES, not the end of
+        // the span. With a `series{span=}` that stops short, the oracle's
+        // outlier window runs past the span end and the two disagree even with
+        // no outlierspan= in the spec at all.
+        {
+            if (spnotl[0] == prm::NOTSET) {
+                xr.begxot(1) = ctx.mdldat.begspn(1);
+                xr.begxot(2) = ctx.mdldat.begspn(2);
+            } else {
+                xr.begxot(1) = spnotl[0];
+                xr.begxot(2) = spnotl[1];
+            }
+            if (spnotl[2] == prm::NOTSET) {
+                int endv[2];
+                addate(ctx.arima.begsrs.data(), sp, ctx.arima.nobs - 1, endv);
+                xr.endxot(1) = endv[0];
+                xr.endxot(2) = endv[1];
+            } else {
+                xr.endxot(1) = spnotl[2];
+                xr.endxot(2) = spnotl[3];
+            }
+            // gtxreg.f:678-695 -- the outlier span must lie inside BOTH the
+            // series and the irregular-regression span, and unlike the span=
+            // check above these are PERROR (with the input line echoed), not
+            // PERRNP.
+            if (hvotsp) {
+                int nelt = 0, nmdl = 0;
+                dfdate(xr.endxot.data(), xr.begxot.data(), sp, nelt);
+                nelt += 1;
+                dfdate(xr.endxrg.data(), xr.begxrg.data(), sp, nmdl);
+                nmdl += 1;
+                if (!chkcvr(ctx.arima.begsrs.data(), ctx.arima.nobs,
+                            xr.begxot.data(), nelt, sp)) {
+                    inpter(ctx, PERROR, L.errpos.data() + 1,
+                           "Span not within the series");
+                    cvrerr(ctx, "Series", ctx.arima.begsrs.data(),
+                           ctx.arima.nobs, "outlier test span",
+                           xr.begxot.data(), nelt, sp);
+                    inptok = false;
+                } else if (!chkcvr(xr.begxrg.data(), nmdl, xr.begxot.data(),
+                                   nelt, sp)) {
+                    inpter(ctx, PERROR, L.errpos.data() + 1,
+                           "Span not within the model span");
+                    cvrerr(ctx, "Model span", xr.begxrg.data(), nmdl,
+                           "outlier test span", xr.begxot.data(), nelt, sp);
+                    inptok = false;
+                }
+                if (ctx.error.lfatal) return;
             }
         }
         // Both halves of the narrowing are now ported, and they are DIFFERENT

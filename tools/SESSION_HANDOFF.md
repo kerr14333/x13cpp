@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots; then `x11regression{outlierspan=}`, which took `cvrerr.f` with it)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7398<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->846<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7484<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->864<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7398<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7484<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2346,6 +2346,64 @@ Widening a slice is not shifting it.
 output `run_pre_model`'s `wants_save()` has never seen. Its own change, its own
 gate; the call site says so.
 
+## This session, part 44: `x11regression{outlierspan=}` closed — and `cvrerr.f` was missing entirely
+
+Board item 2, the third parsed-but-unread option in three increments. Full
+record in `docs/M5_PORT_NOTES.md` entry 93; what carries forward:
+
+**The option.** `gtxreg.f:487-497` parses it, `:665-674` resolves it into the
+COMMON `Begxot`/`Endxot`, `x11mdl.f:441` hands that to `idotlr`. This port
+re-derived the pair LOCALLY from `Begspn`/`Nspobs`, so it was ignored on the
+main run at `OUTCOME: OK` — oracle on-vs-off, airline `critical=3.0`: **203**
+AO columns full-span, **9** with `outlierspan=(1955.1, )`, **28** with
+`(1952.1,1957.12)`.
+
+**The DEFAULT was wrong too, and differently.** `Endxot` defaults to
+`Begsrs + Nobs - 1`, the end of the SERIES, while `Begxot` defaults to
+`Begspn`. With a `series{span=}` that stops short, the two disagree with no
+`outlierspan=` in the spec at all.
+
+**Where that shows is not where you look.** `idotlr.f:207-212` clamps its own
+test range to the span, so a window ending past the span tests the same points.
+The observable is the CRITICAL VALUE — `editor.f:1749-1757` derives `Critxr`
+from the outlier-span LENGTH — so the derivation moved out of `x11reg.cpp` into
+the editor, which also fixed it tracking the SPAN on a replay where the oracle
+fixes it once at spec-read. Disabling it now fails **225** gates.
+
+**A zero that was not a zero.** The first default-window spec used
+`span=(1950.1,1958.12)`: 3.87 against 3.83, and the adjustment is
+bit-identical, because the three AO lines the difference adds are in the
+iteration listing only. Hours went into "the mutation is not compiling."
+`span=(1951.1,1954.12)` (120 months against 48) moves d11 1.8e-2 and the
+mutation now fails 20. **A parameter change that changes no verdict gates
+nothing, and reads exactly like a dead code path.**
+
+**`cvrerr.f` was not ported at all** — the DETAIL lines behind every failed
+`chkcvr` in the program, sixteen call sites, each naming the two dates that
+broke the rule. No corpus spec reached one, so a coverage refusal simply came
+out one third the size the oracle writes it. Now ported (three independent
+`IF` arms, not a chain) and wired at the gtxreg sites.
+
+**Also ported:** the two `chkcvr` refusals at `gtxreg.f:678-695`, the `Cvxtyp`
+arm (which meant exposing `setcvl` from the anonymous namespace it had lived in
+since it was written), and `ssx11a.f:105-106`'s per-span window.
+
+**Kept ungated on purpose:** the per-span window write measures **0** and is
+kept. `idotlr`'s clamp collapses a bracketing main window onto the span, and on
+the one spec built to get past that
+(`extra/airline_slidingspans-x11reg-outlierspan`) no span identifies an AO in
+the restricted region either way; `critical=2.0` to force one kills the ORACLE
+on the design-size limit. Transcription holds it up, not measurement — recorded
+in the spec header and at the call site.
+
+**Mutations**: dates discarded **44**; default end back to the span end **20**;
+second coverage check dropped **1**; `cvrerr` suppressed **2**; editor `Critxr`
+disabled **225**; per-span write removed **0** (above).
+
+**Gated** by `extra/airline_x11regression-outlierspan`, `-outlierspan-both`,
+`-outlierspan-default`, `extra/airline_slidingspans-x11reg-outlierspan`, and
+`edge/x11regression-outlierspan-notinseries` / `-notinmodel`.
+
 ## Open, in the order I would take them
 
 1. **One slidingspans wall left, and it is a judgement call, not a port.**
@@ -2373,18 +2431,21 @@ gate; the call site says so.
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
    36-39 above and entries 83 and 85-88 before touching any of it. Note that
    entry 86 narrowed entry 83's `fixreg=` conclusion: read them together.
-2. **`x11regression{outlierspan=}` is parsed and dropped** (entry 87).
-   `gtxreg.f:666-673` writes the COMMON `Begxot`/`Endxot` from `spnotl`;
-   `x11reg.cpp:1340-1342` re-derives that pair locally from `Begspn`/`Nspobs`
-   every time, so the option is silently ignored on the MAIN run. It coincides
-   with `ssx11a.f:105-106`'s per-span value, which is why the span path did not
-   need it.
-3. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
+2. **What is left of `composite{}`**, now small: pseudo-additive (`Psuadd`) and
    the forced/rounded indirect series on the **agr3** path (`agr3.f:426-538` --
    ported for agr3s, still absent for agr3, and ungated on both for want of a
    `force{}` composite spec).
-4. **A composite whose components carry a residual peak**, to gate savpk's real
+3. **A composite whose components carry a residual peak**, to gate savpk's real
    `.dir`/`.ind` split — only the degenerate branch runs today.
+4. **`ssx11a.f:105-106`'s per-span outlier window is ported and UNGATED**
+   (entry 93). Deleting all four writes leaves the suite byte-identical:
+   `idotlr` clamps its own test range to the span, so a main-run window that
+   brackets the span collapses onto it, and on the one spec built to get past
+   that (`extra/airline_slidingspans-x11reg-outlierspan`) no span identifies an
+   AO inside the restricted region either way. What is needed is a series with
+   a span-local outlier that survives a `critical=` the ORACLE also survives --
+   2.0 kills both on the design-size limit. Same shape as the `rind=1`
+   `bakusr`/`addusr` path in item 1.
 5. **Two unported Mt2 NOTEs** (task #43): `arima.f:936-960`'s fixed-coefficient
    NOTE, subtracted from the golden side of the slidingspans note gate by
    `_UNPORTED_NOTES` with `test_unported_notes_still_unported` guarding the

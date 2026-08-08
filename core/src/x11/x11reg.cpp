@@ -1350,22 +1350,20 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         (ctx.hiddn.irev < 4 || (ctx.hiddn.irev == 4 && ctx.rev.rvxotl)) &&
         (ctx.hiddn.issap < 2 || (ctx.hiddn.issap == 2 && ctx.sspinp.ssxotl));
     if (ctx.x11log.otlxrg && span_reid && ctx.xclude.nxcld == 0) {
-        int begxot[2] = {md.begspn(1), md.begspn(2)};
-        int endxot[2];
-        addate(begxot, sp, nspobs - 1, endxot);
-        int nobxot = 0;
-        dfdate(endxot, begxot, sp, nobxot);
-        nobxot += 1;
-        // editor.f:1749-1757 -- an explicit x11regression{critical=} IS the
-        // critical value; only when none was given is it derived from the
-        // outlier-span length. (The Cvxtyp corrected variant, setcvl, is
-        // deferred.) Reading the parsed value is the fix for a main-run
-        // wrong-numbers bug: this used to be the derived value unconditionally,
-        // so `critical=3.0` identified the default's outlier set instead of the
-        // user's -- measured d11 1.7e-4 relative on airline.
-        const double critxr = dpeq(ctx.x11reg.critxr, prm::DNOTST)
-                                  ? setcv(nobxot, ctx.xrgmdl.cvxalf)
-                                  : ctx.x11reg.critxr;
+        // x11mdl.f:441 hands idotlr the COMMON Begxot/Endxot. This used to
+        // re-derive the pair from Begspn/Nspobs, which was the same window only
+        // while `x11regression{outlierspan=}` was being dropped by the parser:
+        // the option moves it, and even with no outlierspan= at all the
+        // default's END is the series end (gtxreg.f:671, Begsrs+Nobs-1), not
+        // the span end. Written by gtxreg for the main run and by
+        // ssx11a.f:105-106 for each sliding-spans span.
+        const int* begxot = ctx.x11reg.begxot.data();
+        const int* endxot = ctx.x11reg.endxot.data();
+        // Critxr is whatever editor.f:1749-1757 left: the user's `critical=`,
+        // or the value derived there from the outlier-span length. Deriving it
+        // here instead made it track the SPAN on a replay (see the note in
+        // readers_spec.cpp's xrg_editor_setup).
+        const double critxr = ctx.x11reg.critxr;
         double cvec[3] = {critxr, critxr, critxr};
         int nefobs = nefotl;
         idotlr(ctx, /*ltstao=*/true, /*ltstls=*/false, /*ltsttc=*/false,

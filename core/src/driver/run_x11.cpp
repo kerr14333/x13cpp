@@ -197,6 +197,13 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // consumer re-derives from joins this set, not only what it publishes.
     const int begxrg_main[2] = {ctx.x11reg.begxrg(1), ctx.x11reg.begxrg(2)};
     const int endxrg_main[2] = {ctx.x11reg.endxrg(1), ctx.x11reg.endxrg(2)};
+    // ... and Begxot/Endxot with them (ssx11a.f:105-106, inside the Ssxotl
+    // arm). Same rule, eighth time: `x11regression{outlierspan=}` resolves
+    // into this pair at spec-read and a span replay writes its own window over
+    // it. The oracle leaves the last span's values there too and does not care,
+    // because it punched its tables before sspdrv ran.
+    const int begxot_main[2] = {ctx.x11reg.begxot(1), ctx.x11reg.begxot(2)};
+    const int endxot_main[2] = {ctx.x11reg.endxot(1), ctx.x11reg.endxot(2)};
     // prtd8b/prtd9a write straight onto ctx from inside x11pt3, so a span
     // replay overwrites them with that span's own extremes and moving-
     // seasonality ratios -- measured: airline_slidingspans reported the LAST
@@ -269,6 +276,10 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.x11reg.begxrg(2) = begxrg_main[1];
     ctx.x11reg.endxrg(1) = endxrg_main[0];
     ctx.x11reg.endxrg(2) = endxrg_main[1];
+    ctx.x11reg.begxot(1) = begxot_main[0];
+    ctx.x11reg.begxot(2) = begxot_main[1];
+    ctx.x11reg.endxot(1) = endxot_main[0];
+    ctx.x11reg.endxot(2) = endxot_main[1];
     ctx.d8bd9a = d8bd9a_main;
     ctx.x11reg_b16 = b16_main;
     ctx.x11reg_c16 = c16_main;

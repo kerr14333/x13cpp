@@ -57,18 +57,6 @@ double ppnd(double p, int& ier) {
     return v;
 }
 
-// setcvl.f -- large-sample (Ljung) critical value approximation.
-double setcvl(int nspobs, double cvalfa) {
-    if (nspobs == 1) return prm::DNOTST;   // undefined for a 1-point span
-    double pmod = 2.0 - std::sqrt(1.0 + cvalfa);
-    double dnobs = nspobs;
-    double acv = std::sqrt(2.0 * std::log(dnobs));
-    double bcv = acv - (std::log(std::log(dnobs)) + std::log(4.0 * PI_)) /
-                           (2.0 * acv);
-    double xcv = -std::log(-0.5 * std::log(pmod));
-    return (xcv / acv) + bcv;
-}
-
 // lassol.f -- solve AX=B (n<=3) by Gaussian elimination with partial pivoting
 // and row equilibration. a is column-major with leading dimension m. iflag=1 on
 // success, 2 if singular. The oracle's EQUIVALENCEd scalars are used in disjoint
@@ -122,6 +110,19 @@ void lassol(int n, const double* a, const double* b, int m, double* x,
     iflag = 2;
 }
 }  // namespace
+
+// setcvl.f -- large-sample (Ljung) critical value approximation. Namespace
+// scope, not file-local: editor.f:1752 calls it directly when Cvxtyp is set.
+double setcvl(int nspobs, double cvalfa) {
+    if (nspobs == 1) return prm::DNOTST;   // undefined for a 1-point span
+    double pmod = 2.0 - std::sqrt(1.0 + cvalfa);
+    double dnobs = nspobs;
+    double acv = std::sqrt(2.0 * std::log(dnobs));
+    double bcv = acv - (std::log(std::log(dnobs)) + std::log(4.0 * PI_)) /
+                           (2.0 * acv);
+    double xcv = -std::log(-0.5 * std::log(pmod));
+    return (xcv / acv) + bcv;
+}
 
 // setcv.f -- default outlier critical value from the test-span length.
 double setcv(int nspobs, double cvalfa) {
