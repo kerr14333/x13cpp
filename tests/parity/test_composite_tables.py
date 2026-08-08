@@ -46,8 +46,10 @@ sixteen id8/id9/ie*/ip*/iee/i18/ita save tables. See the two increment-4 section
 at the bottom of this file.
 
 Still deferred (tools/composite_scouting.md): cmpchi's chi-square/F diagnostics,
-the aggregate-composition header table, the forced/rounded indirect series, the
-SEATS branch (agr3s.f) and pseudo-additive.
+the aggregate-composition header table, and pseudo-additive. The SEATS branch
+(agr3s.f) is gated by test_composite_seats.py and the forced/rounded indirect
+series by test_composite_force.py -- which also carries the residual-seasonality
+F-test savelog rows (d11.f / id11.f) for every composite case, this one included.
 
 Run:  python -m pytest tests/parity/test_composite_tables.py -q
 """

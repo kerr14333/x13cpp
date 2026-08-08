@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**19 walls.**
+**21 walls.**
 
 
 ## Automatic model selection
@@ -31,6 +31,17 @@ reproduce.
 - **`core/src/automdl/automx.cpp:459`**
   pickmdl{} with regression{aictest=(user)} or user-defined holiday chi-square testing is not yet ported (usraic.f / chkchi.f have no C++; automx.f:463-500 runs them inside the candidate loop).
   *Fortran:* `automx.f:463-500`
+
+
+## Composite
+
+- **`core/src/composite/agr3.cpp:330`**
+  agr3 sliding-spans store of the FORCED indirect SA (agr3.f:497's ssrit)
+  *Fortran:* `agr3.f:497`
+
+- **`core/src/composite/agr3.cpp:359`**
+  agr3 sliding-spans store of the ROUNDED indirect SA (agr3.f:540's ssrit)
+  *Fortran:* `agr3.f:540`
 
 
 ## Diagnostics
@@ -74,7 +85,7 @@ reproduce.
 
 ## X-11
 
-- **`core/src/x11/slidingspans.cpp:762`**
+- **`core/src/x11/slidingspans.cpp:771`**
   slidingspans{} with a change-of-regime regression variable (ssmdl.f:150-241, which the oracle itself halts on -- see CB-39) is
   *Fortran:* `ssmdl.f:150-241`
 

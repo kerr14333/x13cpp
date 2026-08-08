@@ -201,10 +201,39 @@ of the component — optimizer path noise, not aggregation. The indirect
 adjustment is the sum of the component SA series, so it would land there
 undiluted.
 
-Still genuinely open for composite: pseudo-additive (`Psuadd`) and the
-forced/rounded indirect series on the **agr3** path (agr3.f:426-538 — ported for
-agr3s, still absent for agr3, and ungated on both for want of a `force{}`
-composite spec).
+Still genuinely open for composite: pseudo-additive (`Psuadd`).
+
+## `force{}` on an X-11 composite — agr3.f:404-547
+
+Closed. agr3s's twin was ported with the SEATS branch and agr3's was not, so
+`force{}` on an X-11 total computed no `Stci2`/`Stcirn` and returned
+`OUTCOME: OK`. Oracle on-vs-off, `composite-fixed` + `force{type=denton
+round=yes}`: three save files appear (`iaa`/`iff`/`irn`), `adjtot` flips no->yes,
+and nothing else in the run moves — forcing is a tail on the indirect adjustment,
+it does not feed back into the decomposition.
+
+Three things worth carrying:
+
+- **The observable that is easy to miss is a savelog row, not a table.**
+  `agr3.f:417` runs the residual-seasonality F-test on the indirect SA and
+  `:493`/`:537` run it again on the forced and rounded ones, all three under the
+  same `id11.f`/`id11.3y.f` keys — last write wins, so a forced run reports
+  0.87565 where the unforced one reports 0.02200. None of it was gateable:
+  `x13run_composite` emitted no F-test row on either branch.
+- **`agr3.f:537` passes `ib,ie` — the qmap OUTPUTS — not `Pos1ob,Posfob`.**
+  agr3s.f:328 passes the span and additionally guards on `Lx11`; agr3 does
+  neither. `ib`/`ie` are plain locals written only by the `Iyrt==1` arm, so with
+  `round=yes` and no `type=denton` the Fortran reads them undefined.
+- **`indforce=` is inert whenever every component carries the same `force{}`.**
+  Benchmarking commutes with the sum, measured on the oracle at 4.9e-15 for
+  `denton` (linear in the annual discrepancies) and for `regress` alike. The two
+  arms of `agr3.f:436` only separate when the components differ — one forced and
+  one not moves `iaa` by 1.4e-05, which is what
+  `census-examples/composite-force-indno/` is built around.
+
+Two corpora, `census-examples/composite-force/` (indforce default yes, denton +
+round) and `composite-force-indno/` (indforce=no, regress, north forced and
+south not), gated by `tests/parity/test_composite_force.py`.
 
 ## Harness / gate notes
 
@@ -260,5 +289,7 @@ composite is peak-free, so all four keys are `none` and a mutation swapping the
 two output halves passes the suite. Needs a composite whose components carry a
 residual seasonal or trading-day peak.
 
-**Still open for composite:** the SEATS branch (`agr3s.f`), pseudo-additive, and
-the forced/rounded indirect series.
+(This section's own "still open" list has been deleted rather than corrected: it
+had gone stale twice, once when `agr3s.f` landed and again when the forced/rounded
+indirect did. Status belongs to `tools/SESSION_HANDOFF.md`, which is rewritten
+each session; the sections above own what was MEASURED.)

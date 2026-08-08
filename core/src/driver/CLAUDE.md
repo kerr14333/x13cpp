@@ -9,6 +9,7 @@ already paid for once.
 | **1, 2, 26–30** | `history{}` — the forecast-error and model histories, `Fixper`/`Indrev`, the option surface + `fixreg=`, per-span `xrgdrv` + `fixx11reg=`, the held-back outliers (`rmotrv`/`chkorv`), and the alternate revision targets |
 | **10** | `series{modelspan=}` — the narrow/restore dance and its two C++-only seams |
 | **17, 48, 49** | `composite{}` — the X-11 indirect adjustment, the direct+indirect diagnostics, and the SEATS branch (`agr3s.f`) |
+| **94** | `composite{}` + `force{}` — agr3's forced/rounded tail (`agr3.f:426-547`), and the NINTH span-replay save/restore miss: the INDIRECT `id11.f`/`id11.3y.f` F-test pair, where the direct twin had been saved since entry 40. `Iagr` is 5 during a replay, so a `history{}` span files its own DIRECT D11 under the `i` keys |
 | **31** | fixed / initial coefficients — `regression{b=}`, `arima{ar= ma= diff=}`, and the rmfix/addfix seam |
 | **32** | the C / R / Python ABI, and the host floating-point-mode finding |
 | **44** | the model-only diagnostics path (`x11ari` with neither `Lx11` nor `Lseats`) |

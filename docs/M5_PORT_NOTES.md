@@ -6104,6 +6104,7 @@ output that `run_pre_model`'s `wants_save()` has never seen. That is its own
 change with its own gate, and the comment at the call site says so.
 
 ## 93. `x11regression{outlierspan=}` — parsed and dropped, and the critical value it silently owned
+94. `force{}` on an X-11 composite -- agr3's forced/rounded tail, and the F-test channel that could not report it missing
 
 Board item 2, and the third parsed-but-unread option in a row (entries 91, 92).
 `gtxreg.f:487-497` parses the argument into `spnotl`; `:665-674` resolves it into
@@ -6194,3 +6195,123 @@ series-end default, via the critical value), `extra/airline_slidingspans-x11reg-
 start-date arm) and `-notinmodel` (the second — a window inside the series but
 outside the irregular regression's own `span=`, a different pair of dates and a
 different message, which a port that wired only the first arm passes).
+
+## 94. `force{}` on an X-11 composite -- agr3's forced/rounded tail, and the F-test channel that could not report it missing
+
+Board item 2. `agr3s.f:218-338` was ported with the SEATS composite branch
+(entry 49); `agr3.f:426-547`, the same block on the X-11 path, never was.
+`agr3.cpp` ran to `:350` and jumped to `:598`, so a `force{}` on an X-11
+composite total computed no `Stci2` and no `Stcirn`, emitted none of
+`iaa`/`iff`/`irn`, and returned `OUTCOME: OK`. No wall: this is the silent
+early-out shape, not a refusal.
+
+**ORACLE on-vs-off first**, `census-examples/composite-fixed` plus
+`force{type=denton round=yes}`: three save files appear, `adjtot` flips
+`no`->`yes`, `indforce`/`adjtottype`/`adjtottarget`/`adjtotstart` appear, and
+**nothing else in the run moves**. Forcing is a tail on the indirect adjustment;
+it does not feed back into the decomposition. That is the whole reason the gap
+could sit behind `OK` -- every table the corpus was already checking was right.
+
+### The observable that hid it was a savelog row, not a table
+
+`agr3.f:417` runs the residual-seasonality F-test on the indirect SA. `:493`
+runs it again on the forced series and `:537` a third time on the rounded one --
+**all three under the same `id11.f` / `id11.3y.f` keys**, so the last write wins
+and a forced run reports 0.87565 where the unforced one reports 0.02200.
+
+`:417` was unported too, and could not have failed anything:
+**`x13run_composite` emitted no F-test row at all, on either branch**, so the
+`d11.f`/`d11.3y.f`/`id11.f`/`id11.3y.f` block that `x13run_x11` has dumped since
+entry 40 was simply not a channel on the composite path. Same class as entry
+81's Mt2 buffer. Wiring it found two more things immediately:
+
+- **A ninth span-replay save/restore miss.** The DIRECT `d11f` pair has been in
+  `run_x11.cpp`'s set since entry 40; its INDIRECT twin was not -- the
+  subset-restore shape this port keeps repeating (entry 72). On a composite
+  total `Iagr` is 5 during a replay (`agr2.f:250`), so a `history{}` span's
+  `ftest` files the replay's DIRECT D11 under the `i` keys and clobbers what
+  agr3 wrote. `composite-history` reported `id11.f = 0.02402` -- which is that
+  same spec's own `d11.f` -- against the oracle's 0.02200.
+- **A SEATS-adjusted total has no `d11.f` at all**, and the engine correctly
+  writes none. Gated as an absence rather than skipped.
+
+### Two Census asymmetries between agr3 and agr3s, both transcribed
+
+- `agr3.f:537` passes **`ib,ie`** to `ftest` -- the qmap OUTPUTS -- where
+  `agr3s.f:328` passes `Pos1ob,Posfob`. And `agr3.f:44` declares `ib,ie` as plain
+  locals that only the `Iyrt==1` arm writes, so `round=yes` with no
+  `type=denton` reads them undefined. The port initialises them to zero and says
+  so at the call.
+- `agr3s.f:327` guards the rounded F-test on `Lx11`; `agr3.f` does not.
+- The leading partial-year fix-up at `:467` loops `Posfob, ib-1` -- from the LAST
+  observation -- so with `ib > Pos1ob` the range is empty and the intended fix-up
+  never happens. `agr3s.f:257` has the identical line. Transcribed.
+
+### `indforce=` is inert unless the components DIFFER
+
+The `indforce=no` arm (`:476`) copies `Ci2`, the aggregate of the components' own
+forced SA, instead of benchmarking the indirect series. A mutation forcing the
+benchmarking arm measured **zero**, twice.
+
+It is not a gate gap. **Benchmarking commutes with the sum**: measured on the
+ORACLE, `iaa` is the same for `indforce=yes` and `indforce=no` to 4.9e-15 -- for
+`type=denton`, which is linear in the annual discrepancies, and, measured, for
+`type=regress` as well, so the obvious "use the nonlinear one" fix does nothing.
+The arms separate only when the components are not alike: drop `force{}` from ONE
+component and `iaa` moves **1.4e-05**. That is what
+`composite-force-indno` is built around, and it is in the spec header, because
+the next person will otherwise write the symmetric spec and conclude the arm is
+dead.
+
+Same family as entry 93's "a probe spec whose parameter change changes no VERDICT
+gates nothing", one level up: here the parameter changes no VALUE, because the
+operator it selects between is linear.
+
+### Two walls, and one that walls.py could not see
+
+`agr3.f:495-500` and `:539-546` store the forced/rounded series for sliding
+spans via `ssrit` on the COMPOSITE (`Iagr>=3`); this port's `ssrit` is scoped to
+`Iagr!=2` and has none of the `Indssp`/`Saind`/`Sfind` bookkeeping. Refused
+rather than stored wrong. Neither is reachable while `x12run.f` runs `sspdrv`
+after `x11ari`, so this is inventory. `agr3s.cpp` omits the same two arms
+silently.
+
+The first version named the helper `agr3_not_ported` and **`walls.py` did not
+list either wall**: its `HELPERS` tuple is matched with `\b`, and `\bnot_ported`
+cannot match inside `agr3_not_ported` because `_` is a word character. A wall
+the inventory cannot see is precisely what that tool exists to prevent, and the
+count would have stayed at 19 with two new gaps in the tree. Renamed
+`composite_not_ported` and registered in `walls.py`; 19 -> 21 gaps.
+
+### Mutations (verified-0 baseline, full suite `-n 8`)
+
+| mutation | fails |
+|---|---|
+| A the whole force block skipped (the pre-increment behaviour) | 12 |
+| B `agr3.f:417`'s ftest removed | 6 |
+| C `indforce=no` forced onto the benchmarking arm | 4 |
+| D `:537`'s ftest over `[Pos1ob,Posfob]` instead of `[ib,ie]` | 2 |
+| E the harness's four F-test savelog rows suppressed | 26 |
+| F `usefcst` dropped, `lstfrc` pinned to `Posfob` | 5 |
+
+B measured **0** until the F-test gate was widened past the two force cases: on
+a forced run `:417`'s write is overwritten twice, so a force-only gate is
+byte-identical without it. The gate now discovers every composite case whose
+golden carries an `id11.f` row, from disk, with a floor assertion. C measured 0
+twice, for the reason above.
+
+### Gated by
+
+`census-examples/composite-force/` (indforce default yes; `type=denton
+round=yes`, so qmap, both partial-year fix-ups, rndsa and all three F-test
+writers) and `census-examples/composite-force-indno/` (`indforce=no`,
+`type=regress` for the qmap2 branch, north forced and south not), via
+`tests/parity/test_composite_force.py` -- which also gates the `d11.f`/`id11.f`
+rows across every composite corpus, the `indforce:` savelog line, the absence of
+`irn` where the spec never asked for it, and that `iaa` is distinguishable from
+`isa` at all, so a no-op force cannot ride through.
+
+Note the bless path: `run_parity.py --update` runs each `.spc` STANDALONE, which
+for a `composite{}` total produces no components and therefore no indirect
+tables. Metafile goldens are raw `x13as_ascii_O2 -m composite -s` output, as the
+older composite cases are.

@@ -397,6 +397,24 @@ int main(int argc, char** argv) {
                 dump(out, prefix, "ita", begspn, sp, e18_frst, e18_last,
                      ctx.x11_eb.data(), pos1ob);
             }
+            // The FORCED / ROUNDED indirect series (agr3.f:426-547), and the
+            // `indforce:` savelog line beside them. Same three tags the agr3s
+            // branch above emits; this branch had none of it, which is what let
+            // force{} on an X-11 composite go unported behind OUTCOME: OK.
+            if (ctx.force.iyrt > 0) {
+                dump(out, prefix, "iaa", begspn, sp, pos1ob, posfob,
+                     ctx.adxser.stci2.data());
+                dump(out, prefix, "iff", begspn, sp, pos1ob,
+                     ctx.agr_frcfac_last, ctx.agr_frcfac.data());
+            }
+            if (ctx.force.lrndsa)
+                dump(out, prefix, "irn", begspn, sp, pos1ob, posfob,
+                     ctx.adxser.stcirn.data());
+            if (ctx.agr_indforce >= 0) {
+                std::snprintf(cbuf, sizeof cbuf, "indforce %s\n",
+                              ctx.agr_indforce ? "yes" : "no");
+                out += cbuf;
+            }
             // The INDIRECT x11pt4 diagnostics (x11ari.f:341) -- the .udg's
             // `if2.*` / `if3.*` block. Same field layout as the direct `f2.*` /
             // `f3.*` in tools/x13run_x11.cpp; only the source snapshot differs.
@@ -506,6 +524,29 @@ int main(int argc, char** argv) {
         dump_qs(ctx, prefix.c_str(), &out);
         dump_np(ctx, prefix.c_str(), &out);
         dump_spec_peaks(ctx, prefix.c_str(), &out);
+        // ftest.f:188/221 -- the residual-seasonality F-test savelog rows, the
+        // direct `d11.f`/`d11.3y.f` pair and the composite total's INDIRECT
+        // `id11.f`/`id11.3y.f` twins. Emitted by the other two harnesses since
+        // entry 40 and by this one never, so the whole channel was unread on the
+        // composite path: agr3.f:417's ftest was unported and no gate could say
+        // so. (x13run_x11.cpp's dump_d11f, minus its printf.)
+        {
+            char fbuf[160];
+            struct { const char* k; bool on; double f, p; } d11[] = {
+                {"d11.f", ctx.x11_d11f_set, ctx.x11_d11f, ctx.x11_d11f_prob},
+                {"d11.3y.f", ctx.x11_d11f3y_set, ctx.x11_d11f3y,
+                 ctx.x11_d11f3y_prob},
+                {"id11.f", ctx.x11_id11f_set, ctx.x11_id11f,
+                 ctx.x11_id11f_prob},
+                {"id11.3y.f", ctx.x11_id11f3y_set, ctx.x11_id11f3y,
+                 ctx.x11_id11f3y_prob}};
+            for (const auto& d : d11) {
+                if (!d.on) continue;
+                std::snprintf(fbuf, sizeof fbuf, "%s%s %.15E %.15E\n",
+                              prefix.c_str(), d.k, d.f, d.p);
+                out += fbuf;
+            }
+        }
         // ... and the INDIRECT (Iagr==4) half, which only the total has.
         dump_diag_indirect(ctx, prefix.c_str(), &out);
 

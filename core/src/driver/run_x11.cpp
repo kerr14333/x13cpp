@@ -249,6 +249,17 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     const double d11f_main[4] = {ctx.x11_d11f, ctx.x11_d11f_prob,
                                  ctx.x11_d11f3y, ctx.x11_d11f3y_prob};
     const bool d11f_set_main[2] = {ctx.x11_d11f_set, ctx.x11_d11f3y_set};
+    // ...and the NINTH time (task 54). The direct pair above has been saved
+    // since entry 40; its INDIRECT twin was not, which is the subset-restore
+    // shape this file keeps repeating. On a composite total `Iagr` is 5 during a
+    // span replay (agr2.f:250), so ftest files the replay's DIRECT D11 under the
+    // `i` keys and clobbers what agr3 wrote -- `composite-history` reported
+    // id11.f = 0.02402, which is that spec's own d11.f, against the oracle's
+    // 0.02200. Invisible until the composite harness started emitting the rows
+    // at all: a channel nobody reads is a channel nobody gates.
+    const double id11f_main[4] = {ctx.x11_id11f, ctx.x11_id11f_prob,
+                                  ctx.x11_id11f3y, ctx.x11_id11f3y_prob};
+    const bool id11f_set_main[2] = {ctx.x11_id11f_set, ctx.x11_id11f3y_set};
     const auto autosf_main = ctx.x11_autosf_msr;
     const int sfmsr_main = ctx.x11_sfmsr_filter;
     const int d7trend_main = ctx.x11_d7trendma;
@@ -308,6 +319,12 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     ctx.x11_d11f3y_prob = d11f_main[3];
     ctx.x11_d11f_set = d11f_set_main[0];
     ctx.x11_d11f3y_set = d11f_set_main[1];
+    ctx.x11_id11f = id11f_main[0];
+    ctx.x11_id11f_prob = id11f_main[1];
+    ctx.x11_id11f3y = id11f_main[2];
+    ctx.x11_id11f3y_prob = id11f_main[3];
+    ctx.x11_id11f_set = id11f_set_main[0];
+    ctx.x11_id11f3y_set = id11f_set_main[1];
     ctx.x11_autosf_msr = autosf_main;
     ctx.x11_sfmsr_filter = sfmsr_main;
     ctx.x11_d7trendma = d7trend_main;

@@ -753,6 +753,15 @@ bool ssmdl_fix_model(X13Context& ctx, bool& tdfix, bool& holfix, bool otlfix,
             // all, this port wrote both in full. See CB-39. Refusing here is the
             // honest floor: it is not the oracle's message, but it is a refusal
             // where the oracle refuses, instead of numbers where it has none.
+            //
+            // DECIDED 2026-08-08 -- this stays a wall; it is not a deferred
+            // port. Transcribing :150-241 buys ~90 lines whose only reachable
+            // outcome is arriving at the garbage date and stopping, and the
+            // stop is ALREADY gated bit-exact
+            // (test_slidingspans_halt_matches_oracle). The parity contract is
+            // over observable output, and the observable is identical. Revisit
+            // only if Census fixes the `index` typo, which would make the arm
+            // live for the first time.
             if (rtype == PRRTST || rtype == PRRTTD || rtype == PRRTSE ||
                 rtype == PRRTTS || rtype == PRRTLM || rtype == PRRTLQ ||
                 rtype == PRRTLY || rtype == PRRTSL || rtype == PRR1TD ||

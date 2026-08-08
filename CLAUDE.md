@@ -182,7 +182,7 @@ each session and therefore cannot rot. Do not restate it here.
 
 Every M5 feature that closed did so with measurements, traps and Census
 defects attached, and those records are in **`docs/M5_PORT_NOTES.md`**
-(entries 0-93, chronological). They used to live in this file and made it
+(entries 0-94, chronological). They used to live in this file and made it
 ~40k tokens resident in every session.
 
 **Read the matching entry before working on a subsystem.** Several of those
@@ -211,7 +211,10 @@ because by the time you would think to look them up, the damage is done.
   fifth one generalises the rule: the set needs **whatever a consumer
   re-derives from, not only what it publishes.** (Eighth: `/x11reg/`'s
   `Begxot`/`Endxot`, once `x11regression{outlierspan=}` stopped being dropped —
-  entry 93.) The seventh shows what that
+  entry 93. **Ninth: the INDIRECT `id11.f`/`id11.3y.f` F-test pair, whose DIRECT
+  twin had been in the set since entry 40** — the subset-restore shape below, one
+  field at a time. On a composite total `Iagr` is 5 during a replay, so `ftest`
+  files the span's DIRECT D11 under the `i` keys; entry 94.) The seventh shows what that
   costs: `Stoap` is the regression-ADJUSTED original behind the `b1` table, and
   it equals the raw series on every spec with no `regression{}` — so the miss
   was invisible until one spec had both (entry 88, `b1` off by 5.0e-1). `history{}` re-estimates per span, so it leaves the last
@@ -352,7 +355,15 @@ because by the time you would think to look them up, the damage is done.
   instead of erasing them — 192 `sfs` lines move (entry 86). When a note says a
   feature does nothing, the question to ask is what the probe spec did NOT
   have; "no observable effect" and "no effect" differ by whatever the corpus
-  was missing.
+  was missing. **The sharpest form: two arms can select between operators that
+  are ALGEBRAICALLY the same thing on symmetric input.** `force{indforce=}`
+  chooses between benchmarking the indirect SA and summing the components'
+  benchmarked ones, and benchmarking commutes with the sum — the ORACLE gives
+  the same `iaa` either way to 4.9e-15, for the linear `denton` and, measured,
+  for `regress` too. A mutation between the arms fails nothing, and the reflex
+  fix ("use the nonlinear option") also fails nothing. What separates them is
+  making the COMPONENTS differ — force one and not the other, 1.4e-05 (entry
+  94). Ask what identity the probe is sitting on, not just which option it set.
 - **Count the block; never read the indentation.** Fortran closes with bare
   `END IF`, so an `ELSE` seven levels deep looks exactly like a top-level one.
   `x11mdl.f:661`'s `ELSE` pairs with `IF(igrp.gt.0)` at `:546`, not with the
@@ -407,7 +418,12 @@ because by the time you would think to look them up, the damage is done.
   count, and the run's whole `===ERR===` block comes back EMPTY. Two of them
   sat on `rmfix`/`addfix`'s user-regressor arms for months (entry 88). Every
   refusal goes through a `*_not_ported` helper; if you write `abend` directly,
-  give it a message first.
+  give it a message first. **And the helper's NAME is load-bearing, not
+  cosmetic**: `walls.py` matches an explicit `HELPERS` tuple with `\b`, and
+  `\bnot_ported` cannot match inside `agr3_not_ported` because `_` is a word
+  character — two new walls landed invisible, with the count unmoved at 19
+  (entry 94). Reuse an existing helper name or add yours to `walls.py` in the
+  same commit, and confirm the count MOVES.
 - **An unported path that returns SUCCESS is worse than one that has no code.**
   Walls are inventory — `walls.py` lists them and deleting one leaves the list.
   A silent `return true` guard is in neither the wall list nor the gate count,
