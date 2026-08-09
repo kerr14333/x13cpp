@@ -14,6 +14,7 @@
 #include "model.hpp"   // prm::POTLR
 #include "x11/loadxr.hpp"   // loadxr, xrg_clear_working (x11regression model store)
 #include "regarima/outlier.hpp"   // setcv / setcvl (editor.f:1749's Critxr derivation)
+#include "regarima/usrbak.hpp"    // bakusr (editor.f:1541-1544's backup)
 #include "composite/agr.hpp"   // agr1 (composite{} hands the aggregate over as the series)
 
 #include <cctype>
@@ -3773,6 +3774,29 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     // editor.f:1485 `IF(Lx11)` / :1537 `IF(Ixreg.gt.0)`. Ixreg was just set
     // from Nbx, so this is the same guard.
     if (ctx.hiddn.ixreg <= 0) return;
+
+    // editor.f:1541-1544 -- the x11regression half of the editor's user-
+    // regressor backup, and the rind-1 call that CB-40 lives in. `x11mdl.f:460`
+    // calls `addfix(...,1,1)`, whose `addusr(1)` restores `Ncusrx`/`Usrttl` from
+    // slot 1 and the data matrix from a slot the Fortran never writes; with no
+    // backup at all this port restored `Ncusrx=0` and dropped the column
+    // outright. Measured on `extra/airline_x11regression-user-fixed`: the oracle's
+    // `xrm` carries seven columns with `u1` identically ZERO (CB-40), the engine
+    // carried six.
+    //
+    // ORDER, and why the inversion is safe. The oracle takes the rind-0 backup
+    // first (editor.f:1349) and this one second, so its slot 0 ends up holding
+    // the out-of-bounds storage this call reads past `Xuserx`. This port runs
+    // the rind-0 call later, in `run_pre_model` -- so on a spec that fires both,
+    // slot 0 would hold the CORRECT regARIMA backup rather than the oracle's
+    // garbage. Unobservable, because `addusr` refuses every rind-0 restore once
+    // `usrbak_slot0_clobbered` is set (see usrbak.cpp) -- which is exactly the
+    // combination in question.
+    if (ctx.xrgmdl.usrxfx) {
+        bakusr(ctx, usr_design_xrg(ctx), /*rind=*/1, /*is1st=*/true);
+        if (ctx.error.lfatal) return;
+    }
+
     const auto& xg = ctx.xrgmdl;
     auto grp = [&](const char* t) {
         return strinx(true, xg.grpttx.raw(), xg.gpxptr.data(), 1, xg.ngrptx, t);

@@ -27,6 +27,7 @@
 #include "automdl/aictst.hpp"       // explicit_aictest (arima.f:569 aictest)
 #include "automdl/svaict.hpp"       // svaict (arima.f:465 aictest.* savelog)
 #include "automdl/automd_finalize.hpp"  // rmfix, addfix (arima.f:283/910)
+#include "regarima/usrbak.hpp"      // bakusr (editor.f:1348-1350's backup)
 #include "numeric/numeric.hpp"      // dpeq
 #include "gen/srslen.hpp"           // prm::PLEN (residual work-vector sizing)
 #include "gen/model.hpp"            // prm::PORDER
@@ -487,6 +488,28 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
     if (ctx.adj.nadj > 0)
         copy(ctx.adj.adj.data(), prm::PLEN - ctx.adj.setpri + 1, -1,
              ctx.inpt.sprior.data() + (ctx.adj.setpri - 1));
+
+    // ---- editor.f:1344-1350 -- the EDITOR's user-regressor backup -----------
+    // `addusr` rebuilds the user columns from /urgbak/ after `rmfix` has struck
+    // them, and /urgbak/ has exactly ONE writer: `bakusr`. This port had only
+    // the sliding-spans/history callers (ssmdl.f:351, sspdrv.f:170,
+    // revdrv.f:257), so on the MAIN run the backup was never taken and
+    // `addusr(0)` restored `Ncusrx=0` -- the user regressors simply vanished.
+    // Measured on `extra/airline_reg-user-fixed`: the oracle reports `nreg: 2`
+    // with both columns `(fixed)`, the engine reported `nreg: 0`, at OUTCOME: OK.
+    //
+    // The guard is transcribed, including the part that reads oddly: `Userfx` is
+    // the flag `gtxreg.f:864` leaves behind when an `x11regression{}` spec is
+    // present, because `gtinpt.f:831`'s `restor(T,F,F)` restores `Iregfx`/`Regfx`
+    // and NOT `Userfx`. So on such a run this tests the x11regression design's
+    // fixings against the regARIMA design's columns. Faithful; not a CB entry,
+    // because both readings agree wherever a spec fixes user columns in one
+    // design only.
+    if (ctx.captured.has_model && ctx.model.nb > 0 &&
+        (ctx.model.userfx || (ctx.usrreg.ncusrx > 0 && ctx.arima.lautom))) {
+        bakusr(ctx, usr_design_reg(ctx), /*rind=*/0, /*is1st=*/true);
+        if (ctx.error.lfatal) return false;
+    }
 
     // The regression design matrix (arima.f:280): regvar builds [X:y] from the
     // parsed regression groups and the transformed series. Pre-model this is

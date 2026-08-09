@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7592<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->865<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7632<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->871<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -27,12 +27,11 @@ Standing constraints: **never merge this branch to `main`.** Pushing THIS
 BRANCH is authorised as of 2026-08-02 (the repo is PUBLIC —
 `github.com/kerr14333/x13cpp` — and `origin/main` is still at M1, so the branch
 push publishes the whole port on a new remote branch and leaves the default
-branch alone). The branch is on the remote at `ccbe7bbe` with local tracking set, and
+branch alone). The branch is on the remote with local tracking set, and
 `main` is an ancestor of it (`HEAD..main` == 0) — so `main` can fast-forward
-whenever wanted, with no merge commit and nothing discarded. **The remote is
-now 17 commits behind: everything from `119af354` (gtxreg) through this
-session's composite-force increment is local only.** Push when convenient
-(`git push -u origin checkpoint/m5-seats-slidingspans`).
+whenever wanted, with no merge commit and nothing discarded. **Pushed up to date
+2026-08-09** (through the pseudo-additive composite increment); push again when
+convenient (`git push -u origin checkpoint/m5-seats-slidingspans`).
 
 Mechanics for the next push, because this cost two minutes to rediscover: the
 assistant's `git push` is blocked by the permission system, AND
@@ -424,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7592<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7632<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2539,6 +2538,51 @@ specs, one per ERROR arm, each written so the other two arms are false.
 `test_composite_force.py`'s F-test-row gate picked both new corpora up with no
 edit — it discovers every composite golden carrying an `id11.f` row.
 
+## This session, part 47: `x11regression{b=}` -- the spec shape that closes CB-40, and the two `bakusr` calls `editor.f` has and this port did not
+
+Board item 1's first half. Full record in `docs/M5_PORT_NOTES.md` entry 96;
+what carries forward:
+
+**Three defects, all at `OUTCOME: OK`, all on the MAIN run.** (1) `editor.f:1349`
+and `:1543`'s `bakusr` calls were never ported, and `bakusr` is the ONLY writer
+of `/urgbak/` -- so a main run that reached `addusr` restored from a backup
+nobody had taken: `regression{user=(u1 u2) b=(-0.5f 0.3f)}` came back `nreg: 0`
+against the oracle's 2, both regressors simply gone. (2) The same on the
+x11regression side: `xrm` 6 columns against the oracle's 7. (3) `x11pt2.f:720/723`
+gate their `loadxr` swap on `IF(Ixreg.eq.1)`, on BOTH lines; this port swapped
+unconditionally, which is idempotent until `x11mdl` starts mutating the design.
+
+**What made all three reachable is one spec option nothing had used:
+`x11regression{b=}`.** A fixed user coefficient is what sets `Userfx`, and
+`Userfx` is what turns on `addfix.f:73`. No span driver anywhere -- entry 88 had
+looked for a consumer inside a span and correctly found none, then concluded the
+bug was unobservable. The consumers are one phase out, in `x11mdl` itself:
+`:462`'s `regvar` and `:499-508`'s `xrm` punch.
+
+**CB-40 is now pinned by MEASUREMENT** -- displacing the destination (writing
+slot 1 correctly) fails 21 gates. The census_bugs.md caveat that said otherwise
+is replaced.
+
+**The transparent pass CHAINS, on purpose.** Inside `xrgdrv` (`Ixreg==2`) the
+Kpart 2 and Kpart 3 `x11mdl` calls share state: `xrgdrv.f:129` loads the design
+once, `:206` saves it once, and Kpart 3 is meant to see the ZEROED `Userx` that
+Kpart 2's `addusr` left. Reloading gives it the real data back -- `b1` 8.2e-05,
+d10 2.7e-03, and the ARMA itself, because the transparent pass prior-adjusts the
+series the model is estimated on. **The no-model sibling was bit-exact
+throughout, and that is what named the owner** -- cheap-spec-vs-expensive-spec,
+not engine-vs-oracle.
+
+**A discovery predicate caught out again.** Dropping the `rind=1` backup passed
+the WHOLE suite at first: `test_x11regression_tables.py`'s `CASES` discovers on
+`"x11regression" in b` and the spec was named `airline_x11reg-user-fixed`.
+Renamed; the mutation then fails exactly the `xrm` column-count assert.
+
+**Mutations:** rind-0 backup removed **16**; rind-1 backup removed **1**;
+`x11pt2` swap unconditional **19**; CB-40 "fixed" **21**.
+
+**Specs:** `extra/airline_reg-user-fixed`, `extra/airline_x11regression-user-fixed`,
+both hand-authored. Suite 7592 -> **7632** passed, 0 failed, 0 xfailed.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -2551,13 +2595,16 @@ edit — it discovers every composite golden carrying an `id11.f` row.
    (`test_slidingspans_halt_matches_oracle`). Do not re-open it as a port;
    re-open only if Census fixes the typo.
 
-   What is genuinely open here is not a decision, it is two specs. Both were
-   left DELIBERATELY in part 39 and are scoped in entry 88:
-   * the `rind=1` `bakusr`/`addusr` path (CB-40) is faithful by transcription
-     and UNTESTED by measurement -- every mutation of it leaves the engine's
-     whole stdout byte-identical, because nothing downstream of `addfix`'s
-     restore reads the x11regression design again within a span. A spec that
-     can tell the two apart would need a consumer that does.
+   What is genuinely open here is not a decision, it is ONE spec (was two;
+   see entry 96 for the one that closed):
+   * ~~the `rind=1` `bakusr`/`addusr` path (CB-40)~~ **CLOSED 2026-08-09.** The
+     missing ingredient was never a consumer inside a span -- it was
+     `x11regression{b=}`, which sets `Userfx` and so routes `x11mdl` through
+     `rmfix`/`addfix` on the MAIN run. `extra/airline_x11regression-user-fixed`
+     gates it; "fixing" CB-40 now fails 21. It also found that `editor.f`'s TWO
+     `bakusr` calls were unported (so `regression{user= b=…f}` returned
+     `nreg: 0` against the oracle's 2) and that `x11pt2`'s design swap must be
+     `Ixreg==1`-only. Entry 96.
    * `regression{user=}` + `x11regression{usertype=}` + a span driver is
      refused (the CB-40 slot-0 clobber). That refusal is currently SHADOWED by
      two older walls -- `xrgdrv`'s `Ncusrx==0` and x11pt2's user/seasonal/cycle

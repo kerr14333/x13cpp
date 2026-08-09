@@ -702,11 +702,28 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // does NOT re-estimate -- the TD was already removed as a prior.
         if ((ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2) &&
             (kpart == 2 || kpart == 3)) {
-            // x11pt2.f:720/724: swap the x11reg regressors into the working model
-            // for the irregular OLS, then save the estimated betas back.
-            loadxr(ctx, /*toxreg=*/false);
+            // x11pt2.f:720/723: swap the x11reg regressors into the working model
+            // for the irregular OLS, then save the estimated betas back --
+            // **only when Ixreg==1**. Both lines are `IF(Ixreg.eq.1)`, and the
+            // transparent pass (Ixreg==2) deliberately does neither: `xrgdrv.f:129`
+            // has already loaded the design once and `:206` saves it once, so the
+            // Kpart==2 and Kpart==3 calls inside that pass CHAIN -- the second sees
+            // exactly what the first left behind.
+            //
+            // This port swapped on both arms. Idempotent, and therefore invisible,
+            // for as long as x11mdl left the design untouched. It stops being
+            // idempotent the moment `Iregfx>=2` puts x11mdl through rmfix/addfix:
+            // `addusr` restores `Userx` from a /urgbak/ slot the Fortran never
+            // writes (CB-40), so the oracle's Kpart==3 pass fits a ZEROED user
+            // column while a reload hands it the real data back. Measured on
+            // extra/airline_x11regression-user-fixed: b1 8.2e-05 out, and through the
+            // ARIMA that the transparent pass prior-adjusts, every D table
+            // (d10 2.7e-03) -- at OUTCOME: OK. The no-model sibling was bit-exact
+            // throughout, which is what named the transparent pass as the owner.
+            const bool swap = ctx.hiddn.ixreg == 1;
+            if (swap) loadxr(ctx, /*toxreg=*/false);
             x11mdl_td(ctx, kpart);
-            loadxr(ctx, /*toxreg=*/true);
+            if (swap) loadxr(ctx, /*toxreg=*/true);
             if (ctx.error.lfatal) return;
         }
 

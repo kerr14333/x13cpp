@@ -69,8 +69,8 @@ reproduce.
 - **`core/src/regarima/regvar.cpp:315`**
   regression variable type
 
-- **`core/src/regarima/usrbak.cpp:143`**
-  regression{user=} together with x11regression{usertype=} under slidingspans{}/history{} (bakusr.f:50 has already overwritten the regARIMA backup slot with out-of-bounds storage -- CB-40) is
+- **`core/src/regarima/usrbak.cpp:149`**
+  a user-regressor restore for the regARIMA design after x11regression has taken its own backup (bakusr.f:50 has already overwritten the regARIMA backup slot with out-of-bounds storage -- CB-40) is
   *Fortran:* `bakusr.f:50`
 
 
@@ -98,7 +98,7 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:555`**
   x11pt2 user/seasonal/cycle/x11reg factor combine+emit
 
-- **`core/src/x11/x11parts.cpp:761`**
+- **`core/src/x11/x11parts.cpp:778`**
   x11pt2 x11reg Stcsi rebuild with outlier/seasonal/user prior factors
 
 - **`core/src/x11/x11reg.cpp:394`**

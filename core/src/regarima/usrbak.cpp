@@ -129,22 +129,28 @@ void addusr(X13Context& ctx, int rind, int fxindx) {
     // nowhere else, so a preceding bakusr(rind=1) means this restore would need
     // whatever storage followed Xuserx in the oracle's link map. Refuse instead.
     //
-    // REACHABILITY, measured rather than assumed: the spec that gets here is
-    // regression{user=} AND x11regression{usertype=} AND slidingspans{}
-    // (scratchpad probeD; the oracle runs it and a bounds-checked build of the
-    // vendored sources traps at bakusr.f:50 on it). Today that spec stops
-    // EARLIER, at two older walls -- xrgdrv's `Ncusrx==0` and x11pt2's user/
-    // seasonal/cycle factor combine -- so this refusal is currently shadowed.
-    // Confirmed by relaxing the xrgdrv guard and re-running: the next wall
-    // fires, not this one. Kept because it becomes the operative one the moment
-    // either of those lifts, and because a silent wrong answer here is the
-    // failure mode this whole family already had once.
+    // REACHABILITY, measured rather than assumed, and the condition is stated as
+    // the TRIGGER (a rind-0 restore after a rind-1 backup) rather than as any one
+    // spec shape that produces it. TWO shapes do:
+    //   * regression{user=} + x11regression{usertype=} + slidingspans{}
+    //     (entry 88's probeD; a bounds-checked build of the vendored sources
+    //     traps at bakusr.f:50 on it);
+    //   * regression{user= b=(…f)} + x11regression{user= b=(…f)} on a MAIN run,
+    //     which entry 96 opened up -- `editor.f:1349` then `:1543` take both
+    //     backups with no span driver anywhere.
+    // Both stop EARLIER, at two older walls -- xrgdrv's `Ncusrx==0` and x11pt2's
+    // user/seasonal/cycle factor combine -- so this refusal is still shadowed.
+    // Measured both ways: relaxing the xrgdrv guard makes the NEXT wall fire, not
+    // this one, and the main-run shape above fatals at that same xrgdrv wall
+    // today. Kept because it becomes the operative one the moment either lifts,
+    // and because a silent wrong answer here is the failure mode this whole
+    // family already had once.
     if (rind == 0 && ctx.usrbak_slot0_clobbered) {
         not_ported(ctx,
-                   "regression{user=} together with x11regression{usertype=} "
-                   "under slidingspans{}/history{} (bakusr.f:50 has already "
-                   "overwritten the regARIMA backup slot with out-of-bounds "
-                   "storage -- CB-40) is");
+                   "a user-regressor restore for the regARIMA design after "
+                   "x11regression has taken its own backup (bakusr.f:50 has "
+                   "already overwritten the regARIMA backup slot with "
+                   "out-of-bounds storage -- CB-40) is");
         return;
     }
 

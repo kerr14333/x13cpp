@@ -1573,14 +1573,22 @@ for a whole array's length, and writes the result over SLOT 0.
   a span driver, so that an `addusr(0)` follows a `bakusr(1)` -- is refused with
   its own message rather than guessed at.
 
-- **Pinned by:** `tests/corpus/extra/airline_slidingspans-x11reg-usertype`.
-  **Read the caveat with it:** that spec gates the RUN bit-exact, not the bug.
-  Every mutation of the `rind=1` path -- skipping `bakusr(1)` entirely, or
-  "fixing" it to write slot 1 correctly -- leaves the engine's whole stdout
-  BYTE-IDENTICAL on all five probes, because nothing downstream of
-  `addfix`'s restore in a span reads the x11regression design again. So the
-  reproduction above is faithful to the Fortran by transcription, and untested
-  by measurement; the corpus has no spec that can tell the two apart.
+- **Pinned by:** `tests/corpus/extra/airline_x11regression-user-fixed`, and
+  pinned BY MEASUREMENT: "fixing" `bakusr` to displace the destination (so slot
+  1 holds the real user matrix) fails **21 gates**. The defect's whole
+  observable is that the restored column comes back identically zero, and the
+  spec's `xrm` golden carries it.
+
+  **What that spec has and the five sliding-spans ones do not: `x11regression{b=}`.**
+  A fixed x11reg coefficient is what sets `Userfx` (`gtxreg.f:864`) and leaves
+  `Iregfx=2`, which is what routes `x11mdl.f:391/460` through `rmfix`/`addfix`
+  and so reaches `addusr(1)` at all -- on the MAIN run, with no span driver
+  anywhere. The earlier note here read "nothing downstream of `addfix`'s restore
+  in a span reads the x11regression design again", and that was true of the
+  spans; the consumers are one phase out, in `x11mdl` itself: the `regvar` at
+  `:462` that rebuilds `Xy` from the restored `Userx`, and the `xrm` punch at
+  `:499-508` that saves it. The old caveat was a claim about the corpus, written
+  as a claim about the program.
 
 ## CB-41
 

@@ -6451,3 +6451,118 @@ not just the outcome.
 
 `test_composite_force.py`'s F-test-row gate picked the two new corpora up with
 no edit: it discovers every composite golden carrying an `id11.f` row.
+
+## 96. `editor.f`'s two `bakusr` calls were never ported — the main run had no user-regressor backup at all, and CB-40 is finally pinned by measurement
+
+Board item 1's first half: the `rind=1` `bakusr`/`addusr` path was "faithful by
+transcription and untested by measurement", because every mutation of it left
+the five sliding-spans specs byte-identical. The missing ingredient was not a
+consumer inside a span. It was **`x11regression{b=}`** — a spec shape the corpus
+did not have, which reaches the whole family on the MAIN run with no span driver
+involved.
+
+### What makes it reachable, and why nothing had
+
+`addusr` rebuilds the user columns that `rmfix` struck, and it reads them out of
+`/urgbak/`. `/urgbak/` has exactly ONE writer, `bakusr`, at six call sites: two
+in `editor.f` (`:1349` regARIMA, `:1543` x11regression) and four in the span
+drivers. **This port had only the span-driver four.** So on any main run that
+reached `addusr`, the restore came out of a backup nobody had taken.
+
+Reaching `addusr` needs `Userfx`, and outside `ssmdl.f:350` the only writer is
+`gtxreg.f:864`/`getreg.f:746-767` — both of which require FIXED user
+coefficients. No corpus spec fixed one, in either design. Two specs later:
+
+| spec | oracle | engine before |
+|---|---|---|
+| `extra/airline_reg-user-fixed` (`regression{user=(u1 u2) b=(-0.5f 0.3f)}`) | `nreg: 2`, both `(fixed)` | **`nreg: 0`** — both user regressors gone from the model |
+| `extra/airline_x11regression-user-fixed` (`x11regression{user=(u1) usertype=(user) b=(… -0.5f)}`) | `xrm` 7 columns, `u1` identically ZERO | `xrm` **6 columns** — no `u1` at all |
+
+Both at `OUTCOME: OK`. The first is the more serious: a whole regression effect
+silently dropped.
+
+### CB-40 is now gated, and the old caveat was a claim about the corpus
+
+The oracle's own `xrm` shows `u1` all zeros — that IS CB-40, visible on a plain
+main run: `bakusr.f:50/52` displace the SOURCE of the `Userx2`/`Usrty2` copies,
+slot 1 is never written by anything, and `addusr(1)` therefore restores an
+identically zero user matrix with type 0. The port reproduces it by leaving slot
+1 alone; **mutating that to write slot 1 correctly now fails 21 gates.**
+
+What the earlier note got wrong is worth keeping. It said "nothing downstream of
+`addfix`'s restore in a span reads the x11regression design again", which was
+true, and concluded the bug was unobservable, which was not. The consumers sit
+one phase out, in `x11mdl` itself: `:462`'s `regvar` rebuilds `Xy` from the
+restored `Userx`, and `:499-508` punches that `Xy` as `xrm`. *A measured
+inertness is scoped to the probe spec exactly as much as a measured effect is.*
+
+### The third defect, which only the model path could show
+
+With both backups in place the x11regression spec still came out wrong — `b1`
+8.2e-05, and through it every D table (d10 2.7e-03) and the ARMA itself
+(MA 0.26114 vs 0.26078). **The no-model sibling was bit-exact throughout**, and
+that is what named the owner: the divergence lives in `xrgdrv`'s TRANSPARENT
+pass, which only exists when `gtinpt.f:1201` promotes `Ixreg` to 2 for a
+regARIMA model.
+
+`x11pt2.f:720/723` swap the design in and out around `x11mdl` **only when
+`Ixreg.eq.1`**:
+
+```fortran
+        IF(Ixreg.eq.1)CALL loadxr(F)
+        CALL x11mdl(Sti,Muladd,Tmpma,Psuadd,Kpart,Kswv,Lgrfxr)
+        IF(Ixreg.eq.1)THEN
+         CALL loadxr(T)
+```
+
+This port swapped on both arms. Idempotent — and therefore invisible — for as
+long as `x11mdl` left the design untouched, which is every spec until one put it
+through `rmfix`/`addfix`. Then the Kpart==2 call zeroes `Userx` (CB-40) and the
+Kpart==3 call is supposed to CHAIN from that; a reload hands it the real data
+back instead. `xrgdrv.f:129`/`:206` are the only load/save that pass has.
+Reverting the gate fails 19.
+
+**The shape to carry: a swap that is idempotent is untested, not correct.** The
+port had this bracket on both arms for months and every gate agreed, because
+nothing inside had ever written to the buffer being swapped.
+
+### The gate that could not see it
+
+Mutation 2 (drop the `rind=1` backup) passed the WHOLE suite on the first
+attempt. Not because the change was inert — it moves `xrm` from 7 columns to 6 —
+but because `test_x11regression_tables.py`'s `CASES` discovers on
+`"x11regression" in b`, and the spec had been named `airline_x11reg-user-fixed`.
+A substring predicate is the hand-written case list the standing rule warns
+about, wearing a discovery costume. Renamed to `airline_x11regression-user-fixed`;
+the mutation then fails exactly 1 gate, and it is the column-count assert.
+
+### Mutations
+
+| mutation | gates |
+|---|---|
+| A `editor.f:1348-1350`'s `bakusr(rind=0)` removed | 16 |
+| B `editor.f:1541-1544`'s `bakusr(rind=1)` removed | 1 (the `xrm` column count) |
+| C `x11pt2`'s swap made unconditional again (the pre-fix code) | 19 |
+| D CB-40 "fixed" — `bakusr` displaces the destination for `rind=1` | 21 |
+
+### Transcribed as written, not claimed
+
+`editor.f:1348`'s guard is `IF(Userfx.or.((Ncusrx.gt.0).and.Lautom))`, and on a
+run with an `x11regression{}` spec `Userfx` is the flag `gtxreg.f:864` left
+behind — `gtinpt.f:831`'s `restor(T,F,F)` restores `Iregfx`/`Regfx` and NOT
+`Userfx`. So the regARIMA backup's guard tests the x11regression design's
+fixings. Not a CB entry: both readings agree wherever a spec fixes user columns
+in one design only, and the corpus has no spec that fixes them in both (that one
+is behind CB-40's refusal plus two older walls — board item 1's remaining half).
+
+**Order.** The oracle takes the rind-0 backup first, so its slot 0 ends up
+holding the storage the rind-1 call reads past `Xuserx`. This port runs the
+rind-1 call at parse (`xrg_editor_setup`) and the rind-0 call in
+`run_pre_model`, i.e. inverted — unobservable, because `addusr` refuses every
+rind-0 restore once `usrbak_slot0_clobbered` is set, which is exactly the
+combination that would notice.
+
+### Gated by
+
+`extra/airline_reg-user-fixed` and `extra/airline_x11regression-user-fixed`,
+both hand-authored. Suite 7592 -> 7632 passed, 0 failed, 0 xfailed.
