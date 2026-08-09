@@ -4304,6 +4304,13 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // x11reg design, and restor.f:69 puts the regARIMA value back. Nothing else
     // did -- xrg_clear_working clears Regfx but not Iregfx.
     const int sv_iregfx_pre_xreg = ctx.model.iregfx;
+    // gtinpt.f:804's ssprep -- the DESIGN half, which the comment above used to
+    // record as deferred future work. It is restored after loadxr(T) below, where
+    // gtinpt.f:832's restor is. Without it, parsing an x11regression{} spec
+    // DELETED whatever regression{} had put in the model: `nreg: 0` against the
+    // oracle's 2 on a spec carrying both, at OUTCOME: OK once x11pt2's Adjcyc
+    // wall (which had been covering this case for unrelated reasons) came down.
+    const model_design_backup sv_design_pre_xreg = capture_model_design(ctx);
     xrg_clear_working(ctx);
     int argidx;
     while (gtarg(ctx, ARGDIC, argptr, PARG, argidx, arglog, inptok)) {
@@ -5023,7 +5030,10 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
         // regressors) is not ported; the corpus specifies outliers in order.
     }
     loadxr(ctx, /*toxreg=*/true);
-    xrg_clear_working(ctx);
+    // gtinpt.f:832's restor(T,F,F) -- the design (see the capture above). This
+    // stood as `xrg_clear_working` while every spec reaching it had an empty
+    // regARIMA design; the clear and the restore are the same thing there.
+    restore_model_design(ctx, sv_design_pre_xreg);
     // gtinpt.f:832's restor(T,F,F) -- restor.f:73 `Picktd=Pktd2`. loadxr.f:53
     // has just parked the x11reg model's flag in Pckxtd, which is where xrgdrv
     // and x11mdl read it from; the WORKING flag goes back to what gtinpt.f:804

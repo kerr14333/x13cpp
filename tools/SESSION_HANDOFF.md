@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7632<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->871<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7655<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->874<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7632<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7655<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2583,6 +2583,41 @@ Renamed; the mutation then fails exactly the `xrm` column-count assert.
 **Specs:** `extra/airline_reg-user-fixed`, `extra/airline_x11regression-user-fixed`,
 both hand-authored. Suite 7592 -> **7632** passed, 0 failed, 0 xfailed.
 
+## This session, part 48: `xrgdrv`'s `Ncusrx == 0` guard named a symptom -- and parsing `x11regression{}` deleted the `regression{}` design
+
+Board item 1's remaining half, taken from the wall end. Full record in
+`docs/M5_PORT_NOTES.md` entry 97; what carries forward:
+
+**The spec the corpus never had is `regression{}` AND `x11regression{}` in one
+run.** The oracle runs it (`nreg: 2`); the engine fataled at xrgdrv's support
+guard. Behind that guard, in order: x11pt2's `Adjcyc` wall -- **a refusal in
+front of a deferred SEATS-only print**, which fired on exactly this pairing
+because `gtinpt.f:1242`'s clear-every-Adj* arm needs NO regression{} spec and
+`chkadj` runs at `arima.f:1256`, i.e. after `x11ari` has already run xrgdrv;
+then `nreg: 0`, because the port CLEARED the working design where
+`gtinpt.f:832` calls `restor` (the code said "deferred" and nothing walled it);
+then the x11reg user matrix, because `xrgdrv.f:66-74`'s `ubkx` backup -- the
+Fortran's OWN local, not a restor stand-in -- had never been transcribed.
+
+**Two compensators removed as redundant.** `restor_span` already carries
+restor.f:50-70's design half, so xrgdrv needed neither an explicit design
+restore nor the `xrg_clear_working` in front of it; both measure 0 gates. They
+were not always redundant -- `restor_span` grew the design half later -- which
+is the general shape: **a port-only compensator outlives the gap it compensated
+for, and then hides the next one.**
+
+**One transcription measured UNREACHABLE, and said so in the code.**
+x11pt2.f:851-859's six divsubs cannot fire: `Ixreg==2` is the transparent pass
+and `xrgdrv.f:77-92` zeroes a superset of those flags on entry, while `Ixreg==1`
+is the no-model path where every `Fac*` is still `x11int.f:35-39`'s identity. No
+spec can gate them, so the artifact is the argument rather than a new test.
+
+**Mutations:** the parse-time design restore **20**; `ubkx` **19**; the xrgdrv
+design restore **0** (removed); the Adjusr divsub **0** (unreachable).
+
+**Spec:** `extra/airline_x11regression-reg-user`, hand-authored.
+Suite 7632 -> **7655** passed, 0 failed, 0 xfailed. WALLS 21 -> 20 gaps.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -2606,11 +2641,11 @@ both hand-authored. Suite 7592 -> **7632** passed, 0 failed, 0 xfailed.
      `nreg: 0` against the oracle's 2) and that `x11pt2`'s design swap must be
      `Ixreg==1`-only. Entry 96.
    * `regression{user=}` + `x11regression{usertype=}` + a span driver is
-     refused (the CB-40 slot-0 clobber). That refusal is currently SHADOWED by
-     two older walls -- `xrgdrv`'s `Ncusrx==0` and x11pt2's user/seasonal/cycle
-     factor combine -- which is measured, not assumed: relaxing the xrgdrv
-     guard makes the next wall fire, not this one. Lifting either surfaces
-     CB-41 as well.
+     refused (the CB-40 slot-0 clobber). **One of its two shadows is gone as of
+     2026-08-09**: `xrgdrv`'s `Ncusrx==0` clause was standing on two missing
+     restores, not on unported arithmetic, and both are now transcribed (entry
+     97). What still shadows it is x11pt2's user/seasonal/cycle factor combine.
+     Lifting that surfaces CB-41 as well.
 
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
    36-39 above and entries 83 and 85-88 before touching any of it. Note that

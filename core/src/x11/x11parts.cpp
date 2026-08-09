@@ -545,14 +545,25 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
         // a Stcsi rebuilt from the raw Series -- and the C++ takes the
         // `STCSI = STO` shortcut there, which is only bit-equivalent when no such
         // factor exists. So keep them fatal on that path alone, not everywhere.
-        const bool xreg_feedback =
-            (ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2) && xl.axrgtd;
-        if (adj.adjcyc == 1 ||
-            (xreg_feedback && (adj.adjso == 1 || adj.adjsea == 1 ||
-                               adj.adjusr == 1)) ||
-            (xl.axrgtd && ctx.hiddn.ixreg != 1 && ctx.hiddn.ixreg != 2 &&
-             ctx.hiddn.ixreg != 3)) {
-            x11_not_ported(ctx, "x11pt2 user/seasonal/cycle/x11reg factor combine+emit");
+        // Two clauses left this condition on 2026-08-09.
+        //
+        // Adjso/Adjsea/Adjusr: x11pt2.f:851-859's six divsubs are ported below,
+        // and that is the only place the three are numeric in x11pt2.
+        //
+        // Adjcyc: derived, not assumed. `Faccyc` has exactly four readers in the
+        // whole oracle -- `adjreg.f:109/126` build it (ported, x11drv.cpp:513),
+        // `ansub9.f:1466` hands it to SEATS as PAREG(i,5), and `x11pt2.f:284-290`
+        // table/punch it under `.and.Lseats`. No fold into Faccal, nothing in
+        // x11pt3. So this was a refusal in front of a deferred print, and it
+        // fired on every spec carrying BOTH a regression{} and an
+        // x11regression{}: `gtinpt.f:1242`'s clear-everything arm only runs when
+        // there is no regression{} spec at all, and `chkadj` -- which is what
+        // would zero Adjcyc for a model with no cycle regressor -- is called from
+        // `arima.f:1256`, i.e. AFTER x11ari has already run xrgdrv's transparent
+        // pass. The default is 1 for that whole window in the oracle too.
+        if (xl.axrgtd && ctx.hiddn.ixreg != 1 && ctx.hiddn.ixreg != 2 &&
+            ctx.hiddn.ixreg != 3) {
+            x11_not_ported(ctx, "x11pt2 x11reg factor combine+emit");
             return;
         }
         // Trading day (x11pt2.f:158-171).
@@ -770,17 +781,40 @@ void x11pt2(X13Context& ctx, bool lmodel, bool lx11, bool lseats,
             (ctx.hiddn.ixreg == 1 || ctx.hiddn.ixreg == 2);
         if (xrg_feedback_stcsi) {
             const x11adj_cmn& adjs = ctx.x11adj;
-            // x11pt2.f:851-859's per-factor divsubs (Facls/Facao/Factc/Facso/
-            // Facsea/Facusr) are unported; none of those adjustment flags can be
-            // set on the x11regression path this arm serves.
-            if (adjs.adjls == 1 || adjs.adjao == 1 || adjs.adjtc == 1 ||
-                adjs.adjso == 1 || adjs.adjsea == 1 || adjs.adjusr == 1) {
-                x11_not_ported(ctx, "x11pt2 x11reg Stcsi rebuild with "
-                                    "outlier/seasonal/user prior factors");
-                return;
-            }
             copy(ctx.inpt.series.data() + (pos1bk - 1), posffc - pos1bk + 1, 1,
                  stcsi + (pos1bk - 1));
+            // x11pt2.f:851-859 -- the raw series is rebuilt here, so every prior
+            // factor the regARIMA model removed has to come back OUT of it one at
+            // a time, in the Fortran's order. (`Adjpls`/`Adjplt`/`Adjplo` sit
+            // between :858 and :859 commented out in the oracle; not transcribed.)
+            //
+            // These six were a wall until 2026-08-09. **They are transcription,
+            // not a fix, and they are UNGATED -- deleting the Adjusr one measures
+            // 0 gates.** That is not a corpus hole, it is a property of the
+            // program, and it is written down here so the next reader does not
+            // take the code for evidence:
+            //   * `Ixreg==2` is the xrgdrv transparent pass, and `xrgdrv.f:77-92`
+            //     zeroes Adjtd/Adjhol/Adjao/Adjls/Adjtc/Adjso/Adjusr/Adjsea on
+            //     entry -- a superset of the six tested here. All six are 0.
+            //   * `Ixreg==1` is the no-model path (gtinpt.f:1201 promotes to 2
+            //     whenever Lmodel), and every Fac* array is `adjreg`'s output.
+            //     With no model adjreg never runs and `x11int.f:35-39` has left
+            //     them at the identity, so each divsub is a no-op.
+            // The wall they replace was equally unreachable: it tested
+            // Adjso/Adjsea/Adjusr under the same `Ixreg==1||2`. What actually
+            // fired was its Adjcyc clause -- see the note at the top of x11pt2.
+            if (adjs.adjls == 1)
+                divsub(stcsi, stcsi, ctx.x11fac.facls.data(), pos1bk, posffc, muladd);
+            if (adjs.adjao == 1)
+                divsub(stcsi, stcsi, ctx.x11fac.facao.data(), pos1bk, posffc, muladd);
+            if (adjs.adjtc == 1)
+                divsub(stcsi, stcsi, ctx.x11fac.factc.data(), pos1bk, posffc, muladd);
+            if (adjs.adjso == 1)
+                divsub(stcsi, stcsi, ctx.x11fac.facso.data(), pos1bk, posffc, muladd);
+            if (adjs.adjsea == 1)
+                divsub(stcsi, stcsi, ctx.x11fac.facsea.data(), pos1bk, posffc, muladd);
+            if (adjs.adjusr == 1)
+                divsub(stcsi, stcsi, ctx.x11fac.facusr.data(), pos1bk, posffc, muladd);
             if (ctx.prior.kfmt > 0)
                 divsub(stcsi, stcsi, ctx.inpt.sprior.data(), pos1ob, posfob,
                        muladd);

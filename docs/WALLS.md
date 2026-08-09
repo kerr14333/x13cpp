@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**21 walls.**
+**20 walls.**
 
 
 ## Automatic model selection
@@ -95,11 +95,8 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:283`**
   x11pt1 additive/pseudo-additive prior trading-day
 
-- **`core/src/x11/x11parts.cpp:555`**
-  x11pt2 user/seasonal/cycle/x11reg factor combine+emit
-
-- **`core/src/x11/x11parts.cpp:778`**
-  x11pt2 x11reg Stcsi rebuild with outlier/seasonal/user prior factors
+- **`core/src/x11/x11parts.cpp:566`**
+  x11pt2 x11reg factor combine+emit
 
 - **`core/src/x11/x11reg.cpp:394`**
   x11ref forcecal= combined calendar factor
@@ -113,8 +110,8 @@ reproduce.
 - **`core/src/x11/x11reg.cpp:1740`**
   x11mdl Kswv=3 forcecal= combine
 
-- **`core/src/x11/xrgdrv.cpp:49`**
-  xrgdrv OLS prior trading-day (Ixreg>=2): only the TD-only multiplicative path is ported
+- **`core/src/x11/xrgdrv.cpp:57`**
+  xrgdrv OLS prior trading-day (Ixreg>=2) for an additive/pseudo-additive adjustment or a classic X-11 Easter (Khol==1)
 
 
 # Faithful refusals -- the oracle declines too

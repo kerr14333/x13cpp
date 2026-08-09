@@ -6566,3 +6566,94 @@ combination that would notice.
 
 `extra/airline_reg-user-fixed` and `extra/airline_x11regression-user-fixed`,
 both hand-authored. Suite 7592 -> 7632 passed, 0 failed, 0 xfailed.
+
+## 97. `xrgdrv`'s `Ncusrx == 0` guard was standing on two missing `restor`s — and parsing an `x11regression{}` spec deleted the `regression{}` design
+
+Board item 1's remaining half, approached from the wall rather than from the
+spec. `xrgdrv_supported` refused four things; `ctx.usrreg.ncusrx == 0` was the
+one blocking CB-40's refusal and CB-41. It turned out to name a symptom.
+
+### The chain, in the order it came apart
+
+**1. The oracle runs the spec.** `regression{user=(u1 u2)}` +
+`x11regression{variables=(td)}`, airline, multiplicative: `nreg: 2`, clean
+`.udg`, exit 0. The engine fataled at xrgdrv's wall.
+
+**2. Relaxing the guard hits the next wall, as recorded** — `x11pt2 user/
+seasonal/cycle/x11reg factor combine+emit`. Instrumenting it named the clause:
+`Adjcyc == 1`, and **the Adjcyc clause was a refusal in front of a deferred
+print**. `Faccyc` has four readers in the whole oracle: `adjreg.f:109/126` build
+it (ported), `ansub9.f:1466` hands it to SEATS as `PAREG(i,5)`, and
+`x11pt2.f:284-290` table/punch it under `.and.Lseats`. No fold into `Faccal`,
+nothing in x11pt3.
+
+Why it fired here and on nothing before: `gtinpt.f:1242`'s clear-every-Adj* arm
+runs only when there is NO `regression{}` spec, and `chkadj` — which would zero
+`Adjcyc` for a model with no cycle regressor — is called from `arima.f:1256`,
+i.e. AFTER `x11ari` has run xrgdrv. For that whole window `Adjcyc` is its
+`gtinpt` default of 1 in the oracle too. So the wall fired on exactly the
+combination "a regression{} spec and an x11regression{} spec", which is
+precisely the combination the corpus lacked.
+
+**3. Behind it, `nreg: 0`.** With the walls down the run completed and the
+regARIMA model had no regressors at all. Cause: `readers_spec.cpp` clears the
+working design before `gt_x11regression` parses into it (`gtinpt.f:805-816`'s
+dlrgef) and then **cleared it again** afterwards where `gtinpt.f:832` calls
+`restor(T,F,F)`. The comment at the clear said so in as many words -- "a
+regARIMA model that already carries regressors needs the full ssprep/restor
+snapshot (deferred)". Deferred, and not walled: the case was silently wrong for
+as long as nothing reached it.
+
+`ssprep.f:64-83` is the field list (Ngrp/Ngrptl/Ncxy/Nb/Ncoltl/Colttl/Grpttl
+plus the pointer, type, coefficient and fix arrays, Nrxy/Iregfx/Ncusrx/Nrusrx
+and Fulltd), now `capture_model_design`/`restore_model_design` in
+`x11/loadxr.cpp`. Mutating it back to the clear fails **20 gates**.
+
+**4. And `xrgdrv.f:66-74`'s own backup.** Not a restor stand-in — `ubkx`/
+`ubktyp`/`ubkptr`/`nubk`/`ubkttl` are locals of `xrgdrv`, taken under
+`IF(Ncusrx.gt.0)` and put back at `:225-231`. The port had the four descriptors
+(entry 59 added them) and **not the data matrix `Userx`**, which `loadxr(F)` had
+just overwritten with the x11reg store and which nothing else restores.
+Mutation: **19 gates**.
+
+With those two, every table is bit-exact and the guard clause comes off.
+
+### Two mutations measured ZERO, and both are the point
+
+**The design restore INSIDE xrgdrv is redundant** — `restor_span` already
+carries restor.f:50-70's design half out of the ssprep snapshot `xrgdrv` takes
+on entry. It was written before that was true (`restor_span` grew the design
+half in entry 83's work), which is also why the `xrg_clear_working` in front of
+it stopped being necessary. Both removed: two compensators for one Fortran call
+is how the next defect hides.
+
+**x11pt2.f:851-859's six divsubs are unreachable**, and the code now says so.
+`Ixreg==2` is the transparent pass and `xrgdrv.f:77-92` zeroes a SUPERSET of the
+six flags on entry; `Ixreg==1` is the no-model path, where every `Fac*` is
+`adjreg`'s output, `adjreg` never runs, and `x11int.f:35-39` has left them at the
+identity. Ported as transcription, gated by nothing, and the wall they replace
+was unreachable in exactly the same way -- it tested Adjso/Adjsea/Adjusr under
+the same `Ixreg==1||2`. Distinguishing this from a corpus gap matters: no spec
+can close it, so the honest artifact is the argument, not a new gate.
+
+### Mutations
+
+| mutation | gates |
+|---|---|
+| A `gtinpt.f:832`'s design restore back to a clear | 20 |
+| B the same restore inside `xrgdrv` | **0** (redundant with `restor_span`; removed) |
+| C `xrgdrv.f:225-231`'s `ubkx` user-matrix restore removed | 19 |
+| D `x11pt2.f:859`'s Adjusr divsub removed | **0** (unreachable, see above) |
+
+### What this does NOT close
+
+CB-40's refusal and CB-41 are still shadowed -- by x11pt2's user/seasonal/cycle
+factor combine, which is what remains of the wall this increment cut down. The
+`Ncusrx == 0` clause is gone from `xrgdrv_supported`, so that is one shadow
+fewer, and the wall message now names its actual trigger (additive /
+pseudo-additive / `Khol==1`) instead of "TD-only".
+
+### Gated by
+
+`extra/airline_x11regression-reg-user`, hand-authored. Suite 7632 -> 7655
+passed, 0 failed, 0 xfailed. WALLS 21 -> 20 gaps.

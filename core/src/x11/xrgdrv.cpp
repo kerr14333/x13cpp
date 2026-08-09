@@ -12,6 +12,7 @@
 #include "x11/slidingspans.hpp"      // ssprep_snapshot, restor_span
 #include "gen/notset.hpp"            // prm::NOTSET, prm::DNOTST
 #include "gen/srslen.hpp"            // prm::PLEN
+#include "gen/model.hpp"             // prm::PUSERX, PB, PGRP, PUREG
 
 #include <algorithm>
 #include <cstdio>
@@ -28,13 +29,20 @@ static void xrg_not_ported(X13Context& ctx, const char* what) {
     abend(ctx);
 }
 
-// Guard: only the TD-only, multiplicative, no-user-regressor, no-x11reg-span,
-// no-classic-Easter path is ported. Anything else fatals cleanly (matching the
-// old x11pt1 not_ported behaviour, just relocated to the estimation front).
+// Guard: the MULTIPLICATIVE, non-pseudo-additive, no-classic-Easter path is
+// ported. Anything else fatals cleanly (matching the old x11pt1 not_ported
+// behaviour, just relocated to the estimation front).
+//
+// `ctx.usrreg.ncusrx == 0` was a fourth clause until 2026-08-09 -- "no regARIMA
+// user regressors". It was standing on three missing restores, not on anything
+// the pass could not do: gtinpt.f:804/832's and xrgdrv.f:207's `restor` of the
+// DESIGN (both stood in for by a CLEAR, which is the same thing only when the
+// design is empty) and xrgdrv.f:66-74/225-231's `ubkx` backup of the user
+// matrix. With those transcribed the whole pairing is bit-exact.
 static bool xrgdrv_supported(X13Context& ctx) {
     return ctx.hiddn.ixreg >= 2 &&
            ctx.x11opt.muladd == 0 && !ctx.x11msc.psuadd &&
-           ctx.x11opt.khol != 1 && ctx.usrreg.ncusrx == 0;
+           ctx.x11opt.khol != 1;
 }
 
 bool xrgdrv(X13Context& ctx, bool span_mode, bool at_x11ari) {
@@ -46,8 +54,9 @@ bool xrgdrv(X13Context& ctx, bool span_mode, bool at_x11ari) {
     // visible, one that no-ops is not.
     if (ctx.hiddn.ixreg < 2) return true;  // no-op
     if (!xrgdrv_supported(ctx)) {
-        xrg_not_ported(ctx, "xrgdrv OLS prior trading-day (Ixreg>=2): only the "
-                            "TD-only multiplicative path is ported");
+        xrg_not_ported(ctx, "xrgdrv OLS prior trading-day (Ixreg>=2) for an "
+                            "additive/pseudo-additive adjustment or a classic "
+                            "X-11 Easter (Khol==1)");
         return false;
     }
 
@@ -145,6 +154,19 @@ bool xrgdrv(X13Context& ctx, bool span_mode, bool at_x11ari) {
     const auto sv_usrptr = ctx.usrreg.usrptr;
     const auto sv_usrttl = ctx.usrreg.usrttl;
     const int sv_nrusrx = ctx.arima.nrusrx;
+
+    // xrgdrv.f:66-74 -- and THIS one is the Fortran's own, not a restor stand-in:
+    // `ubkx`/`ubktyp`/`ubkptr`/`nubk`/`ubkttl` are locals of `xrgdrv`, taken under
+    // `IF(Ncusrx.gt.0)` and put back at :225-231 under `IF(nubk.gt.0)`. The four
+    // descriptors above duplicate it (they stand in for `restor`, which carries
+    // Ncusrx/Nrusrx and not the matrix); the DATA matrix `Userx` has no other
+    // restorer at all, and loadxr(F) has just overwritten it with the x11reg
+    // store.
+    const int nubk = ctx.usrreg.ncusrx;
+    std::vector<double> ubkx;
+    if (nubk > 0)
+        ubkx.assign(ctx.arima.userx.data(), ctx.arima.userx.data() + prm::PUSERX);
+
 
     // --- xrgdrv.f:129: load the x11regression TD design into the working model.
     loadxr(ctx, /*toxreg=*/false);
@@ -272,7 +294,14 @@ bool xrgdrv(X13Context& ctx, bool span_mode, bool at_x11ari) {
     // regressors explicitly (mirrors the parse-time dlrgef path) -- otherwise the
     // 6 TD columns leak into the ML design (ncxy 1->7, wrong ARMA estimate).
     loadxr(ctx, /*toxreg=*/true);
-    xrg_clear_working(ctx);
+    // xrgdrv.f:207's restor. `restor_span` carries the DESIGN half
+    // (restor.f:50-70 -- Ngrp/Nb/Ncoltl/Colttl/Rgvrtp/Iregfx/Regfx) out of the
+    // ssprep snapshot this routine took on entry, so nothing else is needed here:
+    // an explicit design restore alongside it measures ZERO gates, and the
+    // `xrg_clear_working` that used to stand in front of it was redundant for the
+    // same reason. (It was not always: the clear predates restor_span growing the
+    // design half. Two compensators for one Fortran call is how the next defect
+    // hides, so this keeps the one the oracle has.)
     restor_span(ctx);
     // ...and the user-regressor slots loadxr(F) overwrote (see the save above).
     ctx.usrreg.ncusrx = sv_ncusrx;
@@ -280,6 +309,9 @@ bool xrgdrv(X13Context& ctx, bool span_mode, bool at_x11ari) {
     ctx.usrreg.usrptr = sv_usrptr;
     ctx.usrreg.usrttl = sv_usrttl;
     ctx.arima.nrusrx = sv_nrusrx;
+    // xrgdrv.f:225-231 -- the matrix itself, under the Fortran's own `nubk>0`.
+    if (nubk > 0)
+        std::copy(ubkx.begin(), ubkx.end(), ctx.arima.userx.data());
     if (pktd) {
         ctx.picktd.picktd = true;
         ctx.prior.priadj = sv_priadj;
