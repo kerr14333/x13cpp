@@ -18,15 +18,6 @@ namespace x13 {
 using namespace prm;
 
 namespace {
-// Clean-fatal wall (same shape as the other subsystems'; the name is what
-// tools/walls.py keys the inventory on, so it must be one of its HELPERS).
-void not_ported(X13Context& ctx, const std::string& what) {
-    errhdr(ctx);
-    writln(ctx, "ERROR: " + what + " not ported.", stdio::STDERR, ctx.units.mt2,
-           true);
-    abend(ctx);
-}
-
 // The same "is this a user-defined regressor type" list bakusr.f:31-37,
 // addusr.f:34-38, addfix.f:36-42 and rmfix.f:82-88 all spell out inline.
 bool is_user_type(int rt) {
@@ -99,15 +90,12 @@ void bakusr(X13Context& ctx, const usr_design& d, int rind, bool is1st) {
     // `addusr(1)` restores `Userx` and `Usrtyp` as all-zero from a /usrbak/
     // that was never touched -- the x11regression user column comes back with
     // an identically zero data matrix and type 0 ("User-defined"). Only slot 0
-    // holds the garbage, and slot 0 is read exclusively by `addusr(0)`. This
-    // port therefore reproduces the effect (leave slot 1 alone) and refuses
-    // the one combination where the garbage becomes observable -- see the
-    // guard in `addusr` below.
+    // holds the garbage. This port reproduces the rind-1 effect (leave slot 1
+    // alone) and does NOT reproduce the clobber of slot 0 -- see the block in
+    // `addusr` below, which is where that decision is measured.
     if (rind == 0) {
         copy(&d.userx[0], PUSERX, 1, u.userx2.data());
         cpyint(&d.usrtyp[0], PUREG, 1, u.usrty2.data());
-    } else {
-        ctx.usrbak_slot0_clobbered = true;
     }
     cpyint(&d.usrptr[0], PUREG + 1, 1, &u.usrpt2((PUREG + 1) * rind + 1));
     u.ncusx2(rind) = d.ncusrx;
@@ -125,34 +113,42 @@ void addusr(X13Context& ctx, int rind, int fxindx) {
     usrreg_cmn& ur = ctx.usrreg;
     urgbak_cmn& u = ctx.urgbak;
 
-    // The one place CB-40's garbage becomes observable: slot 0 is read here and
-    // nowhere else, so a preceding bakusr(rind=1) means this restore would need
-    // whatever storage followed Xuserx in the oracle's link map. Refuse instead.
+    // ---- CB-40, and the one place its garbage would be read ----------------
     //
-    // REACHABILITY, measured rather than assumed, and the condition is stated as
-    // the TRIGGER (a rind-0 restore after a rind-1 backup) rather than as any one
-    // spec shape that produces it. TWO shapes do:
-    //   * regression{user=} + x11regression{usertype=} + slidingspans{}
-    //     (entry 88's probeD; a bounds-checked build of the vendored sources
-    //     traps at bakusr.f:50 on it);
-    //   * regression{user= b=(…f)} + x11regression{user= b=(…f)} on a MAIN run,
-    //     which entry 96 opened up -- `editor.f:1349` then `:1543` take both
-    //     backups with no span driver anywhere.
-    // Both stop EARLIER, at two older walls -- xrgdrv's `Ncusrx==0` and x11pt2's
-    // user/seasonal/cycle factor combine -- so this refusal is still shadowed.
-    // Measured both ways: relaxing the xrgdrv guard makes the NEXT wall fire, not
-    // this one, and the main-run shape above fatals at that same xrgdrv wall
-    // today. Kept because it becomes the operative one the moment either lifts,
-    // and because a silent wrong answer here is the failure mode this whole
-    // family already had once.
-    if (rind == 0 && ctx.usrbak_slot0_clobbered) {
-        not_ported(ctx,
-                   "a user-regressor restore for the regARIMA design after "
-                   "x11regression has taken its own backup (bakusr.f:50 has "
-                   "already overwritten the regARIMA backup slot with "
-                   "out-of-bounds storage -- CB-40) is");
-        return;
-    }
+    // Slot 0 is read here and nowhere else. In the oracle it has been clobbered
+    // by any preceding `bakusr(rind=1)` with storage past the end of `Xuserx` in
+    // COMMON /cx11rd/. This port does NOT reproduce that -- it cannot; the bytes
+    // are whatever the link map put after the COMMON -- and restores the backup
+    // it actually took. Until 2026-08-09 this arm was a WALL instead, which
+    // refused a run the oracle completes; that is a gap, and the measurements
+    // below are why it is now a documented deviation rather than a refusal.
+    //
+    // MEASURED against an instrumented build of the vendored sources (a
+    // scratchpad copy -- oracle/fortran is never edited):
+    //   * after `editor.f:1543`'s bakusr(1), slot 0 holds 0.05, 0.5, then zeros
+    //     -- `Cvxalf` and `Cvxrdc`, the two doubles that follow `Xuserx` in
+    //     /cx11rd/, and then storage that reads as zero;
+    //   * `addusr(0)` restores that into `Userx` and the oracle DOES read it
+    //     afterwards: poisoning it with 1e30 moves d10/d11/d12/d13/b16/c16;
+    //   * a `bakusr` patched to displace the DESTINATION -- i.e. made to behave
+    //     the way this port behaves -- moves those same six tables AWAY from the
+    //     stock oracle;
+    //   * the oracle's within-sample aape is computed BEFORE the restore: it
+    //     does not move under the poison, under the destination fix, or under a
+    //     full CB-40 repair.
+    //
+    // And yet the engine, restoring the correct backup, is bit-exact against the
+    // STOCK oracle on both shapes that reach here (`extra/airline_x11regression-
+    // reg-user-bothfixed`, 23 gates, and `extra/airline_slidingspans-reg-
+    // x11regression-user-bothfixed`, 26). So this port agrees by CANCELLATION,
+    // not by faithfulness, and both halves are written down because either one
+    // changing alone breaks the other:
+    //   * it captures aape AFTER this restore where the oracle captures it
+    //     before -- mutation: zeroing the matrix restored below moves aape;
+    //   * its x11 factors do not re-derive from `Userx` after this point at all
+    //     -- the same mutation moves NOTHING else, while in the oracle the six
+    //     tables above depend on it.
+    // Anyone extending user-regressor work here must re-measure that pair.
 
     // addusr.f:28-51 -- delete whatever user columns survive in the design.
     if (ur.ncusrx > 0) {

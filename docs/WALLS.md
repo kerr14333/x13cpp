@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**20 walls.**
+**19 walls.**
 
 
 ## Automatic model selection
@@ -68,10 +68,6 @@ reproduce.
 
 - **`core/src/regarima/regvar.cpp:315`**
   regression variable type
-
-- **`core/src/regarima/usrbak.cpp:149`**
-  a user-regressor restore for the regARIMA design after x11regression has taken its own backup (bakusr.f:50 has already overwritten the regARIMA backup slot with out-of-bounds storage -- CB-40) is
-  *Fortran:* `bakusr.f:50`
 
 
 ## Spec parser

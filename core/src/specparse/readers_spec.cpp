@@ -3784,14 +3784,13 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
     // `xrm` carries seven columns with `u1` identically ZERO (CB-40), the engine
     // carried six.
     //
-    // ORDER, and why the inversion is safe. The oracle takes the rind-0 backup
+    // ORDER, and what the inversion costs. The oracle takes the rind-0 backup
     // first (editor.f:1349) and this one second, so its slot 0 ends up holding
     // the out-of-bounds storage this call reads past `Xuserx`. This port runs
-    // the rind-0 call later, in `run_pre_model` -- so on a spec that fires both,
-    // slot 0 would hold the CORRECT regARIMA backup rather than the oracle's
-    // garbage. Unobservable, because `addusr` refuses every rind-0 restore once
-    // `usrbak_slot0_clobbered` is set (see usrbak.cpp) -- which is exactly the
-    // combination in question.
+    // the rind-0 call later, in `run_pre_model`, so on a spec that fires both,
+    // slot 0 holds the CORRECT regARIMA backup rather than the oracle's garbage
+    // -- a deliberate, measured deviation. `addusr` in usrbak.cpp carries the
+    // instrumented-oracle numbers and the two gated specs that pin it.
     if (ctx.xrgmdl.usrxfx) {
         bakusr(ctx, usr_design_xrg(ctx), /*rind=*/1, /*is1st=*/true);
         if (ctx.error.lfatal) return;

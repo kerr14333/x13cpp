@@ -1568,10 +1568,33 @@ for a whole array's length, and writes the result over SLOT 0.
 
 - **Port:** the EFFECT is reproduced (`bakusr` in
   `core/src/regarima/usrbak.cpp` leaves slot 1 alone for `rind==1`, so
-  `addusr(1)` restores zeros), and the one combination where the slot-0 garbage
-  becomes observable -- `regression{user=}` AND `x11regression{usertype=}` AND
-  a span driver, so that an `addusr(0)` follows a `bakusr(1)` -- is refused with
-  its own message rather than guessed at.
+  `addusr(1)` restores zeros). The slot-0 CLOBBER is **not** reproduced -- it
+  cannot be; the bytes are whatever the link map put after `/cx11rd/` -- and
+  until 2026-08-09 the combination that reads it was refused with its own
+  message. That wall is gone: it refused a run the oracle completes, and the
+  refusal was never the conservative choice it looked like.
+
+  **What replaced it, and what was measured to justify that** (instrumented
+  scratchpad build, on `extra/airline_x11regression-reg-user-bothfixed`):
+
+  | probe | d10/d11/d12/d13/b16/c16 | aape |
+  |---|---|---|
+  | stock oracle | baseline | baseline |
+  | poison `Userx` with 1e30 right after `addusr(0)` | **move** | unchanged |
+  | `bakusr` fixed to displace the DESTINATION | **move** | unchanged |
+  | `bakusr` made to behave like THIS PORT (slot 0 written only for `rind==0`) | **move** | unchanged |
+
+  So the oracle really does read the garbage, and really does compute its
+  within-sample aape before the restore. And yet the engine -- which restores
+  the correct backup -- is bit-exact against the STOCK oracle on all 23 gates of
+  that spec and all 26 of `extra/airline_slidingspans-reg-x11regression-user-bothfixed`.
+  **The port agrees by cancellation, not by faithfulness:** it captures aape
+  AFTER the restore where the oracle captures it before, and its x11 factors do
+  not re-derive from `Userx` after that point at all. Mutation: zeroing the
+  matrix `addusr` restores fails **23 gates**, all of them aape/x11 lines on the
+  regression-user specs, and moves nothing on the six tables the oracle's own
+  poison moves. Both halves are recorded in the code, because either one
+  changing alone breaks the other.
 
 - **Pinned by:** `tests/corpus/extra/airline_x11regression-user-fixed`, and
   pinned BY MEASUREMENT: "fixing" `bakusr` to displace the destination (so slot
@@ -1625,10 +1648,19 @@ Two defects in three lines:
   `ss_user_state::bfx2` member and the restore is sized `nb`
   (`ssp_user_span_undo`, `core/src/x11/slidingspans.cpp`).
 
-- **NOT pinned by a spec, and here is why.** Reaching either defect needs
-  `Nusxrg > 0` (an `x11regression{usertype=}`) at the same time as
-  `Ncusrx > 0`, and that combination is behind CB-40's refusal plus two older
-  walls (`xrgdrv`'s `Ncusrx==0` and x11pt2's user-factor combine). When those
-  lift, `tests/corpus/extra/airline_slidingspans-x11reg-usertype` plus a
-  `regression{user=}` block is the spec that reaches it -- built and measured
-  as scratchpad `probeD` while this entry was written.
+- **STILL not pinned by a spec, and the reason changed on 2026-08-09.** The
+  original reason was that `Nusxrg > 0` together with `Ncusrx > 0` sat behind
+  three walls (`xrgdrv`'s `Ncusrx==0`, x11pt2's user-factor combine, CB-40's
+  refusal). All three are gone, and
+  `tests/corpus/extra/airline_slidingspans-reg-x11regression-user-bothfixed`
+  is exactly that shape, gated bit-exact -- **and it still does not reach
+  either defect.** Both `bfx2` saves are inside `IF(upusrx)`/`IF(upuser)`
+  arms, and `upusrx` needs `chusrg` to find a user column whose DIFFERENCED
+  values are identically zero over the span; under `fixmdl`'s default that is
+  a guaranteed no-op (entry 88). Measured: mutating `sspdrv.f:229`'s `Nb` to
+  `Nbx` fails **0** gates on that spec.
+
+  So what CB-41 needs is not a spec with user regressors in both designs -- it
+  is a user column that `chusrg` can zero out. The remaining route is a user
+  regressor that vanishes under differencing over a SPAN but not over the full
+  series.

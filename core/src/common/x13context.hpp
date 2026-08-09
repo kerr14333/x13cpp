@@ -332,12 +332,6 @@ struct X13Context {
     // aaamain through x12run, which is why the metafile harness has to carry it
     // between specs exactly as it carries /mq11/ and /agreg/.
     bool x11agr = true;
-    // PORT-ONLY. Set by `bakusr(rind=1)`, which in the Fortran overwrites the
-    // rind-0 slot of /usrbak/'s Userx2/Usrty2 with out-of-bounds storage
-    // (CB-40, bakusr.f:50/52 displace the source instead of the destination).
-    // The rind-1 EFFECT is deterministic and is reproduced; the clobber is not
-    // reproducible, so `addusr(rind=0)` refuses once this is set.
-    bool usrbak_slot0_clobbered = false;
     // The INDIRECT x11pt4 diagnostics (x11ari.f:341's second x11pt4 call, run on
     // the buffers agr3 installs) -- the .udg's `if2.*` / `if3.*` block. Same
     // snapshot discipline as the x11_f2* direct set: they share the live /inpt2/,

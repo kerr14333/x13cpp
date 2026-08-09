@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7655<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->874<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7704<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->882<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7655<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7704<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2618,6 +2618,54 @@ design restore **0** (removed); the Adjusr divsub **0** (unreachable).
 **Spec:** `extra/airline_x11regression-reg-user`, hand-authored.
 Suite 7632 -> **7655** passed, 0 failed, 0 xfailed. WALLS 21 -> 20 gaps.
 
+## This session, part 49: CB-40's wall came down -- and the port turns out to match the oracle by CANCELLATION
+
+Board item 1's last piece, and it closes the item. Entry 98.
+
+**The remaining shadow was decorative.** x11pt2's surviving wall clause was
+`Axrgtd && Ixreg not in {1,2,3}`, which a code comment already claimed could not
+occur. One probe confirmed it: the both-designs-fixed spec walked past x11pt2 and
+stopped at CB-40's refusal, which was finally the operative wall.
+
+**And the refusal was the wrong instrument.** `bakusr.f:50`'s `rind=1` call
+overwrites slot 0 with storage past the end of `/cx11rd/`; this port cannot
+reproduce those bytes, so it left slot 0 correct and refused. Measured with an
+instrumented scratchpad build of the vendored Fortran (never the vendored tree):
+
+| probe | d10 d11 d12 d13 b16 c16 | aape |
+|---|---|---|
+| poison `Userx` with 1e30 right after `addusr(0)` | move | unchanged |
+| `bakusr` repaired (displace the DESTINATION) | move | unchanged |
+| `bakusr` made to behave like THIS PORT | move | unchanged |
+
+The clobbered slot 0 holds `0.05, 0.5, 0, 0, …` -- `Cvxalf`, `Cvxrdc`, then
+storage that reads as zero. So the oracle DOES read the garbage, and does NOT
+use it for the within-sample aape.
+
+**The engine matches the stock oracle anyway, on every channel, on both shapes.**
+23 gates on the main-run spec, 26 on the slidingspans one. That is cancellation,
+not faithfulness: the port captures aape AFTER the restore where the oracle
+captures it before, and its x11 factors never re-derive from `Userx` after that
+point where the oracle's six tables do. Mutation, to keep the second half from
+being a guess: zeroing the restored matrix fails **23** gates, all aape/x11
+lines, and moves none of the six tables the oracle's own poison moves.
+
+A wall would have been the safe-looking answer and was the wrong one -- it
+refused a completing run. It is replaced by the table above, in `addusr` where
+the decision lives, plus the instruction to re-measure THE PAIR.
+
+**What did not close: CB-41.** The slidingspans spec is exactly the shape it
+needed and still misses it -- `bfx2`'s saves are inside `IF(upusrx)`, and
+`upusrx` needs `chusrg` to zero a differenced user column, which `fixmdl`'s
+default prevents. Mutating `sspdrv.f:229`'s `Nb` to `Nbx`: **0** gates. The
+lesson worth keeping: **a spec built to satisfy a precondition list is not a
+spec that reaches the code, because the list was assembled from the walls in the
+way, not from the guards inside.**
+
+**Specs:** `extra/airline_x11regression-reg-user-bothfixed` and
+`extra/airline_slidingspans-reg-x11regression-user-bothfixed`, hand-authored.
+Suite 7655 -> **7704** passed, 0 failed, 0 xfailed. WALLS 20 -> 19 gaps.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -2630,22 +2678,41 @@ Suite 7632 -> **7655** passed, 0 failed, 0 xfailed. WALLS 21 -> 20 gaps.
    (`test_slidingspans_halt_matches_oracle`). Do not re-open it as a port;
    re-open only if Census fixes the typo.
 
-   What is genuinely open here is not a decision, it is ONE spec (was two;
-   see entry 96 for the one that closed):
-   * ~~the `rind=1` `bakusr`/`addusr` path (CB-40)~~ **CLOSED 2026-08-09.** The
-     missing ingredient was never a consumer inside a span -- it was
+   ~~What is genuinely open here is not a decision, it is ONE spec~~
+   **BOTH SPECS ARE LANDED -- this item is CLOSED 2026-08-09** (entries 96, 97,
+   98):
+   * ~~the `rind=1` `bakusr`/`addusr` path (CB-40)~~ **CLOSED.** The missing
+     ingredient was never a consumer inside a span -- it was
      `x11regression{b=}`, which sets `Userfx` and so routes `x11mdl` through
      `rmfix`/`addfix` on the MAIN run. `extra/airline_x11regression-user-fixed`
      gates it; "fixing" CB-40 now fails 21. It also found that `editor.f`'s TWO
      `bakusr` calls were unported (so `regression{user= b=…f}` returned
      `nreg: 0` against the oracle's 2) and that `x11pt2`'s design swap must be
      `Ixreg==1`-only. Entry 96.
-   * `regression{user=}` + `x11regression{usertype=}` + a span driver is
-     refused (the CB-40 slot-0 clobber). **One of its two shadows is gone as of
-     2026-08-09**: `xrgdrv`'s `Ncusrx==0` clause was standing on two missing
-     restores, not on unported arithmetic, and both are now transcribed (entry
-     97). What still shadows it is x11pt2's user/seasonal/cycle factor combine.
-     Lifting that surfaces CB-41 as well.
+   * ~~`regression{user=}` + `x11regression{usertype=}` + a span driver is
+     refused (the CB-40 slot-0 clobber)~~ **CLOSED.** Both shadowing walls fell
+     (entry 97's `xrgdrv` clause; x11pt2's surviving clause was decorative, as
+     its own comment had claimed), CB-40's refusal became operative, and it was
+     then REMOVED rather than kept: it refused a run the oracle completes, and
+     the engine is bit-exact against the stock oracle on both shapes that reach
+     it. Gated by `extra/airline_x11regression-reg-user-bothfixed` (23) and
+     `extra/airline_slidingspans-reg-x11regression-user-bothfixed` (26).
+
+     **Read entry 98 before touching user-regressor code.** The port matches by
+     CANCELLATION, not by faithfulness -- it captures aape after `addusr`'s
+     restore where the oracle captures it before, and its x11 factors never
+     re-derive from `Userx` after that point, where the oracle's six D/B/C
+     tables do. Either half changing alone breaks the other. The instrumented
+     oracle numbers are in `addusr` (`core/src/regarima/usrbak.cpp`) and CB-40.
+   * **CB-41 is still unreachable, and the reason moved.** The slidingspans
+     spec above is exactly the shape it needed -- user regressors in BOTH
+     designs, under a span driver -- and mutating `sspdrv.f:229`'s `Nb` to
+     `Nbx` fails **0** gates on it. `bfx2`'s saves sit inside `IF(upusrx)`, and
+     `upusrx` needs `chusrg` to find a user column whose DIFFERENCED values are
+     identically zero over the span; `fixmdl`'s default makes that a no-op. The
+     blocker was never the three walls, it is `chusrg` -- so what is wanted is
+     a user regressor that vanishes under differencing over a SPAN but not over
+     the full series. Cheap, and it is the only thing left under this heading.
 
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
    36-39 above and entries 83 and 85-88 before touching any of it. Note that

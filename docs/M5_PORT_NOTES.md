@@ -6657,3 +6657,96 @@ pseudo-additive / `Khol==1`) instead of "TD-only".
 
 `extra/airline_x11regression-reg-user`, hand-authored. Suite 7632 -> 7655
 passed, 0 failed, 0 xfailed. WALLS 21 -> 20 gaps.
+
+## 98. CB-40's wall came down — the port matches the oracle by CANCELLATION, and both halves had to be measured before that could be written down
+
+Board item 1's last piece. Entry 97 left CB-40's refusal and CB-41 behind one
+remaining wall (x11pt2's user/seasonal/cycle factor combine), whose surviving
+clause a code comment already claimed could not occur. One probe settled it: it
+cannot. The both-designs-fixed spec walked straight past x11pt2 and stopped at
+CB-40's refusal, which was finally the operative wall — and the refusal turned
+out to be the wrong instrument.
+
+### What the wall was protecting against
+
+`bakusr.f:50/52` displace the SOURCE of the `Userx2`/`Usrty2` copies, so a
+`bakusr(rind=1)` reads `Xuserx(PUSERX+1 …)` — past the end of `/cx11rd/` — and
+writes what it finds over SLOT 0. `addusr(0)` is the only reader of slot 0.
+This port cannot reproduce those bytes (they are whatever the link map put after
+the COMMON), so it left slot 0 correct and refused any `rind==0` restore that
+followed a `rind==1` backup.
+
+Two shapes reach that: the editor's pair (`editor.f:1349` then `:1543`, a MAIN
+run, no span driver) and the span driver's pair (`sspdrv.f:159` then `:170`).
+Neither had a corpus spec. Both do now.
+
+### The measurements, from an instrumented scratchpad build
+
+`oracle/fortran` is never edited; this was a copy, built with
+`gfortran -O2 -std=legacy -fallow-argument-mismatch`.
+
+| probe | d10 d11 d12 d13 b16 c16 | aape | xrm |
+|---|---|---|---|
+| stock oracle | baseline | baseline | baseline |
+| poison `Userx` with 1e30 immediately after `addusr(0)` | **move** | unchanged | same |
+| `bakusr` fixed to displace the DESTINATION (CB-40 repaired) | **move** | unchanged | **move** |
+| `bakusr` made to behave like THIS PORT (slot 0 written only for `rind==0`) | **move** | unchanged | same |
+
+And the print that names the garbage exactly:
+
+```
+DBGBAK rind= 1  ncusrx= 1  slot0=  5.0000000000000003E-002  0.50000000000000000
+DBGADD rind= 0  ncusrx= 2  userx=  5.0000000000000003E-002  0.50000000000000000  0.0  0.0
+```
+
+`0.05` and `0.5` are `Cvxalf` and `Cvxrdc`, the two doubles that follow `Xuserx`
+in `COMMON /cx11rd/`; everything past them reads as zero.
+
+So the oracle **does** read the clobbered matrix, and it **does not** use it for
+the within-sample aape, which is computed before the restore.
+
+### The result that decided it, and why it is uncomfortable
+
+The engine, restoring the CORRECT backup, is bit-exact against the STOCK oracle
+on all 23 gates of the main-run spec and all 26 of the slidingspans one. Read
+against the table above, that is not faithfulness — it is cancellation:
+
+* this port captures aape AFTER the restore where the oracle captures it before,
+  so the port's correct data lands where the oracle's pre-restore correct data
+  already was;
+* this port's x11 factors do not re-derive from `Userx` after that point at all,
+  where the oracle's six tables do.
+
+Mutation, to prove the second half is not a guess: zeroing the matrix `addusr`
+restores fails **23 gates**, every one of them an aape or x11 line on a
+`regression{user=}` spec, and moves NOTHING among the six tables the oracle's own
+poison moves. Two rearrangements that exactly offset.
+
+A wall would have been the safe-looking answer, and it was the wrong one: it
+refused a run the oracle completes, on every channel bit-exact, on both shapes
+that reach it. GAPS 20 → 19. What replaces it is a comment carrying the table
+above, in `addusr` where the decision lives, plus the standing instruction that
+anyone extending user-regressor work here must re-measure **the pair** — either
+half changing alone breaks the other.
+
+### What this did NOT close: CB-41
+
+The slidingspans spec is exactly the shape CB-41 was waiting for — user
+regressors in BOTH designs, under a span driver — and it still does not reach
+it. Both `bfx2` saves sit inside `IF(upusrx)`/`IF(upuser)`, and `upusrx` needs
+`chusrg` to find a user column whose DIFFERENCED values are identically zero
+over the span; under `fixmdl`'s default that is a guaranteed no-op (entry 88).
+Measured: mutating `sspdrv.f:229`'s `Nb` to `Nbx` fails **0** gates on it.
+
+The generalisable form, and it is the third time this shape has cost an
+increment: **a spec built to satisfy a precondition list is not a spec that
+reaches the code, because the list was assembled from the walls that were in the
+way, not from the guards inside.** CB-41's blocker was never the three walls; it
+was `chusrg`.
+
+### Gated by
+
+`extra/airline_x11regression-reg-user-bothfixed` (23) and
+`extra/airline_slidingspans-reg-x11regression-user-bothfixed` (26), both
+hand-authored. Suite 7655 -> 7704 passed, 0 failed, 0 xfailed. WALLS 20 -> 19
+gaps.
