@@ -6750,3 +6750,89 @@ was `chusrg`.
 `extra/airline_slidingspans-reg-x11regression-user-bothfixed` (26), both
 hand-authored. Suite 7655 -> 7704 passed, 0 failed, 0 xfailed. WALLS 20 -> 19
 gaps.
+
+## 99. `chusrg` fires for the first time — and the span bracket's over-restore was a defect at the call site the corpus never had
+
+Entry 98 left CB-41 as the only thing under board item 1, with a precise
+requirement: a user regressor that differences to ZERO over a span. Building
+that spec found something else first.
+
+### Three preconditions, each one a probe
+
+1. **`slidingspans{fixmdl=no}`.** Under the default every regression
+   coefficient is fixed by span time, so `chusrg.f:43`'s `.not.Regfx(i)` test
+   rejects every column. Instrumented: `regfx= T` on all four spans. Entry 88
+   had called this "a guaranteed no-op under the `fixmdl` default" — correct,
+   and the fix is one spec line.
+2. **A non-fixed `regression{user=}` column**, so the loop has something to
+   walk, together with an `x11regression{usertype=}` so `sspdrv.f:153`'s branch
+   runs at all.
+3. **The column whose VALUES `chusrg` reads is the x11regression one.**
+   `loadxr.f:43`'s copy back into `Xuserx` is commented out in the Fortran, so
+   after `ssxmdl.f:44`'s `loadxr(F)` the working `Userx` holds the
+   x11regression user matrix for the rest of the run, while `Nb`, `Rgvrtp` and
+   `Regfx` above it are the regARIMA design's. `chusrg` reads it with the
+   regARIMA stride `Ncusrx`. So the column that must go zero over the span is
+   the X11REG one, shaped for the SPAN window rather than for the series.
+
+With all three: `DBGSSP after xrg: upusrx= T` on span 1.
+
+### What that exposed in this port
+
+The engine ran the same spec with `upusrx` false, and the reason was a comment
+that had predicted itself:
+
+> restores strictly MORE than `restor.f` does -- `restor` never touches
+> `Begxy`, `Userx`, `Usrtyp`/`Usrptr`/`Usrttl`, `Userfx`, `Easidx`, `Nusrrg`,
+> `Bgusrx` or the `picktd` block … **An x11regression design with its own
+> `span=` or `user=` is where it would stop being [invisible].**
+
+`ss_save_working`/`ss_restore_working` bracket a `loadxr(false)` this port runs
+on a different schedule than the oracle, so it is a compensator with no Fortran
+counterpart — and it put `Userx` back. Instrumented side by side at
+`sspdrv.f:155`:
+
+| | `Userx(1)`, `Userx(2)` |
+|---|---|
+| oracle | `0.02, 0.04` — the x11regression step column |
+| engine | `-0.0715, 0.05` — the regARIMA user matrix, restored on top |
+
+**Third instance of entry 71's `Ksdev` shape**, and the first one the code had
+warned about in advance. The fix is to trim the compensator to `restor.f:29-99`'s
+actual list: it restores `Priadj`, `Nrxy`, `Ncusrx`, `Nrusrx`, `Picktd`,
+`Fulltd`, the design and the ARIMA-operator flags, and it does NOT restore
+`Userx`, `Usrtyp`/`Usrptr`/`Usrttl`, `Bgusrx`, `Begxy`, `Nusrrg`, `Userfx`,
+`Easidx` or `Tddate`/`Tdzero`/`Lrgmtd`. Only the `Userx` half is measured (the
+rest are transcription); the whole trim leaves the suite green.
+
+The observable is `sspdrv.f:250-260`'s NOTE — "The user defined regressors
+listed below were held fixed for at least one span during the sliding spans
+analysis" — which this port had ported and had never been able to emit. With
+the old bracket the new spec fails `test_slidingspans_notes` with `got: []`.
+
+### CB-41, measured to a sharper answer
+
+The spec now reaches `sspdrv`'s `bfx2` blocks with `upusrx` true. CB-41 still
+does not fire, and the reason is worth recording because it is a THEOREM, not a
+corpus gap:
+
+* **(a), the shared buffer, is unreachable by construction.** Both branches call
+  `chusrg` on the SAME regARIMA arrays with the same predicate, and the first
+  call fixes every column that qualifies. So the second call can never find one:
+  `upusrx` true implies `upuser` false, and with `Nusxrg == 0` the first branch
+  does not run at all and `bfx2` has a single writer. The two saves can never
+  both be live.
+* **(b), the `Nb`-instead-of-`Nbx` restore, now RUNS and is still not
+  observable.** Mutating `Nb` to `Nbx`: 0 gates. Mutating the restore to write
+  `Regfxx` all-true: also 0 gates. `Regfxx` is simply not read again after the
+  span loop on a spec that ends there. What would read it is another phase after
+  `sspdrv` — `slidingspans{}` and `history{}` in one run is the next thing to
+  try.
+
+That distinction is entry 95's: (a) is inert-by-construction and the deliverable
+is the proof; (b) is a corpus gap and the deliverable is a better spec.
+
+### Gated by
+
+`extra/airline_slidingspans-x11regression-user-spanzero`, hand-authored (26).
+Suite 7704 -> 7730 passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.

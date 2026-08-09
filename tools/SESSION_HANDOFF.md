@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7704<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->882<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7730<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->887<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7704<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7730<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2666,6 +2666,46 @@ way, not from the guards inside.**
 `extra/airline_slidingspans-reg-x11regression-user-bothfixed`, hand-authored.
 Suite 7655 -> **7704** passed, 0 failed, 0 xfailed. WALLS 20 -> 19 gaps.
 
+## This session, part 50: `chusrg` fires for the first time -- and the span bracket's over-restore was a defect at the call site the corpus never had
+
+Chasing CB-41 found something else first. Entry 99.
+
+**Three preconditions, each a probe.** `slidingspans{fixmdl=no}` (the default
+fixes every coefficient, so `chusrg.f:43` rejects every column -- entry 88's
+"guaranteed no-op", and the fix is one spec line); a non-fixed
+`regression{user=}` column beside an `x11regression{usertype=}`; and -- the one
+that is not guessable -- the column whose VALUES `chusrg` reads is the
+X11REGRESSION one. `loadxr.f:43`'s copy back into `Xuserx` is COMMENTED OUT, so
+after `ssxmdl.f:44`'s `loadxr(F)` the working `Userx` holds the x11reg matrix
+for the rest of the run while `Nb`/`Rgvrtp`/`Regfx` above it are the regARIMA
+design's. So the column that must go zero is the x11reg one, shaped for the SPAN
+window and read with the regARIMA stride.
+
+**What that exposed.** `ss_save_working`/`ss_restore_working` brackets a
+`loadxr(false)` this port runs on a different schedule than the oracle, so it is
+a compensator with no Fortran counterpart -- and it restored `Userx`. Side by
+side at `sspdrv.f:155`: oracle `Userx(1..2) = 0.02, 0.04` (the x11reg step
+column), engine `-0.0715, 0.05` (the regARIMA matrix put back on top). Third
+instance of entry 71's `Ksdev` shape, and **the first one the code had predicted
+in its own comment** -- which named "an x11regression design with its own
+`span=` or `user=`" as where it would stop being invisible.
+
+Fixed by trimming the bracket to `restor.f:29-99`'s actual list. The observable
+is `sspdrv.f:250-260`'s NOTE, which this port had ported and had never been able
+to emit; with the old bracket the new spec fails `test_slidingspans_notes` with
+`got: []`.
+
+**CB-41, sharper.** (a) the shared `bfx2` is unreachable BY CONSTRUCTION -- both
+branches call `chusrg` on the same regARIMA arrays and the first saturates, so
+`upusrx` true implies `upuser` false. (b) the `Nb`-instead-of-`Nbx` restore now
+RUNS: mutating `Nb`->`Nbx` is 0 gates, and so is writing `Regfxx` all-true --
+`Regfxx` is dead after the span loop. Next try: `slidingspans{}` + `history{}`
+in one spec, so a phase after `sspdrv` reads it.
+
+**Spec:** `extra/airline_slidingspans-x11regression-user-spanzero`,
+hand-authored. Suite 7704 -> **7730** passed, 0 failed, 0 xfailed. WALLS
+unchanged at 19 gaps.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -2704,15 +2744,16 @@ Suite 7655 -> **7704** passed, 0 failed, 0 xfailed. WALLS 20 -> 19 gaps.
      re-derive from `Userx` after that point, where the oracle's six D/B/C
      tables do. Either half changing alone breaks the other. The instrumented
      oracle numbers are in `addusr` (`core/src/regarima/usrbak.cpp`) and CB-40.
-   * **CB-41 is still unreachable, and the reason moved.** The slidingspans
-     spec above is exactly the shape it needed -- user regressors in BOTH
-     designs, under a span driver -- and mutating `sspdrv.f:229`'s `Nb` to
-     `Nbx` fails **0** gates on it. `bfx2`'s saves sit inside `IF(upusrx)`, and
-     `upusrx` needs `chusrg` to find a user column whose DIFFERENCED values are
-     identically zero over the span; `fixmdl`'s default makes that a no-op. The
-     blocker was never the three walls, it is `chusrg` -- so what is wanted is
-     a user regressor that vanishes under differencing over a SPAN but not over
-     the full series. Cheap, and it is the only thing left under this heading.
+   * **CB-41: half of it is now PROVED unreachable, half needs one more spec.**
+     `chusrg` FIRES as of part 50 (`extra/airline_slidingspans-x11regression-user-spanzero`),
+     so both `bfx2` blocks run with `upusrx` true. **(a)**, the shared buffer,
+     can never fire: both branches call `chusrg` on the same regARIMA arrays and
+     the first saturates, so `upusrx` true implies `upuser` false. That is a
+     theorem about the program, not a corpus gap. **(b)**, the
+     `Nb`-instead-of-`Nbx` restore, runs and is still invisible -- 0 gates for
+     `Nb`->`Nbx` AND 0 for writing `Regfxx` all-true, because `Regfxx` is dead
+     after the span loop. Next: `slidingspans{}` + `history{}` in one spec, so a
+     phase after `sspdrv` reads it.
 
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and
    36-39 above and entries 83 and 85-88 before touching any of it. Note that

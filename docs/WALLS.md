@@ -81,7 +81,7 @@ reproduce.
 
 ## X-11
 
-- **`core/src/x11/slidingspans.cpp:771`**
+- **`core/src/x11/slidingspans.cpp:793`**
   slidingspans{} with a change-of-regime regression variable (ssmdl.f:150-241, which the oracle itself halts on -- see CB-39) is
   *Fortran:* `ssmdl.f:150-241`
 

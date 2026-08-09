@@ -156,25 +156,33 @@ ss_store ss_xrg_store(X13Context& ctx) {
 // port runs its `restor_span` on a different schedule (see the note above
 // ssx11a_span_xrg_outliers), so both brackets undo the swap explicitly.
 //
-// This is a compensation for a moved call, NOT a mirror of the Fortran, and it
-// restores strictly MORE than `restor.f` does -- `restor` never touches
-// `Begxy`, `Userx`, `Usrtyp`/`Usrptr`/`Usrttl`, `Userfx`, `Easidx`, `Nusrrg`,
-// `Bgusrx` or the `picktd` block, all of which `loadxr(false)` overwrites and
-// the oracle leaves overwritten. The two designs agree on every one of those
-// across the gated corpus, which is exactly what makes the difference
-// invisible (entry 71's `Ksdev` shape). An x11regression design with its own
-// `span=` or `user=` is where it would stop being.
+// This is a compensation for a moved call, NOT a mirror of the Fortran, so it
+// has to be trimmed to `restor.f`'s field list BY HAND. `restor.f:29-99` puts
+// back `Priadj`, `Nrxy`, `Ncusrx`, `Nrusrx`, `Picktd`, `Fulltd`, the whole
+// design (`Ngrp`…`Regfx`/`Iregfx`) and the ARIMA-operator flags `loadxr` clears
+// -- and it does NOT put back `Userx`, `Usrtyp`/`Usrptr`/`Usrttl`, `Bgusrx`,
+// `Begxy`, `Nusrrg`, `Userfx`, `Easidx` or `Tddate`/`Tdzero`/`Lrgmtd`. The
+// oracle carries the x11regression design's copies of those forward, and this
+// bracket must too.
+//
+// Until 2026-08-09 it restored all of them, and the comment here said the two
+// designs "agree on every one of those across the gated corpus … an
+// x11regression design with its own `span=` or `user=` is where it would stop
+// being [invisible]". That was exactly right, and
+// `extra/airline_slidingspans-x11regression-user-spanzero` is that spec: the
+// oracle reaches `sspdrv.f:155`'s `chusrg` with `Userx` holding the
+// X11REGRESSION user matrix -- which is what lets a column difference to zero
+// over a span and get held fixed -- and this port reached it with the regARIMA
+// matrix restored on top, so the NOTE at `sspdrv.f:250-260` was never emitted.
+// Entry 71's `Ksdev` shape, third instance: identical code, correct at every
+// call site the corpus had.
 struct ss_working_save {
     model_cmn m;
     x13::farray1<double, prm::PB> b;
     int priadj;
-    int nusrrg;
     usrreg_cmn usrreg;
-    decltype(X13Context::arima.userx) userx;
     int nrusrx;
-    x13::farray1<int, 2> bgusrx;
     int nrxy;
-    x13::farray1<int, 2> begxy;
     picktd_cmn picktd;
 };
 
@@ -183,29 +191,43 @@ ss_working_save ss_save_working(const X13Context& ctx) {
     s.m = ctx.model;
     s.b = ctx.mdldat.b;
     s.priadj = ctx.prior.priadj;
-    s.nusrrg = ctx.x11adj.nusrrg;
     s.usrreg = ctx.usrreg;
-    s.userx = ctx.arima.userx;
     s.nrusrx = ctx.arima.nrusrx;
-    s.bgusrx = ctx.arima.bgusrx;
     s.nrxy = ctx.arima.nrxy;
-    s.begxy = ctx.arima.begxy;
     s.picktd = ctx.picktd;
     return s;
 }
 
 void ss_restore_working(X13Context& ctx, const ss_working_save& s) {
+    // The fields `restor.f` leaves alone. Snapshotted from the LIVE state, i.e.
+    // as `loadxr(false)` left them, and written back over the wholesale restores
+    // below -- `model_cmn` and `usrreg_cmn` are copied as units here and the
+    // Fortran's restore is field-by-field.
+    const bool keep_userfx = ctx.model.userfx;
+    const int keep_easidx = ctx.model.easidx;
+    const auto keep_usrtyp = ctx.usrreg.usrtyp;
+    const auto keep_usrptr = ctx.usrreg.usrptr;
+    const auto keep_usrttl = ctx.usrreg.usrttl;
+    const auto keep_tddate = ctx.picktd.tddate;
+    const auto keep_tdzero = ctx.picktd.tdzero;
+    const auto keep_lrgmtd = ctx.picktd.lrgmtd;
+
     ctx.model = s.m;
     ctx.mdldat.b = s.b;
     ctx.prior.priadj = s.priadj;
-    ctx.x11adj.nusrrg = s.nusrrg;
     ctx.usrreg = s.usrreg;
-    ctx.arima.userx = s.userx;
     ctx.arima.nrusrx = s.nrusrx;
-    ctx.arima.bgusrx = s.bgusrx;
     ctx.arima.nrxy = s.nrxy;
-    ctx.arima.begxy = s.begxy;
     ctx.picktd = s.picktd;
+
+    ctx.model.userfx = keep_userfx;
+    ctx.model.easidx = keep_easidx;
+    ctx.usrreg.usrtyp = keep_usrtyp;
+    ctx.usrreg.usrptr = keep_usrptr;
+    ctx.usrreg.usrttl = keep_usrttl;
+    ctx.picktd.tddate = keep_tddate;
+    ctx.picktd.tdzero = keep_tdzero;
+    ctx.picktd.lrgmtd = keep_lrgmtd;
 }
 
 // rmotss.f -- decide what happens to ONE outlier column of the design before the

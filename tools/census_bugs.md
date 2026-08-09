@@ -1648,19 +1648,27 @@ Two defects in three lines:
   `ss_user_state::bfx2` member and the restore is sized `nb`
   (`ssp_user_span_undo`, `core/src/x11/slidingspans.cpp`).
 
-- **STILL not pinned by a spec, and the reason changed on 2026-08-09.** The
-  original reason was that `Nusxrg > 0` together with `Ncusrx > 0` sat behind
-  three walls (`xrgdrv`'s `Ncusrx==0`, x11pt2's user-factor combine, CB-40's
-  refusal). All three are gone, and
-  `tests/corpus/extra/airline_slidingspans-reg-x11regression-user-bothfixed`
-  is exactly that shape, gated bit-exact -- **and it still does not reach
-  either defect.** Both `bfx2` saves are inside `IF(upusrx)`/`IF(upuser)`
-  arms, and `upusrx` needs `chusrg` to find a user column whose DIFFERENCED
-  values are identically zero over the span; under `fixmdl`'s default that is
-  a guaranteed no-op (entry 88). Measured: mutating `sspdrv.f:229`'s `Nb` to
-  `Nbx` fails **0** gates on that spec.
+- **STILL not pinned by a spec, and as of 2026-08-09 half of it never can be.**
+  `extra/airline_slidingspans-x11regression-user-spanzero` is the first spec in
+  this corpus that makes `chusrg` fire at all. It needs three things: `fixmdl=no`
+  (the default fixes every coefficient, so `chusrg.f:43`'s `.not.Regfx(i)` test
+  rejects every column), a non-fixed `regression{user=}` column beside an
+  `x11regression{usertype=}`, and an x11reg user column shaped so that SPAN 1's
+  strided window differences to zero -- the values `chusrg` reads are the
+  x11regression ones, because `loadxr.f:43`'s copy back into `Xuserx` is
+  commented out. It reaches both `bfx2` blocks with `upusrx` true. Neither
+  defect fires.
 
-  So what CB-41 needs is not a spec with user regressors in both designs -- it
-  is a user column that `chusrg` can zero out. The remaining route is a user
-  regressor that vanishes under differencing over a SPAN but not over the full
-  series.
+  **(a), the shared buffer, is unreachable BY CONSTRUCTION.** Both branches call
+  `chusrg` on the SAME regARIMA arrays (`Nb`, `Rgvrtp`, `Regfx`) with the same
+  predicate, and the first call fixes every column that qualifies -- so the
+  second can never find one. `upusrx` true implies `upuser` false; and with
+  `Nusxrg == 0` the first branch does not run at all and `bfx2` has a single
+  writer. The two saves can never both be live. That is a theorem about the
+  program, not a gap in the corpus, and it will not change with a better spec.
+
+  **(b), the `Nb`-instead-of-`Nbx` restore, now RUNS and is still not
+  observable.** Measured on that spec: mutating `Nb` to `Nbx` fails 0 gates, and
+  so does mutating the restore to write `Regfxx` all-true. `Regfxx` is not read
+  again after the span loop. What is wanted is a phase AFTER `sspdrv` that reads
+  it -- `slidingspans{}` and `history{}` in one run is the next thing to try.
