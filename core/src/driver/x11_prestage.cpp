@@ -57,7 +57,7 @@ static void x11_easter_prepass(X13Context& ctx) {
     // from Series each pass, so the transparent decomposition is clean.
     x11pt1(ctx, /*lmodel=*/false, false, false);
     if (!ctx.error.lfatal) x11pt2(ctx, false, /*lx11=*/true, false, false, false);
-    if (!ctx.error.lfatal) x11pt3(ctx, false, /*lttc=*/false);
+    if (!ctx.error.lfatal) x11pt3(ctx, false, ctx.arima.lttc);
     if (ctx.error.lfatal) return;
 
     // xrgdrv.f:168-178 -- restore the extension + X-11 pointers BEFORE holday, so

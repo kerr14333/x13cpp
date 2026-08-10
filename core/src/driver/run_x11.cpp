@@ -76,7 +76,7 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
     // x11ari.f:253 -- `ELSE IF(Lx11)`. With no x11{} spec there is no D8-D16 and
     // no Part E/F; control drops straight through to the diagnostics below.
     if (has_x11) {
-        x11pt3(ctx, lgraf, /*lttc=*/false);
+        x11pt3(ctx, lgraf, ctx.arima.lttc);
         if (ctx.error.lfatal) return false;
 
         // x11pt4.f's savelog point: freeze the D8/B1 seasonality-test battery here,
@@ -97,7 +97,7 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
         // the trend; ctx.x11_stc_int is the internal one.
         if (!ctx.x11_sti_int.empty())
             x11pt4_etables(ctx, ctx.x11_stc_int.data(), ctx.x11srs.stc.data(),
-                           /*lttc=*/false);
+                           ctx.arima.lttc);
         if (!ctx.x11_sti_int.empty() &&
             x11pt4_partf(ctx, ctx.x11_sti_int.data(), ctx.x11_stc_int.data())) {
             ctx.x11_f2inpt2 = ctx.inpt2;

@@ -7242,3 +7242,150 @@ copy fails **4**. Suite 7766 passed, 0 failed, 0 xfailed. WALLS unchanged at 19.
 The tool tracks its own resolution: it reported 15 candidates before the fix and
 14 after, because `automd` no longer writes those fields inline. Same property
 `walls.py` has -- delete the thing and it leaves the list.
+
+## 104. `regression{trendtc=}` and `{testalleaster=}` were in the dictionary and nowhere else -- and a condition the port was allowed to simplify only while one of them stayed false (2026-08-10)
+
+Entry 103 closed with a section headed **"Recorded, not fixed: `Lceaic`"** -- the
+Easter arm it had just ported was dead, because `getreg.f:506`'s argument had no
+reader here. Taking that lead found the argument sitting BESIDE it in the same
+dictionary was in worse shape.
+
+`gt_regression`'s ARGDIC has 23 entries. Twenty-one have a dispatch arm; entries
+22 (`testalleaster`) and 23 (`trendtc`) fell through to the generic
+`consume_value` tail. So the parser ACCEPTED both, validated neither against
+`YSNDIC` (the oracle errors on anything that is not yes or no), and stored
+neither.
+
+* **`Lceaic`** is the one entry 103 already knew about: `editor.f:1419` /
+  `:1430-1433` append the `99` sentinel to `Easvec`, which `easaic` reads as
+  "also test the model carrying ALL the Easter columns at once". Reachable only
+  through the `igrp > 0` arm -- with the bare `aictest=(easter)` fallback the
+  flag is ignored entirely, which is why the corpus's existing Easter specs
+  could not have caught it.
+* **`Lttc` was the live one.** `x11pt3.f:927-931` folds a temporary change back
+  into the FINAL TREND instead of leaving it in the irregular; `:1089-1093`
+  correspondingly stops restoring it into the published D13; `x11pt4.f:242`
+  switches the E7 change table to `Stc2`; `seatpr.f:399` does the same for the
+  SEATS trend. **Every `x11pt3` / `x11pt4_etables` call site in this port passed
+  a hardcoded `/*lttc=*/false`** -- five of them, across `run_x11`,
+  `run_x11_span`, `x11_prestage` and `composite_tail`.
+
+Oracle on-vs-off first, as the rule says. `airline` + `tc1958.mar` + `x11{}`:
+D12's 1958 total moves 4605 -> 4560, E7 Mar-1958 moves `0.0` -> `-3.6`. Not a
+label; a different adjustment at `OUTCOME: OK`.
+
+### Why the defaults audit could not see these
+
+Entry 101 swept all 164 NON-ZERO `gtinpt.f` defaults and made that class
+self-policing. `Lceaic=F` (`gtinpt.f:284`) and `Lttc=F` (`:287`) are both
+**zero** defaults, so the struct's zero-init agrees with the Fortran and
+`test_gtinpt_defaults.py` is silent -- correctly. The two audits answer
+different questions: entry 101's is *does the port write the Fortran's INITIAL
+value*, this one's is *does the port write the value the PARSER computes*. A
+flag that defaults to false and is only ever turned on by an unported argument
+passes the first and fails the second. Neither test subsumes the other.
+
+### The defect behind the defect: one name for two conditions
+
+Wiring `lttc` through made the D-tables (D10/D11/D12/D13/D16/E7) bit-exact
+immediately, and left exactly two things wrong: `f2.a01[9]` and the whole
+`spcsa` spectrum block. Column 10 of F2.A is `Cimbar` (`svf2f3.f:29-31`), the
+summary of `Stcime` -- the modified SA series.
+
+`Stcime`'s weight-zero replacement picks between the folded and the internal
+trend at `x11pt3.f:1212-1217`:
+
+```
+IF(((.not.Finls).and.Adjls.eq.1).or.(Nustad.gt.0.and.Lprntr))THEN
+ Stcime(i)=Stc2(i)
+ELSE
+ Stcime(i)=Stc(i)
+```
+
+and `stc2` is BUILT at `:926-927` under
+
+```
+IF(((.not.Finls).and.Adjls.eq.1).or.(Nustad.gt.0.and.Lprntr).or.
+&((.not.Fintc).and.Lttc.and.Adjtc.eq.1)) THEN
+```
+
+**Two conditions, differing by the `Lttc` term.** This port had collapsed them
+into a single `have_stc2` flag -- exact for as long as `Lttc` cannot be true,
+and `Lttc` could not be true because the argument that sets it was being
+discarded. So `trendtc=yes` with no level shift built `stc2` and then replaced
+the weight-zero SA values from it, where the oracle replaces from the internal
+`Stc`.
+
+Same shape as entry 89's `getrev` trend store, which also turned on
+`(.not.Finls).and.Adjls.eq.1` versus `have_stc2`, and was also invisible until a
+spec made the two differ. **A name the port introduces for a condition is a
+claim that every use of it is the same condition.** Grep the Fortran for each
+use before believing it.
+
+(`x11pt3.f:928` also copies the WHOLE `PLEN`, where this port copied only
+`Pos1bk..Posffc`. Made faithful in the same edit; no gate moved.)
+
+### The SEATS half is not ported, deliberately
+
+`seatpr.f:399`'s `Lttc` fold feeds `LSESTL`, the SEATS trend-without-outlier-
+effects table, which has no C++ at all -- so nothing silently disagrees today,
+and the flag is now correctly stored. Whoever ports `LSESTL` reads
+`ctx.arima.lttc` and the fold is already there. This is the live tail entry 101
+described for defaults, in reader form: **the value landed before its consumer,
+which is the safe order.**
+
+### Gated by
+
+`extra/airline_reg-trendtc` (TC outlier + `x11{save=(d10 d11 d12 d13 d16 e7)}`)
+and `extra/airline_aictest-easter-testall` (`variables=(easter[8] easter[15])`
++ `aictest=(easter)` + `testalleaster=yes`, which makes the oracle run FOUR AIC
+candidates where the existing Easter specs run three), **+23 gates**.
+
+Mutations, each rebuilt and run:
+
+* `ls_in_trend` -> `have_stc2` in the Part-E pick: fails **2**
+  (`test_f2_summary_measures`, `test_spectrum_peak_block`) and nothing else --
+  the D-tables really are insensitive to it.
+* both parse arms forced to `false`: fails **4** -- `d12`, `d13`, the R/Python
+  binding gate and `test_aictest_savelog`.
+
+Note the first mutation's shape. It fails only the two DIAGNOSTIC gates, so a
+spec that saved the D-tables and stopped there would have gated the feature,
+passed, and left the defect in place. This spec earns its coverage by asking for
+the summary block, not by asking for the tables. The first draft of it asked for
+neither -- with no `save=` at all, `test_x11_tables` did not discover it and
+three gates never ran.
+
+Suite **7789 passed, 0 failed, 892 skipped, 0 xfailed**. WALLS unchanged at 19
+gaps / 4 faithful -- nothing was refused before and nothing is refused now,
+which is the whole complaint.
+
+### The sweep for the class, and the seven it leaves open
+
+The detector is committed as `tools/parsed_dropped.py` and its dispositions
+live in its own docstring -- do not re-derive them. It reports **76** candidates
+now and reported **78** before this fix, because `Lttc` and `Lceaic` left the
+list the moment the dispatch arms landed: the same self-resolving property
+`walls.py` and `dup_transcription.py` have. For each `get*.f` / `gt*.f` spec reader it takes every
+assignment to a COMMON member (this codebase capitalises them and lowercases
+locals), cross-checked against every `.field =` in `core/src`. Discounting
+`gtinpt.f`'s defaults (entry 101's territory) and the `Inptok` / `Havesp` /
+`Lmodel` / `Havreg` out-parameters, it leaves **seven** more options this port
+parses and drops, every one with a consumer in an ALREADY-PORTED file, and none
+of them walled:
+
+| option | field | oracle consumers |
+|---|---|---|
+| `x11regression{outliermethod=}` | `Ladd1x` (`gtxreg.f:382`) | `x11mdl.f` |
+| `x11regression{holidaynonlin=}` | `Xhlnln` (`:449`) | `rgtdhl.f`, `x11aic.f`, `x11mdl.f`, `x11ref.f` |
+| `x11regression{eastermeans=}` | `Xelong` (`:458`) | `kfcn.f`, `rgtdhl.f`, `x11aic.f`, `x11mdl.f` |
+| `x11regression{defaultcritical=}` | `Cvxtyp` (`:578`) | `editor.f` |
+| `x11regression{almost=}` | `Cvxrdc` (`:601`) | `x11mdl.f` |
+| `x11{taper=}` | `Thtapr` (`getx11.f:490`) | `spcdrv.f`, `spcrsd.f` |
+| `regression{chi2testcv=}` / `{tlimit=}` | `Chi2cv` (`getreg.f:455`), `Tlimit` (`:470`) | `chkchi.f`, `usraic.f` -- both unported, and WALLED |
+
+The last row is the honest exception: those two are dropped, but their only
+readers are refused, so the drop is covered by an existing wall. The other six
+are `Lttc`'s exact shape -- in the dictionary, out of the dispatch, live reader
+on the other side. They are NOT fixed here: measure the oracle on-vs-off per
+option first, as this entry did for `trendtc`. That is the next front.

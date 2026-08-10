@@ -46,7 +46,7 @@ bool run_composite_tail(X13Context& ctx, const int* begspn_full, bool lx11) {
         // the direct side. The direct block was snapshotted above, so overwriting
         // /inpt2/, /work2/ and Mcd here is safe.
         x11pt4_etables(ctx, ctx.x11srs.stc.data(), ctx.x11srs.stc2.data(),
-                       /*lttc=*/false);
+                       ctx.arima.lttc);
         if (x11pt4_partf(ctx, ctx.x11srs.sti.data(), ctx.x11srs.stc.data())) {
             ctx.agr_f2inpt2 = ctx.inpt2;
             ctx.agr_f2work2 = ctx.work2;

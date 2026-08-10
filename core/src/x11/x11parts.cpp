@@ -1458,10 +1458,19 @@ vtc(ctx, stc, stci);
     // zero SA replacement then uses stc2); the published D12 is stc2, stored into
     // srs.stc as the final action. Base path leaves srs.stc as the published D12.
     const bool tad_in_trend = (pu.nustad > 0 && pri.lprntr);
+    // x11pt3.f:926-927 vs :1212-1213 -- these are TWO conditions, not one. The
+    // stc2 BUILD takes the Lttc term; Part E's weight-zero SA replacement
+    // (:1212) does NOT, so with trendtc=yes and no level shift the oracle builds
+    // stc2 and then replaces from the INTERNAL Stc. Collapsing them into
+    // `have_stc2` was exact for as long as lttc could not be true -- which it
+    // could not, because regression{trendtc=} was parsed and discarded until
+    // 2026-08-10. Cost: Cimbar (F2.A col 10) and the SA spectrum, D-tables all
+    // bit-exact.
+    const bool ls_in_trend = (((!adj.finls) && adj.adjls == 1) || tad_in_trend);
     bool have_stc2 = false;
-    if (((!adj.finls) && adj.adjls == 1) || tad_in_trend ||
-        ((!adj.fintc) && lttc && adj.adjtc == 1)) {
-        copy(stc + (pos1bk - 1), posffc - pos1bk + 1, 1, stc2 + (pos1bk - 1));
+    if (ls_in_trend || ((!adj.fintc) && lttc && adj.adjtc == 1)) {
+        // x11pt3.f:928 copies the WHOLE PLEN, not just the observed span.
+        copy(stc, PLEN, 1, stc2);
         if ((!adj.finls) && adj.adjls == 1)
             addmul(stc2, facls, stc, pos1bk, posffc, muladd);
         if ((!adj.fintc) && lttc && adj.adjtc == 1)
@@ -1557,7 +1566,9 @@ vtc(ctx, stc, stci);
             stime[i - 1] = sti[i - 1];
             stcime[i - 1] = stci[i - 1] + cnst;
         } else {
-            stcime[i - 1] = have_stc2 ? stc2[i - 1] : stc[i - 1];  // LS -> folded trend
+            // x11pt3.f:1212-1217 -- NB `ls_in_trend`, not `have_stc2`: the Lttc
+            // term is absent from this condition. See the build block above.
+            stcime[i - 1] = ls_in_trend ? stc2[i - 1] : stc[i - 1];
             stcime[i - 1] += cnst;
             stime[i - 1] = ebar;          // expected irregular
             // x11pt3.f:1227-1231 -- rebuild the original from its components.

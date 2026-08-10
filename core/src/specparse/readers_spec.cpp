@@ -1104,6 +1104,37 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
                 lumean = ivec[0] == 1;
                 luseas = ivec[0] == 2;
             }
+        } else if (argidx == 22 || argidx == 23) {
+            // getreg.f:500-516 -- testalleaster -> Lceaic, trendtc -> Lttc.
+            // NOTE the Flgnul argument is F here, where every yes/no switch in
+            // getx11.f passes T: a NULL element is silently ignored rather than
+            // flagged. Both were consumed and DISCARDED by this port until
+            // 2026-08-10; both have live consumers.
+            //   Lceaic: editor.f:1419/1430-1433 -- appends the 99 sentinel to
+            //     Easvec, which easaic reads as "also test the model carrying
+            //     ALL the Easter columns at once". Only reachable through the
+            //     igrp>0 arm, i.e. with an Easter group already in variables=.
+            //   Lttc:   x11pt3.f:927-931 / x11pt4.f:242 / seatpr.f:399 -- with
+            //     Adjtc==1 a temporary change folds back into the FINAL TREND
+            //     instead of the irregular. Not a label: measured -3.6 vs 0.0
+            //     on E7 Mar-1958 for airline + tc1958.mar.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            static const char YSNDIC[] = "yesno";
+            static const int ysnptr[3] = {1, 4, 6};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, false, 1, YSNDIC, ysnptr, 2,
+                   argidx == 22 ? "Choices for testalleaster are yes and no."
+                                : "Choices for trendtc are yes and no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (argidx == 22)
+                    ctx.arima.lceaic = (ivec[0] == 1);
+                else
+                    ctx.arima.lttc = (ivec[0] == 1);
+            }
         } else {
             std::vector<std::string>* cap = nullptr;
             std::vector<std::string> tmp;

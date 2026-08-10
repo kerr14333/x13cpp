@@ -546,7 +546,7 @@ bool run_x11_span(X13Context& ctx, const std::vector<double>& trnsrs_full,
             ssrit(ctx, sa_v.data(), pos1ob_s, posfob_s, 3, series);
         }
     } else if (lx11) {
-        x11pt3(ctx, lgraf, /*lttc=*/false);
+        x11pt3(ctx, lgraf, ctx.arima.lttc);
         if (ctx.error.lfatal) return false;
     }
 

@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots; then `x11regression{outlierspan=}`, which took `cvrerr.f` with it; and `force{}` on an X-11 COMPOSITE, unported behind OUTCOME: OK -- found because the composite harness emitted no residual-seasonality F-test row at all, which was also hiding a ninth span-replay save/restore miss; and PSEUDO-ADDITIVE, which closes composite{} -- two lines of agr3, and behind them two entirely unported refusal blocks, a second Mt2 channel nobody read, and `Lindot`, a gtinpt DEFAULT the port never wrote that had four agr3 guards dead)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots; then `x11regression{outlierspan=}`, which took `cvrerr.f` with it; and `force{}` on an X-11 COMPOSITE, unported behind OUTCOME: OK -- found because the composite harness emitted no residual-seasonality F-test row at all, which was also hiding a ninth span-replay save/restore miss; and PSEUDO-ADDITIVE, which closes composite{} -- two lines of agr3, and behind them two entirely unported refusal blocks, a second Mt2 channel nobody read, and `Lindot`, a gtinpt DEFAULT the port never wrote that had four agr3 guards dead; and then `regression{trendtc=}`/`{testalleaster=}`, two arguments in the dictionary and out of the dispatch -- behind the first of them, a condition this port was only allowed to collapse while the flag it omits could not be set)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7766<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->889<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7789<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->892<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7766<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7789<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2902,6 +2902,50 @@ site. Next reader that lands wants them.
 re-derive them. Re-run the tool after any port that transcribes a block, and
 confirm the count MOVES if you deleted a copy (it went 15 -> 14 here).
 
+## This session, part 55: two `regression{}` arguments in the dictionary and out of the dispatch -- and the condition that was only safe while one stayed false
+
+Entry 103's parting note said `Lceaic` had no reader, so the Easter arm it had
+just ported was dead. Following that lead: `gt_regression`'s ARGDIC has 23
+entries and only 21 dispatch arms. `testalleaster` (22) and `trendtc` (23) fell
+through to the generic `consume_value` tail -- accepted, unvalidated, unstored.
+
+* `testalleaster=` -> `Lceaic`. Adds the `99` sentinel to `Easvec`, i.e. a
+  FOURTH AIC candidate carrying all the Easter columns at once. Only reachable
+  with an Easter group already in `variables=`.
+* `trendtc=` -> `Lttc`. **The live one.** With `Adjtc==1` a temporary change
+  folds into the FINAL TREND rather than the irregular. Every `x11pt3` /
+  `x11pt4_etables` call site in this port passed a hardcoded `false` -- five of
+  them. Oracle on-vs-off, measured before any port work: D12 1958 total
+  4605 -> 4560, E7 Mar-1958 `0.0` -> `-3.6`, at `OUTCOME: OK`.
+
+**Why entry 101's audit is silent here, correctly.** Both default to `F` in
+`gtinpt.f`, so the struct zero-init agrees and `test_gtinpt_defaults.py` has
+nothing to say. That test asks *does the port write the Fortran's INITIAL
+value*; this defect is *does the port write the value the PARSER computes*.
+Neither subsumes the other.
+
+**The defect behind it.** Threading `lttc` made every D-table bit-exact at once
+and left `f2.a01[9]` (`Cimbar`, the modified-SA summary) and the `spcsa`
+spectrum wrong. `x11pt3.f:926` BUILDS `stc2` under a condition that includes the
+`Lttc` term; `:1212` PICKS between `stc2` and the internal `Stc` under a
+condition that does not. The port had collapsed them into one `have_stc2`,
+which is exact only while `Lttc` cannot be true. Entry 89 hit the same pair from
+the `getrev` side. Split into `ls_in_trend` (the pick) and `have_stc2` (the
+build).
+
+**Landed.** `extra/airline_reg-trendtc`, `extra/airline_aictest-easter-testall`,
++23 gates. Mutations: the condition split fails 2 (both DIAGNOSTIC gates, not
+one D-table -- a spec that saved tables and stopped would have passed); both
+parse arms forced false fails 4. Suite **7789 passed, 0 failed, 892 skipped**.
+WALLS unchanged at 19/4, which is the complaint: nothing refused before, nothing
+refused now. Entry 104.
+
+**The sweep, and what it leaves.** One screen over every `get*.f`/`gt*.f`
+reader: each COMMON-member assignment cross-checked against every `.field =` in
+`core/src`. Discounting `gtinpt.f` defaults and the out-parameters, **six more
+options are parsed and dropped with a live reader on the other side and no
+wall** -- see the table in entry 104 and board item 8 below.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -3006,6 +3050,23 @@ confirm the count MOVES if you deleted a copy (it went 15 -> 14 here).
    `additivesa=`; `pickmdl{aictest=(user)}` (needs
    `usraic.f`/`chkchi.f`); the `!Hvmdl` no-model cleanup
    (`arima.f:476-527`).
+8. **Six spec options are parsed and DROPPED, each with a live reader and no
+   wall** (found by part 55's sweep, table in entry 104). In the order the
+   sweep ranks them by consumer count:
+   `x11regression{holidaynonlin=}` -> `Xhlnln` (`gtxreg.f:449`; read by
+   `rgtdhl.f`, `x11aic.f`, `x11mdl.f`, `x11ref.f`);
+   `x11regression{eastermeans=}` -> `Xelong` (`:458`; `kfcn.f`, `rgtdhl.f`,
+   `x11aic.f`, `x11mdl.f`);
+   `x11regression{almost=}` -> `Cvxrdc` (`:601`; `x11mdl.f`);
+   `x11regression{outliermethod=}` -> `Ladd1x` (`:382`; `x11mdl.f`);
+   `x11regression{defaultcritical=}` -> `Cvxtyp` (`:578`; `editor.f`);
+   `x11{taper=}` -> `Thtapr` (`getx11.f:490`; `spcdrv.f`, `spcrsd.f`).
+   `regression{chi2testcv=}`/`{tlimit=}` are dropped too but their only readers
+   (`chkchi.f`/`usraic.f`) are walled, so those two are covered.
+   **Measure the ORACLE on-vs-off per option before porting any of them** --
+   part 55 did, and the number is what justified the spec.
+   Note the pairing with item 7: porting `usraic.f`/`chkchi.f` would make
+   `Chi2cv`/`Tlimit` live, so that port must land the two parse arms with it.
 
 ## Environment notes
 
