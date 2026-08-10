@@ -984,17 +984,90 @@ void aictest_td_vectors(X13Context& ctx) {
     }
 }
 
-// editor.f:1410-1442 -- the aictest=easter candidate windows Easvec=(-1,1,8,15).
+// editor.f:1354-1452 -- the aictest=easter candidate windows.
+//
+// TWO arms, and only the second was ported. `editor.f:1409-1442` builds the
+// candidate list from an EXISTING Easter group when the regARIMA design already
+// carries one -- Neasvc = endcol-begcol+2 and each window read back out of the
+// COLUMN TITLE ("Easter[8]" -> 8, the same `ctoi(igrptl, index('[')+1)` trick
+// Aicstk uses) -- and only falls back to (-1,1,8,15) when there is none.
+//
+// This is the regARIMA twin of a defect already found and fixed on the
+// x11regression side (readers_spec.cpp, editor.f:1550-1590): same block, same
+// two arms, same measurement. On
+// `regression{ variables=(easter[8]) aictest=(easter) }` the oracle tests {-1,8}
+// and reports two AICCs; this engine swept the hardcoded {-1,1,8,15}, reported
+// four, and came out with `aictest.e.window: -1` against the oracle's 8 -- i.e.
+// it DROPPED the Easter regressor the oracle keeps. The AICC labels were shifted
+// a slot with it: what the engine called `noeaster` (985.773) is the oracle's
+// `easter08`, because the model the engine used as its baseline already carried
+// the existing column. OUTCOME: OK throughout, and no wall.
 void aictest_eas_vectors(X13Context& ctx) {
     auto& ar = ctx.arima;
+    auto& m = ctx.model;
     if (ar.eastst == 0) ar.eastst = 1;
-    ar.neasvc = 4;
     ar.easvec(1) = -1;
-    ar.easvec(2) = 1;
-    ar.easvec(3) = 8;
-    ar.easvec(4) = 15;
-    ctx.x11adj.neas = 0;
-    if (!ctx.x11adj.finhol) ctx.x11adj.finhol = true;
+
+    // editor.f:1355-1357 -- the three group titles an Easter effect can carry.
+    int igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrp, "Easter");
+    if (igrp == 0)
+        igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrp,
+                      "StatCanEaster");
+    if (igrp == 0)
+        igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1, m.ngrp,
+                      "StockEaster");
+
+    if (igrp > 0) {
+        const int begcol = m.grp(igrp - 1);
+        const int endcol = m.grp(igrp) - 1;
+        ctx.x11adj.neas = endcol - begcol + 1;      // editor.f:1362
+        int neasvc = endcol - begcol + 2;           // :1413
+        // :1418-1425 -- Lceaic adds a fifth ("combined") candidate, so the
+        // headroom check is against PAICEA and not against Neasvc alone. NOTE
+        // Lceaic is currently always false here: getreg.f:506 parses it and
+        // this port has no reader for that argument, so the `+1` and the 99
+        // sentinel below are transcribed but unreachable. Recorded rather than
+        // dropped -- an unported PARSE is what makes them unreachable, not the
+        // shape of the block, and dropping them is how the next reader lands
+        // without them.
+        const int nelim = neasvc + (ar.lceaic ? 1 : 0);
+        if (nelim > prm::PAICEA) {
+            writln(ctx, "ERROR: Too many Easter regressors specified in "
+                        "variables argument to use",
+                   stdio::STDERR, ctx.units.mt2, true);
+            writln(ctx, "       aictest.", stdio::STDERR, ctx.units.mt2, false);
+            ar.leastr = false;                      // :1424
+            return;
+        }
+        for (int icol = 2; icol <= neasvc; ++icol) {
+            std::string ttl;
+            int nchr = 0;
+            getstr(ctx, m.colttl.data(), m.colptr.data(), m.nb,
+                   begcol + icol - 2, ttl, nchr);
+            if (ctx.error.lfatal) return;
+            ttl.resize(static_cast<std::size_t>(nchr));
+            // editor.f:1373-1374: ipos = index(...,'[')+1, then ctoi.
+            const std::size_t br = ttl.find('[');
+            int ipos = (br == std::string::npos) ? 1
+                                                 : static_cast<int>(br) + 2;
+            ar.easvec(icol) = ctoi(ttl, ipos);      // :1428
+        }
+        if (ar.lceaic) {                            // :1430-1433
+            ++neasvc;
+            ar.easvec(neasvc) = 99;
+        }
+        ar.neasvc = neasvc;
+        // NOTE the asymmetry, and it is the oracle's: this arm does NOT set
+        // Finhol. Only the no-group arm below does (:1449), because only that
+        // one is about to GENERATE an Easter regressor.
+    } else {
+        ar.neasvc = 4;
+        ar.easvec(2) = 1;
+        ar.easvec(3) = 8;
+        ar.easvec(4) = 15;
+        ctx.x11adj.neas = 0;
+        if (!ctx.x11adj.finhol) ctx.x11adj.finhol = true;   // :1449
+    }
 }
 
 // arima.f:569-700 -- explicit-model AIC regressor test. Runs the td/lom/easter

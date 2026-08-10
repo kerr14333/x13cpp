@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7755<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->889<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7766<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->889<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7755<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7766<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2855,6 +2855,52 @@ The spec earns its place regardless: it is the second carrier of `prterx`'s
 singular-design refusal and the only one reaching it from inside a span replay.
 Suppressing `prterx_if_singular` fails **10** gates. Suite **7755** passed, 0
 failed, 0 xfailed, +2 documented skips. WALLS unchanged at 19 gaps.
+
+## This session, part 54: the duplicate-transcription sweep -- the Easter twin, in the same function as entry 101's TD one
+
+Entry 101's `automd` finding was a defect SHAPE nobody had hunted: not an
+argument dropped at a second call site (entries 71, 85) but a whole Fortran
+block **re-implemented inline** at one. Swept it, the same way entry 101 swept
+the `gtinpt.f` defaults.
+
+`tools/dup_transcription.py` -- citations alone give 264 groups and are useless;
+requiring both sites to also WRITE >=2 of the same fields gives 15, which is
+readable. Two false-positive classes, both documented in the tool: the Fortran
+itself has parallel blocks (`automx.f:163-177` vs `restor.f:50-64`), and
+gtinpt-default-vs-parse-arm pairs. What survives is "one site is a NAMED
+routine, the other is INLINE".
+
+**The hit was the Easter twin of entry 101's TD copy, fifteen lines below it in
+the same function** -- which is the argument for sweeping rather than fixing what
+you trip over. And the copy was not the whole defect: BOTH transcriptions
+implemented only one of the block's two arms. `editor.f:1409-1442` builds the
+aictest candidate list from an EXISTING Easter group (windows read out of the
+column title, the `Aicstk` trick again) and only falls back to `(-1,1,8,15)`
+when there is none. On `regression{ variables=(easter[8]) aictest=(easter) }`
+the engine swept the defaults and reported `aictest.e.window: -1` against the
+oracle's 8 -- it DROPPED the regressor the oracle keeps -- with the AICC labels
+shifted a slot, its `noeaster` being the oracle's `easter08`. OUTCOME: OK, no
+wall.
+
+**And this was the regARIMA twin of a defect already fixed on the
+x11regression side** (`readers_spec.cpp`, `editor.f:1550-1590`), whose comment
+records the identical measurement. The two Fortran blocks are forty lines apart.
+*A twin inside the ORACLE that the port treated as one feature* is the same
+failure one level up, and it is worth checking for whenever a fix lands on one
+of a pair.
+
+Gated: `extra/airline_aictest-easter-existing`,
+`extra/airline_automdl-aictest-easter-existing` (+11). Mutations per half: 9 / 4.
+Suite **7766** passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.
+
+**Recorded, not fixed: `Lceaic`.** `getreg.f:506` parses it, this port has no
+reader, so the `nelim+1` headroom check and the `Easvec(Neasvc)=99` sentinel in
+the new arm are transcribed and unreachable. Left in with the reason at the
+site. Next reader that lands wants them.
+
+**The other 14 candidates are read and dispositioned** in entry 103 -- do not
+re-derive them. Re-run the tool after any port that transcribes a block, and
+confirm the count MOVES if you deleted a copy (it went 15 -> 14 here).
 
 ## Open, in the order I would take them
 

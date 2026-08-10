@@ -448,7 +448,17 @@ because by the time you would think to look them up, the damage is done.
   whole routine (`editor.f:1151-1166`) **re-implemented inline** at one of
   three call sites, hardcoded to the case its author had. A copy cannot be
   fixed by fixing the original — when you find a block transcribed twice,
-  delete the copy.
+  delete the copy. **Swept in entry 103: `python tools/dup_transcription.py`
+  lists them (same-`.f`-range cited from 2+ files that both WRITE the same
+  fields), and its 14 survivors are already dispositioned there — do not
+  re-derive them.** Re-run it after porting any block, and confirm the count
+  MOVES when you delete a copy. Two lessons from that sweep are separate from
+  the tool: entry 101 fixed the TD copy and left the EASTER copy fifteen lines
+  below it in the same function, so **fix the whole family, not the instance**;
+  and both copies were missing the same arm, which had already been ported on
+  the x11regression side forty lines away in `editor.f` — **a twin inside the
+  ORACLE that the port treats as one feature is the same bug one level up, so
+  when a fix lands on one of a pair, go look for the other.**
 - **A BARE `abend` is not a wall — it is a hole with the lights off.**
   `walls.py` derives the inventory from refusal MESSAGES, so a guard that calls
   `abend(ctx)` with no `errhdr`/`writln` is in neither the gap list nor the

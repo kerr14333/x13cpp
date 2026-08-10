@@ -7149,3 +7149,96 @@ from inside a span replay: suppressing `prterx_if_singular` fails **10** gates,
 two of them this spec's. Suite 7755 passed, 0 failed, 0 xfailed; the two new
 skips are the documented `d8b`/`d9a` exclusion. CB-41 updated: (a) unreachable
 by construction, (b) open with a sharpened precondition — and NOT via `history{}`.
+
+## 103. The duplicate-transcription sweep -- and the Easter twin it found (2026-08-10)
+
+Entry 101 found `automd.cpp` carrying a private inline copy of
+`editor.f:1151-1166`, hardcoded to the flow case, while the faithful
+transcription of the same block already existed as `aictest_td_vectors` and two
+of the three callers used it. That is a defect SHAPE this port had never hunted
+-- entries 71 and 85 are an ARGUMENT dropped at a second call site; this is a
+whole routine re-implemented at one -- so it got the same treatment the
+`gtinpt.f` defaults got in entry 101: run the class as a sweep instead of
+waiting for the next accident.
+
+### The sweep
+
+`tools/dup_transcription.py`. Signal: the same `<name>.f:<lo>-<hi>` citation in
+two or more `.cpp` files where BOTH sites also write >=2 of the same fields
+nearby. The naive version -- citations alone -- returns 264 groups and is
+useless, because citing a Fortran line from several files is ordinary
+cross-reference. Requiring both sites to WRITE the same COMMON fields cuts it to
+15, which is a readable list.
+
+Two false-positive classes, both expected, both worth knowing before reading the
+output:
+
+* **The Fortran itself has parallel blocks.** `automx.f:163-177` keeps its own
+  regression-dictionary snapshot whose field set matches `restor.f:50-64` almost
+  exactly, and this port mirrors both -- two transcriptions of two different
+  routines, which is correct. Same for `chkorv.f:189-202` against the
+  slidingspans `ssprep` snapshot.
+* **One site is the gtinpt DEFAULT and the other is the parse arm** that
+  overrides it. That pairing is the subject of entry 101's test and is correct
+  by design.
+
+What survives is the shape worth acting on: two sites citing the same range
+where one is a NAMED routine and the other is INLINE.
+
+### The hit: the Easter twin, in the same function as the TD one
+
+`editor.f:1354-1452`, cited from `aictst.cpp:987` (`aictest_eas_vectors`) and
+`automd.cpp:125` (inline). Entry 101 replaced the TD copy in that function and
+left the Easter copy fifteen lines below it -- which is exactly the argument for
+sweeping rather than fixing what you trip over.
+
+And the copy was not the whole defect. **Both** transcriptions implemented only
+the second of the block's two arms. `editor.f:1409-1442` builds the aictest
+candidate list from an EXISTING Easter group when the design already carries one
+-- `Neasvc = endcol-begcol+2`, each window read back out of the COLUMN TITLE
+("Easter[8]" -> 8, the same `ctoi(igrptl, index('[')+1)` trick `Aicstk` uses in
+entry 101) -- and only falls back to the hardcoded `(-1,1,8,15)` when there is
+none. Measured on `regression{ variables=(easter[8]) aictest=(easter) }`:
+
+| | oracle | engine (before) |
+|---|---|---|
+| `aictest.easter.num` | 1 | 3 |
+| `aictest.e.aicc.noeaster` | 987.384531359342 | **985.773287290922** |
+| `aictest.e.aicc.easter08` | 985.773287290922 | 987.702151414338 |
+| `aictest.e.window` | **8** | **-1** |
+| `aictest.diff.e` | 1.611244068 | -1.928864123 |
+
+The engine swept the default windows, and picked `-1`: it DROPPED the Easter
+regressor the oracle keeps. Note the second row -- what the engine called
+`noeaster` is the oracle's `easter08`, because the model it used as its baseline
+already carried the existing column. The labels are shifted a slot with the
+answer. `OUTCOME: OK`, no wall.
+
+**This is the regARIMA twin of a defect already found and FIXED on the
+x11regression side** (`readers_spec.cpp`, `editor.f:1550-1590`), whose comment
+records the identical measurement -- "the oracle tests {0,8} and this engine
+swept {0,1,8,15}". The two blocks are forty lines apart in `editor.f`. Fixing
+one and not the other is the same failure the sweep exists to catch, one level
+up: not a copy inside the port, but a twin inside the ORACLE that the port
+treated as one feature.
+
+### Recorded, not fixed: `Lceaic`
+
+`getreg.f:506` parses it; this port has no reader for that argument, so
+`ar.lceaic` is always false. The `nelim = Neasvc + 1` headroom check and the
+`Easvec(Neasvc)=99` sentinel are transcribed faithfully above and are
+consequently unreachable. Left in with the reason at the site, because an
+unported PARSE is what makes them dead, not the shape of the block -- and
+dropping them is how the next reader lands without them. Same family as entry
+101's parsed-but-unread class.
+
+### Gated by
+
+`extra/airline_aictest-easter-existing` (explicit path) and
+`extra/airline_automdl-aictest-easter-existing` (automdl), +11 gates. Mutations
+per half: disabling the `igrp > 0` arm fails **9**; restoring `automd`'s inline
+copy fails **4**. Suite 7766 passed, 0 failed, 0 xfailed. WALLS unchanged at 19.
+
+The tool tracks its own resolution: it reported 15 candidates before the fix and
+14 after, because `automd` no longer writes those fields inline. Same property
+`walls.py` has -- delete the thing and it leaves the list.

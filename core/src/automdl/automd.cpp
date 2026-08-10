@@ -122,22 +122,21 @@ static bool automd_aictest_block1(X13Context& ctx, double* trnsrs, double* a,
         if (ctx.error.lfatal) return false;
     }
     if (!lester && want_easter) {
-        // editor.f:1410-1442 (aictest=easter, no existing Easter regressor):
-        // Easvec = (-1, 1, 8, 15), Neasvc = 4, Eastst = 1.
-        ar.eastst = 1;
-        ar.neasvc = 4;
-        ar.easvec(1) = -1;
-        ar.easvec(2) = 1;
-        ar.easvec(3) = 8;
-        ar.easvec(4) = 15;
-        ctx.x11adj.neas = 0;
-        // editor.f:1440: aictest=easter with no existing Easter regressor also
-        // flags the final SA series for holiday-factor removal. Without this,
-        // x11pt3's Haveum=F Faccal rebuild (x11pt3.f:539, x11parts.cpp:687)
-        // strips Fachol back out of Faccal before D11/D13 divide by it, so the
-        // Easter effect never leaves the final SA series/irregular even though
-        // B1 (the regARIMA-adjusted series) is already Easter-clean.
-        if (!ctx.x11adj.finhol) ctx.x11adj.finhol = true;
+        // editor.f:1354-1452, via the shared routine. This was the SECOND
+        // private inline copy in this function -- the TD one above was the
+        // first (entry 101) -- and it had the same defect in the same place:
+        // hardcoded to the no-existing-regressor arm, so `aictest=(easter)` on
+        // a model that already carries `easter[n]` swept the default windows
+        // instead of the one the design has.
+        //
+        // What the shared routine keeps that this copy dropped: the Easter
+        // effect's removal from the final SA series. editor.f:1449 sets Finhol
+        // only on the arm that is about to GENERATE an Easter regressor;
+        // without it x11pt3's Haveum=F Faccal rebuild (x11pt3.f:539,
+        // x11parts.cpp:687) strips Fachol back out of Faccal before D11/D13
+        // divide by it, so the effect never leaves the final SA series even
+        // though B1 is already Easter-clean.
+        aictest_eas_vectors(ctx);
         easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return false;
     }
