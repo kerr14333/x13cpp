@@ -44,6 +44,7 @@ import os
 import re
 import subprocess
 
+import oracle_outcome
 import pytest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -159,8 +160,15 @@ def _run(rel: str) -> dict[str, list[str]]:
     spec = os.path.join(_CORPUS, rel + ".spc")
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
     r = subprocess.run([BIN, spec], capture_output=True, text=True)
-    assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"
-    assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]
+    # Not `== 0`: where the ORACLE halted late the engine must halt too, and
+    # the diagnostics it produced first are still compared (oracle_outcome.py).
+    _gd = os.path.join(_GOLDEN, rel)
+    _base = os.path.basename(rel)
+    _exp = oracle_outcome.expected_exit(_gd, _base)
+    assert r.returncode == _exp, \
+        oracle_outcome.exit_message(rel, _exp, r.returncode, r.stderr)
+    _want = "OUTCOME: FATAL" if _exp else "OUTCOME: OK"
+    assert r.stdout.splitlines()[0].strip() == _want, r.stdout[:200]
 
     got: dict[str, list[str]] = {}
     for ln in r.stdout.splitlines():
@@ -347,8 +355,13 @@ def _run_raw(rel: str) -> str:
     txt = open(spec, encoding="utf-8", errors="replace").read().lower()
     r = subprocess.run([BIN, spec], capture_output=True, text=True,
                        cwd=os.path.dirname(spec))
-    assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"
-    assert r.stdout.splitlines()[0].strip() == "OUTCOME: OK", r.stdout[:200]
+    _gd = os.path.join(_GOLDEN, rel)
+    _base = os.path.basename(rel)
+    _exp = oracle_outcome.expected_exit(_gd, _base)
+    assert r.returncode == _exp, \
+        oracle_outcome.exit_message(rel, _exp, r.returncode, r.stderr)
+    _want = "OUTCOME: FATAL" if _exp else "OUTCOME: OK"
+    assert r.stdout.splitlines()[0].strip() == _want, r.stdout[:200]
     return r.stdout
 
 
@@ -368,6 +381,17 @@ def _produced_prefixed(text: str, prefix: str) -> dict[str, str]:
 def test_d8b_d9a(rel: str, prefix: str) -> None:
     """prtd8b.f / prtd9a.f savelog rows, compared line-exact."""
     udg = os.path.join(_GOLDEN, rel, os.path.basename(rel) + ".udg")
+    # Same exclusion as test_x11_tables._HALTED, and for the same structural
+    # reason: these rows come from the D8/D9 pass of the MAIN run, which the
+    # oracle punched before the span drivers ran and this harness reads from the
+    # live context at exit. A spec that halted inside a span replay never got
+    # its restore, so the context holds span state. The F2/F3 block above is
+    # unaffected because it is emitted before the span loop.
+    if oracle_outcome.oracle_halted(os.path.join(_GOLDEN, rel),
+                                    os.path.basename(rel)):
+        pytest.skip(f"{rel}: oracle halted mid-span; main-run {prefix} rows are "
+                    f"not recoverable from the post-fatal context "
+                    f"(refusal gated by test_slidingspans_halt_matches_oracle)")
     want = _read_udg_prefixed(udg, prefix)
     if not want:
         pytest.skip(f"golden carries no {prefix} block")

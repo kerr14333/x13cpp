@@ -159,7 +159,24 @@ def _oracle_ok(spc: str):
     So the exit code only counts as a rejection when the run produced NO
     `.udg`, i.e. it did not get far enough to report. That still catches the
     real one: `census-examples/composite/total` exits 3 on a SIGFPE with an
-    empty `.err` and no `.udg` at all."""
+    empty `.err` and no `.udg` at all.
+
+    The SAME argument applies to the `.err` signal, and that took a third case
+    to see. An ERROR raised after a COMPLETE run is not a parse verdict either:
+    `extra/airline_slidingspans-x11regression-user-nofixx11reg` parses, fits,
+    runs the whole main X-11 pass, writes a full `.udg` and every D table, and
+    only then halts inside sliding span #2 on a singular irregular-regression
+    design (`prterx`). The parser accepted that spec; a gate that reads its
+    `.err` as a rejection is asserting the wrong thing about the wrong phase.
+    Until it landed, every erroring spec in the corpus failed EARLY, so
+    "the oracle errored" and "the oracle rejected the spec" could not be told
+    apart -- the coincidence, not the rule.
+
+    Hence the rule below: a run that produced a `.udg` was ACCEPTED, whatever
+    it did afterwards. A rejection is an error with no complete report behind
+    it. Note this only decides what the PARSE gate asserts; the late refusal
+    itself is still gated, by the phase harnesses that reach it and by the
+    `.err` text comparison below."""
     gdir = _golden_dir(spc)
     man = json.load(open(os.path.join(gdir, "manifest.json")))
     base = os.path.basename(spc)[:-4]
@@ -168,9 +185,16 @@ def _oracle_ok(spc: str):
     if os.path.exists(errf):
         errtxt = open(errf, encoding="utf-8", errors="replace").read()
     has_error = len(_err_error_lines(errtxt)) > 0
-    completed = (man.get("exit_code") == 0 or
-                 os.path.exists(os.path.join(gdir, base + ".udg")))
-    return completed and not has_error, errtxt
+    udg = os.path.join(gdir, base + ".udg")
+    # NON-EMPTY is the operative word, and it is the whole distinction: the
+    # oracle OPENS the `.udg` before it validates, so a spec rejected at parse
+    # ships a zero-byte one (`edge/psuadd-prioradj`) while a spec that ran and
+    # halted later ships a full one (394 lines here). Testing existence alone
+    # reads the two as the same thing and flips six parse rejections to
+    # "accepted".
+    reported = os.path.exists(udg) and os.path.getsize(udg) > 0
+    completed = man.get("exit_code") == 0 or os.path.exists(udg)
+    return completed and (reported or not has_error), errtxt
 
 
 def _run(spc: str):

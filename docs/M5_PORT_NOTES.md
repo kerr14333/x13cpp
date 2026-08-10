@@ -7054,3 +7054,98 @@ Also touched: `test_aictest_savelog.py`'s key-ownership table, whose
 `td\.aicc\.\w+` could not match `aictest.td.aicc.tdstock[31]` — the day-of-month
 is part of the candidate NAME. It failed collection the moment the golden landed,
 which is that table working as designed.
+
+## 102. CB-41(b): what actually hides it, and the late-fatal spec class it uncovered (2026-08-09)
+
+Board item 1's last open thread. CB-41(b) is `sspdrv.f:229`'s
+`copylg(bfx2, Nb, 1, Regfxx)` — a restore sized by the regARIMA design's `Nb`
+into an array the x11regression design sizes with `Nbx`. Entry 91 left it
+"runs and is still invisible", with the next step recorded as *`slidingspans{}`
+and `history{}` in one run*.
+
+That was the wrong next step, and the reason is worth more than the item.
+
+### The oracle REPAIRS `Regfxx` between the two phases
+
+`x12run.f:213-240` is explicit about it. With both specs present the sequence is
+`ss2rv` → `sspdrv` → `rv2ss` → `restor` → `revdrv`, and `ss2rv.f:78` /
+`rv2ss.f:68` are a matched `copylg(Regfxx,PB,1,Rxfx2r)` / `copylg(Rxfx2r,PB,1,
+Regfxx)` pair guarded by `Lx11rg`, i.e. exactly when an x11regression design
+exists at all. So the one phase after `sspdrv` that reads `Regfxx`
+(`revdrv.f:132`'s `rvfixd`, `:330`'s `istrue`) can only be reached through a
+route that has already overwritten the corrupted value. **Adding `history{}` to
+a `slidingspans{}` spec cannot expose CB-41(b); it is the configuration in which
+the oracle undoes it.**
+
+### What DOES hide it: `Ssxint`, a default again
+
+Within the span loop the readers are `ssxmdl.f:82`'s `rvfixd` and `:111-113`.
+But `ssxmdl.f:141` — under `IF(Ssxint)` — does `setlg(T,PB,Regfxx)` and pins
+`Irgxfx=3`, and neither is undone between spans. `Ssxint` is
+`slidingspans{fixx11reg=}`, and `gtinpt.f:531` defaults it to **T**. So on every
+spec that does not mention the option, span 1 marks the whole array fixed and
+span 2 reads "everything fixed" regardless of what `:229` wrote into
+`Nb+1..Nbx`. That is why mutating `Nb`→`Nbx` measured zero on
+`extra/airline_slidingspans-x11regression-user-spanzero` even though `Nbx`=7
+(td + ustep) already exceeded `Nb`=2 — the width was never the missing
+ingredient. **Same family as entry 79's `fixx11reg=` finding and entry 95's
+`Lindot`: the arm a spec cannot switch on is the DEFAULT, and an inertness
+measurement that does not name it has measured the default.**
+
+### And turning it off runs into the feature's own precondition
+
+`extra/airline_slidingspans-x11regression-user-nofixx11reg` is that spec —
+identical to its base but for `fixx11reg=no`. The oracle halts in sliding span
+#2: *"Irregular regression matrix singular because of ustep."* Which is not bad
+luck. `chusrg` fires precisely when a user column is DEGENERATE over the span,
+and `Ssxint=yes` is what makes that degeneracy harmless by force-fixing the
+column; take the fixing away and the same degeneracy makes the design singular.
+A second shape (a constant column, degenerate under the (1−B) differencing but
+not identically zero) moved the failure rather than removing it — singular on
+span 1, on the regARIMA `u2` instead.
+
+Two shapes is not a proof, so this is recorded as the sharpened OPEN question
+rather than a theorem: **what CB-41(b) needs is a user column that
+`chusrg`'s differenced test finds degenerate over span 1 while the UNDIFFERENCED
+x11 irregular-regression design stays non-singular in the later spans** — two
+different operators, and the corpus has no column separating them. That is a
+much better description of the gap than "add `history{}`".
+
+### The spec landed anyway, and it found a whole class of gate
+
+The oracle halts LATE on it: full parse, full model, complete main X-11 pass, a
+394-line `.udg` and every D table punched, and only then the span-2 refusal.
+**No spec in this corpus had ever done that** — every erroring spec failed
+early — so six gate files had quietly fused two different conditions:
+
+* `test_m1_parse::_oracle_ok` read any `.err` ERROR as a PARSE rejection. Its
+  docstring had already split "a NOTE is not a parse verdict" off from the exit
+  code; this is the same argument one step further. The fix keys on a
+  **non-empty** `.udg`, which is the whole distinction — the oracle OPENS that
+  file before it validates, so a parse rejection ships a zero-byte one
+  (`edge/psuadd-prioradj`) and a late halt ships a full one. Testing existence
+  alone flips six parse rejections to "accepted", which is how the first
+  attempt was caught.
+* Four phase gates asserted `harness exit == 0`. Now `oracle_outcome.expected_exit`,
+  an EQUALITY: where the oracle halted the engine is REQUIRED to halt, and the
+  diagnostics it produced first are still compared. Strictly more coverage.
+
+What the spec cannot gate is the D tables, `d8b`/`d9a` and the bindings, and the
+reason is structural rather than a tolerance dodge: **the oracle punches those
+before the span drivers run and this harness dumps them from the live context at
+exit.** A run that completes has the span-replay save/restore set to make the two
+agree — that is what the set is FOR — but a run that dies mid-span never reaches
+its restore, so the harness dumps 84 rows of span state where the oracle's file
+holds the main run's 144. Excluded explicitly, with
+`test_halted_exclusions_are_real` asserting every excluded name really is a spec
+whose oracle halted AND reported, so the exclusion cannot become a dumping
+ground. Lifting it means snapshotting the main-run tables before the span loop.
+
+### Gated by
+
+`extra/airline_slidingspans-x11regression-user-nofixx11reg`. It is the second
+carrier of `prterx`'s singular-design refusal and the ONLY one that reaches it
+from inside a span replay: suppressing `prterx_if_singular` fails **10** gates,
+two of them this spec's. Suite 7755 passed, 0 failed, 0 xfailed; the two new
+skips are the documented `d8b`/`d9a` exclusion. CB-41 updated: (a) unreachable
+by construction, (b) open with a sharpened precondition — and NOT via `history{}`.

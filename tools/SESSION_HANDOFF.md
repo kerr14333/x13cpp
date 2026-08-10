@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7744<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->887<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7755<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->889<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7744<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7755<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2810,6 +2810,52 @@ defaults from the first pass); and the port's deliberate reader-head deviation
 is 50 of the 55 fields written outside `gtinpt.cpp`, so a rule that flags it
 buries the one real hit.
 
+## This session, part 53: CB-41(b)'s real masking agent -- and the corpus's first LATE-halting spec, which six gate files could not express
+
+Two findings, and the second was not being looked for.
+
+**CB-41(b).** The recorded next step (`slidingspans{}` + `history{}` in one run)
+is the one configuration that CANNOT expose it: `x12run.f:213-240` brackets
+`sspdrv` with `ss2rv`/`rv2ss`, a matched save/restore of `Regfxx`, so the only
+post-`sspdrv` reader sees a repaired array. The real masking agent is `Ssxint`
+(`slidingspans{fixx11reg=}`, default YES), which has `ssxmdl.f:141` mark the
+whole array fixed on span 1 with nothing undoing it. Width was never missing --
+the existing probe already has `Nbx`=7 against `Nb`=2. Turning `Ssxint` off is
+necessary and, on both column shapes tried, makes the run HALT instead, because
+`chusrg` fires exactly when a column is degenerate over the span and the fixing
+is what made that degeneracy harmless. Sharpened requirement in CB-41 and entry
+102; do not spend on this without reading them.
+
+**The late-halt class.** `extra/airline_slidingspans-x11regression-user-nofixx11reg`
+parses, fits, runs the whole main X-11 pass, writes a 394-line `.udg` and every
+D table, and only then halts in sliding span #2 on a singular irregular
+regression. **No corpus spec had ever halted late** -- every erroring spec failed
+early -- so "the oracle errored" and "the oracle rejected the spec" had never
+needed to be told apart. Six gate files had them fused:
+
+* `test_m1_parse::_oracle_ok` read any `.err` ERROR as a parse rejection. Now
+  keyed on a **non-empty** `.udg`: the oracle opens that file before validating,
+  so a parse rejection ships a zero-byte one and a late halt ships a full one.
+  Existence alone flips six real rejections to "accepted" -- measured, which is
+  how the first attempt was caught.
+* Four phase gates asserted `harness exit == 0`; now
+  `oracle_outcome.expected_exit`, an EQUALITY -- where the oracle halted the
+  engine must halt, and what it produced first is still compared.
+
+What the spec cannot gate is the D tables / `d8b` / `d9a` / bindings, and it is
+structural: the oracle punches those before the span drivers run, this harness
+dumps them from the live context at exit, and a run that dies mid-span never
+reaches its restore (84 rows of span state against the oracle's 144). Excluded
+explicitly, with `test_halted_exclusions_are_real` making the exclusion earn
+each entry. **Lifting it means snapshotting the main-run tables before the span
+loop -- that is a real, bounded piece of driver work and it is now the only
+thing standing between this class of spec and full table coverage.**
+
+The spec earns its place regardless: it is the second carrier of `prterx`'s
+singular-design refusal and the only one reaching it from inside a span replay.
+Suppressing `prterx_if_singular` fails **10** gates. Suite **7755** passed, 0
+failed, 0 xfailed, +2 documented skips. WALLS unchanged at 19 gaps.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -2855,8 +2901,18 @@ buries the one real hit.
      the first saturates, so `upusrx` true implies `upuser` false. That is a
      theorem about the program, not a corpus gap. **(b)**, the
      `Nb`-instead-of-`Nbx` restore, runs and is still invisible -- 0 gates for
-     `Nb`->`Nbx` AND 0 for writing `Regfxx` all-true, because `Regfxx` is dead
-     after the span loop. Next: `slidingspans{}` + `history{}` in one spec, so a
+     `Nb`->`Nbx` AND 0 for writing `Regfxx` all-true. ~~because `Regfxx` is dead
+     after the span loop. Next: `slidingspans{}` + `history{}` in one spec~~
+     **BOTH HALVES OF THAT WERE WRONG, corrected 2026-08-09 (entry 102, part
+     53).** `Regfxx` is read inside the loop (`ssxmdl.f:82`), and the
+     `history{}` route is the one configuration the oracle REPAIRS
+     (`ss2rv`/`rv2ss` around `sspdrv`, `x12run.f:213-240`). The masking agent is
+     `Ssxint` = `slidingspans{fixx11reg=}`, which defaults to YES and has
+     `ssxmdl.f:141` mark the whole array fixed on span 1. What is needed is a
+     user column degenerate under `chusrg`'s DIFFERENCED test over span 1 but
+     leaving the UNDIFFERENCED x11 design non-singular later; see CB-41 and
+     entry 102 before spending anything on this. Old text below kept for the
+     shape of the argument only: `slidingspans{}` + `history{}` in one spec, so a
      phase after `sspdrv` reads it.
 
    The rest of the subsystem is closed and gated bit-exact -- see parts 34 and

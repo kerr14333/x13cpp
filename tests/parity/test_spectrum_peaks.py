@@ -76,6 +76,7 @@ import os
 import re
 import subprocess
 
+import oracle_outcome
 import pytest
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -207,9 +208,16 @@ def _run(rel: str) -> dict[str, str]:
     binary = BIN_SEATS if "seats{" in txt else BIN
     r = subprocess.run([binary, spec], capture_output=True, text=True,
                        cwd=os.path.dirname(spec))
-    assert r.returncode == 0, f"{rel}: harness exit {r.returncode}\n{r.stderr}"
+    # Not `== 0`: where the ORACLE halted late the engine must halt too, and
+    # the peak block it produced first is still compared (oracle_outcome.py).
+    _gd = os.path.join(_GOLDEN, rel)
+    _base = os.path.basename(rel)
+    _exp = oracle_outcome.expected_exit(_gd, _base)
+    assert r.returncode == _exp, \
+        oracle_outcome.exit_message(rel, _exp, r.returncode, r.stderr)
+    _want = "OUTCOME: FATAL" if _exp else "OUTCOME: OK"
     first = r.stdout.splitlines()[0].strip() if r.stdout else ""
-    if first != "OUTCOME: OK":
+    if first != _want:
         pytest.skip(f"engine declined this spec ({first or 'no output'})")
     return _read_block(r.stdout.splitlines())
 

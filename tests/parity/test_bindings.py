@@ -20,6 +20,7 @@ Run:  python -m pytest tests/parity/test_bindings.py -q
 from __future__ import annotations
 
 import os
+import oracle_outcome
 import re
 import sys
 
@@ -84,6 +85,11 @@ def _read_golden(path: str) -> dict[str, float]:
     return out
 
 
+# Specs excluded from the binding comparison because their oracle run halted
+# mid-span; see the note inside _discover.
+_HALTED: list = []
+
+
 def _discover(marker: str) -> list[tuple[str, str, str]]:
     """(spec_id, spec_path, golden_dir) for every corpus spec whose golden dir
     ships `marker` -- d11 for an X-11 run, s11 for a SEATS one. The per-table
@@ -100,6 +106,16 @@ def _discover(marker: str) -> list[tuple[str, str, str]]:
             spec = os.path.join(cdir, name + ".spc")
             if (os.path.isdir(gd) and os.path.exists(spec)
                     and os.path.exists(os.path.join(gd, name + "." + marker))):
+                # A spec whose ORACLE halted inside a span replay has no
+                # comparable main-run tables here: the oracle punched them
+                # before the span drivers ran, this binding reads them from the
+                # live context at exit, and a run that died mid-span never got
+                # its restore. See test_x11_tables._HALTED for the full note;
+                # the refusal itself is gated by
+                # test_slidingspans_tables::test_slidingspans_halt_matches_oracle.
+                if oracle_outcome.oracle_halted(gd, name):
+                    _HALTED.append(f"{group}/{name}")
+                    continue
                 cases.append((f"{group}/{name}", spec, gd))
     return cases
 

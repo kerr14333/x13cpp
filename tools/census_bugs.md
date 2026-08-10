@@ -1669,9 +1669,35 @@ Two defects in three lines:
 
   **(b), the `Nb`-instead-of-`Nbx` restore, now RUNS and is still not
   observable.** Measured on that spec: mutating `Nb` to `Nbx` fails 0 gates, and
-  so does mutating the restore to write `Regfxx` all-true. `Regfxx` is not read
-  again after the span loop. What is wanted is a phase AFTER `sspdrv` that reads
-  it -- `slidingspans{}` and `history{}` in one run is the next thing to try.
+  so does mutating the restore to write `Regfxx` all-true.
+
+  **2026-08-09, entry 102 -- two corrections to the note that used to stand
+  here.**
+
+  1. ~~`slidingspans{}` and `history{}` in one run is the next thing to try.~~
+     **That configuration cannot expose it.** `x12run.f:213-240` runs
+     `ss2rv` -> `sspdrv` -> `rv2ss` -> `restor` -> `revdrv`, and
+     `ss2rv.f:78`/`rv2ss.f:68` are a matched save/restore of `Regfxx` through
+     `Rxfx2r`, guarded by `Lx11rg`. The only post-`sspdrv` reader
+     (`revdrv.f:132`, `:330`) is therefore reached only after the oracle has
+     already repaired the array.
+  2. **The masking agent is `Ssxint`, not the absence of a later reader.**
+     `Regfxx` IS read inside the span loop (`ssxmdl.f:82`, `:111-113`), but
+     `ssxmdl.f:141` does `setlg(T,PB,Regfxx)` and pins `Irgxfx=3` under
+     `IF(Ssxint)` -- and `slidingspans{fixx11reg=}` defaults to yes
+     (`gtinpt.f:531`). Span 1 marks everything fixed, nothing undoes it, and
+     span 2 reads "all fixed" whatever `:229` wrote. Width was never the
+     missing ingredient: the probe spec already has `Nbx`=7 against `Nb`=2.
+
+  **What is actually needed**, and it is narrower than it looks: a user column
+  that `chusrg`'s DIFFERENCED test finds degenerate over span 1 while the
+  UNDIFFERENCED x11 irregular-regression design stays non-singular in the later
+  spans. Turning `Ssxint` off is necessary and, on both column shapes tried so
+  far, sufficient to make the run halt instead --
+  `extra/airline_slidingspans-x11regression-user-nofixx11reg` (the `fixx11reg=no`
+  variant) halts in span 2 on a singular design, and a constant column halts in
+  span 1 on the regARIMA side. Those are two different operators and the corpus
+  has no column separating them; that is the open work.
 
 ## CB-42
 

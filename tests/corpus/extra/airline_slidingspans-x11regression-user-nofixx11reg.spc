@@ -1,0 +1,147 @@
+# Hand-authored (NOT produced by genextra.py).
+# CB-41(b) probe: the same spec as
+# `airline_slidingspans-x11regression-user-spanzero` with ONE option added,
+# `slidingspans{fixx11reg=no}` (Ssxint=F).
+#
+# Ssxint defaults to YES, and that default is what makes sspdrv.f:229's
+# Nb-instead-of-Nbx restore of Regfxx unobservable. With Ssxint true,
+# ssxmdl.f:141 sets ALL of Regfxx true on span 1 and pins Irgxfx=3, and neither
+# is undone between spans -- so span 2's rvfixd (ssxmdl.f:82) reports everything
+# fixed no matter what the restore wrote into the tail. Turning it off is what
+# lets the elements Nb+1..Nbx (here Nbx=7 for td+ustep against Nb=2) carry a
+# value the next span can act on.
+#
+# Everything below is the base spec's own explanation of why `chusrg` fires
+# here at all, and it still applies verbatim:
+#
+# The spec that makes `chusrg` FIRE inside a sliding-spans replay, which nothing
+# in the corpus had done before.
+#
+# Three things have to line up, and each one cost a probe:
+#   * `slidingspans{fixmdl=no}`. Under the default every regression coefficient
+#     is already fixed at span time, so `chusrg.f:43`'s `.not.Regfx(i)` test
+#     rejects every column and the routine is a guaranteed no-op (entry 88).
+#   * a `regression{user=}` column that is NOT fixed, so the loop has something
+#     to walk (`Nb`, `Rgvrtp`, `Regfx` come from the regARIMA design), AND an
+#     `x11regression{usertype=}`, so `sspdrv.f:153`'s branch runs at all.
+#   * the X11REGRESSION user column is the one whose values `chusrg` actually
+#     reads. `loadxr.f:43`'s copy back into `Xuserx` is COMMENTED OUT, so after
+#     `ssxmdl.f:44`'s `loadxr(F)` the working `Userx` holds the x11regression
+#     matrix for the rest of the run while the design columns above it are the
+#     regARIMA ones. `ustep` is therefore shaped for the SPAN: nonzero over the
+#     first three years and zero afterwards, so span 1's strided window
+#     (`uptr=(Ncusrx*disp)+iuser`, stride 2) is identically zero, differences to
+#     zero, and the column is held fixed.
+#
+# The observable is `sspdrv.f:250-260`'s NOTE ("The user defined regressors
+# listed below were held fixed for at least one span"), which this port had
+# ported and had never been able to emit.
+series{
+  title  = "Intl Airline Passengers"
+  file   = "../data/airline.dat"
+  start  = 1949.01
+  period = 12
+  save   = (b1)
+}
+transform{
+  function = log
+}
+regression{
+  user = (u1 u2)
+  data = (
+     -0.071500   0.050000  -0.070500   0.047553  -0.069500   0.040451
+     -0.068500   0.029389  -0.067500   0.015451  -0.066500   0.000000
+     -0.065500  -0.015451  -0.064500  -0.029389  -0.063500  -0.040451
+     -0.062500  -0.047553  -0.061500  -0.050000  -0.060500  -0.047553
+     -0.059500  -0.040451  -0.058500  -0.029389  -0.057500  -0.015451
+     -0.056500  -0.000000  -0.055500   0.015451  -0.054500   0.029389
+     -0.053500   0.040451  -0.052500   0.047553  -0.051500   0.050000
+     -0.050500   0.047553  -0.049500   0.040451  -0.048500   0.029389
+     -0.047500   0.015451  -0.046500   0.000000  -0.045500  -0.015451
+     -0.044500  -0.029389  -0.043500  -0.040451  -0.042500  -0.047553
+     -0.041500  -0.050000  -0.040500  -0.047553  -0.039500  -0.040451
+     -0.038500  -0.029389  -0.037500  -0.015451  -0.036500  -0.000000
+     -0.035500   0.015451  -0.034500   0.029389  -0.033500   0.040451
+     -0.032500   0.047553  -0.031500   0.050000  -0.030500   0.047553
+     -0.029500   0.040451  -0.028500   0.029389  -0.027500   0.015451
+     -0.026500   0.000000  -0.025500  -0.015451  -0.024500  -0.029389
+     -0.023500  -0.040451  -0.022500  -0.047553  -0.021500  -0.050000
+     -0.020500  -0.047553  -0.019500  -0.040451  -0.018500  -0.029389
+     -0.017500  -0.015451  -0.016500   0.000000  -0.015500   0.015451
+     -0.014500   0.029389  -0.013500   0.040451  -0.012500   0.047553
+     -0.011500   0.050000  -0.010500   0.047553  -0.009500   0.040451
+     -0.008500   0.029389  -0.007500   0.015451  -0.006500   0.000000
+     -0.005500  -0.015451  -0.004500  -0.029389  -0.003500  -0.040451
+     -0.002500  -0.047553  -0.001500  -0.050000  -0.000500  -0.047553
+      0.000500  -0.040451   0.001500  -0.029389   0.002500  -0.015451
+      0.003500  -0.000000   0.004500   0.015451   0.005500   0.029389
+      0.006500   0.040451   0.007500   0.047553   0.008500   0.050000
+      0.009500   0.047553   0.010500   0.040451   0.011500   0.029389
+      0.012500   0.015451   0.013500  -0.000000   0.014500  -0.015451
+      0.015500  -0.029389   0.016500  -0.040451   0.017500  -0.047553
+      0.018500  -0.050000   0.019500  -0.047553   0.020500  -0.040451
+      0.021500  -0.029389   0.022500  -0.015451   0.023500   0.000000
+      0.024500   0.015451   0.025500   0.029389   0.026500   0.040451
+      0.027500   0.047553   0.028500   0.050000   0.029500   0.047553
+      0.030500   0.040451   0.031500   0.029389   0.032500   0.015451
+      0.033500  -0.000000   0.034500  -0.015451   0.035500  -0.029389
+      0.036500  -0.040451   0.037500  -0.047553   0.038500  -0.050000
+      0.039500  -0.047553   0.040500  -0.040451   0.041500  -0.029389
+      0.042500  -0.015451   0.043500   0.000000   0.044500   0.015451
+      0.045500   0.029389   0.046500   0.040451   0.047500   0.047553
+      0.048500   0.050000   0.049500   0.047553   0.050500   0.040451
+      0.051500   0.029389   0.052500   0.015451   0.053500   0.000000
+      0.054500  -0.015451   0.055500  -0.029389   0.056500  -0.040451
+      0.057500  -0.047553   0.058500  -0.050000   0.059500  -0.047553
+      0.060500  -0.040451   0.061500  -0.029389   0.062500  -0.015451
+      0.063500  -0.000000   0.064500   0.015451   0.065500   0.029389
+      0.066500   0.040451   0.067500   0.047553   0.068500   0.050000
+      0.069500   0.047553   0.070500   0.040451   0.071500   0.029389
+      0.072500   0.015451   0.073500  -0.000000   0.074500  -0.015451
+      0.075500  -0.029389   0.076500  -0.040451   0.077500  -0.047553
+      0.078500  -0.050000   0.079500  -0.047553   0.080500  -0.040451
+      0.081500  -0.029389   0.082500  -0.015451   0.083500  -0.000000
+  )
+}
+arima{
+  model = (0 1 1)
+}
+forecast{ maxlead=0 }
+x11{ save=(d10 d11 d12 d13) }
+x11regression{
+  variables = (td)
+  user = (ustep)
+  usertype = (user)
+  data = (
+       0.0200    0.0400    0.0600    0.0800    0.1000    0.1200
+       0.1400    0.1600    0.1800    0.2000    0.2200    0.2400
+       0.2600    0.2800    0.3000    0.3200    0.3400    0.3600
+       0.3800    0.4000    0.4200    0.4400    0.4600    0.4800
+       0.5000    0.5200    0.5400    0.5600    0.5800    0.6000
+       0.6200    0.6400    0.6600    0.6800    0.7000    0.7200
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+       0.0000    0.0000    0.0000    0.0000    0.0000    0.0000
+  )
+  start = 1949.01
+  print = all
+  save = (xrm b16 c16)
+}
+slidingspans{ save=(sfs chs) fixmdl=no fixx11reg=no }
