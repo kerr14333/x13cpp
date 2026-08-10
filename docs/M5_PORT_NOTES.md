@@ -6836,3 +6836,107 @@ is the proof; (b) is a corpus gap and the deliverable is a better spec.
 
 `extra/airline_slidingspans-x11regression-user-spanzero`, hand-authored (26).
 Suite 7704 -> 7730 passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.
+
+## 100. The three instrumented-Fortran questions, answered in one afternoon — and one of them was this port's own missing writer
+
+Board item 6 had sat open since entries 76 and 77 with the same note on all
+three: *they want the Fortran instrumented directly, not more reasoning.* Entry
+98 built that instrument for a different purpose. This is what it cost to use
+it: one `WRITE(6,*)` and one rebuild per question.
+
+### Q1 — `x11ref.f:87`'s `IF(Holgrp.gt.0)` guard. ANSWERED, and it was ours.
+
+Entry 76 had measured that adding the guard costs **54 gates**, concluded that
+the fold demonstrably happens on the vendored binary, and left the question
+"something restores `Holgrp` that is not visible in `x11aic.f`".
+
+It is visible in `x11aic.f`, four lines below an `addeas` this port HAD ported:
+
+```fortran
+        IF(i.gt.1)THEN
+         CALL addeas(Xeasvc(i)+Easidx,Easidx,1)
+         IF(Lfatal)RETURN
+         Easgrp=strinx(T,Grpttl,Grpptr,1,Ngrptl,'Easter')      ! :318
+         IF(Easgrp.eq.0)Easgrp=strinx(T,...,'StatCanEaster')
+         IF(Holgrp.eq.0)Holgrp=Easgrp                          ! :322
+        END IF
+```
+
+`:63` clears `Holgrp` on the way in; every candidate past the first re-locates
+its own Easter group and adopts it when no other holiday group survived. The
+port stopped at the `addeas`. Instrumented confirmation at `x11ref.f:87` on
+`extra/airline_x11regression-aictest-easter8`:
+
+```
+DBGREF Holgrp= 2  Tdgrp= 1  Stdgrp= 0  Trumlt= T  Muladd= 0  Easidx= 0  Nb= 8
+```
+
+`Holgrp` is 2, the guard is TRUE, and folding unconditionally measured correct
+because the guard it was standing in for was never false. **With the writer
+restored the guard costs 0 gates**, and it is now ported. Mutation: deleting the
+writer again, guard in place, fails **52**.
+
+Also restored while there: both `del_easter` sites write the COMMON `Easgrp`
+(`x11aic.f:304-307`, `:427-429`), which this port had kept in a local.
+
+The shape is worth naming, because entry 76 did everything right and still got
+it wrong. **A measurement that says "reproducing this Fortran line makes the
+engine worse" is not evidence about the Fortran line. It is evidence that the
+engine and the oracle disagree about that line's INPUTS**, and the honest next
+step is to print the input rather than to drop the line. 54 gates of pressure
+pointed the wrong way for two increments.
+
+### Q2 — `Trumlt`. ANSWERED, and filed as CB-42.
+
+`x11ref.f:19` declares it LOGICAL; it is not a dummy argument, is in none of the
+four INCLUDEs, and is assigned nowhere in the tree. `:88` reads it. Entry 76 had
+inferred `.true.` from gate behaviour and explicitly declined to file a CB entry
+under the standing measure-before-naming rule. The same `DBGREF` line above
+reads it directly: **`Trumlt= T`**. Now CB-42, with the caveat that the VALUE is
+one build's stack contents while the DEFECT is the uninitialized read.
+
+### Q3 — `x11mdl.f:597-602`'s stale `icol`. ANSWERED: dead code, for a reason
+nobody had guessed.
+
+Entry 77 left it as an open question with a specific story: the divergent case
+needs an UNFIXED `td1coef` coefficient above 0.4, and fixing one to get there
+makes the group all-fixed, which `editor.f:1660` answers by clearing `Lxrneg`.
+Both halves are true. Both are beside the point.
+
+Running `x11regression{ variables=(td1coef) reweight=yes }` under the instrument:
+
+```
+DBGTD   Havxtd= T  Haveum= F  Lxrneg= T  Ngrptl= 2  Kpart= 2
+DBGIGRP igrp= 0    Grpttl="1-Coefficient Trading DayAutomatically Identified Outliers"
+```
+
+`addtd.f:75-77` titles EVERY single-column trading-day group
+`1-Coefficient <title>`, and `x11mdl.f:545`'s search for `"Trading Day"` is
+exact. So `igrp` is 0, the enclosing block never runs, and `begcol == endcol`
+cannot be reached through any group this program builds with one column. The
+only other route would be a six-column "Trading Day" group reduced to one by
+deletion, and nothing deletes TD columns singly — `x11aic.f:257-274` takes them
+all at once.
+
+The stale `icol` stays transcribed verbatim: what makes it dead is the guard
+above it, and a caller that found the group by another name would resurrect it.
+Restored in the same breath: `x11mdl.f:541`'s `.and.(.not.Haveum)`, which this
+port had dropped from the condition.
+
+### The standing rule this leaves
+
+**An "open question" that says it needs the Fortran instrumented is a five-minute
+job with the toolchain already on the machine, and it had been open for
+fourteen entries.** `gfortran -O2 -std=legacy -fallow-argument-mismatch -w` over
+a scratchpad copy of `oracle/fortran` builds the oracle in about four minutes;
+after that each question is one `WRITE(6,*)` and one incremental rebuild. Two of
+these three answers contradicted a written-down inference that had been measured
+carefully through gates. Gate-level inference tells you the engine and the
+oracle disagree; only the print tells you which side is wrong.
+
+### Gated by
+
+No new spec — all three are answers about existing ones. Mutation: the missing
+`x11aic.f:318-322` writer, with `x11ref.f:87`'s guard in place, fails **52**
+gates. Suite 7730 passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.
+Board item 6 CLOSED.

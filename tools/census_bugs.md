@@ -1672,3 +1672,54 @@ Two defects in three lines:
   so does mutating the restore to write `Regfxx` all-true. `Regfxx` is not read
   again after the span loop. What is wanted is a phase AFTER `sspdrv` that reads
   it -- `slidingspans{}` and `history{}` in one run is the next thing to try.
+
+## CB-42
+
+**`x11ref.f:88` reads `Trumlt`, a LOGICAL local that nothing in the program ever
+assigns.**
+
+- **File:line:** `x11ref.f:19` (declaration), `x11ref.f:88` (read).
+- **Severity:** `undefined-behaviour`. It selects between two different
+  normalisations of the holiday factor, so on a build where the slot happens to
+  come up `.false.` a TD + holiday x11regression adjustment differs.
+
+```fortran
+      LOGICAL Psuadd,Axruhl,Trumlt,Calfrc,Xhlnln     ! :19
+      ...
+      IF(Holgrp.gt.0)THEN
+       IF((Muladd.eq.2.or.Trumlt).and.Tdgrp.gt.0)THEN   ! :88
+        CALL mulref(Nrxy,Fcal,Fhol,Xdev,Xnstar,DNOTST,F)
+        CALL mulref(Nrxy,Fhol,Fhol,Xdev,Xnstar,DNOTST,T)
+       ELSE
+        CALL mulref(Nrxy,Fcal,Fhol,Xdev,Xnstar,ONE,F)
+       END IF
+      END IF
+```
+
+`Trumlt` is not a dummy argument of `x11ref` and is in none of its four
+INCLUDEs (`srslen.prm`, `model.prm`, `xrgum.cmn`, `xtdtyp.cmn`). Grep the whole
+tree: it is declared here and read here, and assigned nowhere.
+
+- **Measured, not inferred.** Instrumented build of the vendored sources
+  (scratchpad copy -- the vendored tree is never edited), printing the condition
+  inputs at `:87` on `extra/airline_x11regression-aictest-easter8`:
+
+  ```
+  DBGREF Holgrp= 2  Tdgrp= 1  Stdgrp= 0  Trumlt= T  Muladd= 0  Easidx= 0  Nb= 8
+  ```
+
+  Both the earlier gate-level inference (entry 76: every TD + holiday spec is
+  bit-exact taking the `.true.` arm) and the direct read agree.
+
+- **Reachability.** The condition is `.and.Tdgrp.gt.0`, so with no trading-day
+  group it is false whatever `Trumlt` holds and the defect cannot reach the
+  no-TD path. `x11aic.f:328` and `:449` read the same uninitialized name into
+  `tdhol`/`xm`, under the same `Tdgrp.gt.0` conjunction.
+
+- **Port:** reproduced by taking the `.true.` arm
+  (`core/src/x11/x11reg.cpp`, `x11ref_td`), with the caveat recorded there that
+  this is one build's value and not a language guarantee -- the gates are what
+  pin it.
+
+- **Pinned by:** every gated TD + holiday x11regression spec; the `.false.` arm
+  is a different normalisation and fails them.

@@ -419,30 +419,35 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
     //   ELSE                                        -> divide by ONE (i.e. add
     //                                                  Fhol to Fcal unscaled)
     //
-    // `Trumlt` there is a CENSUS DEFECT: x11ref.f:19 declares it LOGICAL, it is
-    // not a dummy argument and not in any COMMON, and nothing ever assigns it --
-    // line 88 reads an uninitialized local. It is only reachable with Tdgrp>0,
-    // where the vendored binary behaves as if it were .true. (every gated TD +
-    // holiday spec is bit-exact taking that arm), so the read is reproduced by
-    // taking it. With Tdgrp==0 the condition is false whatever Trumlt holds, so
-    // the defect cannot reach the no-TD path at all.
-    // The `IF(Holgrp.gt.0)` OUTER guard is deliberately not reproduced, and this
-    // is a measured decision, not an oversight. It is a no-op whenever there is
-    // no holiday column (Fhol is all zero and both arms add zero), so it only
-    // bites when Fhol is nonzero while Holgrp is 0 -- which is what an Easter
-    // AICtest leaves behind: x11aic.f:64 clears Holgrp and neither the accept arm
-    // (:445) nor the "winner was the last window tested" path (estend=F) puts it
-    // back. Adding the guard costs 54 gates (c16 3.4e-4 on
-    // airline_x11regression-aictest-easter8 and its siblings), so on the vendored
-    // binary the fold demonstrably HAPPENS for those runs. Something restores
-    // Holgrp that is not visible in x11aic.f; until that is found, fold
-    // unconditionally, which is what the measurement says. OPEN QUESTION, not a
-    // Census bug claim -- it has not been measured in the Fortran directly.
-    if (tdgrp > 0) {
-        mulref(nrxy, fcal, fhol.data(), xdev, xnstar, prm::DNOTST, false);
-        mulref(nrxy, fhol.data(), fhol.data(), xdev, xnstar, prm::DNOTST, true);
-    } else {
-        mulref(nrxy, fcal, fhol.data(), xdev, xnstar, 1.0, false);
+    // `Trumlt` there is a CENSUS DEFECT, now filed as CB-42: x11ref.f:19 declares
+    // it LOGICAL, it is not a dummy argument and not in any COMMON, and nothing
+    // ever assigns it -- line 88 reads an uninitialized local. MEASURED
+    // DIRECTLY as of 2026-08-09, not inferred from gates: an instrumented build
+    // of the vendored sources prints `Trumlt= T` at :87 on
+    // extra/airline_x11regression-aictest-easter8, which is the arm this port
+    // takes. One build's stack value, not a language guarantee; the gates pin
+    // it. With Tdgrp==0 the condition is false whatever Trumlt holds, so the
+    // defect cannot reach the no-TD path at all.
+    // The `IF(Holgrp.gt.0)` OUTER guard is now reproduced. It was NOT, from
+    // entry 76 until 2026-08-09, and the note here said adding it cost 54 gates
+    // -- so "something restores Holgrp that is not visible in x11aic.f".
+    //
+    // It was visible, four lines below an `addeas` this port had ported:
+    // `x11aic.f:318-322` re-locates the Easter group after every candidate past
+    // the first and adopts it as Holgrp when no other holiday group survived.
+    // With that writer in place, an instrumented build of the vendored sources
+    // reports `Holgrp=2, Tdgrp=1, Trumlt=T` at x11ref.f:87 on
+    // extra/airline_x11regression-aictest-easter8 -- the guard is TRUE there,
+    // which is why folding unconditionally measured correct. The 54 gates were
+    // the port's own missing writer, not a defect in the Fortran.
+    if (holgrp > 0) {
+        if (tdgrp > 0) {
+            mulref(nrxy, fcal, fhol.data(), xdev, xnstar, prm::DNOTST, false);
+            mulref(nrxy, fhol.data(), fhol.data(), xdev, xnstar, prm::DNOTST,
+                   true);
+        } else {
+            mulref(nrxy, fcal, fhol.data(), xdev, xnstar, 1.0, false);
+        }
     }
     // x11ref.f:99-135, the Muladd==0 arm (psuadd and log-additive are walled
     // upstream). x11ref.f:116-122 -- Kswv==3 (a tdprior prior TD has already
@@ -797,7 +802,11 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         return eg;
     };
     auto del_easter = [&]() {
-        int eg = find_easter();
+        // x11aic.f:304-311 and :427-433 both write the COMMON `Easgrp` here,
+        // not a local -- the search result outlives the delete and x11mdl.f:141
+        // reads it.
+        xr.easgrp = find_easter();
+        const int eg = xr.easgrp;
         if (eg > 0) {
             const int begcol = m.grp(eg - 1);
             const int ncol = m.grp(eg) - begcol;
@@ -839,6 +848,16 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         if (i > 1) {
             addeas(ctx, ctx.x11reg.xeasvc(i) + easidx, easidx, 1);
             if (ctx.error.lfatal) return;
+            // x11aic.f:318-322 -- THE MISSING WRITER. `:63` cleared Holgrp on
+            // the way in, and this is what puts it back: every candidate after
+            // the first re-locates its own Easter group and, if no other
+            // holiday group survived, adopts it. Absent, Holgrp stayed 0 for
+            // the rest of the run, which is what made x11ref.f:87's outer guard
+            // look like a Census defect (entry 76's open question -- "something
+            // restores Holgrp that is not visible in x11aic.f"; it is visible,
+            // four lines below the addeas this port did port).
+            xr.easgrp = find_easter();
+            if (xr.holgrp == 0) xr.holgrp = xr.easgrp;
         }
         // x11aic.f:327 -- with `estend` false the trading-day test has already
         // left exactly this design fitted, and its `aictd` was copied into
@@ -1495,7 +1514,16 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     double dx11[7];
     bool have_dx11 = false;
     int tdbegcol = 0, tdendcol = 0;
-    if (ctx.x11log.havxtd) {
+    // x11mdl.f:541 -- `IF(Havxtd.and.(.not.Haveum))`. The Haveum half had been
+    // dropped; it is restored here rather than argued away, per the standing
+    // rule about narrowed conditions waiting for their second call site.
+    if (ctx.x11log.havxtd && !ctx.xrgum.haveum) {
+        // x11mdl.f:545 -- an EXACT search for "Trading Day", which is what makes
+        // the one-column arm below dead code. `addtd.f:75-77` titles every
+        // single-column TD group `1-Coefficient <title>`, so `td1coef` builds
+        // "1-Coefficient Trading Day" and this search returns 0. Measured on an
+        // instrumented build of the vendored sources: `igrp=0, Grpttl=
+        // "1-Coefficient Trading DayAutomatically Identified Outliers"`.
         const int igrp = strinx(true, m.grpttl.raw(), m.grpptr.data(), 1,
                                 m.ngrptl, "Trading Day");
         if (igrp > 0) {
@@ -1554,14 +1582,28 @@ void x11mdl_td(X13Context& ctx, int kpart) {
                 // and icol==7, so the two agree by accident; for td1coef ncol0==1
                 // and it would read element 7 while writing element 2.
                 //
-                // OPEN QUESTION, deliberately not filed as a CB entry. The
-                // divergent case needs an UNFIXED td1coef coefficient above 0.4
-                // (Dx11(6)=Dx11(7)=1-2.5B goes negative there) -- fixing it makes
-                // the group all-fixed, which editor.f:1660 answers by clearing
-                // Lxrneg before this code runs. No spec in the corpus reaches it,
-                // so this is read off the Fortran and NOT measured, and the
-                // standing rule is measure-before-naming. Transcribed verbatim so
-                // that whichever way it behaves, this port behaves the same.
+                // CLOSED 2026-08-09, and the answer is that the divergent case
+                // is DEAD CODE in the oracle -- not for the reason this comment
+                // used to give.
+                //
+                // It said the case needed an UNFIXED td1coef coefficient above
+                // 0.4, and that fixing it to get there makes the group all-fixed
+                // and clears Lxrneg at editor.f:1660. Both true, and both beside
+                // the point: an instrumented build of the vendored sources on
+                // `x11regression{ variables=(td1coef) reweight=yes }` never
+                // reaches this block at all. `Havxtd=T, Lxrneg=T`, and then
+                //   igrp=0  Grpttl="1-Coefficient Trading DayAutomatically…"
+                // `addtd.f:75-77` titles EVERY single-column trading-day group
+                // `1-Coefficient <title>`, and x11mdl.f:545's search for
+                // "Trading Day" is exact -- so `begcol == endcol` cannot be
+                // reached through a group this program builds with one column.
+                // The only other route would be a six-column "Trading Day" group
+                // reduced to one by deletion, and nothing deletes TD columns
+                // singly (x11aic.f:257-274 takes them all).
+                //
+                // Kept transcribed verbatim anyway: the guard above it is what
+                // makes it dead, and a future caller that finds the group by a
+                // different name would resurrect it.
                 const int stale = ncol0 + 1;
                 if (dx11[6] >= 0.0) {
                     tdwsum += dx11[stale - 1];

@@ -2706,6 +2706,48 @@ in one spec, so a phase after `sspdrv` reads it.
 hand-authored. Suite 7704 -> **7730** passed, 0 failed, 0 xfailed. WALLS
 unchanged at 19 gaps.
 
+## This session, part 51: the three instrumented-Fortran questions, answered in one afternoon -- and one was this port's own missing writer
+
+Board item 6, open since entries 76 and 77, all three carrying the same note:
+they want the Fortran instrumented directly. Part 49 built that instrument for
+something else. Entry 100.
+
+**Q1, `x11ref.f:87`'s `IF(Holgrp.gt.0)` guard.** Entry 76 measured that adding
+it cost 54 gates and left the question "something restores Holgrp that is not
+visible in x11aic.f". It IS visible, four lines below an `addeas` this port had
+ported: `x11aic.f:318-322` re-locates the Easter group after every candidate
+past the first and adopts it as Holgrp. Instrumented at `x11ref.f:87`:
+`Holgrp= 2  Tdgrp= 1  Trumlt= T`. With the writer restored the guard costs **0**
+gates and is now ported; deleting the writer again fails **52**. Both
+`del_easter` sites also now write the COMMON `Easgrp`, which this port kept in a
+local.
+
+**The shape, because entry 76 did everything right and still got it wrong.** A
+measurement saying "reproducing this Fortran line makes the engine worse" is not
+evidence about the line. It is evidence that the engine and the oracle disagree
+about that line's INPUTS. Print the input; do not drop the line.
+
+**Q2, `Trumlt`.** Read directly: `.true.`. Entry 76 had inferred it from gate
+behaviour and declined to file a CB under the measure-before-naming rule. Now
+**CB-42** -- the VALUE is one build's stack contents, the DEFECT is the
+uninitialized read.
+
+**Q3, `x11mdl.f:597-602`'s stale `icol`.** Entry 77's story (needs an unfixed
+`td1coef` above 0.4; fixing it clears `Lxrneg`) is true and beside the point.
+Under the instrument: `Havxtd= T  Lxrneg= T`, then `igrp= 0  Grpttl=
+"1-Coefficient Trading Day…"`. `addtd.f:75-77` titles every one-column TD group
+`1-Coefficient <title>` and `x11mdl.f:545`'s search is exact, so the enclosing
+block never runs and the case is DEAD CODE. Left transcribed verbatim; also
+restored `x11mdl.f:541`'s dropped `.and.(.not.Haveum)`.
+
+**Method, reusable.** `gfortran -O2 -std=legacy -fallow-argument-mismatch -w`
+over a scratchpad copy of `oracle/fortran` (`makefile.gf`, `mingw32-make` from
+rtools44) builds the oracle in ~4 minutes; each question after that is one
+`WRITE(6,*)` and one incremental rebuild. The vendored tree is never edited.
+
+**No new spec** -- all three are answers about existing ones. Suite **7730**
+passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -2778,10 +2820,22 @@ unchanged at 19 gaps.
    `_UNPORTED_NOTES` with `test_unported_notes_still_unported` guarding the
    list; and `prtmdl.f:174-177`'s `Nliter>200` NOTE, unported with no corpus
    carrier and deliberately NOT listed.
-6. `x11ref.f`'s `IF(Holgrp.gt.0)` fold guard and the uninitialized `Trumlt`,
-   both recorded in entry 76 as open questions -- they want the Fortran
-   instrumented directly (the `tools/ref_*.f` read-only probe pattern), not
-   more reasoning. Same for `x11mdl.f:597-602`'s stale `icol` (entry 77).
+6. ~~`x11ref.f`'s `IF(Holgrp.gt.0)` fold guard, the uninitialized `Trumlt`, and
+   `x11mdl.f:597-602`'s stale `icol`~~ **ALL THREE CLOSED 2026-08-09, entry
+   100.** The guard was this port's own missing writer (`x11aic.f:318-322`);
+   it is ported and costs 0 gates, and deleting the writer again fails 52.
+   `Trumlt` was read directly as `.true.` and is now CB-42. The stale `icol` is
+   DEAD CODE: `addtd.f:75-77` titles every one-column TD group
+   `1-Coefficient …` and `x11mdl.f:545` searches for `Trading Day` exactly, so
+   `igrp` is 0 and the block never runs.
+
+   **The method is the reusable part.** `gfortran -O2 -std=legacy
+   -fallow-argument-mismatch -w` over a scratchpad copy of `oracle/fortran`
+   builds the oracle in ~4 minutes (`makefile.gf`, `mingw32-make` from
+   rtools44); after that each question is one `WRITE(6,*)` and one incremental
+   rebuild. Never edit the vendored tree. Reach for this the moment a note says
+   "measured through its effect on gates" -- two of these three answers
+   contradicted exactly such an inference.
 7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}`
    (`x11outlier=no` closed in part 41) /
