@@ -1,4 +1,4 @@
-# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots; then `x11regression{outlierspan=}`, which took `cvrerr.f` with it; and `force{}` on an X-11 COMPOSITE, unported behind OUTCOME: OK -- found because the composite harness emitted no residual-seasonality F-test row at all, which was also hiding a ninth span-replay save/restore miss; and PSEUDO-ADDITIVE, which closes composite{} -- two lines of agr3, and behind them two entirely unported refusal blocks, a second Mt2 channel nobody read, and `Lindot`, a gtinpt DEFAULT the port never wrote that had four agr3 guards dead; and then `regression{trendtc=}`/`{testalleaster=}`, two arguments in the dictionary and out of the dispatch -- behind the first of them, a condition this port was only allowed to collapse while the flag it omits could not be set)
+# Session handoff — 2026-07-30 … 2026-08-01 (`pickmdl{}` + `regression{aictest=}` CLOSED; the SEATS forecast decomposition CLOSED; the WHOLE `aictest.*` savelog surface ported and gated; `x11aic.f`'s trading-day branch ported; the Picktd-flip corner FIXED; `x11regression{user=}`, the `Kswv==3` prior-TD route and `x11aic.f`'s USER branch ported -- x11aic CLOSED; `x11regression{span=}` CLOSED both halves; the parity suite swept for blind gates -- which found a SEATS decomposition 8.1e-7 wrong; **`slidingspans{}` CLOSED bit-exact on every table it ships and `_KNOWN_GAPS` is empty** -- `Setpri` is editor-only, the spans CHAIN through `arima.f:1430`, and `fixreg=` fixes nothing in the oracle; the sliding-spans HELD-BACK OUTLIERS ported -- a block that was neither ported nor walled -- and the change-of-regime arm walled where the oracle itself halts, CB-39; `slidingspans{fixreg=(outlier)}` UNWALLED -- and it falsified "fixreg= fixes nothing in the oracle", which was measured on a spec the outlier walk never touches; `slidingspans{}` + AUTOMATIC x11regression outliers ported and gated on the full 2x2 -- one wall, and behind it an unwalled crash and two clauses missing from `x11mdl.f:424-425`; `slidingspans{}` + USER REGRESSORS ported and gated -- a wall keyed on the wrong flag, two BARE abends behind it, a seventh span-replay leak, and an out-of-bounds read in the oracle, CB-40/CB-41; then `Irev` finally advanced to 4/5, which moved `getrev` back inside `x11pt3` where the oracle calls it and found three buffers the old post-hoc read had wrong; `history{x11outlier=no}` CLOSED with no code -- entry 87's fix had measured zero because its own precondition was dead; then `savelog =` turned out never to have been validated at all -- one dictionary, fourteen per-spec slices, and two call sites passing placeholder displacements into a routine that ignored them; then the same for `print =` / `save =`, where PRINT and SAVE turn out to be different dictionaries over the same 396 table slots; then `x11regression{outlierspan=}`, which took `cvrerr.f` with it; and `force{}` on an X-11 COMPOSITE, unported behind OUTCOME: OK -- found because the composite harness emitted no residual-seasonality F-test row at all, which was also hiding a ninth span-replay save/restore miss; and PSEUDO-ADDITIVE, which closes composite{} -- two lines of agr3, and behind them two entirely unported refusal blocks, a second Mt2 channel nobody read, and `Lindot`, a gtinpt DEFAULT the port never wrote that had four agr3 guards dead; and then `regression{trendtc=}`/`{testalleaster=}`, two arguments in the dictionary and out of the dispatch -- behind the first of them, a condition this port was only allowed to collapse while the flag it omits could not be set; and then `Xelong`, which was not merely dropped -- six x11reg.cpp sites were reading the REGRESSION spec's `Elong` instead, and `Xhlnln` beside it produced a wall that refused runs the oracle completes until the guard was taken from rgtdhl.f itself)
 
 Replaces the 2026-07-29b handoff. Its findings are carried forward below where
 they still matter; its open item 1 (pickmdl's last wall) is done bar one
@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7789<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->892<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7811<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->892<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7789<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7811<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2946,6 +2946,43 @@ reader: each COMMON-member assignment cross-checked against every `.field =` in
 options are parsed and dropped with a live reader on the other side and no
 wall** -- see the table in entry 104 and board item 8 below.
 
+## This session, part 56: board item 8, first two -- and `Xelong` was not merely dropped, it was being read from the other spec's copy
+
+`x11regression{eastermeans=}` -> `Xelong` and `{holidaynonlin=}` -> `Xhlnln`,
+both on entry 104's parsed-and-dropped list.
+
+**`Xelong` was worse than dropped.** All six `x11reg.cpp` sites where the oracle
+passes `Xelong` were passing `arima.elong` -- `regression{eastermeans=}`, a
+different option over a different design. Both default true, so they agreed on
+every corpus spec. Oracle on-vs-off on
+`x11regression{variables=(td easter[8])}`: `regression{eastermeans=no}` moves
+**0** output lines, `x11regression{eastermeans=no}` moves **624**.
+
+**`Xhlnln` produced a wall that was too WIDE, twice over.** First attempt
+refused at the heads of `x11aic`/`x11mdl_td` whenever the flag was set --
+entry 74's mistake mirrored, refusing runs the oracle completes. `rgtdhl.f`
+keeps its guard INSIDE the routine on purpose (its own comment says why: the
+`idotlr` call sites stay clean), and it needs six conditions. The port now has
+`rgtdhl(ctx)` with the guard transcribed verbatim and the BODY walled, called at
+all eight sites the oracle calls it. Widening it back fails 10.
+
+**Three spec attempts, each measuring something.** (1) with a holiday group and
+a log transform the ORACLE abends -- the nonlinear design is singular, on
+airline / ces_accfood / ces_leis / expgs, easter[8] and easter[15] alike; (2)
+`x11{mode=add}` clears `Muladd` and walks into a DIFFERENT pre-existing wall
+(x11pt1's additive prior TD) -- confirmed pre-existing by running the same spec
+with `holidaynonlin=no` and getting the same 10 failures; (3) `variables=(td)`
+alone leaves `Holgrp` 0, the oracle completes, and the run is bit-identical to
+holidaynonlin=no. Landed as (3). So rgtdhl's live arm is walled and cannot be
+gated from this corpus -- the wall carries the measurement.
+
+**Landed.** `extra/airline_x11regression-eastermeans`,
+`extra/airline_x11regression-holidaynonlin`, +22 gates. Mutations: the `Xelong`
+substitution fails 8; the widened guard fails 10. Suite **7811 passed, 0
+failed, 892 skipped**. WALLS **20 gaps / 4 faithful**, +1 and the count MOVED.
+`gtinpt.f`'s `Ladd1x=T` / `Xelong=T` / `Cvxrdc=0.5` defaults all written, two of
+them ahead of their readers on purpose. Entry 105.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -3050,13 +3087,18 @@ wall** -- see the table in entry 104 and board item 8 below.
    `additivesa=`; `pickmdl{aictest=(user)}` (needs
    `usraic.f`/`chkchi.f`); the `!Hvmdl` no-model cleanup
    (`arima.f:476-527`).
-8. **Six spec options are parsed and DROPPED, each with a live reader and no
-   wall** (found by part 55's sweep, table in entry 104). In the order the
-   sweep ranks them by consumer count:
-   `x11regression{holidaynonlin=}` -> `Xhlnln` (`gtxreg.f:449`; read by
-   `rgtdhl.f`, `x11aic.f`, `x11mdl.f`, `x11ref.f`);
-   `x11regression{eastermeans=}` -> `Xelong` (`:458`; `kfcn.f`, `rgtdhl.f`,
-   `x11aic.f`, `x11mdl.f`);
+8. **Four spec options are still parsed and DROPPED, each with a live reader
+   and no wall** (found by part 55's sweep, table in entry 104; the first two
+   of the original six CLOSED in part 56):
+   ~~`x11regression{holidaynonlin=}` -> `Xhlnln`~~ **CLOSED** -- parsed, and
+   `rgtdhl.f`'s guard transcribed with its body WALLED at all eight call sites.
+   Read entry 105 before touching it: the arm that runs cannot be gated from
+   this corpus (the oracle's nonlinear design is singular on every series
+   tried, and the other route out hits x11pt1's additive prior-TD wall), so the
+   wall carries a measurement and the SPEC gates the guard's narrowness.
+   ~~`x11regression{eastermeans=}` -> `Xelong`~~ **CLOSED** -- and it was not
+   merely dropped: six `x11reg.cpp` sites were reading `arima.elong`, the
+   REGRESSION spec's copy. Both default true.
    `x11regression{almost=}` -> `Cvxrdc` (`:601`; `x11mdl.f`);
    `x11regression{outliermethod=}` -> `Ladd1x` (`:382`; `x11mdl.f`);
    `x11regression{defaultcritical=}` -> `Cvxtyp` (`:578`; `editor.f`);

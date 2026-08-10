@@ -23,7 +23,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**19 walls.**
+**20 walls.**
 
 
 ## Automatic model selection
@@ -94,16 +94,19 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:566`**
   x11pt2 x11reg factor combine+emit
 
-- **`core/src/x11/x11reg.cpp:394`**
+- **`core/src/x11/x11reg.cpp:347`**
+  x11regression{holidaynonlin=yes} -- the Bell-Hilmer nonlinear Easter (rgtdhl.f / kfcn.f / estrmu.f)
+
+- **`core/src/x11/x11reg.cpp:428`**
   x11ref forcecal= combined calendar factor
 
-- **`core/src/x11/x11reg.cpp:984`**
+- **`core/src/x11/x11reg.cpp:1028`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1765`**
+- **`core/src/x11/x11reg.cpp:1814`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1782`**
+- **`core/src/x11/x11reg.cpp:1831`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:57`**

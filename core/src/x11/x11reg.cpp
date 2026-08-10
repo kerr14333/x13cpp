@@ -317,6 +317,37 @@ void prterx_if_singular(X13Context& ctx) {
     if (!ctx.error.lfatal && ctx.mdldat.armaer == prm::PSNGER) prterx(ctx);
 }
 
+// ---- rgtdhl.f --------------------------------------------------------------
+// The Bell-Hilmer NONLINEAR Easter: with a true-multiplicative adjustment
+// carrying both a trading-day and a holiday group, remove the MEAN holiday
+// effect by an iterated regression on `Kvec*Xnstar*Sti - Xn`, and re-derive
+// Kvec from it (kfcn.f -> estrmu.f). The body is not ported.
+//
+// Only the GUARD is transcribed here, verbatim from rgtdhl.f:43-45, and that is
+// the whole point: the Fortran puts the test INSIDE the routine ("so that the
+// call from the outlier identification routines is kept as clean as possible"),
+// so all eight call sites reach it and seven of the eight configurations return
+// immediately. A wall at the callers -- or at the heads of x11aic/x11mdl_td,
+// which is what this started as -- refuses runs the oracle completes: with
+// `x11regression{holidaynonlin=yes}` and NO log transform the oracle is
+// bit-identical to holidaynonlin=no, because Muladd is not 0 and it returns
+// here. Measured, both arms, before this was narrowed.
+//
+// Note what the oracle then does on the arm that DOES run: on airline,
+// ces_accfood, ces_leis and expgs, with easter[8] and easter[15], the nonlinear
+// design comes out SINGULAR and `prterx` halts the program. Every configuration
+// reachable from this corpus refuses; that is a measurement, not a proof, so
+// this stays a GAP rather than a faithful refusal.
+void rgtdhl(X13Context& ctx) {
+    const auto& xr = ctx.x11reg;
+    if (!(ctx.x11log.xhlnln && ((!ctx.x11msc.psuadd) && ctx.x11opt.muladd == 0) &&
+          ctx.model.easidx == 0 && ((!ctx.x11log.axruhl) && xr.holgrp > 0) &&
+          xr.tdgrp > 0))
+        return;
+    x11reg_not_ported(ctx, "x11regression{holidaynonlin=yes} -- the Bell-Hilmer "
+                           "nonlinear Easter (rgtdhl.f / kfcn.f / estrmu.f)");
+}
+
 // ---- regx11.f (reuses olsreg/resid) --------------------------------------
 bool regx11(X13Context& ctx, double* aout, int* naout, int* nefout) {
     auto& md = ctx.mdldat;
@@ -370,8 +401,9 @@ bool regx11(X13Context& ctx, double* aout, int* naout, int* nefout) {
 // coefficients. Holiday (Easter etc.) columns accumulate into a local Fhol that
 // is folded into Fcal via mulref (x11ref.f:87-95, the mult Tdgrp>0 branch); with
 // no holiday column Fhol stays 0 and Fcal is TD-only (the pritd / bare-TD case).
-// The Bell-Hilmer nonlinear-Easter Kvec path (Xhlnln) is not reached here (the
-// x11regression easter regressor is linear, Xhlnln=F).
+// The Bell-Hilmer nonlinear-Easter Kvec path (Xhlnln) is not reached here: the
+// x11regression easter regressor is linear, and the walls at the heads of
+// x11aic/x11mdl_td refuse Xhlnln outright (rgtdhl.f is unported).
 //
 // Tdgrp/Stdgrp/Holgrp are PARAMETERS, not the COMMON: pritd.f:44 passes the
 // literals 1/0/0 (it is building a prior-TD factor out of six day-of-week
@@ -386,8 +418,10 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
     // x11ref.f:123-129 -- with a holiday group AND forcecal=yes the combined
     // factor is the PRODUCT Ftd*Fhol rather than the mulref accumulation below.
     // (The other arm, the Bell-Hilmer nonlinear-Easter Kvec divide, needs
-    // Xhlnln, which no x11regression holiday regressor sets.) Reachable only
-    // since forcecal= started being honoured.
+    // Xhlnln -- which x11regression{holidaynonlin=} DOES set as of 2026-08-10;
+    // the two walls at the heads of x11aic/x11mdl_td refuse that whole route,
+    // so this arm still cannot be reached.) Reachable only since forcecal=
+    // started being honoured.
     if (ctx.x11log.calfrc) {
         for (int icol = 1; icol <= nb; ++icol) {
             if (is_hol_type(rtype[icol - 1])) {
@@ -469,7 +503,7 @@ void x11ref_td(X13Context& ctx, double* fcal, double* ftd, int xdev, int nrxy,
             ftd[irow - 1] += add;
             fcal[irow - 1] += add;
             // (x11ref.f:124-131's Xhlnln / Calfrc sub-arms are unreachable here:
-            // no x11regression holiday regressor sets Xhlnln, and Calfrc is
+            // Xhlnln is walled at the heads of x11aic/x11mdl_td, and Calfrc is
             // walled above.)
         } else {
             fcal[irow - 1] += 1.0;
@@ -636,14 +670,15 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         int nrxy = 0, frstry = 0;
         regvar(ctx, trnsrs, nobspf, ar.fctdrp, nfcst, 0, ar.userx.data(),
                ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxy,
-               ar.begxy.data(), frstry, xm, ar.elong);
+               ar.begxy.data(), frstry, xm, ctx.x11log.xelong);
         if (ctx.error.lfatal) return;
         ar.nrxy = nrxy;
     };
     // x11aic.f:328-329 / :449-450 -- the Easter-branch regvar calls pass
     // `xm = Easidx.eq.0 .and. .not.(Trumlt.and.tdhol.and.Xhlnln)`. Xhlnln is
-    // the Bell-Hilmer nonlinear Easter, which this port never sets, so the
-    // second conjunct is always true and `xm` is just Easidx==0. The
+    // the Bell-Hilmer nonlinear Easter, which is WALLED at the head of this
+    // routine (it was `never set` only because the option was being discarded),
+    // so the second conjunct is always true and `xm` is just Easidx==0. The
     // trading-day branch's three regvar calls pass a literal T.
     const bool eas_xm = (easidx == 0);
 
@@ -713,6 +748,8 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         rebuild_design();
         if (ctx.error.lfatal) return;
         if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
+        rgtdhl(ctx);   // x11aic.f/x11mdl.f -- returns unless Xhlnln
+        if (ctx.error.lfatal) return;
         double aicntd = prm::DNOTST;
         xrlkhd(ctx, aicntd, xc.nxcld);
         if (ctx.error.lfatal) return;
@@ -737,8 +774,11 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
         rebuild_design();
         if (ctx.error.lfatal) return;
         if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
+        rgtdhl(ctx);   // x11aic.f/x11mdl.f -- returns unless Xhlnln
+        if (ctx.error.lfatal) return;
         // (x11aic.f:208's rgtdhl is a no-op here: it returns unless Xhlnln,
-        // the Bell-Hilmer nonlinear Easter, which this port never sets.)
+        // the Bell-Hilmer nonlinear Easter, which the wall at the head of this
+        // routine refuses.)
         double aictd = prm::DNOTST;
         xrlkhd(ctx, aictd, xc.nxcld);
         if (ctx.error.lfatal) return;
@@ -867,6 +907,8 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
             rebuild_design(eas_xm);
             if (ctx.error.lfatal) return;
             if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
+            rgtdhl(ctx);   // x11aic.f/x11mdl.f -- returns unless Xhlnln
+            if (ctx.error.lfatal) return;
             aichol = prm::DNOTST;
             xrlkhd(ctx, aichol, xc.nxcld);
             // x11aic.f:345-350 -- the Jacobian is the TD one whenever a TD
@@ -935,6 +977,8 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
     // already left a fitted design behind.
     if (estend) {
         if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
+        rgtdhl(ctx);   // x11aic.f/x11mdl.f -- returns unless Xhlnln
+        if (ctx.error.lfatal) return;
         // (:466's rgtdhl is the same Xhlnln no-op as in the TD branch.)
         xrlkhd(ctx, aicnus, xc.nxcld);
         if (ctx.error.lfatal) return;
@@ -989,6 +1033,8 @@ void x11aic(X13Context& ctx, double* trnsrs, const double* sti, int nobspf,
     rebuild_design();
     if (ctx.error.lfatal) return;
     if (!regx11(ctx)) { prterx_if_singular(ctx); return; }
+    rgtdhl(ctx);   // x11aic.f/x11mdl.f -- returns unless Xhlnln
+    if (ctx.error.lfatal) return;
     double aicusr = prm::DNOTST;
     xrlkhd(ctx, aicusr, xc.nxcld);
     if (ctx.error.lfatal) return;
@@ -1324,7 +1370,7 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     int nrxy = 0, frstry = 0;
     regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst, 0, ar.userx.data(),
            ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxy,
-           ar.begxy.data(), frstry, /*xmeans=*/true, ar.elong);
+           ar.begxy.data(), frstry, /*xmeans=*/true, ctx.x11log.xelong);
     if (ctx.error.lfatal) return;
     ar.nrxy = nrxy;
     // x11mdl.f:390-395 -- x11regression coefficients held FIXED (Iregfx>=2 on the
@@ -1341,7 +1387,7 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         int nrxyf = 0, frstryf = 0;
         regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst, 0, ar.userx.data(),
                ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxyf,
-               ar.begxy.data(), frstryf, /*xmeans=*/true, ar.elong);
+               ar.begxy.data(), frstryf, /*xmeans=*/true, ctx.x11log.xelong);
         if (ctx.error.lfatal) return;
         nrxy = nrxyf;
         ar.nrxy = nrxy;
@@ -1351,6 +1397,8 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     std::vector<double> aotl(PLEN, 0.0);
     int naotl = 0, nefotl = 0;
     if (!regx11(ctx, aotl.data(), &naotl, &nefotl)) { prterx_if_singular(ctx); return; }
+    rgtdhl(ctx);   // x11aic.f/x11mdl.f -- returns unless Xhlnln
+    if (ctx.error.lfatal) return;
     // x11mdl.f:424 -- Otlxrg is the automatic AO outlier identification arm of
     // the extreme-value method; editor.f:1727-1747 chose it at spec-read (see
     // xrg_editor_setup). AO-only, add-one, over the full model span, with the
@@ -1396,7 +1444,7 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         int nrxy2 = 0, frstry2 = 0;
         regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst, 0, ar.userx.data(),
                ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxy2,
-               ar.begxy.data(), frstry2, /*xmeans=*/true, ar.elong);
+               ar.begxy.data(), frstry2, /*xmeans=*/true, ctx.x11log.xelong);
         if (ctx.error.lfatal) return;
         nrxy = nrxy2;
         ar.nrxy = nrxy;
@@ -1411,7 +1459,7 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst, ctx.extend.nbcst,
                ar.userx.data(), ar.bgusrx.data(), ar.nrusrx, ctx.prior.priadj,
                ar.reglom, nrxya, ar.begxy.data(), frstrya, /*xmeans=*/true,
-               ar.elong);
+               ctx.x11log.xelong);
         if (ctx.error.lfatal) return;
         nrxy = nrxya;
         ar.nrxy = nrxy;
@@ -1460,13 +1508,14 @@ void x11mdl_td(X13Context& ctx, int kpart) {
             regvar(ctx, trnsrs.data(), nobspf, ar.fctdrp, nfcst,
                    ctx.extend.nbcst, ar.userx.data(), ar.bgusrx.data(),
                    ar.nrusrx, ctx.prior.priadj, ar.reglom, nrxyr,
-                   ar.begxy.data(), frstryr, /*xmeans=*/true, ar.elong);
+                   ar.begxy.data(), frstryr, /*xmeans=*/true, ctx.x11log.xelong);
             if (ctx.error.lfatal) return;
             nrxy = nrxyr;
             ar.nrxy = nrxy;
             // (x11mdl.f:526's `IF(Xhlnln) kfcn` -- the nonlinear-holiday
-            // rescale -- is not reached: Xhlnln needs an x11regression holiday
-            // regressor, which this TD-only path does not carry.)
+            // rescale -- is not reached: Xhlnln is walled at the head of
+            // x11mdl_td, and this TD-only path carries no holiday regressor
+            // either.)
         }
         // Disarm only where the Fortran's own restore is what left the values:
         // when :518's `IF(nbeg>0.or.nend>0)` fired, and on the Xdsp route, where

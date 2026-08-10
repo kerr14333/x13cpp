@@ -26,9 +26,16 @@ DISPOSITIONS as of entry 104 -- do not re-derive, extend:
   * `Chi2cv` (`getreg.f:455`) / `Tlimit` (`:470`) -- dropped, but their only
     readers are `chkchi.f` / `usraic.f`, which are unported and WALLED. Covered.
     Whoever ports those two lands these parse arms in the same commit.
-  * `Xhlnln`, `Xelong`, `Cvxrdc`, `Ladd1x`, `Cvxtyp`, `Thtapr` -- SIX genuine
-    survivors, live readers, no wall. Board item 8. Measure the oracle
-    on-vs-off per option before porting any of them.
+  * `Xhlnln`, `Xelong` -- CLOSED in entry 105. `Xelong` was not merely dropped:
+    six x11reg.cpp sites were reading `arima.elong`, the REGRESSION spec's copy
+    of the same option. `Xhlnln` is parsed and `rgtdhl.f`'s guard transcribed
+    with its body walled.
+  * `Ladd1x`, `Cvxrdc` -- their gtinpt defaults are now written (entry 105), so
+    they leave this list, but NEITHER HAS A READER YET. They are still board
+    item 8: `x11regression{outliermethod=}` and `{almost=}` reach `idotlr`/
+    `prothd` in the oracle and nothing here.
+  * `Cvxtyp`, `Thtapr` -- still parsed and dropped with live readers and no
+    wall. Board item 8. Measure the oracle on-vs-off before porting either.
 
 Run it after adding a dispatch arm and confirm the count MOVES -- same property
 `walls.py` and `dup_transcription.py` have.

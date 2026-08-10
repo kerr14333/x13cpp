@@ -62,6 +62,11 @@ void prterx(X13Context& ctx);
 // Call it on the failure edge of regx11; it is a no-op when the failure was a
 // fatal raised further down instead of a singular column.
 void prterx_if_singular(X13Context& ctx);
+// rgtdhl.f -- the Bell-Hilmer nonlinear Easter. Only the guard
+// (rgtdhl.f:43-45) is transcribed; the body is WALLED. Called at all eight
+// sites the oracle calls it, because the Fortran keeps the test inside the
+// routine on purpose and seven configurations return from it immediately.
+void rgtdhl(X13Context& ctx);
 
 // x11ref.f (mult, TD-only): build the TD factor series ftd (and combined fcal)
 // from the fitted coeffs b x design xy over Nrxy rows, mean-normalized by Xnstar

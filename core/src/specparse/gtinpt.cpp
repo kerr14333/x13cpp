@@ -252,6 +252,17 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     setint(prm::NOTSET, 2, ctx.x11reg.xaicrg.data());
     ctx.x11reg.xaicst = 31;
     ctx.xrgmdl.cvxalf = 0.05;          // PT5
+    // gtinpt.f:460/466/479 -- x11regression{outliermethod= eastermeans= almost=}.
+    // All three are NON-ZERO Census defaults that this port never wrote, and
+    // Xelong is the one that was already being read: x11reg.cpp passed
+    // `arima.elong` -- the REGRESSION spec's eastermeans -- at all six sites
+    // where the oracle passes Xelong. Both default true, so the substitution was
+    // invisible until a spec set one of them. Measured on the stock oracle:
+    // `regression{eastermeans=no}` changes an x11regression Easter run by
+    // NOTHING, `x11regression{eastermeans=no}` changes 624 output lines.
+    ctx.xrgfct.ladd1x = true;          // gtinpt.f:460
+    ctx.x11log.xelong = true;          // gtinpt.f:466
+    ctx.xrgmdl.cvxrdc = 0.5;           // gtinpt.f:479
     ctx.picktd.tdzero = 0;
     ctx.picktd.lnzero = 0;
     setint(prm::NOTSET, 2, ctx.picktd.tddate.data());

@@ -7389,3 +7389,127 @@ readers are refused, so the drop is covered by an existing wall. The other six
 are `Lttc`'s exact shape -- in the dictionary, out of the dispatch, live reader
 on the other side. They are NOT fixed here: measure the oracle on-vs-off per
 option first, as this entry did for `trendtc`. That is the next front.
+
+## 105. `Xelong` -- the option was dropped AND the reader was reading the other spec's copy (2026-08-10)
+
+Board item 8, first two of six. Entry 104's sweep listed
+`x11regression{eastermeans=}` -> `Xelong` and `{holidaynonlin=}` -> `Xhlnln` as
+parsed-and-dropped with live readers. `Xelong` turned out to be worse than
+that, because it was ALREADY BEING READ -- from the wrong variable.
+
+`Elong` is `regression{eastermeans=}`; `Xelong` is
+`x11regression{eastermeans=}`. Two options, two COMMON slots, two different
+design matrices. All six sites in `x11reg.cpp` where the oracle passes `Xelong`
+to `regvar` were passing `arima.elong`. Both default true (`gtinpt.f:289` and
+`:466`), so the substitution agreed with the oracle on every spec that set
+neither -- which is every spec in the corpus.
+
+**Oracle on-vs-off, three runs, before touching the port.** Baseline is
+`x11regression{variables=(td easter[8])}` on airline:
+
+| spec | output lines that move |
+|---|---|
+| `+ regression{eastermeans=no}` | **0** |
+| `+ x11regression{eastermeans=no}` | **624** |
+
+The first row is the finding. `Elong` does not reach the x11regression design
+at all, so the port was feeding a switch that the oracle keeps strictly on the
+other side of the wall -- and the only reason it agreed is that both switches
+default to the same value.
+
+### `Xhlnln`: the wall that was too WIDE, and the guard that fixes it
+
+`Xhlnln` is the Bell-Hilmer nonlinear Easter. It turns `rgtdhl.f` from a
+routine that returns immediately into the one that rebuilds the holiday design
+(`kfcn.f` -> `estrmu.f` behind it). Unported. Five comments in `x11reg.cpp`
+said the flag "is never set" -- true of this port's PARSER, not of the oracle,
+and exactly the sentence entry 104 was written about.
+
+The first attempt refused at the heads of `x11aic` and `x11mdl_td` the moment
+`Xhlnln` was true. That is the entry-74 mistake mirrored: a wall keyed on the
+OPTION rather than on the trigger, and this time too WIDE -- it refuses runs the
+oracle completes. `rgtdhl.f:43-45` needs all of
+
+```
+Xhlnln .and. ((.not.Psuadd).and.Muladd.eq.0) .and. Easidx.eq.0 .and.
+((.not.Axruhl).and.Holgrp.gt.0) .and. Tdgrp.gt.0
+```
+
+and the Fortran states, in a comment at the head of the routine, WHY the test
+lives inside it rather than at the callers: "so that the call from the outlier
+identification routines is kept as clean as possible". There are eight call
+sites. So the port now has a `rgtdhl(ctx)` whose GUARD is transcribed verbatim
+and whose BODY is the wall, called at all eight (`x11aic.f:208/339/466/539/598`,
+`x11mdl.f:418`, `idotlr.f:879/996`) right after each `regx11` +
+`prterx_if_singular` pair, which is the shape every one of those sites has.
+
+**Porting a routine's guard and walling its body is strictly better than
+walling its callers**, and the difference is measurable: the wide version fails
+10 gates on a spec the oracle runs to completion.
+
+### Three attempts at a spec, and what each one measured
+
+The wall spec had to reach `holidaynonlin=yes` on an arm the oracle FINISHES.
+Getting there took three tries and each failure was informative:
+
+1. `easter[8]`, log transform -- the oracle **abends**: `ERROR: Irregular
+   regression matrix singular because of Easter[8].` That is `prterx` inside
+   `rgtdhl`, so the option is live; the nonlinear design is simply singular.
+   Re-measured on `ces_accfood`, `ces_leis` and `expgs`, with `easter[8]` and
+   `easter[15]`: singular every time.
+2. `x11{mode=add}`, which clears `Muladd` and so returns from `rgtdhl` -- and
+   walks straight into a DIFFERENT wall this port already had, `x11pt1`'s
+   additive/pseudo-additive prior trading day. Confirmed as pre-existing by
+   running the same spec with `holidaynonlin=no`: identical 10 failures. A
+   control worth the thirty seconds; without it that looked like a new defect.
+3. `variables=(td)` -- `Holgrp` is 0, `rgtdhl` returns, the oracle completes and
+   is bit-identical to `holidaynonlin=no`. Landed.
+
+So the arm that RUNS is walled and cannot be gated from this corpus: with a
+holiday group the oracle halts, and without a multiplicative mode this port
+halts one wall earlier. The wall carries the measurement instead.
+
+### The spec gates the guard, not the option
+
+`extra/airline_x11regression-holidaynonlin` sets the option and asserts the run
+is bit-exact anyway. That reads like a spec that tests nothing, and it is the
+opposite: widening the guard back to `if (!ctx.x11log.xhlnln) return;` fails
+**10** gates on it. **Setting an option is not the same as reaching the code it
+enables**, and after entry 104 that distinction is now the one this port keeps
+getting wrong in both directions -- too narrow in `Lttc`'s case, too wide here.
+
+### Gated by
+
+`extra/airline_x11regression-eastermeans` (`variables=(td easter[8])` +
+`eastermeans=no`, saving D10/D11/D12/D16) and
+`extra/airline_x11regression-holidaynonlin`, **+22 gates**.
+
+Mutations:
+
+* `ctx.x11log.xelong` -> `ar.elong` at the six sites: fails **8**, all on the
+  eastermeans spec.
+* the `rgtdhl` guard widened to the option alone: fails **10**, all on the
+  holidaynonlin spec.
+
+Suite **7811 passed, 0 failed, 892 skipped, 0 xfailed**. WALLS **20 gaps / 4
+faithful** -- the count MOVED by exactly one, which is the check that the
+helper name is one `walls.py` matches (entry 94's trap).
+`tools/parsed_dropped.py` goes 76 -> 68: four names leave, each from both the
+reader list and the `gtinpt.f` list.
+
+`gtinpt.f`'s three non-zero defaults for this family are written in the same
+commit even though two have no reader yet: `Ladd1x=T` (`:460`),
+`Xelong=T` (`:466`), `Cvxrdc=0.5` (`:479`). Entry 101's rule -- port the default
+with the reader -- inverted, because the reader is what board item 8 will add
+next and the test starts demanding the default the moment it appears.
+
+### A trap that cost twenty minutes: `mv` restores an OLD mtime
+
+Between mutations the source was restored with `mv x11parts.cpp.bak
+x11parts.cpp`. `mv` preserves the backup's mtime, which is older than the .obj
+compiled from the MUTATED file, so `make` saw nothing to do and every
+subsequent "verification" ran the mutated binary. It presented as the trendtc
+gates from entry 104 regressing for no reason, on a tree whose `git diff`
+touched no relevant file. **Restore by WRITING the file, not by moving a backup
+over it** -- or `touch` it afterwards. The tell is a failing value that exactly
+equals a number you printed during a mutation run.

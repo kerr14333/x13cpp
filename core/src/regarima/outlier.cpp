@@ -850,8 +850,10 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
         if (ctx.error.lfatal) return;
         if (lxreg) {
             int nn = 0;
-            regx11(ctx, a, &nn, &nefobs);   // rgtdhl is a no-op (Xhlnln=F)
+            regx11(ctx, a, &nn, &nefobs);
             prterx_if_singular(ctx);        // idotlr.f:878
+            rgtdhl(ctx);                    // idotlr.f:879
+            if (ctx.error.lfatal) return;
             na = nn;
         } else {
             rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs, lautmp);
@@ -884,8 +886,10 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
                 if (ctx.error.lfatal) return;
                 int na = 0;
                 if (lxreg) {
-                    regx11(ctx, a, &na, &nefobs);   // rgtdhl no-op (Xhlnln=F)
+                    regx11(ctx, a, &na, &nefobs);
                     prterx_if_singular(ctx);        // idotlr.f:995
+                    rgtdhl(ctx);                    // idotlr.f:996
+                    if (ctx.error.lfatal) return;
                 } else {
                     rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs,
                            lautmp);

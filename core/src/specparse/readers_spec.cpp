@@ -4620,6 +4620,34 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                    inptok);
             if (ctx.error.lfatal) return;
             if (argok && nelt > 0) ctx.x11log.calfrc = (ivec[0] == 1);
+        } else if (argidx == 22 || argidx == 23) {
+            // gtxreg.f:442-459 -- holidaynonlin -> Xhlnln, eastermeans -> Xelong.
+            // Both fell through to the discard arm. `Xelong` is the sharper of
+            // the two, because it was already being READ: every one of the six
+            // x11reg.cpp sites where the oracle passes `Xelong` was passing
+            // `arima.elong`, i.e. the REGRESSION spec's eastermeans. Both
+            // default true, so the substitution could not show until a spec set
+            // one. Measured on the stock oracle: `regression{eastermeans=no}`
+            // changes an x11regression Easter run by NOTHING (Elong never
+            // reaches this design), `x11regression{eastermeans=no}` moves 624
+            // lines of output.
+            if (L.nxtktp == lexprm::EQUALS) lex(ctx);
+            static const char YSNDIC[] = "yesno";
+            static const int ysnptr[3] = {1, 4, 6};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, false, 1, YSNDIC, ysnptr, 2,
+                   argidx == 22 ? "Choices for holidaynonlin are yes or no."
+                                : "Choices for eastermeans are yes or no.",
+                   ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (argidx == 22)
+                    ctx.x11log.xhlnln = (ivec[0] == 1);
+                else
+                    ctx.x11log.xelong = (ivec[0] == 1);
+            }
         } else if (argidx == 28) {
             // gtxreg.f:513-518 aicdiff= -> Xraicd, the threshold the x11aic
             // tests must clear to switch AWAY from the no-regressor model
