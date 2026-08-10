@@ -6940,3 +6940,117 @@ No new spec — all three are answers about existing ones. Mutation: the missing
 `x11aic.f:318-322` writer, with `x11ref.f:87`'s guard in place, fails **52**
 gates. Suite 7730 passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.
 Board item 6 CLOSED.
+
+## 101. The `gtinpt.f` default audit — `Aicstk`, and the class made self-policing (2026-08-09)
+
+Entry 95 closed with a rule rather than a fix: *a DEFAULT that lives only in the
+Fortran's initialisation block is the same defect as an unadvanced mode
+variable.* `Lindot` was found by accident — a composite happened to carry a
+component-level shift. This entry is that rule run as a SWEEP instead of waiting
+for the next accident.
+
+### The sweep
+
+`gtinpt.f` lines 128-566 are one straight-line block that gives every option
+COMMON its value before a single spec is read. Parse it, keep the defaults whose
+value is not something a C++ struct's zero-init already provides, and ask of each
+one: does the port write it, and does anything read it? 370 defaults, 164 of them
+non-zero.
+
+Two mechanical traps in doing this, both of which cost a pass:
+
+* **The column-1 comment rule.** Testing `line.lstrip().startswith('C')` drops
+  every `CALL setint(...)` line, because fixed-form Fortran comments are a marker
+  in column 1 and `CALL` starts with a C. That silently removed 51 array
+  defaults — including `Critvl`, `Xaicrg`, `Tddate` — from the first sweep. The
+  same shape as "count the block; never read the indentation": a lexical rule
+  applied where a positional one was meant.
+* **The port's deliberate deviation is not the defect.** `gt_seats`, `gt_force`,
+  `gt_history` and `gt_slidingspans` all set their COMMON's defaults at the head
+  of the READER rather than at spec-parse start, on the argument that nothing
+  reads those blocks before the reader runs. That is 50 of the 55 fields written
+  outside `gtinpt.cpp`, and treating it as a finding buries the one real hit.
+
+### The one real hit: `Aicstk`
+
+`gtinpt.f:291` sets `Aicstk=31`, the DAY OF MONTH a stock series is measured on.
+The port never wrote it, and `automd.cpp` additionally reset it to **0** — a
+value the Fortran assigns nowhere at all — under a comment claiming to install
+"the aictest defaults the parser would install".
+
+It is not a label parameter. `addtd.f:31-46` uses it to build the group title AND
+to select `PRGTST`/`PRG1ST`, the stock trading-day variables, whose COLUMN VALUES
+are computed for that day. Day 0 is a different design matrix.
+
+What kept it alive is the conjunction, exactly as with `Lindot`. `Aicstk` is read
+only when the aictest TD candidate is a stock variant (`Tdindx` 3 or 6), and the
+oracle's other writer — `editor.f:1051-1057`, which reads the number back out of
+an existing `tdstock[n]` group's title — covers most routes there. The one route
+it does not cover is the one that makes the default observable:
+`editor.f:1159-1165` rewrites the candidate vector to `Tdayvc=(0,3,6)` when
+`Isrflw==2` **and no trading-day group is present** — i.e. precisely when there is
+no title to read the day out of. So `series{type=stock}` + `regression{aictest=(td)}`
+ran the whole test at day 0:
+
+| | oracle | engine (before) |
+|---|---|---|
+| `aictest.td.aicc.notd` | 987.384531359342 | 987.384531359342 |
+| `aictest.td.aicc.tdstock[·]` | 989.053376325258 | 983.883209492248 |
+| `aictest.td.aicc.tdstock1coef[·]` | 985.147172703322 | 976.557913377560 |
+| `aictest.diff.td` | 2.237358656 | 10.82661798 |
+
+`notd` agrees to every digit — there is no TD column in that fit — and every
+candidate that HAS one is wrong. `OUTCOME: OK` throughout.
+
+### Its sibling, which the fix alone would not have reached
+
+`automd.cpp` also carried its own inlined copy of `editor.f:1151-1166`, hardcoded
+to the FLOW answer `Tdayvc=(0,1,4)`. The port already had the block transcribed
+faithfully in `aictest_td_vectors` (`aictst.cpp`), and the explicit and `pickmdl`
+paths both call it; **automdl was the one caller with a private copy**, and the
+copy dropped both of the editor's conditions — `ktd.eq.0` and the `Isrflw==2`
+remap. On automdl + stock the oracle selects `tdstock1coef[31]` and this path
+selected `td1coef`: a DIFFERENT REGRESSOR in the final model, `aictest.diff.td`
+18.33 against 2.24. Setting `Aicstk` correctly would have left that untouched.
+
+Same shape as `ssprep`'s narrowed signature (entry 85) and `xrgdrv`'s `Ksdev`
+(entry 71), one level up: **not an argument dropped, but a whole routine
+re-implemented inline at one of its call sites.** The private copy was correct
+for the case its author had, and a copy cannot be fixed by fixing the original.
+
+### The audit is now a test, not a session
+
+`tests/parity/test_gtinpt_defaults.py` re-derives BOTH sides — the defaults out
+of the vendored `gtinpt.f`, the writes and reads out of the C++ tree — and fails
+when a non-zero Census default is read outside the parser and reaches no write.
+Deliberately weak on where the write lives, so the reader-head deviation above
+does not have to be relitigated on every run; the class it catches is the default
+that reaches NO write, or only a write of zero.
+
+Three ALLOWED entries, each a checked claim rather than a silencer: `Eick`
+(both consumers test `> 0`, and DNOTST and 0.0 agree on that predicate), and
+`Targsa`/`Targtr`/`Rfctlg` (count-bounded arrays — every read is bounded by the
+companion count the parser writes, so an unparsed slot is unreachable). The
+allowance is on the BOUND, not the array: a read that ever iterates to `PTARGT`
+instead of `Ntarsa` puts the entry back.
+
+It carries the two things this repo requires of a guardrail. A floor assertion,
+because a discovery that shrinks to nothing reports green. And a POSITIVE
+CONTROL: `test_checker_can_fail` asserts `Eick` is a genuine member of the
+offender set that only its ALLOWED entry suppresses, so the parse, the
+declaration scan, the read scan and the write scan are all provably live. Deleting
+the `aicstk = 31` line makes the check name it, `aicstk gtinpt.f:291 = 31`, with
+no build.
+
+### Gated by
+
+`extra/airline_aictest-td-stock` (explicit path) and
+`extra/airline_automdl-aictest-td-stock` (automdl path), +11 gates. Mutations,
+per half: reverting the `Aicstk` default fails **9**; restoring `automd`'s
+port-invented `aicstk = 0` fails **4**; re-inlining the hardcoded flow vector
+fails **4**. Suite 7741 passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.
+
+Also touched: `test_aictest_savelog.py`'s key-ownership table, whose
+`td\.aicc\.\w+` could not match `aictest.td.aicc.tdstock[31]` — the day-of-month
+is part of the candidate NAME. It failed collection the moment the golden landed,
+which is that table working as designed.

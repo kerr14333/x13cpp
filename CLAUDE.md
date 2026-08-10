@@ -434,7 +434,21 @@ because by the time you would think to look them up, the damage is done.
   `itn`/`iir`/`id8`/`id9` were 3.5e-04 out at `OUTCOME: OK`. **Generalised
   form: a DEFAULT that lives only in the Fortran's initialisation block is the
   same defect as an unadvanced mode variable.** When you port a `cmn` flag,
-  find its `gtinpt.f` default, not just its reader.
+  find its `gtinpt.f` default, not just its reader. **This class is now swept
+  and self-policing** (entry 101): all 164 non-zero defaults audited, which found
+  `Aicstk` — the day of month a STOCK series is measured on, never written and
+  reset by `automd.cpp` to a 0 the Fortran assigns nowhere, so
+  `series{type=stock}` + `aictest=(td)` ran the whole test on the wrong design
+  matrix — and `tests/parity/test_gtinpt_defaults.py` now re-derives both sides
+  and fails on the next one. Do not re-run the audit by hand. Do note its live
+  tail: ~17 fields have the default and no consumer yet, so **when you port
+  their reader, port the default in the same commit** — the test starts
+  demanding it the moment the read appears. The same sweep found the SHARPER
+  form of entries 71/85: not an argument dropped at a second call site, but a
+  whole routine (`editor.f:1151-1166`) **re-implemented inline** at one of
+  three call sites, hardcoded to the case its author had. A copy cannot be
+  fixed by fixing the original — when you find a block transcribed twice,
+  delete the copy.
 - **A BARE `abend` is not a wall — it is a hole with the lights off.**
   `walls.py` derives the inventory from refusal MESSAGES, so a guard that calls
   `abend(ctx)` with no `errhdr`/`writln` is in neither the gap list nor the

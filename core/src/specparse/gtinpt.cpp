@@ -213,6 +213,20 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     for (int i = 1; i <= prm::PAICT; ++i)
         ctx.arima.rgaicd(i) = 0.0;    // setdp(ZERO,PAICT,Rgaicd)
     ctx.arima.pvaic = prm::DNOTST;    // gtinpt.f:300: Pvaic=DNOTST
+    // gtinpt.f:291 -- Aicstk, the DAY OF MONTH a stock series is measured on.
+    // This is not a label parameter: addtd.f:31-36 stamps it into the group
+    // title AND selects the PRGTST/PRG1ST stock-TD variables, whose values are
+    // built for that day, so a wrong Aicstk is a wrong design matrix. The
+    // oracle's only other writer is editor.f:1051-1057, which reads the number
+    // back out of an EXISTING tdstock[n] group's title -- and that branch cannot
+    // run on the one path where the default is observable: editor.f:1159-1165
+    // rewrites the aictest TD vector to the stock variants (Tdayvc=(0,3,6),
+    // Itdtst=3) exactly when Isrflw==2 and NO trading-day group is present, i.e.
+    // when there is no title to read. So `series{type=stock}` + `aictest=(td)`
+    // ran the whole test at day 0 against the oracle's day 31: bit-exact `notd`
+    // AICC (no TD column yet) and both TD candidates wrong, aictest.diff.td
+    // 10.83 against 2.24, at OUTCOME: OK.
+    ctx.arima.aicstk = 31;
     for (int i = 1; i <= 7; ++i)
         ctx.x11reg.dwt(i) = prm::DNOTST;   // gtinpt.f:470 setdp(DNOTST,7,Dwt)
     // gtinpt.f:457-458/478 -- x11regression{sigma= critical= cvalpha=}. The

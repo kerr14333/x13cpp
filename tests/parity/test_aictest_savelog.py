@@ -73,12 +73,14 @@ OWNED = re.compile(
     r"|" + _LN + r"|" + _LN + r"\.reg|diff\." + _LN + r"|cvaic\." + _LN +
     r"|easter\.reg|e|e\.window|diff\.e|cvaic\.e"
     r"|u|diff\.u|cvaic\.u"
-    # -- tdaic.f's own table
-    r"|td\.num|td\.reg|td\.reg2|td\.aicc\.\w+"
+    # -- tdaic.f's own table. The candidate NAME is part of the key, and a
+    # stock-trading-day candidate carries its day-of-month in brackets
+    # (`aictest.td.aicc.tdstock[31]`, mktdlb.f:36) -- so the suffix is not \w+.
+    r"|td\.num|td\.reg|td\.reg2|td\.aicc\.[\w\[\]]+"
     # -- easaic.f's
-    r"|easter\.num|e\.aicc\.\w+"
+    r"|easter\.num|e\.aicc\.[\w\[\]]+"
     # -- lomaic.f's
-    r"|" + _LN + r"\.aicc\.\w+"
+    r"|" + _LN + r"\.aicc\.[\w\[\]]+"
     r")$"
     # easaic.f:69-73 writes this one WITHOUT the prefix, and it is part of the
     # same block -- an unprefixed key is exactly the kind that goes unnoticed.

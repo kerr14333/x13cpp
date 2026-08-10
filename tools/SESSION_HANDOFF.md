@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7730<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->887<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7744<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->887<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7730<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7744<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2747,6 +2747,68 @@ rtools44) builds the oracle in ~4 minutes; each question after that is one
 
 **No new spec** -- all three are answers about existing ones. Suite **7730**
 passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.
+
+## This session, part 52: the `gtinpt.f` default audit -- `Aicstk`, an inlined copy of a routine the port already had, and the class turned into a test
+
+Entry 95 left the `Lindot` rule ("a DEFAULT that lives only in the Fortran's
+initialisation block is the same defect as an unadvanced mode variable") but
+`Lindot` itself was found by accident. This ran it as a sweep: parse
+`gtinpt.f:128-566`, keep the 164 defaults a C++ zero-init does not already give
+you, and ask of each whether the port writes it and whether anything reads it.
+
+**One real hit, `Aicstk`** (`gtinpt.f:291` = 31, the day of month a STOCK series
+is measured on) -- never written, and `automd.cpp` additionally reset it to 0, a
+value the Fortran assigns nowhere. Not cosmetic: `addtd.f` uses it to select the
+stock TD variables and build their column VALUES. Reachable through exactly one
+door, `series{type=stock}` + `aictest=(td)` with no TD regressor, because that is
+the one route to the stock candidates on which `editor.f:1051-1057`'s other
+writer has no group title to read the day out of. `aictest.diff.td` 10.83 against
+the oracle's 2.24 at `OUTCOME: OK`.
+
+**And its sibling, which fixing `Aicstk` would not have reached.** `automd.cpp`
+carried a private inlined copy of `editor.f:1151-1166` hardcoded to the FLOW
+answer `Tdayvc=(0,1,4)`, dropping both editor conditions. The port already had
+the block transcribed correctly as `aictest_td_vectors`, called by the explicit
+and pickmdl paths; automdl was the one caller with its own copy, and on
+automdl + stock it selected `td1coef` where the oracle selects
+`tdstock1coef[31]` -- a different regressor in the final model. **The generalised
+form is worth keeping: entries 71 and 85 are an ARGUMENT dropped at one call
+site; this is a whole routine re-implemented inline at one call site, and a copy
+cannot be fixed by fixing the original.**
+
+Gated by `extra/airline_aictest-td-stock` and
+`extra/airline_automdl-aictest-td-stock` (+11). Mutations per half: 9 / 4 / 4.
+Suite **7741** passed, 0 failed, 0 xfailed. WALLS unchanged at 19 gaps.
+
+**The audit is now `tests/parity/test_gtinpt_defaults.py`, so it does not have
+to be re-run by hand.** Both sides derived (defaults out of the vendored
+`gtinpt.f`, reads/writes out of the C++ tree); fails when a non-zero Census
+default is read outside the parser and reaches no write, or only a write of
+zero. Deliberately silent about WHERE the write lives, because `gt_seats` /
+`gt_force` / `gt_history` / `gt_slidingspans` set their defaults at the reader
+head on purpose and that deviation should not be relitigated every run. Three
+ALLOWED entries, each a checked claim: `Eick` (consumers test `> 0`, where
+DNOTST and 0.0 agree) and `Targsa`/`Targtr`/`Rfctlg` (count-bounded arrays --
+the allowance is on the BOUND, so a read that iterates to `PTARGT` instead of
+`Ntarsa` puts it back). Carries a floor assertion and a positive control
+(`test_checker_can_fail`); deleting the `aicstk = 31` line makes it name the
+field, with no build.
+
+**What the sweep leaves open, and it is a live list.** These have a non-zero
+`gtinpt.f` default, a declared field in the port, and NO consumer yet, so they
+are not defects today and the test correctly ignores them -- but each becomes
+one the moment its reader lands: `Ladd1x`, `Xelong`, `Cvxrdc`, `Chi2cv`,
+`Tlimit`, `Mxidlg`, `Percnt`, `Prtype`, `Itukey`, `Pttdr`/`Pttdo`/`Pttda`/`Pttdi`,
+`Ptsr`/`Ptso`/`Ptsa`/`Ptsi`. **When you port the consumer, port the default in
+the same commit** -- the test will start demanding it the moment the read
+appears, which is the intended behaviour, not a surprise.
+
+Two mechanical traps, both of which cost a pass and will recur in any Fortran
+sweep: `line.lstrip().startswith('C')` drops every `CALL` line, because a
+fixed-form comment is a marker in COLUMN 1 (this silently removed 51 array
+defaults from the first pass); and the port's deliberate reader-head deviation
+is 50 of the 55 fields written outside `gtinpt.cpp`, so a rule that flags it
+buries the one real hit.
 
 ## Open, in the order I would take them
 

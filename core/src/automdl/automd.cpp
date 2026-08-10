@@ -94,18 +94,28 @@ static bool automd_aictest_block1(X13Context& ctx, double* trnsrs, double* a,
     ctx.picktd.tdzero = 0;
     ctx.picktd.tddate(1) = NOTSET;
     ctx.picktd.tddate(2) = NOTSET;
-    ar.aicstk = 0;
+    // NOT Aicstk: automd.f assigns it nowhere, so it keeps whatever the editor
+    // stage left -- gtinpt.f:291's 31, or editor.f:1057's day-of-month read out
+    // of an existing tdstock[n] group. This port used to reset it to 0 here,
+    // which is a value the Fortran never writes at all.
     m.easidx = 0;
 
     bool lester = false;
     if (want_td) {
-        // editor.f:1151-1166 (aictest=td, monthly/quarterly, no existing TD
-        // regressor): Tdayvc = (0, 1, 4), Ntdvec = 3.
+        // editor.f:1151-1166. This used to be inlined as the FLOW answer --
+        // Tdayvc = (0, 1, 4), Ntdvec = 3 -- which is only what the block
+        // computes when the series is a flow AND no trading-day group is
+        // present. It drops both of the editor's conditions: `ktd.eq.0` (an
+        // existing TD group leaves Ntdvec at 2) and, more sharply, :1159-1165's
+        // `Isrflw.eq.2` remap to the STOCK candidates (0,3,6). On
+        // `series{type=stock}` + `aictest=(td)` the oracle chose
+        // tdstock1coef[31] and this path chose td1coef -- a different regressor
+        // in the final model, aictest.diff.td 18.33 against 2.24, at OUTCOME:
+        // OK. The shared routine (aictst.cpp, editor.f:1151-1166 verbatim) is
+        // what the explicit and pickmdl paths already call; automdl was the one
+        // caller with its own copy.
         ar.itdtst = 1;
-        ar.ntdvec = 3;
-        ar.tdayvc(1) = 0;
-        ar.tdayvc(2) = 1;
-        ar.tdayvc(3) = 4;
+        aictest_td_vectors(ctx);
         int tdmdl1 = 0;
         tdaic(ctx, trnsrs, a, nefobs, na, frstry, tdmdl1, /*ltdlom=*/false,
               lester, /*lsumm=*/false);
