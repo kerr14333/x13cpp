@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7811<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->892<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7897<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->908<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7811<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7897<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -2983,6 +2983,59 @@ failed, 892 skipped**. WALLS **20 gaps / 4 faithful**, +1 and the count MOVED.
 `gtinpt.f`'s `Ladd1x=T` / `Xelong=T` / `Cvxrdc=0.5` defaults all written, two of
 them ahead of their readers on purpose. Entry 105.
 
+## This session, part 57: board item 8 CLOSED -- and the dictionary was wrong in both directions
+
+The last four parsed-and-dropped options. Two were not the defect the list said.
+
+**`x11regression{almost=}` is unreachable in the ORACLE (CB-43).** `gtxreg.f:59`
+declares `ARGDIC*271` over a 269-character literal and `argptr`'s last entry is
+264..271, so dictionary entry 36 is `'almost  '` and `cmpstr`'s length test can
+never match the token. The oracle halts with `Argument name "almost" not found`.
+This port accepted it and ran to `OUTCOME: OK`, because
+`string_view::substr` CLAMPS where Fortran pads. Fix: write the literal at its
+DECLARED length. `tools/dict_overrun.py` sweeps for the shape and **expects
+zero** -- a padded dictionary does not overrun, so any hit is either an unpadded
+literal or a mistyped pointer table.
+
+**The mirror was live: `check{qtype=}`.** `getchk.f:48` is
+`DATA qptr/1,9,11,20,22/`; the port had `{1,9,11,21,23}`, slicing the last two
+entries as `"boxpierceb"` and `"p"`, so the oracle accepts `qtype=boxpierce`/`bp`
+and the port **FATALed** on both. No corpus spec had ever set qtype.
+
+**`outliermethod=`: 154 oracle pairs, tables identical every time.** addall
+changes the forward-addition path and backward deletion converges -- and this
+port defers the iteration print, so the obvious spec would gate nothing. The two
+points in that sweep where the VERDICTS differ are both addall overrunning the
+regression-effect limit: `co2` at critical=3.2 (addone completes, addall halts)
+and payems at 4.6. The gate is the halt against the completed sibling. Behind it,
+`adrgef.f`'s refusal was **two lines of six**, each indented one space too far.
+
+**`defaultcritical=`: the reader existed, the OBSERVABLE did not.** Entry 93 had
+already moved `editor.f:1749`'s setcvl/setcv choice into the port. With the parse
+arm added the mutation STILL passed: the only observable is `x11irrcrtval`, a
+`x12hdr.f:751-764` savelog key the engine never emitted -- in every golden, read
+by no gate. Ported that block's `Ixreg` arm (4 keys) and added them to
+`_X11_MISC`. 97 probe pairs confirm the ~2e-3 change moves no table. Its two
+preconditions each cost a sweep: no `critical=`, and a holiday/easter/AO group
+or `editor.f:1730` never sets `Otlxrg`.
+
+**`taper=`:** `taper.f` was simply absent from `sautco`. Ported; only the arspec
+estimator is tapered (`spcdrv` does not hand `Thtapr` to `spgrh2`).
+
+**Also:** `x13run_x11` passed the spec BASE where `genfor.f` prints the FILENAME,
+so every `.err` header was wrong -- entry 95's composite fix, unpropagated, and
+that fix had itself passed the `.spc` name for BOTH roles, giving `savtbl` a stem
+with `.spc` on it. `base` and `spcname` are now separate parameters on
+`run_x11`/`run_seats`/`run_m2`.
+
+**Landed.** `extra/co2_x11regression-outliermethod-addall` + `-addone`,
+`extra/airline_x11regression-defaultcritical`, `extra/airline_x11-taper`,
+`extra/airline_check-qtype-boxpierce`,
+`edge/x11regression-almost-unmatchable`, **+86 gates**. Five mutations, all fail
+(4 / 1 / 1 / 1 / 4). Suite **7897 passed, 0 failed, 908 skipped**, ctest 12/12,
+WALLS unchanged **20 gaps / 4 faithful** (nothing here was walled -- the point of
+the item). `parsed_dropped.py` 68 -> 64. Entry 106, CB-43.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -3087,9 +3140,17 @@ them ahead of their readers on purpose. Entry 105.
    `additivesa=`; `pickmdl{aictest=(user)}` (needs
    `usraic.f`/`chkchi.f`); the `!Hvmdl` no-model cleanup
    (`arima.f:476-527`).
-8. **Four spec options are still parsed and DROPPED, each with a live reader
-   and no wall** (found by part 55's sweep, table in entry 104; the first two
-   of the original six CLOSED in part 56):
+8. ~~**Six spec options are parsed and DROPPED, each with a live reader and no
+   wall**~~ **ALL SIX CLOSED -- this item is EMPTY as of 2026-08-11** (parts 56
+   and 57; entries 105 and 106). Kept only for what the closures found, because
+   two of the four were not the defect the list said they were:
+   `x11regression{almost=}` is unreachable in the ORACLE (CB-43 -- its
+   dictionary entry carries two trailing blanks and `cmpstr` compares lengths),
+   and this port ACCEPTED it because `string_view::substr` clamps where Fortran
+   pads; `x11regression{defaultcritical=}` already had its reader and its
+   mutation still passed, because the only observable is a savelog key the
+   engine did not emit. `tools/dict_overrun.py` now sweeps the first shape and
+   expects zero. The original text follows for the record:
    ~~`x11regression{holidaynonlin=}` -> `Xhlnln`~~ **CLOSED** -- parsed, and
    `rgtdhl.f`'s guard transcribed with its body WALLED at all eight call sites.
    Read entry 105 before touching it: the arm that runs cannot be gated from

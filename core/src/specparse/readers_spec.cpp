@@ -487,6 +487,29 @@ void gt_x11(X13Context& ctx, bool havesp, bool& inptok) {
             }
             continue;
         }
+        if (argidx == 13) {
+            // taper -> Thtapr (getx11.f:479-493). Parsed and dropped: the
+            // Tukey-Hanning taper sautco applies before the autocovariances
+            // (sautco.f:18, `IF(R.gt.0D0)CALL taper`), so it moves every
+            // AR-spectrum table. Default 0 (gtinpt.f:336) = no taper, which is
+            // why the drop was invisible. spgrh2 (the periodogram estimator)
+            // is NOT tapered -- spcdrv passes Thtapr to spgrh only.
+            double dvec[1] = {0.0};
+            int nelt = 0;
+            bool argok = true;
+            gtdpvc(ctx, LPAREN, true, 1, dvec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (argok && nelt > 0) {
+                if (dvec[0] < 0.0 || dvec[0] > 1.0) {
+                    inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                           "Value of taper must be between zero and 1.");
+                    inptok = false;
+                } else {
+                    ctx.rho.thtapr = dvec[0];
+                }
+            }
+            continue;
+        }
         if (argidx == 4) {
             // trendma -> Ktcopt (fixed Henderson length; getx11.f:283-295). vtc
             // honours Ktcopt>0 as the trend-filter length.
@@ -2963,7 +2986,13 @@ void gt_check(X13Context& ctx, bool& inptok) {
     static const char ARGDIC[] = "maxlagprintsavesavelogacflimitqtypeqlimit";
     static const int argptr[PARG + 1] = {1, 7, 12, 16, 23, 31, 36, 42};
     static const char QDIC[] = "ljungboxlbboxpiercebp";     // getchk.f QDIC
-    static const int qptr[5] = {1, 9, 11, 21, 23};
+    // getchk.f:48 is `DATA qptr/1,9,11,20,22/`. This read {1,9,11,21,23},
+    // which slices the last two entries as "boxpierceb" and "p": the oracle
+    // accepts `qtype=boxpierce` and `qtype=bp` and this reader FATALed on both
+    // ("Argument name \"boxpierce\" not found"). No corpus spec had ever set
+    // qtype, which is the whole reason a one-character transcription slip in a
+    // DATA statement survived.
+    static const int qptr[5] = {1, 9, 11, 20, 22};
 
     // getchk.f:58-67 -- check{} present flips Mxcklg off its unset 0 BEFORE the
     // argument loop, so an explicit maxlag= below overrides this default rather
@@ -4267,7 +4296,18 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
         "pesigmacriticalumdataumstartumfileumformatumnameoutliermethodaicte"
         "sttdpriornoapplyholidaynonlineastermeansforcecalspanoutlierspanump"
         "recisionaicdiffsavelogumtrimzerocenteruserreweightcriticalalphadef"
-        "aultcriticalprioralmost";
+        "aultcriticalprioralmost  ";
+    // CB-43, and the two trailing blanks are the fix. gtxreg.f:59 declares
+    // `CHARACTER ARGDIC*271` but the literal is 269 characters, so Fortran pads
+    // it -- and argptr's last entry is 264..271, i.e. 'almost' PLUS those two
+    // blanks. cmpstr compares lengths exactly, so the oracle can never match
+    // the token `almost` and refuses the documented option with
+    // `Argument name "almost" not found`. This port stored the literal
+    // unpadded, and string_view::substr CLAMPS at the end of the string where
+    // Fortran pads, so it sliced a bare "almost", matched, and returned
+    // OUTCOME: OK on a spec the oracle halts. Padding to the DECLARED length is
+    // the faithful transcription: it reproduces the defect rather than fixing
+    // it (see tests/corpus/edge/x11regression-almost-unmatchable.spc).
     static const int argptr[PARG + 1] = {1, 10, 14, 18, 23, 27, 33, 34, 39, 43, 51,
         56, 64, 70, 77, 83, 91, 97, 110, 117, 124, 131, 144, 155, 163, 167, 178,
         189, 196, 203, 213, 223, 231, 244, 259, 264, 272};
@@ -4620,6 +4660,38 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
                    inptok);
             if (ctx.error.lfatal) return;
             if (argok && nelt > 0) ctx.x11log.calfrc = (ivec[0] == 1);
+        } else if (argidx == 18) {   // outliermethod -> Ladd1x (gtxreg.f:377-383)
+            // Parsed and dropped. `Ladd1x` is idotlr's `Ladd1`: addone stops
+            // each identification pass after the single largest t, addall adds
+            // every candidate over the critical value at once (idotlr.f:525,
+            // 633, 729, 943), so the two arms can land on different outlier
+            // sets. Default addone (gtinpt.f:460, written since entry 105).
+            // Note the oracle takes the value on `nelt.gt.0` ALONE -- no
+            // `argok` term, unlike every neighbouring arm.
+            static const char MTDDIC[] = "addoneaddall";
+            static const int mtdptr[3] = {1, 7, 13};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, MTDDIC, mtdptr, 2,
+                   "Choices are ADDONE or ADDALL", ivec, nelt, argok, inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt > 0) ctx.xrgfct.ladd1x = (ivec[0] == 1);
+        } else if (argidx == 34) {   // defaultcritical -> Cvxtyp (gtxreg.f:573-578)
+            // Parsed and dropped, and this one already had its READER: entry
+            // 93 moved editor.f:1749-1757's Critxr derivation into
+            // xrg_editor_setup, `ljung` selecting setcvl over setcv. Measured
+            // on the oracle: x11irrcrtval 3.850775 -> 3.848402.
+            static const char DEFDIC[] = "ljungcorrected";
+            static const int defptr[3] = {1, 6, 15};
+            int ivec[1] = {prm::NOTSET};
+            int nelt = 0;
+            bool argok = true;
+            gtdcvc(ctx, LPAREN, true, 1, DEFDIC, defptr, 2,
+                   "Choices are ljung or corrected.", ivec, nelt, argok,
+                   inptok);
+            if (ctx.error.lfatal) return;
+            if (nelt > 0 && argok) ctx.x11log.cvxtyp = (ivec[0] == 1);
         } else if (argidx == 22 || argidx == 23) {
             // gtxreg.f:442-459 -- holidaynonlin -> Xhlnln, eastermeans -> Xelong.
             // Both fell through to the discard arm. `Xelong` is the sharper of

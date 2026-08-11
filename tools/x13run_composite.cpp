@@ -168,8 +168,12 @@ int main(int argc, char** argv) {
             // .err header, and the oracle prints it WITH the extension. The
             // harness passed the bare base for as long as nobody read the
             // channel.
-            ok = lseats ? x13::run_seats(ctx, text, spec)
-                        : x13::run_x11(ctx, text, spec);
+            // `base` is the save-file stem / default series label; `spec` is
+            // the name genfor.f prints in the .err header. Entry 95 wired the
+            // header by passing `spec` for BOTH, which fixed the header and
+            // quietly gave savtbl a stem with `.spc` on it.
+            ok = lseats ? x13::run_seats(ctx, text, base, spec)
+                        : x13::run_x11(ctx, text, base, spec);
         } catch (const std::exception& e) {
             std::fprintf(stderr, "x13run_composite: %s: exception: %s\n",
                          base.c_str(), e.what());

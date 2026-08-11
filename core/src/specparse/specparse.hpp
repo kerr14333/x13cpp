@@ -387,8 +387,12 @@ bool parse_spec(X13Context& ctx, const std::string& spec_text,
 // With `estimate` true (the M3 path), the built regARIMA model is estimated in
 // place after the pre-model saves (rgarma; results land in ctx.mdldat); the
 // default false keeps the M2 save-only behavior the M2 parity gate depends on.
+// `spcname` is the SPEC FILE NAME as the oracle's genfor.f prints it in the
+// .err header (`Infile`, i.e. with the .spc extension); it is distinct from
+// `base`, which is the save-file stem and the default series label. Empty
+// means `base + ".spc"`.
 bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base,
-            bool estimate = false);
+            bool estimate = false, const std::string& spcname = "");
 
 // Post-parse body of run_m2 (pre-model saves + optional estimate/forecast) on an
 // already-parsed context. out_trnsrs/out_nobspf, when non-null, return the clean
@@ -401,7 +405,8 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
 // B/C/D tables (B1..D7) in the ctx x11srs arrays. Wired for the no-model direct-
 // X11 path (airline_x11-default) so far; a spec carrying a regARIMA model fatals
 // cleanly until the estimate/forecast/extend/adjreg glue lands.
-bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& base);
+bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& base,
+             const std::string& spcname = "");
 
 // M6(scoping) SEATS phase (core/src/driver/run_seats.cpp): parse, estimate the
 // regARIMA model (SEATS is always model-based -- no direct-SEATS path exists
@@ -410,7 +415,8 @@ bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& b
 // yet ported (see tools/seats_scope.md); this currently always returns false
 // with a "not yet ported" fatal once the model is in hand, giving the parity
 // harness (tools/x13run_seats.cpp) a stable, xfailed gate to iterate against.
-bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string& base);
+bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string& base,
+               const std::string& spcname = "");
 
 } // namespace x13
 

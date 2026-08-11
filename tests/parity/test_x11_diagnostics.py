@@ -422,7 +422,13 @@ def test_d8b_d9a(rel: str, prefix: str) -> None:
 # Compared LINE-EXACT: the engine writes each with the Fortran format that
 # produced it, so there is nothing to round.
 
-_X11_MISC = ["d11.f", "d11.3y.f", "sfmsr", "d7trendma", "finaltrendma"]
+_X11_MISC = ["d11.f", "d11.3y.f", "sfmsr", "d7trendma", "finaltrendma",
+             # x12hdr.f:751-764. x11irrcrtval is the ONLY observable of
+             # x11regression{defaultcritical=}: it selects setcvl over setcv in
+             # editor.f:1749-1757 and the two derivations differ by ~2e-3, which
+             # moved no table on any of 97 oracle probe pairs. The key was in
+             # every golden and the engine emitted none of this block.
+             "x11regress", "x11regressextreme", "x11irrcrtval", "x11irrsiglim"]
 _X11_MISC_PREFIX = "autosf.msr"
 
 

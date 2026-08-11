@@ -30,12 +30,15 @@ DISPOSITIONS as of entry 104 -- do not re-derive, extend:
     six x11reg.cpp sites were reading `arima.elong`, the REGRESSION spec's copy
     of the same option. `Xhlnln` is parsed and `rgtdhl.f`'s guard transcribed
     with its body walled.
-  * `Ladd1x`, `Cvxrdc` -- their gtinpt defaults are now written (entry 105), so
-    they leave this list, but NEITHER HAS A READER YET. They are still board
-    item 8: `x11regression{outliermethod=}` and `{almost=}` reach `idotlr`/
-    `prothd` in the oracle and nothing here.
-  * `Cvxtyp`, `Thtapr` -- still parsed and dropped with live readers and no
-    wall. Board item 8. Measure the oracle on-vs-off before porting either.
+  * `Ladd1x`, `Cvxrdc`, `Cvxtyp`, `Thtapr` -- ALL CLOSED in entry 106, which
+    empties board item 8. `Ladd1x` (`outliermethod=`) is idotlr's `Ladd1` and
+    now reaches it; `Cvxtyp` (`defaultcritical=`) already had its reader and
+    needed only the parse arm plus x12hdr's `x11irrcrtval` savelog key, without
+    which its sole observable was unemitted; `Thtapr` (`x11{taper=}`) took
+    `taper.f` into `sautco` with it. `Cvxrdc` (`almost=`) is the odd one: the
+    option is UNREACHABLE in the oracle (CB-43, see tools/dict_overrun.py) and
+    both of idotlr's almost-outlier re-scans are `.or.Lxreg -> GO TO 50`
+    anyway, so it has no reachable consumer on the only path that passes it.
 
 Run it after adding a dispatch arm and confirm the count MOVES -- same property
 `walls.py` and `dup_transcription.py` have.

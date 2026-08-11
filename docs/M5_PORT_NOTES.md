@@ -7513,3 +7513,142 @@ gates from entry 104 regressing for no reason, on a tree whose `git diff`
 touched no relevant file. **Restore by WRITING the file, not by moving a backup
 over it** -- or `touch` it afterwards. The tell is a failing value that exactly
 equals a number you printed during a mutation run.
+
+## 106. Board item 8's last four -- and the dictionary itself was wrong in both directions (2026-08-11)
+
+Entry 104's sweep left six options parsed and dropped; entry 105 closed two.
+This closes the other four, and two of them were not the defect the list said.
+
+### The measurements, before any code
+
+| option | oracle on-vs-off | what the port did |
+|---|---|---|
+| `x11regression{almost=}` | **the oracle REFUSES the option** | ran it, `OUTCOME: OK` |
+| `x11regression{outliermethod=addall}` | 123 lines of `.out`, tables identical | hardcoded `addone` |
+| `x11regression{defaultcritical=ljung}` | `x11irrcrtval` 3.850775 -> 3.848402 | dropped; the READER already existed |
+| `x11{taper=0.3}` | 484 lines | dropped; no taper in `sautco` at all |
+
+### `almost=` -- CB-43, and a sweepable class behind it
+
+`gtxreg.f:59` declares `CHARACTER ARGDIC*271` over a literal that is **269**
+characters, and `argptr`'s last entry is `264..271`. Fortran pads the parameter,
+so dictionary entry 36 is `'almost  '`; `cmpstr` compares lengths first, so the
+token `almost` can never match it and the oracle answers `Argument name
+"almost" not found` and halts. Only the LAST entry of a dictionary can be hit
+this way.
+
+This port had the mirror of the defect: `std::string_view::substr` CLAMPS at the
+end of the literal where Fortran pads, so `strinx` sliced a bare `"almost"`,
+matched, and returned `OUTCOME: OK` on a spec the oracle refuses. **The fix is
+two trailing blanks** -- writing the literal at its DECLARED length is the
+faithful transcription.
+
+`tools/dict_overrun.py` sweeps the port for it. **Its expected count is zero**,
+and that is the useful part: a faithfully padded dictionary does not overrun, so
+any hit is a defect in one of two directions -- an unpadded literal (the port
+accepts what the oracle refuses) or a mistyped pointer table (the port refuses
+what the oracle accepts).
+
+### The second direction was live too: `check{qtype=}`
+
+The same sweep found `gt_check`'s QDIC. `getchk.f:48` is
+`DATA qptr/1,9,11,20,22/`; this port had `{1,9,11,21,23}`, which slices the last
+two entries as `"boxpierceb"` and `"p"`. So the oracle accepts
+`check{qtype=boxpierce}` and `qtype=bp` and this port **FATALed** on both with
+`Argument name "boxpierce" not found`. A one-character slip in a transcribed
+DATA statement, invisible because **no corpus spec had ever set `qtype`** and the
+two entries BEFORE the slip (`ljungbox`, `lb`) match either way.
+
+Mutating the pointer table back fails 4.
+
+### `outliermethod=` -- where the arms differ is not where they diverge
+
+`Ladd1x` is `idotlr`'s `Ladd1`: addone stops each forward-addition pass after the
+single largest t, addall adds every candidate over the critical value at once.
+Every `idotlr` call on the x11reg path passed a hardcoded `true`.
+
+A **154-pair oracle sweep** (7 series x critical 2.8 through 4.9) found the
+forward-addition ITERATION LISTING differing every single time and the saved
+tables differing **never**: backward deletion drops whatever addall over-added
+and both arms land on the same design. Since this port defers the whole
+iteration print, the obvious spec would have gated nothing at all -- the
+entry-93 trap, one layer further in, because here the mutation would fail no
+gate rather than measure zero.
+
+There are exactly two points in that sweep where the arms reach different
+VERDICTS, and both are the same shape: addall overruns the regression-effect
+limit first. On `co2` at `critical=3.2` addone completes and addall halts with
+`Adding AO1971.Sep exceeds the number of regression effects allowed`; `payems`
+at 4.6 is the other. So the gate is a HALT against a completed sibling, and the
+mutation back to `true` turns the halt into `OUTCOME: OK`.
+
+**And the refusal under it was two lines of six.** `adrgef.f`'s FORMAT 1010 is a
+six-line block; this port emitted the first two, and both one space too far
+right because the literals carried the FORMAT's leading blank on top of the one
+`writln` writes. Nothing had ever reached it. Same family as `cvrerr.f`
+(entry 93): when you port a refusal, port the lines under it.
+
+### `defaultcritical=` -- the reader existed and the OBSERVABLE did not
+
+`Cvxtyp` selects `setcvl` over `setcv` in `editor.f:1749-1757`, which entry 93
+had already moved into `xrg_editor_setup`. So the only missing piece was the
+parse arm -- and with it added, **the mutation still passed**.
+
+The reason is the standing rule in its sharpest form: the option's sole
+observable is `x11irrcrtval`, a savelog key **the engine did not emit**. It sits
+in `x12hdr.f:751-764`, the run-header savelog, which is deferred with the `.out`
+print engine; the key was in every golden, no gate read it, and 97 oracle probe
+pairs (8 series spans, 80 series x outlier-span combinations) confirmed the
+~2e-3 critical-value change moves no table on anything this corpus can build.
+Porting the four keys of that block's `Ixreg` arm (`x11regress`,
+`x11regressextreme`, `x11irrcrtval`, `x11irrsiglim`) and adding them to
+`_X11_MISC` is what makes the option gateable. **A fix whose only observable is
+unemitted is indistinguishable from no fix.**
+
+Two preconditions of the probe spec cost a sweep each, both rediscovered rather
+than read: `editor.f:1749` derives `Critxr` only when no `critical=` was given,
+and `editor.f:1730` takes the `Sigxrg=2.5` arm and never sets `Otlxrg` at all
+unless a holiday/easter/AO group is present. A first sweep of 80 oracle pairs
+measured a clean zero because its specs were `variables=(td)`.
+
+### `taper=` -- fifteen lines that were simply absent
+
+`taper.f` is the Tukey-Hanning taper `sautco` applies between the mean deletion
+and the autocovariances (`sautco.f:18`). The port's `sautco` had no `r`
+parameter. Ported verbatim, wired through `spgrh_fit`; note that only the
+AR-spectrum estimator is tapered -- `spcdrv.f` hands `Thtapr` to `spgrh` and not
+to `spgrh2`, so `type=arspec` is load-bearing in the gating spec.
+
+### The `.err` header nobody read, again
+
+Wiring the addall gate surfaced that `x13run_x11` passes the spec BASE name
+where `genfor.f` prints `Infile`, so every `.err` header said
+`co2_...-addall:` against the oracle's `co2_...-addall.spc:`. Entry 95 fixed
+exactly this in `x13run_composite` -- and fixed it by passing the `.spc` name
+for BOTH arguments, which quietly gave `savtbl` a save-file stem with `.spc` on
+it. The two names are now separate parameters (`base`, `spcname`) on `run_x11` /
+`run_seats` / `run_m2`, defaulting to `base + ".spc"`, and all five harnesses
+are right. **Fixing a channel fixes one harness; check the siblings** -- and
+check that the fix did not conflate two things that only looked like one.
+
+### Gated by
+
+`extra/co2_x11regression-outliermethod-addall` + `-addone`,
+`extra/airline_x11regression-defaultcritical`, `extra/airline_x11-taper`,
+`extra/airline_check-qtype-boxpierce`,
+`edge/x11regression-almost-unmatchable`. **+86 gates.**
+
+Mutations, all five verified:
+
+| mutation | fails |
+|---|---|
+| `qptr` back to `{1,9,11,21,23}` | 4 |
+| ARGDIC unpadded | 1 |
+| `ladd1` hardcoded `true` | 1 |
+| the `Cvxtyp` store removed | 1 |
+| `sautco`'s taper call disabled | 4 |
+
+Suite **7897 passed, 0 failed, 908 skipped, 0 xfailed**; ctest 12/12. WALLS
+unchanged at **20 gaps / 4 faithful** -- nothing here was walled, which is the
+point of the whole board item. `tools/parsed_dropped.py` 68 -> **64**, and
+board item 8 is empty.

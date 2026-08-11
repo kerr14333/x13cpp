@@ -129,8 +129,11 @@ bool seats_has_mean(const X13Context& ctx) {
 }
 }  // namespace
 
-bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string& base) {
-    if (!parse_spec(ctx, spec_text, base)) return false;
+bool run_seats(X13Context& ctx, const std::string& spec_text, const std::string& base,
+               const std::string& spcname) {
+    if (!parse_spec(ctx, spec_text,
+                    spcname.empty() ? base + ".spc" : spcname))
+        return false;
     if (!ctx.captured.has_series) return false;
     if (!ctx.captured.has_seats) return false;
     // transform{constant=} is now parsed and applied (the whole series is

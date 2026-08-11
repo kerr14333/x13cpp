@@ -232,6 +232,35 @@ static void dump_sfmsr(const x13::X13Context& ctx) {
 }
 
 
+// x12hdr.f:751-764 -- the x11regression corner of the run-header savelog. The
+// rest of that block (seasonalma/trendma/priortd/...) is still deferred with
+// the .out print engine; this arm is here because `x11irrcrtval` is the ONLY
+// observable of x11regression{defaultcritical=}, which selects setcvl over
+// setcv in editor.f:1749-1757. Without it that option is honoured and ungated:
+// the derived critical value differs by ~2e-3 and moves no table.
+//   1600 FORMAT(a,': ',a)   1620 FORMAT(a,': ',f12.6)
+static void dump_x11reg_hdr(const x13::X13Context& ctx) {
+    using x13::fwrite_fmt;
+    auto line = [](const std::string& t) { std::printf("%s\n", t.c_str()); };
+    if (ctx.hiddn.ixreg > 0) {
+        line(fwrite_fmt("(a,': ',a)", "x11regress", "yes"));
+        if (ctx.x11log.otlxrg) {
+            line(fwrite_fmt("(a,': ',a)", "x11regressextreme", "autoao"));
+            line(fwrite_fmt("(a,': ',f12.6)", "x11irrcrtval",
+                            ctx.x11reg.critxr));
+        } else if (ctx.x11reg.sigxrg > 0.0) {
+            line(fwrite_fmt("(a,': ',a)", "x11regressextreme", "sigma"));
+            line(fwrite_fmt("(a,': ',f12.6)", "x11irrsiglim",
+                            ctx.x11reg.sigxrg));
+        } else {
+            line(fwrite_fmt("(a,': ',a)", "x11regressextreme", "none"));
+        }
+    } else {
+        line(fwrite_fmt("(a,': ',a)", "x11regress", "no"));
+    }
+}
+
+
 // dump_qs / dump_np now live in tools/dump_diag.hpp -- x11ari.f runs genqs and
 // gennpsa after the Lseats/Lx11 branch rejoins, so x13run_seats needs the same
 // two blocks in the same formats.
@@ -585,6 +614,7 @@ int main(int argc, char** argv) {
     dump_d8bd9a(ctx);
     dump_d11f(ctx);
     dump_sfmsr(ctx);
+    dump_x11reg_hdr(ctx);
     dump_qs(ctx);
     dump_np(ctx);
     dump_spec_peaks(ctx);

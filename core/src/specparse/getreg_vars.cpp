@@ -240,12 +240,33 @@ void adrgef(X13Context& ctx, double initvl, std::string_view effttl,
     }
 
     if (M.nb >= PB) {
+        // adrgef.f:228-244, FORMAT 1010. writln itself writes the leading blank
+        // (errio.cpp's `(' ',a)`), so these literals carry one space less than
+        // the FORMAT does -- they used to carry the FORMAT's space as well and
+        // every line came out indented by one. And only the first two lines of
+        // the six were here: the four under them are the same shape as
+        // cvrerr.f (entry 93), a refusal whose body was never ported because no
+        // corpus spec reached it. LIMSEC / PRGNAM / DOCNAM are the Fortran's
+        // parameters, spelled out.
         errhdr(ctx);
-        writln(ctx, std::string(" ERROR: Adding ") + std::string(effttl) +
+        int ipos = 1;
+        std::string numstr(8, ' ');
+        itoc(ctx, PB, numstr, ipos);
+        numstr = numstr.substr(0, static_cast<std::size_t>(ipos - 1));
+        writln(ctx, std::string("ERROR: Adding ") + std::string(effttl) +
                " exceeds the number of regression effects allowed",
                stdio::STDERR, ctx.units.mt2, true);
-        writln(ctx, "        in the model (80).", stdio::STDERR, ctx.units.mt2,
+        writln(ctx, "       in the model (" + numstr + ").",
+               stdio::STDERR, ctx.units.mt2, false);
+        writln(ctx, "       Check the regression model, change the automatic "
+                    "outlier options,", stdio::STDERR, ctx.units.mt2, true);
+        writln(ctx, "       (e.g. method to ADDONE, raise the critical value, "
+                    "or change types", stdio::STDERR, ctx.units.mt2, false);
+        writln(ctx, "       to identify AOs only), or change the program "
+                    "limits (see Section 2.7", stdio::STDERR, ctx.units.mt2,
                false);
+        writln(ctx, "       of the X-13ARIMA-SEATS Reference Manual).",
+               stdio::STDERR, ctx.units.mt2, false);
         abend(ctx);
         return;
     }

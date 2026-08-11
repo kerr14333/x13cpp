@@ -99,15 +99,43 @@ void spgrh2(const double* x, const std::vector<double>& frq, int n1, int n2,
     }
 }
 
+// taper.f: the Tukey-Hanning taper, applied to x[n1..n2] in place. The cosine
+// ramp covers the outer r/2 of the window at each end and the middle is left
+// alone. NOTE `xtap` divides by the window length l but the ramp is expressed
+// in the ORIGINAL r, not r/2 -- transcribed as written.
+void taper(double* x, int l1, int l2, double r) {
+    const double PI = 3.14159265358979;
+    const int l = l2 - l1 + 1;
+    const double r1 = r / 2.0;
+    const double r2 = 1.0 - r1;
+    for (int i = l1; i <= l2; ++i) {
+        const double xtap = (static_cast<double>(i - l1) + 0.5) /
+                            static_cast<double>(l);
+        double tap;
+        if (xtap >= r1 && xtap <= r2) {
+            tap = 1.0;
+        } else {
+            double xpi = 0.0;
+            if (xtap < r1) xpi = (2.0 * PI * xtap) / r;
+            if (xtap > r2) xpi = (2.0 * PI * (1.0 - xtap)) / r;
+            tap = (1.0 - std::cos(xpi)) / 2.0;
+        }
+        x[i - 1] *= tap;
+    }
+}
+
 // smeadl.f + sautco.f: mean-delete x[n1..n2] in place, then the biased
-// autocovariance cxx[0..lagh1-1] (crosco). Thtapr defaults to 0 (no Tukey-Hanning
-// taper) on this path. Returns false if cxx[0]==0 (degenerate). x is modified.
-bool sautco(double* x, int n1, int n2, int n, int lagh1,
+// autocovariance cxx[0..lagh1-1] (crosco). `r` is Thtapr (x11{taper=}), which
+// defaults to 0 = no taper -- and was hardcoded to that here until the parse
+// arm existed. Returns false if cxx[0]==0 (degenerate). x is modified.
+bool sautco(double* x, int n1, int n2, int n, int lagh1, double r,
             std::vector<double>& cxx) {
     double sumf = 0.0;
     for (int i = n1; i <= n2; ++i) sumf += x[i - 1];
     const double xmean = sumf / n;
     for (int i = n1; i <= n2; ++i) x[i - 1] -= xmean;
+    // sautco.f:18 -- strictly after the mean deletion, strictly before crosco.
+    if (r > 0.0) taper(x, n1, n2, r);
     cxx.assign(static_cast<std::size_t>(lagh1), 0.0);
     for (int i = 0; i < lagh1; ++i) {
         double t = 0.0;
@@ -177,7 +205,7 @@ struct ArFit {
 // `nspfrq` sets sautco's lag truncation (spgrh.f passes the frequency count),
 // so it belongs to the FIT even though it names a grid length.
 ArFit spgrh_fit(const double* yy, int n1, int n2, int nspfrq, int sp,
-                int mxarsp) {
+                int mxarsp, double thtapr) {
     ArFit f;
     const int n = n2 - n1 + 1;
     std::vector<double> x(PLEN, 0.0);
@@ -185,7 +213,7 @@ ArFit spgrh_fit(const double* yy, int n1, int n2, int nspfrq, int sp,
     const int h = nspfrq - 1;
     const int lagh1 = std::min(n - 1, h) + 1;
     std::vector<double> cxx;
-    if (!sautco(x.data(), n1, n2, n, lagh1, cxx)) return f;
+    if (!sautco(x.data(), n1, n2, n, lagh1, thtapr, cxx)) return f;
     int ifpl = (mxarsp == prm::NOTSET) ? 30 * sp / 12 : mxarsp;
     ifpl = std::min(ifpl, n - 1);
     sicp2(cxx, ifpl + 1, n, f.coef, f.l, f.sgme2);
@@ -381,7 +409,8 @@ bool run_spectrum(X13Context& ctx, bool iagr4) {
                         const char* prefix, std::vector<double>& sxx) -> bool {
         std::vector<double> sxx2;
         if (spctyp == 0) {
-            const ArFit f = spgrh_fit(series, n1, n2, 61, sp, mxarsp);
+            const ArFit f = spgrh_fit(series, n1, n2, 61, sp, mxarsp,
+                                      ctx.rho.thtapr);
             if (!f.ok) return false;
             spgrh_eval(f, out.frq, 61, ldecbl, sxx);
             if (pkgrid.ok)

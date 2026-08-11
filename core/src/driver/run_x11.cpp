@@ -35,8 +35,11 @@
 
 namespace x13 {
 
-bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& base) {
-    if (!parse_spec(ctx, spec_text, base)) return false;
+bool run_x11(X13Context& ctx, const std::string& spec_text, const std::string& base,
+             const std::string& spcname) {
+    if (!parse_spec(ctx, spec_text,
+                    spcname.empty() ? base + ".spc" : spcname))
+        return false;
     if (!ctx.captured.has_series) return false;
     // x12run.f:181 calls x11ari with neither Lx11 nor Lseats -- a spec that asks
     // for no adjustment still goes through the pre-stage and out the other side

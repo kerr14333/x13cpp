@@ -53,11 +53,11 @@ reproduce.
 
 ## Drivers
 
-- **`core/src/driver/run_seats.cpp:141`**
+- **`core/src/driver/run_seats.cpp:144`**
   transform{constant=} through SEATS (seatpr.f:211-390 constant removal)
   *Fortran:* `seatpr.f:211-390`
 
-- **`core/src/driver/run_seats.cpp:391`**
+- **`core/src/driver/run_seats.cpp:394`**
   SEATS historical-span decomposition (ESTBUR general-branch solve) -- either an unsupported model shape (p>0/bp>0/imean!=0) or the chain failed; see tools/seats_scope.md
 
 
@@ -72,10 +72,10 @@ reproduce.
 
 ## Spec parser
 
-- **`core/src/specparse/getreg_vars.cpp:591`**
+- **`core/src/specparse/getreg_vars.cpp:612`**
   change-of-regime trigonometric seasonal regressors (adrgim.f)
 
-- **`core/src/specparse/getreg_vars.cpp:1121`**
+- **`core/src/specparse/getreg_vars.cpp:1142`**
   AOS/LSS outlier regressors (rdotls.f)
 
 
@@ -103,10 +103,10 @@ reproduce.
 - **`core/src/x11/x11reg.cpp:1028`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1814`**
+- **`core/src/x11/x11reg.cpp:1822`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1831`**
+- **`core/src/x11/x11reg.cpp:1839`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:57`**

@@ -1749,3 +1749,58 @@ tree: it is declared here and read here, and assigned nowhere.
 
 - **Pinned by:** every gated TD + holiday x11regression spec; the `.false.` arm
   is a different normalisation and fails them.
+
+## CB-43
+
+**`x11regression{almost=}` is a documented option v1.1 b61 cannot parse: its
+dictionary entry is two blanks longer than the name.**
+
+- **File:line:** `gtxreg.f:59` (the declaration), `gtxreg.f:63-67` (the
+  literal), `gtxreg.f:121-123` (the pointer table), `gtxreg.f:588-604` (the
+  dispatch arm that can never be reached).
+- **Severity:** `unreachable-feature`. The option is in the X-13ARIMA-SEATS
+  reference manual and in the program's own dictionary; a spec that uses it is
+  refused with an error naming the argument as unknown, and the run halts.
+
+```fortran
+      CHARACTER ARGDIC*271                                        ! :59
+      PARAMETER(ARGDIC='variablesuserdatastart...prioralmost')    ! :63-67
+      DATA argptr/1,10,...,244,259,264,272/                       ! :121-123
+```
+
+The literal is **269** characters. The declaration is `*271`, so Fortran pads it
+with two blanks, and `argptr`'s last pair is `264..271` -- eight characters, i.e.
+`'almost  '`. `gtdcnm` -> `strinx` slices exactly that range and hands it to
+`cmpstr`, which compares LENGTHS first (`cmpstr.f:11-12`, `nchr1.eq.nchr2`), so
+the six-character token `almost` can never match the eight-character entry.
+`strinx` returns 0 and `gtarg` takes the `Argidx.eq.0` arm:
+
+```
+ ERROR:  Argument name "almost" not found
+```
+
+Only the LAST entry of a dictionary can be affected -- every earlier entry is
+bounded on both sides by a pointer that is inside the literal.
+
+- **Measured, not inferred.** Stock `x13as_ascii_O2.exe`, airline with
+  `x11regression{variables=(td) critical=3.0 almost=2.0}`: the run halts with the
+  message above and writes no tables. Removing the `almost=` line only, the same
+  spec completes. Every other gtxreg argument accepts a value normally
+  (`prior=no` was checked as the neighbouring entry, 259..263, and works).
+
+- **Reproduced verbatim.** `core/src/specparse/readers_spec.cpp`'s ARGDIC now
+  carries the two trailing blanks the Fortran declares, so this port refuses the
+  option identically. It had accepted it: `std::string_view::substr` CLAMPS at
+  the end of the string where Fortran pads, so `strinx` sliced a bare `"almost"`,
+  matched, and the run returned `OUTCOME: OK` on a spec the oracle halts.
+
+- **Pinned by:** `tests/corpus/edge/x11regression-almost-unmatchable.spc`.
+  Removing the padding fails the gate. `tools/dict_overrun.py` sweeps the whole
+  port for the same shape and expects a count of zero.
+
+- **Consequence for the port beyond the parse.** `Cvxrdc`, the variable
+  `almost=` would set, has exactly one call site (`x11mdl.f:441`, into
+  `idotlr`), and both of `idotlr`'s almost-outlier re-scans are guarded by
+  `.or.Lxreg -> GO TO 50` (`idotlr.f:846`, `:1046-1048`) with `Lxreg` true at
+  that call. So even if the option could be set, it would have no reachable
+  consumer -- inert by construction, not merely unexercised.

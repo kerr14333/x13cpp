@@ -54,8 +54,10 @@ bool wants_save(const X13Context& ctx, const std::string& ext) {
 }  // namespace
 
 bool run_m2(X13Context& ctx, const std::string& spec_text, const std::string& base,
-            bool estimate) {
-    if (!parse_spec(ctx, spec_text, base)) return false;
+            bool estimate, const std::string& spcname) {
+    if (!parse_spec(ctx, spec_text,
+                    spcname.empty() ? base + ".spc" : spcname))
+        return false;
     return run_m2_after_parse(ctx, base, estimate, nullptr, nullptr);
 }
 

@@ -1433,8 +1433,16 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         const double critxr = ctx.x11reg.critxr;
         double cvec[3] = {critxr, critxr, critxr};
         int nefobs = nefotl;
+        // x11mdl.f:441 passes the COMMONs Ladd1x and Cvxrdc. `ladd1` was
+        // hardcoded true here, which is `outliermethod=addone` -- the default,
+        // so it agreed until the option was parsed at all. `cvrduc` stays the
+        // gtinpt default: `x11regression{almost=}` is the one entry of gtxreg's
+        // ARGDIC the oracle can never match (CB-43), and idotlr's two
+        // almost-outlier re-scans are both `.or.Lxreg` -> GO TO 50
+        // (idotlr.f:846, 1046-1048), so on this path Cvxrdc has no reachable
+        // consumer even if it could be set.
         idotlr(ctx, /*ltstao=*/true, /*ltstls=*/false, /*ltsttc=*/false,
-               /*ladd1=*/true, cvec, /*cvrduc=*/0.5, begxot, endxot, nefobs,
+               ctx.xrgfct.ladd1x, cvec, ctx.xrgmdl.cvxrdc, begxot, endxot, nefobs,
                ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
                /*lauto=*/false, aotl.data(), /*lxreg=*/true);
         if (ctx.error.lfatal) return;
