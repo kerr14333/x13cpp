@@ -1804,3 +1804,64 @@ bounded on both sides by a pointer that is inside the literal.
   `.or.Lxreg -> GO TO 50` (`idotlr.f:846`, `:1046-1048`) with `Lxreg` true at
   that call. So even if the option could be set, it would have no reachable
   consumer -- inert by construction, not merely unexercised.
+
+## CB-44
+
+**`regression{aictest=(user)}` is a no-op for user regressors declared
+`usertype=seasonal`: the AIC test compares a model against itself.**
+
+- **File:line:** `usraic.f:116-120` (the group walk that collects and deletes),
+  against `addusr.f:34-38` (the otherwise-equivalent predicate).
+- **Severity:** `silent-wrong-verdict`. The test reports a decision it did not
+  make. The two AICCs are bit-identical, the difference is exactly 0, and the
+  verdict is reported as `yes` -- so a User-defined Seasonal group is always
+  "accepted", whatever the data says.
+
+```fortran
+c     usraic.f:116-120 -- collect, and again at :136-140 to delete
+       IF(rtype.eq.PRGUTD.or.rtype.eq.PRGULM.or.rtype.eq.PRGULQ.or.
+     &    rtype.eq.PRGULY.or.rtype.eq.PRGTUD.or.rtype.eq.PRGTUH.or.
+     &    rtype.eq.PRGUH2.or.rtype.eq.PRGUH3.or.rtype.eq.PRGUH4.or.
+     &    rtype.eq.PRGUH5.or.rtype.eq.PRGUAO.or.rtype.eq.PRGULS.or.
+     &    rtype.eq.PRGUSO.or.rtype.eq.PRGUCN.or.rtype.eq.PRGUCY)THEN
+
+c     addusr.f:34-38 -- the same set PLUS PRGTUS
+        IF((rtype.ge.PRGTUH.and.rtype.le.PRGUH5).or.rtype.eq.PRGTUS.or.
+     &      rtype.eq.PRGUTD.or.rtype.eq.PRGTUD.or.rtype.eq.PRGULM.or.
+     &      rtype.eq.PRGULQ.or.rtype.eq.PRGULY.or.rtype.eq.PRGUAO.or.
+     &      rtype.eq.PRGULS.or.rtype.eq.PRGUSO.or.rtype.eq.PRGUCN.or.
+     &      rtype.eq.PRGUCY)THEN
+```
+
+`PRGTUS` (User-defined Seasonal) is in the second list and not the first.
+`usraic` therefore never backs up such a column's coefficient and never calls
+`dlrgef` on its group, so the model it fits "without user regressors" is the
+model it just fitted WITH them.
+
+Note the routine is not internally consistent either: its RESTORE dispatch at
+`:237-239` has a `PRGTUS` arm and titles it `User-defined Seasonal`. The type is
+known to the routine; only the two walks omit it.
+
+- **Measured, not inferred.** Stock `x13as_ascii_O2.exe`, airline with two
+  synthetic user columns and `regression{aictest=(user)}`:
+
+| spec | `aictest.u.aicc.user` | `.nouser` | `diff.u` | verdict | `nreg` |
+|---|---|---|---|---|---|
+| default usertype | 0.135149136085112E+04 | 0.134807000007141E+04 | -3.42 | no | 0 |
+| `usertype=(seasonal seasonal)` | 0.135149136085112E+04 | **0.135149136085112E+04** | **0.0** | yes | 2 |
+
+The same two columns, the same series, the same model. Only the declared type
+differs.
+
+- **Reproduced verbatim.** `is_usraic_rgvr` in `core/src/automdl/aictst.cpp`
+  omits `PRGTUS`, with a comment. Adding it -- the obvious "fix" -- fails 3
+  gates.
+
+- **Pinned by:** `tests/corpus/extra/airline_reg-aictest-user-seasonal.spc`,
+  against its `airline_reg-aictest-user` sibling.
+
+- **Adjacent, and separate:** the same routine titles `PRGUCY`
+  `User-defined Transitory` (`usraic.f:276`) where `addusr.f:122` titles it
+  `User-defined Cycle`. One type, two group names, in one program. Transcribed
+  both ways; not filed as a bug because no corpus spec builds a transitory user
+  regressor and the effect is a label, not a number.

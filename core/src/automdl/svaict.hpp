@@ -86,6 +86,9 @@ struct AictestSavelog {
     bool have_testalleaster = false;
     bool testalleaster = false;
     std::vector<AiccRow> lom_aicc;
+    // usraic.f 1012: ('aictest.u.aicc.',a,': ',e29.15) -- 'user' then
+    // 'nouser', in the order the two models are fitted.
+    std::vector<AiccRow> user_aicc;
 
     Group td;
     Group lom;                     // key stem is lom.abbrev, not "lom"

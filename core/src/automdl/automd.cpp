@@ -60,16 +60,37 @@ static bool automd_aictest_block1(X13Context& ctx, double* trnsrs, double* a,
     model_cmn& m = ctx.model;
     arima_cmn& ar = ctx.arima;
 
-    bool want_td = false, want_easter = false, unported = false;
+    bool want_td = false, want_easter = false, want_user = false;
+    bool unported = false;
     for (const auto& t : ctx.captured.aictest_vars) {
         std::string s;
         for (char c : t)
             s += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (s == "td") want_td = true;
         else if (s == "easter") want_easter = true;
-        else unported = true;    // td1coef/tdstock/lom/user/... not yet ported
+        else if (s == "user") want_user = true;
+        else unported = true;    // td1coef/tdstock/lom/... not yet ported
     }
-    if (unported) { abend(ctx); return false; }
+    // Was a BARE abend: no message, so the run's ===ERR=== block came back
+    // empty and walls.py could list neither the gap nor its trigger.
+    if (unported) {
+        aictest_not_ported(ctx, "automdl{} with regression{aictest=} naming "
+                                "anything other than td, easter or user -- "
+                                "td1coef / tdstock / lom have no automd path");
+        return false;
+    }
+    if (want_user && !(want_td || want_easter)) {
+        // automd.f:233-237 runs usraic AFTER the td/easter block, and the
+        // set-up above (Begadj/Nadj/Adj1st) belongs to tdaic's leap-year
+        // preadjust. With user ALONE there is nothing to set up first.
+        bool lester = false;
+        if (ctx.arima.luser && ctx.usrreg.ncusrx > 0) {
+            usraic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
+            if (ctx.error.lfatal) return false;
+            if (ctx.usrreg.ncusrx == 0 && ar.ch2tst) ar.ch2tst = false;
+        }
+        return true;
+    }
     if (!(want_td || want_easter)) return true;
 
     // Prior-adjustment span (adjsrs.f:20-21,89-90) tdaic's leap-year preadjust
@@ -140,14 +161,21 @@ static bool automd_aictest_block1(X13Context& ctx, double* trnsrs, double* a,
         easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return false;
     }
+    // automd.f:233-237, after the td/lom/easter block.
+    if (!lester && ar.luser && ctx.usrreg.ncusrx > 0) {
+        usraic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
+        if (ctx.error.lfatal) return false;
+        if (ctx.usrreg.ncusrx == 0 && ar.ch2tst) ar.ch2tst = false;
+    }
     return true;
 }
 
 // Block-2 (automd.f:508-548) / block-3 (automd.f:585-620) AIC re-test: rerun
 // tdaic then (if td didn't error) easaic, reusing the candidate state block-1
 // installed (Itdtst/Tdayvc/Leastr/Easvec persist for the whole automd call).
-// lomaic/usraic/chkchi are unreachable here -- automd_aictest_block1 rejects
-// any aictest token other than td/easter before this ever runs.
+// lomaic/chkchi are unreachable here -- automd_aictest_block1 rejects any
+// aictest token other than td/easter/user before this ever runs. usraic is
+// reachable and runs at automd.f:526-530 / :602-606.
 static bool automd_aic_round(X13Context& ctx, double* trnsrs, double* a,
                              int& nefobs, int& na, int& frstry) {
     auto& ar = ctx.arima;
@@ -161,6 +189,11 @@ static bool automd_aic_round(X13Context& ctx, double* trnsrs, double* a,
     if (!lester && ar.leastr) {
         easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return false;
+    }
+    if (!lester && ar.luser && ctx.usrreg.ncusrx > 0) {
+        usraic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
+        if (ctx.error.lfatal) return false;
+        if (ctx.usrreg.ncusrx == 0 && ar.ch2tst) ar.ch2tst = false;
     }
     if (lester) {
         prterr(ctx, nefobs, false);

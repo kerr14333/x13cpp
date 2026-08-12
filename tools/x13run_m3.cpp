@@ -296,6 +296,11 @@ static void dump_aictest(const x13::X13Context& ctx) {
         diffs(s.easter, "e");
     }
     if (s.user.tested) {
+        // usraic.f 1012: ('aictest.u.aicc.',a,': ',e29.15) -- written by the
+        // TEST, before svaict's verdict, in fit order (user then nouser).
+        for (const auto& r : s.user_aicc)
+            line(fwrite_fmt("(a,a,': ',e29.15)", "aictest.u.aicc.", r.label,
+                            r.aicc));
         verdict(s.user, "aictest.u", false);
         diffs(s.user, "u");
     }

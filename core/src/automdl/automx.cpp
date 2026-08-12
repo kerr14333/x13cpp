@@ -365,8 +365,7 @@ bool amx_has_aictest(const X13Context& ctx) {
 // Fatal rather than silently skipping a test that changes the model.
 bool amx_aic_unported(const X13Context& ctx) {
     const auto& ar = ctx.arima;
-    return (ar.luser && ctx.usrreg.ncusrx > 0) ||
-           (ar.ch2tst && ctx.usrreg.nguhl > 0);
+    return ar.ch2tst && ctx.usrreg.nguhl > 0;
 }
 
 // automx.f:404-500 and :748-845 -- the AIC-regressor tests standing in for the
@@ -394,6 +393,16 @@ void amx_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
     if (!lester && ar.leastr) {
         easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
         if (ctx.error.lfatal) return;
+    }
+    // automx.f:465-483. Lsumm is a literal 0 at every automx/automd call site,
+    // so the per-candidate AICC table is NOT written here -- only arima.f's
+    // explicit path passes it true.
+    if (!lester && ar.luser && ctx.usrreg.ncusrx > 0) {
+        usraic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/false);
+        if (ctx.error.lfatal) return;
+        // automx.f:482 -- usraic may empty the user design, and chkchi has
+        // nothing left to test if it did.
+        if (ctx.usrreg.ncusrx == 0 && ar.ch2tst) ar.ch2tst = false;
     }
 }
 
@@ -456,10 +465,10 @@ void automx(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     auto& d = ctx.mdldat;
 
     if (amx_aic_unported(ctx)) {
-        fatal(ctx, "pickmdl{} with regression{aictest=(user)} or user-defined "
-                   "holiday chi-square testing is not yet ported (usraic.f / "
-                   "chkchi.f have no C++; automx.f:463-500 runs them inside "
-                   "the candidate loop).");
+        fatal(ctx, "pickmdl{} with user-defined holiday chi-square testing is "
+                   "not yet ported (chkchi.f has no C++; automx.f:484-500 runs "
+                   "it inside the candidate loop). The user-regressor half of "
+                   "this wall came down when usraic.f was ported.");
         return;
     }
     const bool laictst = amx_has_aictest(ctx);

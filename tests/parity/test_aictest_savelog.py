@@ -81,6 +81,10 @@ OWNED = re.compile(
     r"|easter\.num|e\.aicc\.[\w\[\]]+"
     # -- lomaic.f's
     r"|" + _LN + r"\.aicc\.[\w\[\]]+"
+    # -- usraic.f's, MOVED here from nowhere at all: the routine was
+    # unported, so no golden in the corpus carried these keys and the
+    # classifier was never asked about them.
+    r"|u\.aicc\.(?:user|nouser)"
     r")$"
     # easaic.f:69-73 writes this one WITHOUT the prefix, and it is part of the
     # same block -- an unprefixed key is exactly the kind that goes unnoticed.

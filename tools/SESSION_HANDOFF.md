@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7897<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->908<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7951<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->917<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -423,7 +423,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7897<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7951<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -3036,6 +3036,47 @@ with `.spc` on it. `base` and `spcname` are now separate parameters on
 WALLS unchanged **20 gaps / 4 faithful** (nothing here was walled -- the point of
 the item). `parsed_dropped.py` 68 -> 64. Entry 106, CB-43.
 
+## This session, part 58: `usraic.f` -- and an AIC test that compares a model against itself
+
+`regression{aictest=(user)}` had no C++: a BARE `abend` covering usraic and
+chkchi together, so the `===ERR===` block came back empty and `walls.py` could
+list neither.
+
+**Measured first, on `generated/airline_user-reg-x11` plus one line:** with
+`aictest=(user)` the oracle REJECTS the two user columns (`diff.u` -3.42,
+`nreg` 2 -> 0) and every X-11 table moves; with `aicdiff=(-100)` it takes the
+RESTORE branch instead (`nreg` 2), which is two thirds of the routine and would
+otherwise be dead code in the suite.
+
+**CB-44.** `usraic.f:116-120`'s group walk lists fifteen user-regressor types
+and omits `PRGTUS`, which `addusr.f:34`'s otherwise-equivalent predicate
+includes. So `usertype=seasonal` columns are never backed up and never deleted:
+the "without" fit IS the "with" fit, the two AICCs are bit-identical, `diff.u`
+is exactly 0, and the verdict comes back `yes` whatever the data says. The
+routine's own restore dispatch has a `PRGTUS` arm, so it is the walks alone.
+Adding `PRGTUS` -- the obvious fix -- fails 3 gates. **Second asymmetry in the
+same pair, not a CB:** `usraic.f:276` titles `PRGUCY` "User-defined Transitory"
+where `addusr.f:122` titles it "User-defined Cycle".
+
+**The automdl/automx call sites are PORTED AND UNGATED on purpose.** All four
+are transcribed (including `automx.f:482`'s `Ncusrx==0 -> Ch2tst=F`, which
+matters because usraic can empty the design out from under chkchi), but the only
+probe available is automdl on a user-regressor spec, and its CONTROL run --
+no `aictest=` at all -- already diverges: **the oracle halts with `Estimation
+failed to converge -- maximum iterations reached` and this engine returns
+`OUTCOME: OK`.** That is a pre-existing automdl gap in the dangerous direction
+and is now open item 9. Do not re-probe usraic through automdl until it closes.
+
+**chkchi stays unported**, now walled WITH A MESSAGE at both sites and narrowed
+to the chi-square half. `regression{chi2testcv=}`/`{tlimit=}` remain
+parsed-and-dropped behind it. The new helper `aictest_not_ported` is registered
+in `walls.py`'s HELPERS and GAP_HELPERS in the same commit -- the count moved
+20 -> 22, which is the check (entry 94).
+
+**Landed.** `extra/airline_reg-aictest-user`, `-accept`, `-seasonal`, **+54
+gates**. Mutations fail 3 / 4 / 4. Suite **7951 passed, 0 failed, 917 skipped**,
+ctest 12/12, WALLS **22 gaps / 4 faithful**. Entry 107, CB-44.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -3137,9 +3178,14 @@ the item). `parsed_dropped.py` 68 -> 64. Entry 106, CB-43.
 7. The amdfct out-of-sample-backcast-with-outlier corner (0.2% out, measured
    and walled); `spectrum{altfreq=yes}` pending CB-30; `history{outlier=auto}`
    (`x11outlier=no` closed in part 41) /
-   `additivesa=`; `pickmdl{aictest=(user)}` (needs
-   `usraic.f`/`chkchi.f`); the `!Hvmdl` no-model cleanup
-   (`arima.f:476-527`).
+   `additivesa=`; the `!Hvmdl` no-model cleanup
+   (`arima.f:476-527`). ~~`pickmdl{aictest=(user)}` (needs
+   `usraic.f`/`chkchi.f`)~~ **`usraic.f` is PORTED (part 58, entry 107)** and
+   wired at all five oracle call sites; only `chkchi.f` (the user-defined
+   HOLIDAY chi-square test) is still unported, walled with a message at
+   `explicit_aictest` and `amx_aictest`. `regression{chi2testcv=}`/`{tlimit=}`
+   stay parsed-and-dropped behind that wall -- land those two parse arms with
+   the chkchi port.
 8. ~~**Six spec options are parsed and DROPPED, each with a live reader and no
    wall**~~ **ALL SIX CLOSED -- this item is EMPTY as of 2026-08-11** (parts 56
    and 57; entries 105 and 106). Kept only for what the closures found, because
@@ -3170,6 +3216,17 @@ the item). `parsed_dropped.py` 68 -> 64. Entry 106, CB-43.
    part 55 did, and the number is what justified the spec.
    Note the pairing with item 7: porting `usraic.f`/`chkchi.f` would make
    `Chi2cv`/`Tlimit` live, so that port must land the two parse arms with it.
+
+9. **`automdl{}` on a spec carrying user regressors: the oracle refuses and
+   this engine returns `OUTCOME: OK`.** Found as the CONTROL run while looking
+   for a way to gate usraic's automdl call sites (part 58), so it is measured
+   with `aictest=` absent -- it is not an AIC-test defect.
+   `generated/airline_user-reg-x11` with `arima{}` replaced by `automdl{ }`:
+   the oracle halts with `ERROR: Estimation failed to converge -- maximum
+   iterations reached`, this engine completes. The dangerous direction, and it
+   is what makes the four `usraic` call sites inside `automd.f`/`automx.f`
+   ported-and-ungated: any aictest probe built on this spec measures this
+   instead. Close it before re-probing those.
 
 ## Environment notes
 

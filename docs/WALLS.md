@@ -23,14 +23,20 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**20 walls.**
+**22 walls.**
 
 
 ## Automatic model selection
 
-- **`core/src/automdl/automx.cpp:459`**
-  pickmdl{} with regression{aictest=(user)} or user-defined holiday chi-square testing is not yet ported (usraic.f / chkchi.f have no C++; automx.f:463-500 runs them inside the candidate loop).
-  *Fortran:* `automx.f:463-500`
+- **`core/src/automdl/aictst.cpp:1303`**
+  regression{chi2test=yes} with user-defined holiday regressors -- chkchi.f is not ported
+
+- **`core/src/automdl/automd.cpp:77`**
+  automdl{} with regression{aictest=} naming anything other than td, easter or user -- td1coef / tdstock / lom have no automd path
+
+- **`core/src/automdl/automx.cpp:468`**
+  pickmdl{} with user-defined holiday chi-square testing is not yet ported (chkchi.f has no C++; automx.f:484-500 runs it inside the candidate loop). The user-regressor half of this wall came down when usraic.f was ported.
+  *Fortran:* `automx.f:484-500`
 
 
 ## Composite
@@ -124,16 +130,16 @@ inventory.
 
 ## Automatic model selection
 
-- **`core/src/automdl/automx.cpp:481`**
+- **`core/src/automdl/automx.cpp:490`**
   Must have user supplied models stored in
 
-- **`core/src/automdl/automx.cpp:515`**
+- **`core/src/automdl/automx.cpp:524`**
   No ARIMA models stored in
 
-- **`core/src/automdl/automx.cpp:524`**
+- **`core/src/automdl/automx.cpp:533`**
   Every pickmdl candidate model failed to estimate.
 
-- **`core/src/automdl/automx.cpp:803`**
+- **`core/src/automdl/automx.cpp:812`**
   pickmdl{}: the selected model failed to re-estimate.
 
 

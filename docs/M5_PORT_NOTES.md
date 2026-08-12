@@ -7652,3 +7652,90 @@ Suite **7897 passed, 0 failed, 908 skipped, 0 xfailed**; ctest 12/12. WALLS
 unchanged at **20 gaps / 4 faithful** -- nothing here was walled, which is the
 point of the whole board item. `tools/parsed_dropped.py` 68 -> **64**, and
 board item 8 is empty.
+
+## 107. `usraic.f` -- and the AIC test that compares a model against itself (2026-08-11)
+
+Board item 7's tail: `regression{aictest=(user)}` had no C++ at all. The port
+hit a BARE `abend` covering `usraic` and `chkchi` together -- no message, so the
+run's `===ERR===` block came back empty and `walls.py` could list neither.
+
+### The measurement first
+
+`generated/airline_user-reg-x11` (two synthetic user columns) plus one line:
+
+| spec | `aictest.u.aicc.user` | `.nouser` | `diff.u` | verdict | `nreg` |
+|---|---|---|---|---|---|
+| `+ aictest=(user)` | 0.135149136085112E+04 | 0.134807000007141E+04 | -3.42 | no | 2 -> **0** |
+| `+ aicdiff=(-100)` | same | same | -3.42 | **yes** | 2 |
+| `+ usertype=(seasonal seasonal)` | 0.135149136085112E+04 | **identical** | **0.0** | yes | 2 |
+
+The first row rejects the regressors and moves every X-11 table with them. The
+second forces the RESTORE branch -- two thirds of the routine, and dead code in
+the suite without a spec that reaches it. The third is CB-44.
+
+### CB-44: `usertype=seasonal` makes the test a no-op
+
+`usraic.f:116-120` lists fifteen user regressor types for its collect walk (and
+again at `:136-140` to delete). `addusr.f:34-38`'s otherwise-equivalent
+predicate lists the same set **plus `PRGTUS`**. So a User-defined Seasonal group
+is never backed up and never deleted, and the "without user regressors" fit is
+the model that was just fitted WITH them: identical AICCs, `diff.u` exactly 0,
+verdict `yes`, `nreg` unchanged.
+
+The routine knows the type -- its RESTORE dispatch at `:237` has a `PRGTUS` arm
+and titles it correctly. Only the two walks omit it. Transcribed as written;
+adding `PRGTUS` fails 3 gates.
+
+**A second asymmetry in the same pair, not filed as a bug:** `usraic.f:276`
+titles `PRGUCY` `User-defined Transitory` where `addusr.f:122` titles the same
+type `User-defined Cycle`. One type, two group names, one program. Both
+transcribed. This is the "diff the arms, do not assume the pair" rule paying
+out twice in one routine -- and it is worth noting that the two arms were found
+by reading them side by side, not by any test.
+
+### What the port needed besides the routine
+
+* **A savelog key nothing classified.** `aictest.u.aicc.user` / `.nouser` come
+  from `usraic.f`'s own FORMAT 1012, not from `svaict`. Because the routine was
+  unported, no golden in the corpus carried them and
+  `test_aictest_savelog`'s classifier had never been asked -- it failed loudly
+  the moment a golden did, which is that gate's whole design working.
+* **A named refusal helper.** `aictest_not_ported` is registered in
+  `walls.py`'s `HELPERS` **and** `GAP_HELPERS` in the same commit, because
+  `\bnot_ported` cannot match inside it (entry 94). The count moved 20 -> 22,
+  which is the check.
+
+### The automdl / pickmdl paths are PORTED AND UNGATED, deliberately
+
+`usraic` is called from five places in the oracle: `arima.f:655` (the explicit
+path, gated here three ways) and four inside `automd.f`/`automx.f`. Those four
+are transcribed -- including `automx.f:482`'s `IF(Ncusrx.eq.0.and.Ch2tst)
+Ch2tst=F`, which matters because usraic can empty the design out from under
+chkchi -- and **nothing gates them**, for a reason worth recording:
+
+the only probe available is `automdl{}` on a spec carrying user regressors, and
+its CONTROL run already diverges. Without any `aictest=` at all, the oracle
+halts with `Estimation failed to converge -- maximum iterations reached` and
+this engine returns `OUTCOME: OK`. That is a pre-existing automdl estimation
+gap, in the dangerous direction, and it has nothing to do with usraic --
+building the aictest probe on top of it would have measured it instead. Left as
+a separate lead; do not re-probe usraic through automdl until it is closed.
+
+`chkchi.f` stays unported and is now walled with a MESSAGE at two sites
+(`explicit_aictest`, `amx_aictest`), narrowed to the chi-square half.
+`regression{chi2testcv=}` / `{tlimit=}` remain parsed-and-dropped behind it, as
+`tools/parsed_dropped.py` says: whoever ports chkchi lands those parse arms.
+
+### Gated by
+
+`extra/airline_reg-aictest-user` (reject), `-accept` (the restore branch),
+`-seasonal` (CB-44). **+54 gates.**
+
+| mutation | fails |
+|---|---|
+| add `PRGTUS` to the group walk (the "fix" for CB-44) | 3 |
+| never take the restore branch | 4 |
+| never `dlrgef` the user groups | 4 |
+
+Suite **7951 passed, 0 failed, 917 skipped, 0 xfailed**; ctest 12/12. WALLS
+**22 gaps / 4 faithful** (+2, both replacing bare abends).

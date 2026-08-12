@@ -75,6 +75,25 @@ void easaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
 void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
             int& frstry, bool& lester, bool lsumm);
 
+// The refusal helper for the AIC-test front. The NAME is load-bearing:
+// walls.py matches an explicit HELPERS tuple with , so a helper it does not
+// know about is a wall in neither the gap list nor the count (entry 94).
+void aictest_not_ported(X13Context& ctx, const std::string& what);
+
+// usraic.f: the user-defined-regressor AIC test. Estimates the model WITH the
+// user regressors (the design as given -- they are always present when this is
+// reached), removes every user group, re-estimates, and keeps the lower-AICC
+// form; the gap lands in ctx.arima.dfaicu and the two AICCs in
+// ctx.aictest_log.user_aicc. Leaves the model rebuilt to the chosen form.
+//
+// TWO asymmetries against addusr.f are transcribed, not tidied. Its group walk
+// omits PRGTUS where addusr.f:34's includes it, so a `usertype=seasonal`
+// column is never removed and the test compares a model against itself
+// (CB-44); and its restore titles PRGUCY "User-defined Transitory" where
+// addusr.f:122 titles the same type "User-defined Cycle".
+void usraic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
+            int& frstry, bool& lester, bool lsumm);
+
 // addlom.f: add a lom/loq/lpyear regressor group (used by lomaic). aicrgm is the
 // change-of-regime date (aicrgm[0]==NOTSET for a plain effect); aicln0 the
 // regime zero indicator; lnindx = 1/2/3 for lom/loq/lpyear.

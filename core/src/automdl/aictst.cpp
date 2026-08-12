@@ -82,6 +82,17 @@ int find_td_group(model_cmn& m) {
 }
 }  // namespace
 
+// The refusal helper for this file. Its NAME is load-bearing: walls.py matches
+// an explicit HELPERS tuple with , so a helper it does not know about is a
+// wall in neither the gap list nor the count (entry 94). Registered there in
+// the same commit that introduced it.
+void aictest_not_ported(X13Context& ctx, const std::string& what) {
+    errhdr(ctx);
+    writln(ctx, "ERROR: " + what + ".", stdio::STDERR, ctx.units.mt2, true);
+    abend(ctx);
+}
+
+
 // ---------------------------------------------------------------------------
 // addtd.f
 // ---------------------------------------------------------------------------
@@ -958,6 +969,181 @@ void lomaic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
     }
 }
 
+// usraic.f -- the user-defined-regressor AIC test.
+//
+// Shape is lomaic's: fit, toggle, fit, keep the lower AICC. The toggle here is
+// "delete every user group / add them all back", so the backup is a whole
+// snapshot of /usrreg/ plus the coefficients and fixed-flags of the user
+// columns. It is a LOCAL backup on purpose -- /urgbak/ belongs to the editor's
+// bakusr and reusing it would clobber the span drivers' restore point.
+//
+// usraic.f's group walk (:116-120) OMITS PRGTUS where addusr.f:34's predicate
+// includes it. Transcribed as written: see CB-44.
+static bool is_usraic_rgvr(int rt) {
+    using namespace prm;
+    return rt == PRGUTD || rt == PRGULM || rt == PRGULQ || rt == PRGULY ||
+           rt == PRGTUD || rt == PRGTUH || rt == PRGUH2 || rt == PRGUH3 ||
+           rt == PRGUH4 || rt == PRGUH5 || rt == PRGUAO || rt == PRGULS ||
+           rt == PRGUSO || rt == PRGUCN || rt == PRGUCY;
+}
+
+void usraic(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
+            int& frstry, bool& lester, bool lsumm) {
+    using namespace prm;
+    auto& m = ctx.model; auto& d = ctx.mdldat; auto& ar = ctx.arima;
+    auto& pr = ctx.prior; auto& aj = ctx.adj; auto& ext = ctx.extend;
+    auto& ur = ctx.usrreg;
+
+    bool argok = ar.lautom || ar.lautox;
+    auto reest = [&](bool lprtit) {
+        regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0, ar.userx.data(),
+               ar.bgusrx.data(), ar.nrusrx, pr.priadj, ar.reglom, ar.nrxy,
+               ar.begxy.data(), frstry, true, ar.elong);
+        if (ctx.error.lfatal) return;
+        argok = ar.lautom || ar.lautox;
+        rgarma(ctx, true, ar.mxiter, ar.mxnlit, lprtit, a, na, nefobs, argok);
+        if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) abend(ctx);
+    };
+    auto est_err = [&]() {
+        int e = d.armaer;
+        return e == PMXIER || e == PSNGER || e == PISNER || e == PNIFER ||
+               e == PNIMER || e == PCNTER || e == POBFN0 || e < 0 ||
+               ((ar.lautom || ar.lautox) && !argok);
+    };
+    // usraic.f:52-58, :150-156, :271-277 -- the SAME reseed appears three
+    // times, once before each of the three fits.
+    auto reseed_arma = [&]() {
+        if (m.nopr <= 0) return;
+        const int endlag = m.opr(m.nopr) - 1;
+        for (int ilag = 1; ilag <= endlag; ++ilag)
+            if (!m.arimaf(ilag)) d.arimap(ilag) = m.ap1(ilag);
+    };
+
+    if (lsumm) {
+        ctx.aictest_log.ran = true;
+        ctx.aictest_log.user_aicc.clear();
+    }
+
+    reseed_arma();
+
+    // ---- fit WITH the user regressors -------------------------------------
+    reest(false);
+    if (ctx.error.lfatal) return;
+    if (est_err()) { lester = true; return; }
+    if (d.armaer != 0) d.armaer = 0;
+    prlkhd(ctx, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), aj.adjmod, ar.fcntyp,
+           ar.lam);
+    if (ctx.error.lfatal) return;
+    const double aicusr = ctx.lkhd.aicc;
+    int nbu = 0;
+    if (!dpeq(ar.pvaic, DNOTST)) nbu = m.nb;
+    if (lsumm) ctx.aictest_log.user_aicc.push_back({"user", ctx.lkhd.aicc});
+
+    // ---- back up /usrreg/ and the user columns' coefficients --------------
+    std::vector<double> ubkx(ar.userx.data(), ar.userx.data() + PUSERX);
+    std::vector<int> ubktyp(PUREG + 1, 0);
+    for (int i = 1; i <= PUREG; ++i) ubktyp[static_cast<std::size_t>(i)] = ur.usrtyp(i);
+    std::vector<int> ubkptr(PUREG + 2, 0);
+    for (int i = 0; i <= PUREG; ++i) ubkptr[static_cast<std::size_t>(i)] = ur.usrptr(i);
+    const int nubk = ur.ncusrx;
+    const std::string ubkttl(ur.usrttl.raw());
+
+    std::vector<double> ubkb(PUREG + 1, 0.0);
+    std::vector<char> ubkfix(PUREG + 1, 0);
+    int iuser = 0;
+    for (int igrp = 1; igrp <= m.ngrp; ++igrp) {
+        const int begcol = m.grp(igrp - 1);
+        if (!is_usraic_rgvr(m.rgvrtp(begcol))) continue;
+        const int endcol = m.grp(igrp) - 1;
+        for (int i = begcol; i <= endcol; ++i) {
+            ++iuser;
+            ubkb[static_cast<std::size_t>(iuser)] = d.b(i);
+            ubkfix[static_cast<std::size_t>(iuser)] = m.regfx(i) ? 1 : 0;
+        }
+    }
+
+    // ---- delete the user groups, back to front ----------------------------
+    for (int igrp = m.ngrp; igrp >= 1; --igrp) {
+        const int begcol = m.grp(igrp - 1);
+        if (!is_usraic_rgvr(m.rgvrtp(begcol))) continue;
+        const int endcol = m.grp(igrp) - 1;
+        dlrgef(ctx, begcol, ar.nrxy, endcol - begcol + 1);
+        if (ctx.error.lfatal) return;
+    }
+    ur.ncusrx = 0;
+
+    // ---- fit WITHOUT ------------------------------------------------------
+    reseed_arma();
+    reest(false);
+    if (ctx.error.lfatal) return;
+    if (est_err()) { lester = true; return; }
+    if (d.armaer != 0) d.armaer = 0;
+    prlkhd(ctx, &ar.y(ar.frstsy), &aj.adj(aj.adj1st), aj.adjmod, ar.fcntyp,
+           ar.lam);
+    if (ctx.error.lfatal) return;
+    const double aicnou = ctx.lkhd.aicc;
+    int nbno = 0;
+    if (!dpeq(ar.pvaic, DNOTST)) nbno = m.nb;
+    if (lsumm) ctx.aictest_log.user_aicc.push_back({"nouser", ctx.lkhd.aicc});
+
+    // ---- verdict (usraic.f:196-204) ---------------------------------------
+    ar.dfaicu = aicnou - aicusr;
+    if (!dpeq(ar.pvaic, DNOTST)) {
+        const int aicdf = nbu - nbno;
+        const double thiscv = chsppf(ar.pvaic, aicdf);
+        ar.rgaicd(PUAIC) = thiscv - 2.0 * static_cast<double>(aicdf);
+    }
+    if (ar.dfaicu <= ar.rgaicd(PUAIC)) return;   // AICC prefers WITHOUT
+
+    // ---- restore and refit (usraic.f:205-290) -----------------------------
+    for (int i = 1; i <= PUSERX; ++i)
+        ar.userx(i) = ubkx[static_cast<std::size_t>(i - 1)];
+    for (int i = 1; i <= PUREG; ++i) ur.usrtyp(i) = ubktyp[static_cast<std::size_t>(i)];
+    for (int i = 0; i <= PUREG; ++i) ur.usrptr(i) = ubkptr[static_cast<std::size_t>(i)];
+    ur.ncusrx = nubk;
+    ur.usrttl = ubkttl;
+
+    for (int i = 1; i <= ur.ncusrx; ++i) {
+        std::string effttl;
+        int nchr = 0;
+        getstr(ctx, ur.usrttl.data(), &ur.usrptr(0), ur.ncusrx, i, effttl, nchr);
+        if (ctx.error.lfatal) return;
+        const int ut = ur.usrtyp(i);
+        const char* grp = "User-defined";
+        int vartyp = ut;
+        if (ut == PRGTUH)       grp = "User-defined Holiday";
+        else if (ut == PRGUH2)  grp = "User-defined Holiday Group 2";
+        else if (ut == PRGUH3)  grp = "User-defined Holiday Group 3";
+        else if (ut == PRGUH4)  grp = "User-defined Holiday Group 4";
+        else if (ut == PRGUH5)  grp = "User-defined Holiday Group 5";
+        else if (ut == PRGTUS)  grp = "User-defined Seasonal";
+        else if (ut == PRGUCN)  grp = "User-defined Constant";
+        else if (ut == PRGUTD)  grp = "User-defined Trading Day";
+        else if (ut == PRGULM)  grp = "User-defined LOM";
+        else if (ut == PRGULQ)  grp = "User-defined LOQ";
+        else if (ut == PRGULY)  grp = "User-defined Leap Year";
+        else if (ut == PRGUAO)  grp = "User-defined AO";
+        else if (ut == PRGULS)  grp = "User-defined LS";
+        else if (ut == PRGUSO)  grp = "User-defined SO";
+        // usraic.f:276 titles PRGUCY "User-defined Transitory"; addusr.f:122
+        // titles the same type "User-defined Cycle". Two spellings of one group
+        // in one program -- diff the arms, do not assume the pair.
+        else if (ut == PRGUCY)  grp = "User-defined Transitory";
+        else                    vartyp = PRGTUD;   // usraic.f:279-281
+        adrgef(ctx, ubkb[static_cast<std::size_t>(i)], effttl, grp, vartyp,
+               ubkfix[static_cast<std::size_t>(i)] != 0, false);
+        if (ctx.error.lfatal) return;
+    }
+
+    reseed_arma();
+    regvar(ctx, trnsrs, ext.nobspf, ar.fctdrp, ext.nfcst, 0, ar.userx.data(),
+           ar.bgusrx.data(), ar.nrusrx, pr.priadj, ar.reglom, ar.nrxy,
+           ar.begxy.data(), frstry, true, ar.elong);
+    if (!ctx.error.lfatal)
+        rgarma(ctx, true, ar.mxiter, ar.mxnlit, false, a, na, nefobs, argok);
+    if (!ctx.error.lfatal && (ar.lautom || ar.lautox) && !argok) lester = true;
+}
+
 // editor.f:1151-1166 -- build the TD candidate vector from Itdtst. In the oracle
 // this runs ONCE, in the editor, before any model is estimated; this port has no
 // editor block for it, so each caller of the AIC tests runs it at its own
@@ -1108,12 +1294,14 @@ void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
     // Save the entry model so lomaic's restor branch has a valid target.
     ssprep_save(ctx);
 
-    // usraic (user-regressor AIC) and chkchi (chi-square holiday) are not
-    // ported; fail loudly rather than replace rgarma with a no-op (arima.f:644-
-    // 692). The tested td/lom/easter contract is unaffected.
-    if ((ar.luser && ctx.usrreg.ncusrx > 0) ||
-        (ar.ch2tst && ctx.usrreg.nguhl > 0)) {
-        abend(ctx);
+    // chkchi (the chi-square test for user-defined HOLIDAY groups,
+    // arima.f:679-692) is still unported. usraic is not -- it runs below. This
+    // used to be a BARE abend covering both, i.e. a hole with the lights off:
+    // no message, so walls.py could not list it and the ===ERR=== block came
+    // back empty.
+    if (ar.ch2tst && ctx.usrreg.nguhl > 0) {
+        aictest_not_ported(ctx, "regression{chi2test=yes} with user-defined "
+                                "holiday regressors -- chkchi.f is not ported");
         return;
     }
 
@@ -1136,7 +1324,13 @@ void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
         easaic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/true);
         if (ctx.error.lfatal) return;
     }
-    // usraic (user) + chkchi (chi-square holiday) deferred.
+    if (!lester && ar.luser && ctx.usrreg.ncusrx > 0) {
+        usraic(ctx, trnsrs, a, nefobs, na, frstry, lester, /*lsumm=*/true);
+        if (ctx.error.lfatal) return;
+        ssprep_save(ctx);   // arima.f:661
+    }
+    // chkchi (chi-square holiday) deferred -- walled at the head of this
+    // function, because arima.f:666-678 can CLEAR Ch2tst before reaching it.
 
     // arima.f:697-700: turn off the AIC-test options for the rest of the run.
     ar.itdtst = 0;
