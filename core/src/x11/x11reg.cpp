@@ -1672,9 +1672,14 @@ void x11mdl_td(X13Context& ctx, int kpart) {
                     if (!(tdwsum > 0.0)) {
                         // x11mdl.f:613-623 -- every unfixed weight is zero, so
                         // there is no scale factor to build. The oracle abends.
+                        // x11mdl.f:614-616 writes FORMAT 1000 directly, and
+                        // that format has no leading `/` -- so no blank line
+                        // ahead of it. This passed `lblnk=true` and emitted one,
+                        // which nothing could see until a gate compared the
+                        // whole `.err` block rather than only its ERROR lines.
                         writln(ctx, "ERROR: Cannot generate factor necessary to "
                                "reweight trading day", stdio::STDERR,
-                               ctx.units.mt2, true);
+                               ctx.units.mt2, false);
                         writln(ctx, "       daily weights - none of the unfixed "
                                "daily weights are greater", stdio::STDERR,
                                ctx.units.mt2, false);

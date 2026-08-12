@@ -23,6 +23,9 @@ import tempfile
 
 import pytest
 
+from spec_text import spec_body
+from oracle_outcome import oracle_halted
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
 _CORPUS = os.path.join(_REPO, "tests", "corpus")
@@ -104,7 +107,9 @@ def _estimation_reproducible(spc: str) -> bool:
         regression columns around the estimation.
     (sincos / trigonometric-seasonal regressors ARE now ported -- adsncs.f.)
     """
-    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
+    # spec_body strips `#` comments -- a spec whose HEADER names one of the
+    # tokens below used to drop out of this gate silently. See spec_text.py.
+    txt = spec_body(spc).lower()
     flat = txt.replace(" ", "")
     if "arima{" not in flat or "model=" not in flat:
         return False
@@ -233,6 +238,20 @@ def _close(a: float, b: float, rtol: float = RTOL, bstr: str = "") -> bool:
 def test_estimation_matches_oracle(spc, workdir):
     rel = os.path.relpath(spc, _CORPUS)
     work_spc = os.path.join(workdir, rel)
+
+    # The oracle HALTED on this spec, so there is no converged fit to compare
+    # and `assert got["converged"] == "yes"` would be asserting the opposite of
+    # what the oracle did. Require the harness to halt too -- the same equality
+    # the other phase gates use (oracle_outcome.py) -- and leave the halting
+    # run's report to test_halt_err.py, which compares its `.err` verbatim.
+    base = os.path.basename(spc)[:-4]
+    if oracle_halted(_golden_dir(spc), base):
+        proc = subprocess.run([BIN, work_spc], capture_output=True, text=True)
+        assert proc.returncode == 1 and "OUTCOME: FATAL" in proc.stdout, (
+            f"{rel}: the oracle halted, so x13run_m3 must too -- "
+            f"exit {proc.returncode}\n{proc.stdout}")
+        return
+
     got = _run(work_spc)
     exp = _parse_udg(spc)
 
@@ -262,3 +281,12 @@ def test_estimation_matches_oracle(spc, workdir):
 
 def test_at_least_one_spec():
     assert _SPECS, "no estimation-reproducible corpus specs discovered"
+    # A FLOOR, not a bound. `_estimation_reproducible` is a token test over the
+    # spec text, i.e. a hand-written case list that has learned to hide -- and
+    # it had: it read the raw file, so eleven specs whose HEADER COMMENT
+    # mentioned `composite{` or `automdl` were silently excluded (spec_text.py).
+    # A predicate that shrinks reports green, so state the size out loud and
+    # RAISE this number whenever specs are added.
+    assert len(_SPECS) >= 311, (
+        f"only {len(_SPECS)} estimation-reproducible specs discovered -- "
+        "the scope predicate shrank; check it against `pytest --collect-only`")

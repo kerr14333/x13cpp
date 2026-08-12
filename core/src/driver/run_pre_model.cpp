@@ -23,6 +23,7 @@
 #include "regarima/forecast.hpp"
 #include "regarima/outlier.hpp"     // idotlr, setcv
 #include "automdl/automd.hpp"       // automd (automatic model selection)
+#include "automdl/iddiff.hpp"       // prterr (arima.f:711/:772 estimation-error report)
 #include "automdl/automx.hpp"       // automx (pickmdl candidate search)
 #include "automdl/aictst.hpp"       // explicit_aictest (arima.f:569 aictest)
 #include "automdl/svaict.hpp"       // svaict (arima.f:465 aictest.* savelog)
@@ -660,6 +661,18 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 (void)na;
                 if (ctx.error.lfatal) return false;
 
+                // arima.f:711 -- report whatever /mdldat/'s Armaer says about
+                // the fit just made. The automatic paths call prterr from
+                // inside automd/automx; the EXPLICIT-model path had no call at
+                // all, so an explicit model that ran out of iterations reached
+                // arima.f:1216's halt with an empty `===ERR===` block. `lauto`
+                // is arima.f's own local (Lautom.or.Lautox), false by
+                // construction on this arm -- which is what selects itrerr's
+                // three-remedy text with the ARMA start values under it.
+                prterr(ctx, nefobs,
+                       ctx.arima.lautom || ctx.arima.lautox);
+                if (ctx.error.lfatal) return false;
+
                 // Automatic outlier identification (arima.f:756 idotlr), when an
                 // outlier{} spec is present. Re-estimates the model in place with
                 // the identified AO/LS/TC regressors. Default the test span (model
@@ -690,6 +703,14 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                            ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
                            /*lauto=*/false, a.data());
                     if (ctx.error.lfatal) return false;
+                    // arima.f:772 -- and again after outlier identification,
+                    // which re-estimates. Gated on !Convrg here, where :711 is
+                    // unconditional.
+                    if (!ctx.mdldat.convrg) {
+                        prterr(ctx, nefobs,
+                               ctx.arima.lautom || ctx.arima.lautox);
+                        if (ctx.error.lfatal) return false;
+                    }
                     // arima.f:773 -- after idotlr, rebuild the FULL Nobspf-row
                     // regression design. idotlr's coladd/addotl fill only the
                     // Nspobs span rows of any inserted outlier column (idotlr.f:
@@ -754,7 +775,13 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // whenever a model spec is present, so the enclosing condition has
             // to be spelled out; without it `extra/airline_identify` emits a
             // full spcrsd block the oracle does not.
-            if (na > 0 && ctx.arima.ldestm) {
+            // `Convrg` is the oracle's own gate: arima.f:1046 wraps the whole
+            // residual-diagnostic / spectrum / forecast / span-restore tail in
+            // `IF(Convrg)THEN`, and its ELSE at :1216 is a bare `CALL abend`
+            // (see the check below). This port runs the residual capture and
+            // the residual QS ahead of prlkhd rather than after it, so the
+            // condition has to be spelled out at each moved site.
+            if (na > 0 && ctx.arima.ldestm && ctx.mdldat.convrg) {
                 ctx.resid_a.assign(a.begin(), a.begin() + na);
                 ctx.resid_na = na;
                 // arima.f:1125 computes `idate` HERE, from the estimation-time
@@ -822,8 +849,12 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 if (ctx.captured.has_seats) ctx.chkopt.mxcklg = 3 * sp;
                 else ctx.chkopt.mxcklg = 2 * sp;
             }
-            check_residuals(ctx, a.data(), na, nefobs);
-            if (ctx.error.lfatal) return false;
+            // arima.f:1046's `IF(Convrg)` again -- prtacf and everything under
+            // it are inside it. See the residual-capture note above.
+            if (ctx.mdldat.convrg) {
+                check_residuals(ctx, a.data(), na, nefobs);
+                if (ctx.error.lfatal) return false;
+            }
 
             // savotl.f (the outlier counts) + prtrts.f (the ARMA operator
             // roots) -- the other half of the estimation savelog block, and
@@ -845,6 +876,23 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 // no `lauto`.
                 aape_diagnostics(ctx, trnsrs.data());
                 if (ctx.error.lfatal) return false;
+            }
+
+            // arima.f:1216-1218 -- "If estimation did not converge, exit with
+            // an error". A BARE `CALL abend`: the oracle writes nothing here,
+            // because whichever prterr already fired owns the message. So this
+            // is deliberately not routed through a `*_not_ported` helper and
+            // will never appear in walls.py -- it is not a gap, it is the
+            // oracle's own halt, and the run's `===ERR===` block carries only
+            // what prterr/itrerr put there.
+            //
+            // Everything from here to the end of the estimation block (the
+            // forecasts, the backcasts and arima.f:1180-1213's span restore)
+            // lives inside the `IF(Convrg)` this closes, so the early return
+            // IS the guard for all of it.
+            if (!ctx.mdldat.convrg) {
+                abend(ctx);
+                return false;
             }
 
             // NOTE (deferred): forecasting on a post-outlier model with other

@@ -1,9 +1,11 @@
-// iddiff.cpp -- iddiff.f (unit-root / differencing-order identification) and the
-// non-print core of prterr.f. Control flow follows the Fortran DO WHILE with the
-// GO TO 10 (continue) / GO TO 20 (exit) / GO TO 30 (finish) targets modeled by a
-// continue-flag and a break. Farray state stays 1-based; raw scratch (txy, a) is
-// 0-based. All WRITE/Prttab table output is deferred (see the print-engine
-// milestone); iddiff's decisions are the load-bearing effect.
+// iddiff.cpp -- iddiff.f (unit-root / differencing-order identification) and
+// prterr.f / itrerr.f / prarma.f (the estimation-error report). iddiff's control
+// flow follows the Fortran DO WHILE with the GO TO 10 (continue) / GO TO 20
+// (exit) / GO TO 30 (finish) targets modeled by a continue-flag and a break.
+// Farray state stays 1-based; raw scratch (txy, a) is 0-based. iddiff's
+// Prttab table output is deferred (see the print-engine milestone); its
+// decisions are the load-bearing effect. prterr, by contrast, emits: its Mt2
+// half is the run's `===ERR===` block and gates read it.
 #include "automdl/iddiff.hpp"
 
 #include <cmath>
@@ -20,18 +22,257 @@
 #include "gen/model.hpp"             // prm::AR, DIFF, MA, PB, PRGTCN, PSNGER, PUNKER
 #include "gen/srslen.hpp"            // prm::PLEN
 #include "gen/notset.hpp"            // prm::DNOTST
+#include "x13/fformat.hpp"           // fwrite_fmt (prterr/itrerr message formats)
 
 namespace x13 {
 
+// prarma.f -- the ARMA start values, dumped under itrerr's option (2) so the
+// user can paste them back into the spec. Fh is a unit number; itrerr's only
+// caller passes Mt2 (the Mt1 half is the deferred .out engine).
+static void prarma(X13Context& ctx, int fh) {
+    using namespace prm;
+    const auto& m = ctx.model;
+    const auto& d = ctx.mdldat;
+    static const char* armopr[4] = {"", "", "ar  ", "ma  "};
+    auto& u = ctx.channels_.unit(fh);
+    for (int iflt = AR; iflt <= MA; ++iflt) {
+        const int begopr = m.mdl(iflt - 1);
+        const int endopr = m.mdl(iflt) - 1;
+        if (endopr < begopr) continue;
+        u.put(fwrite_fmt("('   ',a,'=(')", std::string(armopr[iflt])) + "\n");
+        for (int iopr = begopr; iopr <= endopr; ++iopr) {
+            const int beglag = m.opr(iopr - 1);
+            const int endlag = m.opr(iopr) - 1;
+            for (int ilag = beglag; ilag <= endlag; ++ilag) {
+                if (m.arimaf(ilag))
+                    u.put(fwrite_fmt("('    ',e24.10,a)", d.arimap(ilag),
+                                     std::string("f")) + "\n");
+                else
+                    u.put(fwrite_fmt("('    ',e24.10)", d.arimap(ilag)) + "\n");
+            }
+        }
+        u.put(fwrite_fmt("('   )')") + "\n");
+    }
+}
+
+// itrerr.f -- the iteration/function-evaluation limit report. Only the Mt2 half
+// is emitted (Mt1 is the deferred .out engine, STDERR is not gated), but note
+// that `Lauto` changes the Mt2 TEXT and not merely which channels are written:
+// the automatic-model arm offers two remedies and the explicit arm offers three
+// with the ARMA start values under them.
+static void itrerr(X13Context& ctx, const char* errstr, bool lauto, int issap,
+                   int irev) {
+    const int Mt2 = ctx.units.mt2;
+    auto& mt2 = ctx.channels_.unit(Mt2);
+    static const std::string RULE =
+        "(/,' "
+        "***********************************************************************')";
+    const std::string es(errstr);
+
+    mt2.put(fwrite_fmt(RULE) + "\n");
+    if (issap == 2) {
+        mt2.put(fwrite_fmt("(/,' ERROR: Estimation failed to converge -- maximum ',a,"
+                           "' reached',/,'        during sliding spans analysis.')",
+                           es) + "\n");
+    } else if (irev == 4) {
+        mt2.put(fwrite_fmt("(/,' ERROR: Estimation failed to converge -- maximum ',a,"
+                           "' reached',/,'        during history analysis.')",
+                           es) + "\n");
+    } else {
+        mt2.put(fwrite_fmt("(/,' ERROR: Estimation failed to converge -- maximum ',a,"
+                           "' reached.')", es) + "\n");
+    }
+    mt2.put(fwrite_fmt("('        Rerun program trying one of the following:',/,"
+                       "10x,'(1) Allow more iterations (set a larger value of ',"
+                       "'maxiter).')") + "\n");
+    if (lauto) {
+        mt2.put(fwrite_fmt("(10x,'(2) Try a different model.',//,1x,'See ',a,"
+                           "' of the ',a,' ',a,' for more discussion.')",
+                           std::string(stdio::MDLSEC), std::string(stdio::PRGNAM),
+                           std::string(stdio::DOCNAM)) + "\n");
+        mt2.put(fwrite_fmt(RULE) + "\n");
+        return;
+    }
+    bool lparma = false;
+    if (issap == 2 || irev == 4) {
+        mt2.put(fwrite_fmt("(10x,'(2) Fix the values of the ARMA coefficients to ',"
+                           "'those obtained',/,14x,"
+                           "'while estimating the full series (set fixmdl=yes)')") + "\n");
+    } else {
+        mt2.put(fwrite_fmt("(10x,'(2) Use initial values for ARMA parameters as ',"
+                           "'given ',a,'.')", std::string("below")) + "\n");
+        lparma = true;
+    }
+    mt2.put(fwrite_fmt("(10x,'(3) Try a different model.',//,1x,'See ',a,"
+                       "' of the ',a,' ',a,' for more discussion.')",
+                       std::string(stdio::MDLSEC), std::string(stdio::PRGNAM),
+                       std::string(stdio::DOCNAM)) + "\n");
+    if (lparma) {
+        // itrerr.f:82-84 -- `WRITE(Mt2,*)' '` is list-directed, so it emits a
+        // leading blank of its own plus the blank datum.
+        mt2.put("  \n");
+        prarma(ctx, Mt2);
+        mt2.put("  \n");
+    }
+    mt2.put(fwrite_fmt(RULE) + "\n");
+}
+
+// prterr.f -- report whatever /mdldat/'s Armaer says went wrong in the last
+// estimation. Ported here as the Mt2 half plus the control flow: the Mt1
+// listing and the STDERR courtesy line (FORMAT 1230) belong to the deferred
+// .out engine and to a channel no gate reads.
+//
+// This routine used to be a four-line stub that zeroed Convrg on PUNKER and
+// dropped both its arguments -- the shape CLAUDE.md calls "an argument the
+// Fortran passes and this port dropped". `Lauto` selects the message TEXT and
+// gates five `CALL abend()`s; `Nefobs` is a number inside FORMAT 1180. With it
+// stubbed, a run whose estimation hit the iteration limit came back with an
+// EMPTY `===ERR===` block and, until arima.f:1216 was ported beside it,
+// `OUTCOME: OK`.
 void prterr(X13Context& ctx, int nefobs, bool lauto) {
-    (void)nefobs;
-    (void)lauto;
-    // Error-message printing deferred; only the unknown-cause branch has a
-    // non-print effect -- zero the fit so the caller's !Convrg check triggers.
-    int ae = ctx.mdldat.armaer;
-    if (ae == prm::PUNKER || ae < 0) {
-        ctx.mdldat.convrg = false;
-        ctx.mdldat.var = 0.0;
+    using namespace prm;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+    const int Mt2 = ctx.units.mt2;
+    auto& mt2 = ctx.channels_.unit(Mt2);
+    const int issap = ctx.hiddn.issap;
+    const int irev = ctx.hiddn.irev;
+    const int ae = d.armaer;
+
+    if (ae == PUNKER || ae < 0) {
+        // Unknown error.
+        d.convrg = false;
+        d.var = 0.0;
+        if (issap == 2) {
+            errhdr(ctx);
+            mt2.put(fwrite_fmt("(/,' ERROR: Nonlinear estimation error with unknown "
+                               "cause ','during ',/,'        sliding spans analysis.')") + "\n");
+        } else if (irev == 4) {
+            errhdr(ctx);
+            mt2.put(fwrite_fmt("(/,' ERROR: Nonlinear estimation error with unknown "
+                               "cause ','during ',/,'        revisions analysis.')") + "\n");
+        } else {
+            // No errhdr on this arm -- prterr.f:51-55 has none.
+            mt2.put(fwrite_fmt("(/,' ERROR: Nonlinear estimation error with unknown "
+                               "cause.',/)") + "\n");
+        }
+    } else if (ae == PSNGER || ae == PISNER) {
+        // Xy is singular.
+        std::string str;
+        int nchr = 4;
+        if (d.sngcol < m.ncxy) {
+            getstr(ctx, m.colttl.data(), m.colptr.data(), m.ncoltl, d.sngcol, str,
+                   nchr);
+            if (ctx.error.lfatal) return;
+        } else {
+            str = "data";
+        }
+        const std::string col = str.substr(0, static_cast<std::size_t>(nchr));
+        errhdr(ctx);
+        if (ae == PISNER) {
+            mt2.put(fwrite_fmt("(/,' ERROR: Regression matrix singular because of ',a,"
+                               "'.',/,'        Remove variable(s) from regression spec "
+                               "and ','try again.',/)", col) + "\n");
+        } else {
+            mt2.put(fwrite_fmt("(/,' ERROR: Regression matrix singular because of ',a,"
+                               "'.',/,'        Check regression model or change "
+                               "automatic ','outlier options',/,'        i.e. method to "
+                               "addone or types to identify AO ','only.',/)", col) + "\n");
+        }
+        if (!lauto) abend(ctx);
+        return;
+    } else if (ae == PINPER) {
+        errhdr(ctx);
+        mt2.put(fwrite_fmt("(/,' WARNING: Improper input parameters to the likelihood',"
+                           "'minimization routine.',/,'          Please send us the data "
+                           "and spec file that ','produced this',/,'          message "
+                           "(x12@census.gov).')") + "\n");
+    } else if (ae == PMXIER) {
+        errhdr(ctx);
+        itrerr(ctx, "iterations", lauto, issap, irev);
+    } else if (ae == PMXFER) {
+        errhdr(ctx);
+        itrerr(ctx, "function evaluations", lauto, issap, irev);
+    } else if (ae == PSCTER || ae == PSPMER || ae == PCOSER) {
+        errhdr(ctx);
+        mt2.put(fwrite_fmt("(/,' WARNING: Estimation was terminated because no ',"
+                           "'further improvement in',/,'          the likelihood was "
+                           "possible.  Check ','iteration output to ',/,'          "
+                           "confirm that model estimation really ','converged.')") + "\n");
+        if (!m.lprier) {
+            mt2.put(fwrite_fmt("(/)") + "\n");
+        } else if (ae == PSCTER) {
+            mt2.put(fwrite_fmt("('          Convergence tolerance on the likelihood is ',"
+                               "'too strict.',/)") + "\n");
+        } else if (ae == PSPMER) {
+            errhdr(ctx);
+            mt2.put(fwrite_fmt("(/,' WARNING: Convergence tolerance for the relative ',"
+                               "'difference in the',/,'          parameter estimates is "
+                               "too strict.')") + "\n");
+        } else {
+            errhdr(ctx);
+            mt2.put(fwrite_fmt("(/,'          Cosine of the angle between the vector of ',"
+                               "'expected values and ',/,'          any column of the "
+                               "jacobian is too small.',/)") + "\n");
+        }
+    } else if (ae == PNIFER || ae == PNIMER) {
+        // Invertibility errors. Print the estimates, and stop.
+        std::string str;
+        int nchr = 0;
+        getstr(ctx, m.oprttl.data(), m.oprptr.data(), m.noprtl, d.prbfac, str, nchr);
+        if (ctx.error.lfatal) return;
+        const std::string opr = str.substr(0, static_cast<std::size_t>(nchr));
+        errhdr(ctx);
+        if (ae == PNIFER) {
+            mt2.put(fwrite_fmt("(/,' ERROR: ',a,' has roots inside the unit circle but ',"
+                               "/,'some',/,'         parameters are fixed so cannot "
+                               "invert the ','operator.',/)", opr) + "\n");
+        } else {
+            mt2.put(fwrite_fmt("(/,' ERROR: ',a,' has roots inside the unit circle but ',"
+                               "'some are missing',/,'        so cannot invert the "
+                               "operator.  Try ','including all lags.',/)", opr) + "\n");
+        }
+        // prterr.f:170-175 -- Lprier is forced on for the root listing, which is
+        // Mt1-only: chkrt2's one Mt2 write is under `IF(Lprmsg)` and this call
+        // passes Lprmsg=F. So the stub is faithful on the gated channel.
+        const bool ltmper = m.lprier;
+        m.lprier = true;
+        int itmp = 0;
+        chkrt2(ctx, false, itmp, ctx.hiddn.lhiddn);
+        if (ctx.error.lfatal) return;
+        m.lprier = ltmper;
+        if (!lauto) abend(ctx);
+        return;
+    } else if (ae == PCNTER) {
+        // Stpitr convergence errors.
+        errhdr(ctx);
+        mt2.put(fwrite_fmt("(/,' ERROR: Convergence tolerance must be set larger than ',"
+                           "'machine',/,'precision',e25.14,'.',/)",
+                           2.0 / static_cast<double>(nefobs) * dpmpar(1)) + "\n");
+        if (!lauto) abend(ctx);
+        return;
+    } else if (ae == PDVTER) {
+        errhdr(ctx);
+        mt2.put(fwrite_fmt("(/,' WARNING: Deviance was less than machine precision ',"
+                           "'so could not',/,'          calculate the relative "
+                           "deviance.',/)") + "\n");
+    } else if (ae == PACSER) {
+        // Singular ARMA covariance matrix.
+        errhdr(ctx);
+        mt2.put(fwrite_fmt("(/,' WARNING: The covariance matrix of the ARMA ',"
+                           "'parameters is singular,',/,'          so the standard "
+                           "errors and the correlation ','matrix of the ARMA',/,"
+                           "'          parameters will not be printed out.',/)") + "\n");
+    } else if (ae == POBFN0) {
+        // Objective function equal to zero.
+        errhdr(ctx);
+        mt2.put(fwrite_fmt("(/,' ERROR: Differencing has annihilated the series.',/,"
+                           "'        Check the model specified in the arima spec,',"
+                           "' set or change',/,'        the possible differencing orders "
+                           "(if using the ','automdl spec), or',/,'        change the "
+                           "models specified in the automatic ','model file',/,"
+                           "'        (if using the pickmdl spec).')") + "\n");
+        if (!lauto) abend(ctx);
     }
 }
 

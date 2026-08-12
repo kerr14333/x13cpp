@@ -27,6 +27,8 @@ import tempfile
 
 import pytest
 
+from spec_text import spec_body
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
 _CORPUS = os.path.join(_REPO, "tests", "corpus")
@@ -116,7 +118,7 @@ def _trn_reproducible(spc: str) -> bool:
         shrink the trn span to a model span.
     Those are estimation-dependent and out of the M2 pre-model scope.
     """
-    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
+    txt = spec_body(spc).lower()
     txt = txt.replace(" ", "")
     if "function=auto" in txt or "automdl" in txt or "pickmdl" in txt:
         return False
@@ -138,7 +140,7 @@ def _implicit_lpyear(spc: str) -> bool:
     """True when a td/td1coef regressor plus a log transform induces the
     implicit leap-year prior adjustment (gtinpt.f Picktd -> rmlnvr.f), which the
     pre-model phase reproduces (a2/a3 = lpyear factors / adjusted data)."""
-    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower().replace(" ", "")
+    txt = spec_body(spc).lower().replace(" ", "")
     if "function=log" not in txt:
         return False
     if "tdstock" in txt or "automdl" in txt or "pickmdl" in txt or "aictest" in txt:
@@ -152,7 +154,7 @@ def _has_predefined_adjust(spc: str) -> bool:
     predefined length-of-period / leap-year prior reproduced by priadj.cpp.
     (Other paths that emit a2/a3, e.g. the SEATS a3, are out of the pre-model
     scope.)"""
-    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower().replace(" ", "")
+    txt = spec_body(spc).lower().replace(" ", "")
     return "adjust=lom" in txt or "adjust=loq" in txt or "adjust=lpyear" in txt
 
 
@@ -169,7 +171,7 @@ def _rmx_reproducible(spc: str) -> bool:
     when automatic outlier identification (outlier spec) or automatic model /
     regressor selection can add or drop columns before arima.f's savmtx call,
     or when the spec uses regressor families the M2 slice has not ported."""
-    txt = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
+    txt = spec_body(spc).lower()
     txt = txt.replace(" ", "")
     if "outlier{" in txt or "automdl" in txt or "pickmdl" in txt:
         return False
@@ -179,7 +181,7 @@ def _rmx_reproducible(spc: str) -> bool:
         return False
     # Unported regressor families (loud-abend paths in the C++): keep only
     # specs whose variables list is drawn from the ported set.
-    raw = open(spc, "r", encoding="utf-8", errors="replace").read().lower()
+    raw = spec_body(spc).lower()
     m = re.search(r"variables\s*=\s*\(([^)]*)\)", raw)
     if m:
         ported = {"const", "seasonal", "td", "tdnolpyear", "td1coef",

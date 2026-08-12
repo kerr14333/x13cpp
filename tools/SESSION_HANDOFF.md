@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7951<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->917<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7982<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->915<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -430,7 +430,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7951<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->7982<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -3084,6 +3084,68 @@ in `walls.py`'s HELPERS and GAP_HELPERS in the same commit -- the count moved
 gates**. Mutations fail 3 / 4 / 4. Suite **7951 passed, 0 failed, 917 skipped**,
 ctest 12/12, WALLS **22 gaps / 4 faithful**. Entry 107, CB-44.
 
+## This session, part 59: open item 9 CLOSED -- a fit that never converged returned `OUTCOME: OK`
+
+Three things missing at once, and the whole estimation-error report was one of
+them.
+
+**`arima.f:1216` is a BARE `ELSE CALL abend`** -- the ELSE of `IF(Convrg)` at
+`:1046`, which wraps prtacf, the check{} battery, the residual QS, `spcrsd`,
+the model-span restore, the forecasts and the backcasts. Everything ahead of it
+(aape, prtmdl, savotl, prlkhd, prtrts) runs on a non-converged fit, which is why
+the oracle's `.udg` carries `converged: no` AND `errorstop: yes`. **`:525`'s
+`IF(.not.Convrg)CALL abend()` is a different guard** -- it belongs to the
+`.NOT.Hvmdl` arm at `:476`, still unported. The pairing script, not the
+indentation.
+
+**`prterr.f` was `(void)nefobs; (void)lauto;`** -- counted as ported because its
+one numeric effect was there. `Lauto` selects the message TEXT and gates five
+`abend()`s; fifteen `Armaer` branches had none. Ported now (Mt2 half + control
+flow) with `itrerr.f`, `prarma.f` and `chkmu.f:88-96`'s constant-term NOTE.
+itrerr's arms differ in CONTENT, not channel: automatic offers two remedies,
+explicit offers three with the ARMA start values printed under (2) -- hence two
+specs. `chkrt2`'s stub stays faithful: prterr passes `Lprmsg=F`, which is the
+flag on its only Mt2 write.
+
+**`arima.f:711`/`:772` had no prterr call**, so the EXPLICIT-model path -- most
+of the corpus -- reached the halt silently even once the messages existed.
+
+**Three defects found by the gate, not by the port.** (a) `x13run_x11` decided
+it had tables to dump from `x11ptr.pos1ob`, which the pre-MODEL editor sets, so
+a run that died in estimation printed `b1`/`d10`..`d13` as 144 zeros where the
+oracle writes no file; now `ctx.x11_stage_ran`, set in `x11_prestage`. Moving
+that guard hid the `===ERR===` block behind it for one build -- the Mt2 dump now
+precedes it on every path. (b) `x11mdl.f:614`'s reweight abend was emitting a
+blank line its FORMAT does not have. (c) **A spec's own header comment was
+disabling its gates**: `test_m3_estimate` and five `test_m2_tables` predicates
+scope by token over the RAW file, so `airline_estimate-maxiter-noconverge` --
+which contains no `automdl{}`, only a comment naming the sibling that covers
+that arm -- silently left M3. `tests/parity/spec_text.py` strips `#` comments;
+**eleven** specs came back, ten of them the `composite-*/region_*` components,
+all passing. M3 now states its floor.
+
+**New gate `tests/parity/test_halt_err.py`**, discovered from
+`oracle_halted() and oracle_reported()` -- **8 specs**, six of them pre-existing
+and never `.err`-compared. `test_m1_parse` cannot cover them: it compares ERROR
+text only where it classifies the spec REJECTED, and a late halt is by
+construction the other case. Two assertions: the block verbatim, and the mirror
+(a tag the SPEC asked for and the ORACLE withheld must not be printed).
+`_UNPORTED_BLOCKS` holds one entry with the usual guard -- `spcrsd.f:140-184`'s
+residual-spectrum peak WARNING, now open item 10.
+
+**Landed.** `extra/airline_automdl-user-reg-noconverge`,
+`extra/airline_estimate-maxiter-noconverge`, **+31 gates**. Eight mutations,
+all fail (6/3/2/1/1/1/1/1). Suite **7982 passed, 0 failed, 915 skipped**, ctest
+12/12, WALLS unchanged **22 gaps / 4 faithful** (the halt is the oracle's own;
+a transcribed bare abend is not a gap). Entry 108. No CB.
+
+**One unexplained event, not waved away.** The first full-suite run after this
+landed had `test_x11_diagnostics::test_d8b_d9a[d8b-extra/airline_pickmdl-backcast-oos]`
+fail with the harness exiting 3221225477 (`STATUS_ACCESS_VIOLATION`), empty
+stdout and empty stderr. Not reproduced by 40 concurrent runs, 40 serial runs,
+the gate file alone under `-n 8`, or two further full suites. Recorded, not
+attributed and not claimed fixed -- if it recurs, that is the thread.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -3224,16 +3286,37 @@ ctest 12/12, WALLS **22 gaps / 4 faithful**. Entry 107, CB-44.
    Note the pairing with item 7: porting `usraic.f`/`chkchi.f` would make
    `Chi2cv`/`Tlimit` live, so that port must land the two parse arms with it.
 
-9. **`automdl{}` on a spec carrying user regressors: the oracle refuses and
-   this engine returns `OUTCOME: OK`.** Found as the CONTROL run while looking
-   for a way to gate usraic's automdl call sites (part 58), so it is measured
-   with `aictest=` absent -- it is not an AIC-test defect.
-   `generated/airline_user-reg-x11` with `arima{}` replaced by `automdl{ }`:
-   the oracle halts with `ERROR: Estimation failed to converge -- maximum
-   iterations reached`, this engine completes. The dangerous direction, and it
-   is what makes the four `usraic` call sites inside `automd.f`/`automx.f`
-   ported-and-ungated: any aictest probe built on this spec measures this
-   instead. Close it before re-probing those.
+9. ~~**`automdl{}` on a spec carrying user regressors: the oracle refuses and
+   this engine returns `OUTCOME: OK`.**~~ **CLOSED 2026-08-11 (part 59, entry
+   108)**, and it was never about automdl or about user regressors: any
+   regARIMA fit that failed to converge ran on to a full adjustment with an
+   empty `.err`. `arima.f:1046`'s `IF(Convrg)` and its bare `ELSE CALL abend`
+   at `:1216` are ported, `prterr.f`/`itrerr.f`/`prarma.f`/`chkmu.f`'s NOTE
+   have their message half, and `arima.f:711`/`:772`'s prterr calls exist on
+   the explicit-model path. Gated by
+   `extra/airline_automdl-user-reg-noconverge` and
+   `extra/airline_estimate-maxiter-noconverge` through the new
+   `tests/parity/test_halt_err.py`.
+
+   **What this UNBLOCKS, and the honest state of it:** entry 107 left usraic's
+   four `automd.f`/`automx.f` call sites ported and ungated because the only
+   probe available diverged before the AIC test ran. That control run now
+   agrees with the oracle -- both halt, byte-identical `.err`. But the halt is
+   still a halt: an automdl-plus-user-regressor spec cannot reach usraic's
+   automatic call sites on THIS series. What is needed is a series where the
+   automdl default model converges with user columns present; the probe is
+   cheap now that the control is trustworthy. Read entry 107 first.
+
+10. **`spcrsd.f:140-184`'s residual-spectrum peak WARNINGs are unported.**
+    Three sibling texts (seasonal / trading day / both), each with a SEATS and
+    a regARIMA wording, on Mt1+Mt2. The PEAKS themselves are computed and gated
+    (`spcrsd`/`peaks.*` udg keys, `test_spectrum_peaks`); only the WARNING has
+    no C++. Carried as the single entry of `test_halt_err._UNPORTED_BLOCKS`,
+    subtracted from the golden side of that gate, with
+    `test_unported_halt_blocks_still_unported` requiring it to stay carried by
+    a golden -- so it cannot rot, and deleting the entry is the last step of
+    porting it. Note `spcdrv.f:613` has a fourth sibling on the SERIES
+    spectrum, which no late-halt golden carries.
 
 ## Environment notes
 

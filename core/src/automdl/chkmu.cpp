@@ -12,6 +12,7 @@
 #include "specparse/specparse.hpp"   // strinx, adrgef, dlrgef, copy, abend
 #include "gen/model.hpp"             // prm::PB, PRGTCN
 #include "gen/notset.hpp"            // prm::DNOTST
+#include "x13/fformat.hpp"           // fwrite_fmt (chkmu.f:1010's Mt2 NOTE)
 
 namespace x13 {
 
@@ -95,7 +96,18 @@ void chkmu(X13Context& ctx, double* trnsrs, double* a, int& nefobs, int& na,
         int icol = m.grp(kmu) - 1;   // last column of group kmu == the constant
         if (std::abs(tval[icol - 1]) < cval) kmu = -1;
     } else {
-        // Non-convergence NOTE deferred; drop the constant.
+        // chkmu.f:88-96. The Mt1 half is the deferred .out engine; the Mt2 half
+        // is the .err, which this port does emit -- and until it did, an
+        // automdl run whose constant-term trial failed to converge produced a
+        // completely empty `===ERR===` block where the oracle writes a NOTE.
+        // No errhdr: the Fortran does not call one here.
+        ctx.channels_.unit(ctx.units.mt2).put(
+            fwrite_fmt("(/,' NOTE: Cannot perform test for constant term:',/,"
+                       "'       Model estimation does not converge when ',"
+                       "'constant term added.',//,"
+                       "'       Constant term will not be included in regARIMA'"
+                       ",' model',/)") +
+            "\n");
         kmu = -1;
     }
 

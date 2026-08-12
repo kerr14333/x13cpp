@@ -581,6 +581,12 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     x11pt2(ctx, lmodel, lx11, lseats, lgraf, lgrfxr);
     if (ctx.error.lfatal) return false;
 
+    // The adjustment stage has produced real buffers from here on, so the
+    // harnesses may dump them even if a LATER phase fatals. See the field's
+    // comment in x13context.hpp: the span pointers this used to be keyed on are
+    // set by the pre-MODEL editor geometry and so were true of a run that never
+    // reached X-11 at all.
+    ctx.x11_stage_ran = true;
     return true;
 }
 

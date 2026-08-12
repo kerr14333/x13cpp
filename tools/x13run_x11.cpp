@@ -308,6 +308,18 @@ int main(int argc, char** argv) {
         // Surface the .err channel so a FATAL names its blocking stub.
         std::fputs(ctx.channels_.unit(ctx.units.mt2).str().c_str(), stderr);
     }
+    // The Mt2 channel, in x13run_m2's marker format. The oracle writes it to
+    // <base>.err, and it is where every non-fatal NOTE and WARNING lands --
+    // including the two that are the only observable of a sliding-spans
+    // Itd/Ihol demote (ssphdr.f:2000/2001), whose whole effect is that a table
+    // is NOT produced. Emitted on EVERY path, fatal or not, and BEFORE the
+    // table guard below: a diagnostic nobody can read is a diagnostic nobody
+    // gates, and the runs that halt earliest are exactly the ones whose entire
+    // observable is this block (docs/M5_PORT_NOTES.md entries 81, 85, 95).
+    std::fputs("===ERR===\n", stdout);
+    std::fputs(ctx.channels_.unit(ctx.units.mt2).str().c_str(), stdout);
+    std::fputs("===END ERR===\n", stdout);
+
     // A FATAL raised by a LATE refusal still has a complete main run behind it,
     // and throwing it away makes that run ungateable. `slidingspans{}` with a
     // change-of-regime regressor is the worked case: the oracle finishes the
@@ -317,25 +329,21 @@ int main(int argc, char** argv) {
     // lesson as the Mt2 channel below -- a channel nobody can read is a channel
     // nobody gates (docs/M5_PORT_NOTES.md entries 81, 85).
     //
-    // Guarded on the X-11 pointers actually being set, so an EARLY fatal (a
-    // parse refusal, a bad series) still prints nothing rather than dumping an
-    // uninitialised buffer: those specs have no tables to compare anyway, and a
-    // gate that reads garbage is worse than one that skips.
-    const bool reached_x11 =
-        ctx.model.sp > 0 && ctx.x11ptr.pos1ob > 0 &&
-        ctx.x11ptr.posfob >= ctx.x11ptr.pos1ob;
-    if (!ok && !reached_x11) return 1;
+    // Guarded on the adjustment stage having actually run, so an EARLY fatal (a
+    // parse refusal, a bad series, a regARIMA fit that never converged) still
+    // prints nothing rather than dumping an uninitialised buffer: those specs
+    // have no tables to compare anyway, and a gate that reads garbage is worse
+    // than one that skips.
+    //
+    // This used to test `sp > 0 && x11ptr.pos1ob > 0 && posfob >= pos1ob` --
+    // a PROXY, and the wrong one. Those pointers are written by the pre-MODEL
+    // editor geometry (x11_editor_geometry, editor.f:206-233), so they are set
+    // on a run that halts in ESTIMATION and never computes a single X-11 table:
+    // `extra/airline_estimate-maxiter-noconverge` dumped b1/d10/d11/d12/d13 as
+    // 144 zeros each where the oracle writes no save file at all. State the
+    // trigger in the condition, not a symptom of it.
+    if (!ok && !ctx.x11_stage_ran) return 1;
     const int exit_code = ok ? 0 : 1;
-
-    // The Mt2 channel on a SUCCESSFUL run, in x13run_m2's marker format. The
-    // oracle writes it to <base>.err, and it is where every non-fatal NOTE and
-    // WARNING lands -- including the two that are the only observable of a
-    // sliding-spans Itd/Ihol demote (ssphdr.f:2000/2001), whose whole effect is
-    // that a table is NOT produced. Dumped unconditionally rather than only on
-    // FATAL: a diagnostic nobody can read is a diagnostic nobody gates.
-    std::fputs("===ERR===\n", stdout);
-    std::fputs(ctx.channels_.unit(ctx.units.mt2).str().c_str(), stdout);
-    std::fputs("===END ERR===\n", stdout);
 
     const int sp = ctx.model.sp;
     const int* begspn = ctx.mdldat.begspn.data();

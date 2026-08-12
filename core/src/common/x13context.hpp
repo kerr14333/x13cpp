@@ -210,6 +210,16 @@ struct X13Context {
     tests_cmn x11_f2tests{};
     bool x11_f2tests_set = false;
 
+    // Did the ADJUSTMENT stage actually run? The harnesses dump their table
+    // buffers on a FATAL as well as on success (a late refusal has a complete
+    // run behind it and throwing it away makes that run ungateable -- entry
+    // 85), and they used to decide that on the x11ptr span pointers being set.
+    // Those are written by the PRE-MODEL editor geometry, so a run that halted
+    // in regARIMA estimation -- before a single X-11 table existed -- dumped
+    // b1/d10..d13 full of zeros where the oracle writes no save file at all.
+    // Set once, in x11_prestage, after the pre-stage has actually produced B1.
+    bool x11_stage_ran = false;
+
     // check{}'s residual diagnostics (arima.f:1044-1102 -- acf/pacf
     // significance, Ljung-Box + Box-Pierce Q, normality, Durbin-Watson,
     // Friedman). Diagnostic only; nothing downstream reads it, which is why

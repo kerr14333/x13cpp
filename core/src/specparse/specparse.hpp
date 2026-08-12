@@ -25,6 +25,7 @@ inline constexpr char VERNUM[] = "1.1";
 inline constexpr char PRGNAM[] = "X-13ARIMA-SEATS";
 inline constexpr char DOCNAM[] = "Reference Manual";
 inline constexpr char LIMSEC[] = "Section 2.7";
+inline constexpr char MDLSEC[] = "Section 5";
 } // namespace stdio
 
 // --------------------------------------------------------------------------

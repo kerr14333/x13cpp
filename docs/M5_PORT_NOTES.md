@@ -7739,3 +7739,161 @@ a separate lead; do not re-probe usraic through automdl until it is closed.
 
 Suite **7951 passed, 0 failed, 917 skipped, 0 xfailed**; ctest 12/12. WALLS
 **22 gaps / 4 faithful** (+2, both replacing bare abends).
+
+## 108. A regARIMA fit that never converged returned `OUTCOME: OK` -- and the whole estimation-error report was a four-line stub (2026-08-11)
+
+Open item 9, opened as the CONTROL run of entry 107's abandoned automdl probe:
+`generated/airline_user-reg-x11` with `arima{}` replaced by `automdl{ }`, no
+`aictest=` anywhere. The oracle writes two blocks to its `.err` and halts. This
+engine wrote an EMPTY `===ERR===` block and returned `OUTCOME: OK`, having gone
+on to produce a full X-11 adjustment from a model whose second user coefficient
+had blown up to `-9.3e+14`.
+
+Three separate things had to be missing at once for that, and each is a
+different shape of the same class.
+
+### 1. The halt: `arima.f:1216`, a bare `ELSE CALL abend`
+
+```fortran
+c     If estimation did not converge, exit with an error
+       ELSE
+        CALL abend
+        RETURN
+       END IF
+```
+
+It is the ELSE of `IF(Convrg)THEN` at `arima.f:1046`, which wraps the entire
+tail of the estimation phase -- prtacf and the whole check{} battery, the
+residual QS, `spcrsd`, the model-span restore, the forecasts and the backcasts.
+Everything BEFORE it (aape, prtmdl, savotl, prlkhd, prtrts, savmdl) runs on a
+non-converged fit, which is why the oracle's `.udg` here still carries
+`aape.*`, `roots.ma.*` and `converged: no` before `errorstop: yes`.
+
+**Read the pairing, do not read the indentation** -- again. `IF(.not.Convrg)
+CALL abend()` at `:525` looks like the same guard nine hundred lines earlier and
+is not: it belongs to the `.NOT.Hvmdl` arm of `IF(Hvmdl)` at `:476`, i.e. the
+no-model-selected cleanup that is still unported. The twenty-line IF/ELSE/END IF
+pairing script found the real one in a minute.
+
+### 2. The report: `prterr.f` was a stub that dropped both its arguments
+
+```cpp
+void prterr(X13Context& ctx, int nefobs, bool lauto) {
+    (void)nefobs;
+    (void)lauto;
+    ...
+}
+```
+
+`tools/coverage_map.py` counted prterr as ported, and it was -- its one
+non-print effect (zero the fit on `PUNKER`) was there. But `Lauto` selects the
+message TEXT and gates five `CALL abend()`s, and `Nefobs` is a number inside
+FORMAT 1180. This is the `(void)param;` shape CLAUDE.md already names, in the
+routine whose entire job is to say what went wrong: fifteen `Armaer` branches,
+of which the port had the numeric effect of one.
+
+Ported now as the Mt2 half plus the control flow -- `itrerr.f` and `prarma.f`
+with it, and `chkmu.f:88-96`'s constant-term NOTE, which had the same "print
+deferred" comment on it. The Mt1 listing stays with the deferred `.out` engine;
+STDERR's FORMAT 1230 courtesy line goes to a channel no gate reads.
+
+`itrerr`'s two arms are not the same text on different channels:
+
+| `Lauto` | remedies offered |
+|---|---|
+| true (automdl/pickmdl) | (1) more iterations, (2) try a different model |
+| false (explicit model) | (1) more iterations, (2) **use these ARMA start values**, (3) try a different model -- with `prarma.f` printing them |
+
+so both needed a spec. `chkrt2`'s root listing under the two invertibility
+branches is genuinely Mt1-only: prterr passes `Lprmsg=F` and that is the flag on
+chkrt2's single Mt2 write, so the existing stub is faithful on the gated
+channel.
+
+### 3. `arima.f:711` -- the explicit-model path had no prterr call at all
+
+The automatic paths call prterr from inside `automd`/`automx`/`iddiff`/`pass2`.
+The plain `ELSE` arm -- an explicit `arima{}` model, which is most of the corpus
+-- calls it at `arima.f:711`, unconditionally, and again at `:772` after
+`idotlr` on `.not.Convrg`. Neither was ported. So even with prterr's messages
+in place, `estimate{maxiter=2}` reached the halt with nothing written.
+
+### What the gate found on the way in
+
+**The harness decided it had tables to print from a PROXY.** `x13run_x11`
+dumped its buffers on a fatal when `sp > 0 && x11ptr.pos1ob > 0 && posfob >=
+pos1ob`. Those pointers are written by the pre-MODEL editor geometry
+(`editor.f:206-233`), so they are set on a run that dies in estimation and
+computes no X-11 table at all: both new specs dumped `b1`/`d10`/`d11`/`d12`/`d13`
+as 144 zeros apiece where the oracle writes no save file. Replaced by
+`ctx.x11_stage_ran`, set in `x11_prestage` after x11pt2. **State the trigger,
+not a symptom of it** -- and note the guard's own comment already said its
+purpose was "not to dump an uninitialised buffer", which is exactly what it was
+doing.
+
+Moving that guard then hid the `===ERR===` block behind it, which is the trap
+one line further on: the earliest-halting runs are the ones whose ENTIRE
+observable is that block. The Mt2 dump now precedes the table guard on every
+path.
+
+**`x11mdl.f:614`'s reweight abend was emitting a blank line the FORMAT does not
+have.** `WRITE(Mt2,1000)` with no leading `/`; the port passed `writln`'s
+`lblnk=true`. Invisible for as long as the only `.err` comparison in the suite
+compared ERROR LINES rather than the block.
+
+**A spec's own header comment was disabling its gates.**
+`test_m3_estimate._estimation_reproducible` and five predicates in
+`test_m2_tables` scope by token (`"automdl" in flat`, `"composite{" in flat`)
+over the RAW file. `extra/airline_estimate-maxiter-noconverge` contains no
+`automdl{}` -- its comment names the sibling spec that covers that arm -- and
+that was enough to drop it out of M3 silently. Stripping `#` comments
+(`tests/parity/spec_text.py`) brings in **eleven** specs, ten of them the
+`census-examples/composite-*/region_*.spc` components, all passing. The
+discovery-predicate rule with a twist: the more carefully a spec is documented,
+the less of it was tested. M3's floor assertion now states the count.
+
+### The gate
+
+`tests/parity/test_halt_err.py`, discovered rather than listed: every golden
+where `oracle_halted() and oracle_reported()` -- the two predicates the phase
+gates already share. **8 specs**, only two of them this increment's.
+`test_m1_parse` could not cover them: it compares ERROR text only on specs it
+classifies as REJECTED, and "rejected" there means "errored with no complete
+report behind it", which a late halt is by construction not.
+
+Two assertions per spec: the `.err` block verbatim (not just its ERROR lines --
+see the blank line above), and the mirror -- for every tag the SPEC asked to
+save that the ORACLE wrote no file for, the engine must print no rows. The
+second one exists because the table gates skip an absent golden, which is how
+the zero-filled `b1` survived every gate in the suite.
+
+`_UNPORTED_BLOCKS` carries one entry, with the usual still-unported guard:
+`spcrsd.f:140-184`'s residual-spectrum peak WARNING. The peaks are computed and
+gated; the three-line WARNING has no C++.
+
+### Gated by
+
+`extra/airline_automdl-user-reg-noconverge` (itrerr's Lauto arm + chkmu's NOTE),
+`extra/airline_estimate-maxiter-noconverge` (the explicit arm + prarma).
+
+| mutation | fails |
+|---|---|
+| harness table guard back to the span-pointer proxy | **6** |
+| `arima.f:1216`'s abend never fires | 3 |
+| prterr back to the four-line stub | 2 |
+| chkmu's constant-term NOTE suppressed | 1 |
+| itrerr's `Lauto` arm forced to the explicit text | 1 |
+| prarma's start values not printed | 1 |
+| `arima.f:711`'s prterr call removed | 1 |
+| the reweight abend's `lblnk` back to true | 1 |
+
+Suite **7982 passed, 0 failed, 915 skipped, 0 xfailed**; ctest 12/12. WALLS
+unchanged **22 gaps / 4 faithful** -- nothing here is a gap, the halt is the
+oracle's own and the bare abend is transcribed bare.
+
+**One unexplained event, recorded rather than waved away.** The first full-suite
+run after this landed had `test_x11_diagnostics::test_d8b_d9a[d8b-extra/
+airline_pickmdl-backcast-oos]` fail with the harness exiting 3221225477
+(`STATUS_ACCESS_VIOLATION`), empty stdout and empty stderr. It has not
+reproduced: 40 concurrent runs, 40 serial runs, the gate file alone under `-n 8`,
+and two more full suites are all clean. Not attributed to this increment and not
+claimed fixed.
