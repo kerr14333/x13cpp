@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9008<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->938<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9034<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->942<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -430,7 +430,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->9008<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->9034<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -3217,8 +3217,10 @@ collapsed -- cutting a block out cannot preserve blank structure, and everywhere
 else the comparison is exact, which is where two of the three defects above were
 caught.
 
-**Landed.** `extra/airline_sma-s3x15-rsdpeak`. `editor.f:2071-2097`'s two 3x15
-WARNINGs ported (one entry off the unported list). Identical `.err`: **129 ->
+**Landed.** `extra/airline_sma-s3x15-rsdpeak` and
+`extra/airline_force-constant-rsdpeak`. `editor.f:2071-2097`'s two 3x15 WARNINGs
+and `x11pt3.f`'s three negative-value NOTEs ported (**19 -> 16** on the unported
+list), the last of which is what made the placement gateable at all. Identical `.err`: **129 ->
 525 of 525**. Eleven mutations, all fail
 (661/294/28/14/4/2/2/2/1/1/1 over the four affected gate files). Suite **9008
 passed, 0 failed, 938 skipped**, ctest 12/12, WALLS unchanged **22 gaps / 4
@@ -3394,19 +3396,20 @@ faithful**. Entry 109. **CB-45.**
 
     **What replaces it, in the order I would take it:**
 
-    * **`_UNPORTED_BLOCKS` is the inventory now -- 19 entries**, each a real
-      NOTE/WARNING the oracle writes and this engine does not, each carried by
-      a golden and guarded in both directions. Working the list down is
-      ordinary, well-measured work with a gate already in place. The three
-      `x11force.f` negative-value NOTEs are the ones with leverage: porting any
-      x11pt3-phase message makes it possible to write the spec that GATES
-      spcrsd's placement (see below).
-    * **The residual-spectrum placement is ported faithfully and still
-      ungated.** `run_residual_spectrum` runs where the oracle runs it
-      (`arima.f:1126`, the estimation phase), but no corpus golden pairs an
-      x11pt2/x11pt3 Mt2 write with a residual peak, so computing it late --
-      where it used to be -- produces the same file on all 525. A spec with a
-      residual peak AND a ported x11pt3 NOTE closes that.
+    * **`_UNPORTED_BLOCKS` is the inventory now -- 16 entries** (it opened at
+      19), each a real NOTE/WARNING the oracle writes and this engine does not,
+      each carried by a golden and guarded in both directions. Working the list
+      down is ordinary, well-measured work with a gate already in place.
+    * ~~**The residual-spectrum placement is ported faithfully and still
+      ungated.**~~ **GATED**, same day. The leverage was exactly as predicted:
+      porting `x11pt3.f`'s three negative-value NOTEs (`:647`, `:796`, `:863`)
+      made the spec writable, and `extra/airline_force-constant-rsdpeak` is
+      `-force-constant-denton` with `(0 1 1)(0 1 1)` changed to `(0 1 1)(0 0 0)`
+      -- dropping the seasonal MA leaves seasonality in the residuals, whose
+      spectrum then clears the six-star threshold the sibling misses at 5.8.
+      The residual WARNING has to precede three x11pt3 NOTEs; compute the block
+      late and it lands with the LAST one. Mutation-proved on that spec alone
+      (same two lines, position 5 -> 20).
     * **The `Prttab(LSPCRS)` precondition is SATURATED**, 293 of 293. The
       warning is gated on a print-table dictionary this port does not have, so
       it is taken as true. A `print=` that suppressed the table would diverge

@@ -12,8 +12,9 @@ What that hid, measured the day this file was widened: **396 of the 525
 differed.** 313 were the spectrum peak WARNINGs -- three texts in `spcrsd.f`
 and two in `spcdrv.f`, on every monthly run that finds a visually significant
 peak, computed and gated as NUMBERS since entry 46 and never once emitted as
-text. The rest is a long tail of nineteen unported blocks (`_UNPORTED_BLOCKS`
-below), and three real defects that had nothing to do with the warnings:
+text. The rest is a long tail of unported blocks (`_UNPORTED_BLOCKS` below --
+nineteen when this file was widened, sixteen by the end of the same day), and
+three real defects that had nothing to do with the warnings:
 
   * `x11mdl.f:316`'s AIC-reject NOTE was routed through `writln(.., Mt2, Mt2,
     ..)` -- the same unit twice -- so every line came out DOUBLED and indented
@@ -117,8 +118,8 @@ HALT_CASES = [c for c in CASES
 # by some golden AND to still be absent from every engine run.
 #
 # This list IS the inventory of what the `.err` front is missing, and it is
-# meant to shrink. Nineteen entries as of 2026-08-13; nothing here is a
-# spectrum peak warning any more.
+# meant to shrink. SIXTEEN entries as of 2026-08-13 -- it opened at nineteen
+# and x11pt3.f's three force NOTEs came off it the same day.
 _UNPORTED_BLOCKS = (
     # seatop.f -- SEATS asks for a longer forecast horizon than the spec set.
     "NOTE: A longer forecast horizon is required by the SEATS signal extraction",
@@ -140,10 +141,6 @@ _UNPORTED_BLOCKS = (
     "WARNING:  User-defined prior adjustment factor not provided",
     # prlkhd.f -- the AIC block on an approximate (conditional) likelihood.
     "NOTE:  AIC and related statistics are printed only for exact",
-    # x11force.f -- the negative-value corrections. Three sibling texts.
-    "NOTE: Negative values were created in the seasonally adjusted series when",
-    "NOTE: Values <= 0 were found in the forced seasonally adjusted series.",
-    "NOTE: Values <= 0 were found in the final forced seasonally adjusted series.",
     # checkres -- the normality battery on a short series. Two siblings.
     "NOTE: The program cannot perform hypothesis tests for kurtosis on",
     "NOTE: The program cannot compute the significance of skewness statistic",
@@ -470,7 +467,15 @@ def test_err_cases_discovered() -> None:
                  "extra/airline_estimate-maxiter-noconverge",   # itrerr, explicit arm
                  "extra/airline_x11regression-aictest-tdrej",   # CB-45
                  "census-examples/composite-fixed/region_north",  # composite path
-                 "census-examples/01-basic-x11"):               # spcdrv's warning
+                 "census-examples/01-basic-x11",                # spcdrv's warning
+                 # The one spec in the corpus that pins WHERE the residual
+                 # spectrum runs: its residual WARNING (arima.f:1126, the
+                 # estimation phase) has to come out AHEAD of three x11pt3
+                 # force NOTEs. Derive the residual block late -- with the
+                 # other three spectra, where it used to live -- and it lands
+                 # with the last of them instead. Every other .err golden is
+                 # blind to the difference.
+                 "extra/airline_force-constant-rsdpeak"):
         assert need in CASES, f"{need} is no longer discovered"
 
 

@@ -1248,16 +1248,38 @@ vtc(ctx, stc, stci);
     // series back in editor.f, so the PUBLISHED seasonally adjusted series and
     // original have it taken back out here. The pre-removal D11 is kept as
     // Stcipc, which is the `sac` save table ("SA series with the constant").
-    // The negative-value message is print surface, but its Iyrt>0 floor at zero
-    // is not -- force reads Stci afterwards.
+    // Its Iyrt>0 floor at zero is not print surface -- force reads Stci
+    // afterwards.
     if (!dpeq(adjc.cnstnt, prm::DNOTST)) {
         const double c = adjc.cnstnt;
+        bool negmsg = false;
         ctx.x11_stcipc.assign(stci, stci + PLEN);
         for (int i = pos1ob; i <= posffc; ++i) {
             stci[i - 1] -= c;
             series[i - 1] -= c;
-            if (!(stci[i - 1] > 0.0) && muladd != 1 && frc.iyrt > 0)
-                stci[i - 1] = 0.0;
+            if (!(stci[i - 1] > 0.0) && muladd != 1) {
+                negmsg = true;
+                if (frc.iyrt > 0) stci[i - 1] = 0.0;
+            }
+        }
+        // x11pt3.f:647-656. `gudrun` is x11pt3.f:76's
+        // `Issap.lt.2 .and. Irev.lt.4 .and. Khol.ne.1` -- the message is a
+        // MAIN-run diagnostic and a sliding-spans or history replay, or the
+        // classic-Easter transparent pass, must not repeat it.
+        const bool gudrun = hid.issap < 2 && hid.irev < 4 && opt.khol != 1;
+        if (negmsg && gudrun) {
+            const int mt1 = ctx.units.mt1;
+            const int mt2 = ctx.units.mt2;
+            writln(ctx, "NOTE: Negative values were created in the seasonally "
+                        "adjusted series when ", mt1, mt2, true);
+            writln(ctx, "      removing the temporary constant.", mt1, mt2,
+                   false);
+            if (frc.iyrt > 0) {
+                writln(ctx, "      Negative values in the seasonally adjusted "
+                            "series were replaced by ", mt1, mt2, true);
+                writln(ctx, "      zero before forcing annual totals.", mt1,
+                       mt2, false);
+            }
         }
     } else {
         ctx.x11_stcipc.clear();
@@ -1369,8 +1391,30 @@ vtc(ctx, stc, stci);
                     if (!(stci2[i - 1] > 0.0)) negfin = true;
             }
         }
-        // (deferred: D11A/rnd/e6*/p6*/cr/rr table + punch; the negmsg/negfin
-        // NOTE messages.)
+        // (deferred: D11A/rnd/e6*/p6*/cr/rr table + punch.)
+
+        // x11pt3.f:796-806 -- the correction NOTE. Two arms: with forcing on
+        // (Iyrt>0) the three-line "prorated with the target series" text, and
+        // without it a single line. Only the first can be reached from here --
+        // the whole block sits inside `IF(Iyrt.gt.0)` at x11pt3.f:673 -- but
+        // the ELSE is transcribed because the Fortran has it and a reader who
+        // finds only one arm cannot tell which.
+        if (negmsg) {
+            const int mt1 = ctx.units.mt1;
+            const int mt2 = ctx.units.mt2;
+            writln(ctx, "NOTE: Values <= 0 were found in the forced seasonally "
+                        "adjusted series.", mt1, mt2, true);
+            if (frc.iyrt > 0) {
+                writln(ctx, "      These values were corrected by replacing "
+                            "the negative values with zero", mt1, mt2, false);
+                writln(ctx, "      and prorating the modified forced "
+                            "seasonallyadjusted series with ", mt1, mt2, false);
+                writln(ctx, "      the target series.", mt1, mt2, false);
+            } else {
+                writln(ctx, "      These values were corrected by replacing "
+                            "the negative values with zero.", mt1, mt2, false);
+            }
+        }
 
         // x11pt3.f:812-814 -- the residual-seasonality F-test AGAIN, now on the
         // FORCED series. Its print flags differ but its Lsav is the same, so it
@@ -1415,6 +1459,21 @@ vtc(ctx, stc, stci);
                                     : prm::DNOTST;
         } else {
             divsub(frcfac, stci, stci2, pos1ob, lstfrc, muladd);
+        }
+
+        // x11pt3.f:863-868 -- and it is gated on `negmsg`, not on `negfin`,
+        // which is the flag the -999 it describes actually keys on. So a run
+        // where the prorating fixed everything still claims factors were set to
+        // -999. Transcribed as written; not filed as a CB because no corpus
+        // spec separates the two (every negmsg here has negfin with it) and an
+        // unmeasured Census bug is a guess.
+        if (negmsg) {
+            const int mt1 = ctx.units.mt1;
+            const int mt2 = ctx.units.mt2;
+            writln(ctx, "NOTE: Values <= 0 were found in the final forced "
+                        "seasonally adjusted series.", mt1, mt2, true);
+            writln(ctx, "      Forcing factors for these observations were set "
+                        "to -999.", mt1, mt2, false);
         }
     } else {
         copy(stci, posffc, 1, stci2);

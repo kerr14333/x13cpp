@@ -8084,3 +8084,68 @@ the count is exactly one -- the same defect this entry found in `x11mdl.f`,
 hiding one level up in the machinery built to find it.
 
 Suite **9008 passed, 0 failed, 938 skipped, 0 xfailed**; ctest 12/12; WALLS unchanged 22 gaps / 4 faithful.
+
+### Same day: the placement got its gate, and the three force NOTEs got ported
+
+The section above closes with "the residual-vs-x11pt3 order is still ungated,
+and openly so: it needs a spec pairing a residual peak with a ported
+x11pt3-phase NOTE, and today all three of those are unported." Both halves
+landed in the next hour, which is the point of writing the requirement down as a
+requirement rather than a caveat.
+
+**`x11pt3.f`'s three negative-value NOTEs**, ported as written:
+
+* `:647` -- negative values created by removing `transform{constant=}`. Gated on
+  `gudrun` (`x11pt3.f:76`: `Issap.lt.2 .and. Irev.lt.4 .and. Khol.ne.1`), which
+  is what stops a sliding-spans or history replay, or the classic-Easter
+  transparent pass, repeating it. The port had the message's SIDE EFFECT -- the
+  `Iyrt>0` floor at zero -- and neither the flag nor the text.
+* `:796` -- values still `<= 0` after forcing, corrected by prorating against the
+  target. Two arms; only the `Iyrt>0` one is reachable, because the whole block
+  is inside `IF(Iyrt.gt.0)` at `:673`. The `ELSE` is transcribed anyway: a reader
+  who finds one arm cannot tell which.
+* `:863` -- and this one is gated on `negmsg` where the `-999` it describes keys
+  on `negfin`. So a run where the prorating fixed everything still claims
+  forcing factors were set to -999. Transcribed as written and NOT filed as a CB:
+  no corpus spec separates the two flags, and an unmeasured Census bug is a
+  guess (the standing rule -- two near-CB entries have already turned out to be
+  correct Fortran read against the wrong mode).
+
+**`extra/airline_force-constant-rsdpeak`** is then the spec that pins the
+placement. It is `airline_force-constant-denton` with one line changed --
+`arima{model=(0 1 1)(0 1 1)}` becomes `(0 1 1)(0 0 0)` -- and that is the whole
+trick: dropping the seasonal MA leaves the seasonality in the residuals, whose
+spectrum then clears the six-star threshold that the sibling misses at 5.8. The
+oracle writes
+
+```
+ WARNING ... spectrum of the regARIMA residuals    <- arima.f:1126, estimation
+ NOTE: Negative values were created ...            <- x11pt3.f:647
+ NOTE: Values <= 0 ... forced ...                  <- x11pt3.f:796
+ NOTE: Values <= 0 ... final forced ...            <- x11pt3.f:863
+ WARNING ... one or more of the estimated spectra  <- spcdrv.f:594, after x11
+```
+
+so computing the residual block late puts the first line where the last one is.
+The mutation that does exactly that -- leave the numbers alone, move only the
+emission into `run_spectrum` -- is the one that had no gate an hour earlier.
+
+| mutation | fails |
+|---|---|
+| the residual WARNING emitted with spcdrv's, not at estimation | 55 |
+| `x11pt3.f:647`'s temporary-constant NOTE suppressed | 3 |
+| `x11pt3.f:796`'s forced-series NOTE suppressed | 3 |
+| `x11pt3.f:863`'s final-forced NOTE suppressed | 3 |
+
+**Read the 55 with care -- it is not a pure ordering count.** The mutation
+re-emits only the SEASONAL arm in `run_spectrum`, so every spec whose residual
+peak is trading-day or both loses its warning outright, and those failures are
+about the missing arm, not about position. What IS pure is
+`extra/airline_force-constant-rsdpeak`: `peaks.td` does not name `rsd` there, so
+the moved block writes its text exactly, and the diff under the mutation is the
+same two lines relocated from position 5 to position 20 -- nothing added,
+nothing dropped. That single case is the placement evidence; the other 54 are
+noise from the cheapest way to write the mutation.
+
+`_UNPORTED_BLOCKS` **19 -> 16**. Suite **9034 passed, 0 failed, 942 skipped**;
+ctest 12/12.
