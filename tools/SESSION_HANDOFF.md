@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->7982<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->915<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9008<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->938<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -430,7 +430,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->7982<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->9008<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -3146,6 +3146,84 @@ stdout and empty stderr. Not reproduced by 40 concurrent runs, 40 serial runs,
 the gate file alone under `-n 8`, or two further full suites. Recorded, not
 attributed and not claimed fixed -- if it recurs, that is the thread.
 
+## This session, part 60: the `.err` of a run that COMPLETES was compared by nothing -- 396 of 525 goldens differed
+
+Board item 10 said "spcrsd's three peak WARNINGs are unported". True, and a
+symptom. `test_halt_err.py` compared the `.err` of the **8** goldens that ended
+in an ERROR; **525** ship a non-empty one. Widening the discovery to all of them
+measured **396 differing**.
+
+**313 were the peak warnings** -- FIVE texts, not three: spcrsd's
+seasonal/trading-day/both trio (the SEATS wordings are unreachable, arima.f:1126
+passes `Lseats=F`) plus spcdrv.f:594-617's own two. The peaks have been gated as
+NUMBERS since entry 46. `Prttab(LSPCRS)` gates all three spcrsd arms; this port
+has no print-table dictionary so it is taken TRUE, and that is **saturated** --
+293 of 293 goldens with an `rsd` peak carry the warning.
+
+**Placement is why this needed a code move, not a print.** The numbers were
+bit-exact inside `run_spectrum`; a warning is a line in a stream and the `.err`
+compares in ORDER, and the oracle runs spcrsd from `arima.f:1126`, before
+x11pt2. New `run_residual_spectrum(ctx)` is called from `run_pre_model` after
+the convergence halt, with its own `spr_peaks`/`spr_tukey` fields (run_spectrum
+clears the lists it owns and re-seeds from them); the estimator was hoisted to a
+shared `spec_est_impl` rather than transcribed twice. **No corpus golden pairs
+an x11pt2/x11pt3 Mt2 write with a residual peak, so both placements agree on all
+525 -- that ordering is still ungated and says so.** The ordering that a spec
+COULD separate belonged elsewhere: `editor.f:2071`'s 3x15-filter WARNING was
+being written from `x11_prestage`, a phase late, and
+`extra/airline_sma-s3x15-rsdpeak` came out with the two WARNINGs swapped. The
+message now leaves `x11_editor_geometry` under `set_setpri` (already the "I am
+the editor" flag); the demote stays where Posffc is.
+
+**Three defects that were not about spectra.** (a) `x11mdl.f:316`'s AIC-reject
+NOTE went through `writln(.., Mt2, Mt2, ..)` -- the same unit twice, so every
+line came out DOUBLED and one column right; two more of that exact slip fell out
+beside it (`agr3s`'s indirect-forecast NOTE, and `gtxreg.f:840`'s refusal with
+`lblnk=true` on all three lines). (b) `gtxreg.f:894`'s refusal emitted a blank
+line its FORMAT does not have -- the SECOND instance (x11mdl.f:614 was the
+first, entry 108). (c) `gtrvst.f:1020`'s three-line WARNING was one string, so
+writln's 131-char truncation cut it mid-word at "...to get a revision".
+
+**CB-45, and a THIRD outcome class for a blessed run.** `x11mdl.f:378` writes
+`'finalxreg01: none'` through FORMAT 1060 -- the weekday-header format, `7F9.4`
+-- and gfortran KILLS the program, exit 2. A previous session found the wrong
+FORMAT and wrote "the string is dropped and the .udg gets a stray column
+header"; it does that AND ends the run. No regARIMA, no X-11, no spectrum, no
+C-iteration x11mdl. This engine produced all of it at `OUTCOME: OK`. Hidden
+because **"halted" and "stopped" are different predicates**: the `.err` has a
+NOTE and no ERROR, so every gate demanded exit 0 of a run that never finished.
+`oracle_died()` reads the blessing manifest's own `exit_code` (recorded all
+along); `expected_exit` folds it in. Three goldens are in the class -- the two
+CB-45 specs and a SIGFPE in `census-examples/composite/total` that is NOT
+reproduced. Making the engine stop then exposed `x13run_x11` dumping the
+`aictest.*` canaries BELOW its table guard, so those specs compared zero keys --
+third instance in that one harness (entries 81, 85, now the savelog block).
+
+**The gate.** `tests/parity/test_err_block.py` replaces `test_halt_err.py`:
+**525 cases**, composite included (one `===ERR <base>===` block per member).
+`_UNPORTED_BLOCKS` is **19 entries**, PREFIX-matched, guarded in both directions
+(still carried by a golden AND still not emitted -- the second half is the one
+that matters, since a subtracted block would pass whatever the engine wrote).
+`_ENGINE_WALLS` is 3 specs where the engine REFUSES and the oracle does not --
+there the wall must be present and everything AHEAD of it must match -- and
+`_ENGINE_NOTES` is 2 where it writes an extra NOTE and carries on, where the
+block is cut from the ENGINE side, the rest compared in full, and the count
+asserted to be exactly one. **That split IS a mutation finding**: restoring
+agr3s's `writln(.., Mt2, Mt2, ..)` doubling passed the wall contract (which only
+reads the first line and what precedes it), then passed the cut version too (two
+copies are two blocks and both get cut), and only the count kills it.
+Only a spec whose golden carried an unported block is compared with blank runs
+collapsed -- cutting a block out cannot preserve blank structure, and everywhere
+else the comparison is exact, which is where two of the three defects above were
+caught.
+
+**Landed.** `extra/airline_sma-s3x15-rsdpeak`. `editor.f:2071-2097`'s two 3x15
+WARNINGs ported (one entry off the unported list). Identical `.err`: **129 ->
+525 of 525**. Eleven mutations, all fail
+(661/294/28/14/4/2/2/2/1/1/1 over the four affected gate files). Suite **9008
+passed, 0 failed, 938 skipped**, ctest 12/12, WALLS unchanged **22 gaps / 4
+faithful**. Entry 109. **CB-45.**
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -3307,16 +3385,41 @@ attributed and not claimed fixed -- if it recurs, that is the thread.
    automdl default model converges with user columns present; the probe is
    cheap now that the control is trustworthy. Read entry 107 first.
 
-10. **`spcrsd.f:140-184`'s residual-spectrum peak WARNINGs are unported.**
-    Three sibling texts (seasonal / trading day / both), each with a SEATS and
-    a regARIMA wording, on Mt1+Mt2. The PEAKS themselves are computed and gated
-    (`spcrsd`/`peaks.*` udg keys, `test_spectrum_peaks`); only the WARNING has
-    no C++. Carried as the single entry of `test_halt_err._UNPORTED_BLOCKS`,
-    subtracted from the golden side of that gate, with
-    `test_unported_halt_blocks_still_unported` requiring it to stay carried by
-    a golden -- so it cannot rot, and deleting the entry is the last step of
-    porting it. Note `spcdrv.f:613` has a fourth sibling on the SERIES
-    spectrum, which no late-halt golden carries.
+10. ~~**`spcrsd.f:140-184`'s residual-spectrum peak WARNINGs are unported.**~~
+    **CLOSED 2026-08-13 (part 60, entry 109)** -- all five texts (spcrsd's
+    trio and spcdrv.f:594-617's pair) are ported, and the item was a symptom:
+    the `.err` of a run that COMPLETES was compared by no gate at all, and 396
+    of 525 goldens differed. `tests/parity/test_err_block.py` now compares all
+    525.
+
+    **What replaces it, in the order I would take it:**
+
+    * **`_UNPORTED_BLOCKS` is the inventory now -- 19 entries**, each a real
+      NOTE/WARNING the oracle writes and this engine does not, each carried by
+      a golden and guarded in both directions. Working the list down is
+      ordinary, well-measured work with a gate already in place. The three
+      `x11force.f` negative-value NOTEs are the ones with leverage: porting any
+      x11pt3-phase message makes it possible to write the spec that GATES
+      spcrsd's placement (see below).
+    * **The residual-spectrum placement is ported faithfully and still
+      ungated.** `run_residual_spectrum` runs where the oracle runs it
+      (`arima.f:1126`, the estimation phase), but no corpus golden pairs an
+      x11pt2/x11pt3 Mt2 write with a residual peak, so computing it late --
+      where it used to be -- produces the same file on all 525. A spec with a
+      residual peak AND a ported x11pt3 NOTE closes that.
+    * **The `Prttab(LSPCRS)` precondition is SATURATED**, 293 of 293. The
+      warning is gated on a print-table dictionary this port does not have, so
+      it is taken as true. A `print=` that suppressed the table would diverge
+      and cannot be written until Prttab exists.
+    * **`census-examples/composite/total` dies of a SIGFPE in the oracle**
+      (`exit_code: 3`, the third member of `oracle_died`'s class) and the
+      engine does not reproduce the stop. Unlike CB-45 the cause is not yet
+      identified.
+    * `seatpr.f:145`'s second `spcrsd` call -- the SEATS EXTENDED residuals,
+      which is what makes spcrsd's three SEATS wordings reachable -- is still
+      unported. `seatpr.f:142` gates it on `Prttab/Savtab(LSPERS)` and NOT on
+      `Lsumm`, so `-s` alone never produces it and no golden carries a single
+      `spcextrsd` key.
 
 ## Environment notes
 

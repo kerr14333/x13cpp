@@ -1322,19 +1322,24 @@ void x11mdl_td(X13Context& ctx, int kpart) {
     // wrong factor.
     if (!(ctx.x11reg.holgrp > 0 || ctx.x11reg.tdgrp > 0 ||
           ctx.x11reg.stdgrp > 0)) {
+        // x11mdl.f:316-325 -- ONE `WRITE(Mt2,1030)`, not three writln calls.
+        // This used to route each of FORMAT 1030's three lines through
+        // `writln(.., Mt2, Mt2, ..)`, which is the same unit twice: writln
+        // writes flhdnl and flhdn2 in turn, so every line came out DOUBLED, and
+        // with the format's own leading blank plus writln's `(' ',a)` each one
+        // was indented one column too far. Nothing could see it -- the `.err` of
+        // a run that completes was compared by no gate at all until
+        // test_err_block.
         errhdr(ctx);
-        writln(ctx,
-               " NOTE: Because of the AIC test result, X-13ARIMA-SEATS has "
-               "removed any trading day,",
-               ctx.units.mt2, ctx.units.mt2, false);
-        writln(ctx,
-               "       stock trading day, or holiday regressors from the "
-               "irregular component",
-               ctx.units.mt2, ctx.units.mt2, false);
-        writln(ctx,
-               "       regression model.  No further model estimation will be "
-               "attempted.",
-               ctx.units.mt2, ctx.units.mt2, false);
+        const std::string note = fwrite_fmt(
+            "(' NOTE: Because of the AIC test result, ',a,' ',"
+            "'has removed any trading day,',/,7x,"
+            "'stock trading day, or holiday regressors from the ',"
+            "'irregular component',/,7x,"
+            "'regression model.  No further model estimation will ',"
+            "'be attempted.',//)", std::string(stdio::PRGNAM)) + "\n";
+        ctx.channels_.unit(ctx.units.mt2).put(note);
+        ctx.channels_.unit(stdio::STDERR).put(note);
         // x11mdl.f:326-350 -- ZERO for an additive adjustment, ONE otherwise.
         // (The `icol.ge.4.and.Kswv.gt.0` arm punches the user prior TD Stptd
         // instead; Kswv is 0 on this path, so it is not reproduced.)
@@ -1353,16 +1358,54 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         if (ctx.x11log.axrgtd) ctx.x11log.axrgtd = false;
         if (ctx.x11log.axrghl) ctx.x11log.axrghl = false;
         if (ctx.x11log.axruhl) ctx.x11log.axruhl = false;
-        // NOT reproduced, and it is a pre-existing gap rather than one this
-        // branch introduces: x11mdl.f:377-379's `nfinalxreg` / `finalxreg01`
-        // savelog pair. The engine emits that family on NO path, accept arm
-        // included, so it is ungated everywhere. Note for whoever ports it that
-        // :378 and :883 write `'finalxreg01: none'` through FORMAT 1060, which
-        // in that scope is the WEEKDAY-HEADER format ('  Mon  Tue ...') and
-        // carries no data descriptor -- so the string is dropped and the .udg
-        // gets a stray column header instead of the key. Census bug, measured
-        // in this spec's own golden, not claimed as a CB entry until the
-        // family is ported and the difference is reproducible.
+        // x11mdl.f:376-379 -- and this is where the ORACLE DIES. CB-45.
+        //
+        //     IF(ldiag)THEN
+        //      WRITE(Nform,1025)'nfinalxreg:   1'
+        //      WRITE(Nform,1060)'finalxreg01: none'
+        //     END IF
+        //
+        // FORMAT 1060 in this routine's scope is the WEEKDAY HEADER at :655 --
+        // `('   Mon   Tue …',/,3X,7F9.4,//)` -- so the CHARACTER argument meets
+        // an `F9.4` descriptor:
+        //
+        //     At line 378 of file x11mdl.f (unit = 14, file = '….udg')
+        //     Fortran runtime error: Expected REAL for item 1 in formatted
+        //     transfer, got CHARACTER
+        //     Error termination.
+        //
+        // exit code 2, `run_ok: false` in the golden's own manifest. The
+        // literal text ahead of the descriptor has already been flushed, which
+        // is why the golden `.udg` ends on a stray column header.
+        //
+        // A previous session read this block, spotted the wrong FORMAT, and
+        // wrote that "the string is dropped and the .udg gets a stray column
+        // header instead of the key" -- true, and it stops one line short of
+        // the consequence: the write does not lose a key, it ENDS THE RUN.
+        // Nothing downstream happens -- no regARIMA estimation, no X-11 D
+        // tables, no spectrum, and no second (C-iteration) x11mdl call. This
+        // engine ran on and produced all of it at `OUTCOME: OK`, emitting the
+        // NOTE above a second time and two spectrum WARNINGs the oracle never
+        // wrote. Invisible for as long as no gate compared the `.err` of a run
+        // that COMPLETES (test_err_block does now).
+        //
+        // Reproduced as a bare halt: the oracle's `.err` here carries the NOTE
+        // and nothing else, so there is no message to write. The two savelog
+        // lines that trigger it stay unported -- this engine emits the
+        // nfinalxreg/finalxreg01 family on no path at all, accept arm included
+        // -- but `ldiag` IS ported, because it is what decides whether the run
+        // dies: without `-s`/savelog the WRITE never executes and the oracle
+        // completes normally.
+        //
+        // `ldiag` is x11mdl.f:86's `Lsumm.gt.0 .and. (Issap.LT.2 .and.
+        // Irev.lt.4)`. `Lsumm>0` is the `-s` flag, which every harness run and
+        // every blessed golden carries -- `ctx.hiddn.lsumm` has no writer in
+        // this port and the aictest block twenty lines up passes `lsumm=true`
+        // literally for the same reason. The other two terms are live and are
+        // spelled out: inside a sliding-spans or history replay the oracle does
+        // NOT take this write, so the run does not die there.
+        const bool ldiag = ctx.hiddn.issap < 2 && ctx.hiddn.irev < 4;
+        if (ldiag) abend(ctx);
         return;
     }
 

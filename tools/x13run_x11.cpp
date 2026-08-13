@@ -342,6 +342,19 @@ int main(int argc, char** argv) {
     // `extra/airline_estimate-maxiter-noconverge` dumped b1/d10/d11/d12/d13 as
     // 144 zeros each where the oracle writes no save file at all. State the
     // trigger in the condition, not a symptom of it.
+    // ...and the aictest savelog canaries go ABOVE that guard, because they are
+    // not tables: each dump_aictest_* self-gates on its own `*_ran` flag, so it
+    // prints only what was actually computed, and the run that stops EARLIEST
+    // after computing them is CB-44 -- the oracle writes every `aictest.xtd.*`
+    // key and is then killed by the Fortran runtime on the next savelog line.
+    // Below the guard they were discarded, so the two reject specs compared
+    // zero keys the moment the engine started reproducing that halt. Third
+    // instance of the same shape in this harness: entry 81 (Mt2 on success),
+    // entry 85 (tables on a late fatal), now the savelog block.
+    dump_aictest_xtd(ctx);
+    dump_aictest_xe(ctx);
+    dump_aictest_xu(ctx);
+
     if (!ok && !ctx.x11_stage_ran) return 1;
     const int exit_code = ok ? 0 : 1;
 
@@ -615,9 +628,6 @@ int main(int argc, char** argv) {
                 std::printf("aicc_xe %d %.15E\n", wa.first, wa.second);
             std::printf("aicc_xe_window %d\n", ctx.x11reg_xe_window);
         }
-        dump_aictest_xtd(ctx);
-        dump_aictest_xe(ctx);
-        dump_aictest_xu(ctx);
     }
     dump_d8bd9a(ctx);
     dump_d11f(ctx);

@@ -109,10 +109,10 @@ reproduce.
 - **`core/src/x11/x11reg.cpp:1028`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1827`**
+- **`core/src/x11/x11reg.cpp:1870`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1844`**
+- **`core/src/x11/x11reg.cpp:1887`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:57`**

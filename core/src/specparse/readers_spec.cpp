@@ -2949,28 +2949,49 @@ void gt_history(X13Context& ctx, bool& havesp, bool& inptok) {
                 } else if (!(ir.indrvs(YR) == rv.rvstrt(YR) &&
                              ir.indrvs(MO) == rv.rvstrt(MO))) {
                     ir.indrev = 0;
+                    // gtrvst.f:1020 -- three FORMAT lines, and they must stay
+                    // three: writln truncates at 131 characters, so the
+                    // single-string version came out cut off mid-word
+                    // ("...to get a revision") and no gate could see it until
+                    // test_err_block compared the block. Its leading `/` is
+                    // the `lblnk` on the first line only.
                     writln(ctx, "WARNING: Starting date of revisons history "
-                                "analysis must be the same for all components "
-                                "of a composite adjustment to get a revisions "
-                                "history of the indirect seasonally adjusted "
-                                "series.",
+                                "analysis must be the same for all",
                            stdio::STDERR, ctx.units.mt2, true);
+                    writln(ctx, "         components of a composite "
+                                "adjustment to get a revisions history of the",
+                           stdio::STDERR, ctx.units.mt2, false);
+                    writln(ctx, "         indirect seasonally adjusted "
+                                "series.",
+                           stdio::STDERR, ctx.units.mt2, false);
                     lprt2 = true;
                 }
             } else if (rv.rvstrt(YR) == 0 && ir.indrev > 0) {
                 ir.indrev = 0;
+                // gtrvst.f:1030 -- the sibling of :1020 above, same three-line
+                // shape, differing only in "must be specified" for "must be
+                // the same". No corpus golden reaches this arm; it is split
+                // here because its twin had to be, and a pair transcribed one
+                // way and one the other is how the next reader gets it wrong.
                 writln(ctx, "WARNING: Starting date of revisons history "
-                            "analysis must be specified for all components of "
-                            "a composite adjustment to get a revisions history "
-                            "of the indirect seasonally adjusted series.",
+                            "analysis must be specified for all",
                        stdio::STDERR, ctx.units.mt2, true);
+                writln(ctx, "         components of a composite adjustment "
+                            "to get a revisions history of the",
+                       stdio::STDERR, ctx.units.mt2, false);
+                writln(ctx, "         indirect seasonally adjusted series.",
+                       stdio::STDERR, ctx.units.mt2, false);
                 lprt2 = true;
             }
         }
-        if (lprt2)
+        // gtrvst.f:1040 -- and this one is TWO lines, with its own leading `/`.
+        if (lprt2) {
             writln(ctx, "         Edit all input specification files to "
-                        "correct this and rerun the metafile.",
-                   stdio::STDERR, ctx.units.mt2, false);
+                        "correct this and rerun the",
+                   stdio::STDERR, ctx.units.mt2, true);
+            writln(ctx, "         metafile.", stdio::STDERR, ctx.units.mt2,
+                   false);
+        }
     }
 
     inptok = inptok && argok;
@@ -5110,12 +5131,17 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
             if (igrp == 0) igrp = mgrp("User-defined Holiday");
             if (igrp == 0) {
                 errhdr(ctx);
+                // gtxreg.f:840 is ONE `WRITE(Mt2,1030)` over a three-line
+                // FORMAT with no leading `/`, so there is no blank ahead of it
+                // and none between its lines. All three writln calls passed
+                // `lblnk=true`, and the engine wrote a blank line before every
+                // line of the message.
                 writln(ctx, "ERROR: Cannot specify group types for user-defined "
-                       "irregular component", stdio::STDERR, ctx.units.mt2, true);
+                       "irregular component", stdio::STDERR, ctx.units.mt2, false);
                 writln(ctx, "       regression variables if user-defined "
-                       "irregular component", stdio::STDERR, ctx.units.mt2, true);
+                       "irregular component", stdio::STDERR, ctx.units.mt2, false);
                 writln(ctx, "       regression variables are not defined in the "
-                       " x11regression spec.", stdio::STDERR, ctx.units.mt2, true);
+                       " x11regression spec.", stdio::STDERR, ctx.units.mt2, false);
                 inptok = false;
             }
             // gtxreg.f:849-855 -- one type given, every user column takes it.
@@ -5203,8 +5229,13 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // this the engine ran `x11regression{user= data=}` to OUTCOME: OK while the
     // oracle rejected the spec.
     if (!(ctx.x11log.axrgtd || ctx.x11log.axrghl || neltdw > 0)) {
+        // `lblnk=false`: gtxreg.f:894's FORMAT 1040 has no leading `/`, so
+        // there is no blank line ahead of it. Second instance of exactly this
+        // (x11mdl.f:614's reweight abend was the first) -- and both were
+        // invisible until a gate compared the `.err` block rather than its
+        // ERROR lines.
         writln(ctx, "ERROR: Must adjust for either trading day or holiday in "
-               "the x11regression spec.", stdio::STDERR, ctx.units.mt2, true);
+               "the x11regression spec.", stdio::STDERR, ctx.units.mt2, false);
         inptok = false;
     }
     // gtxreg.f:899-905 -- Noxfac suppresses the x11pt2 holiday/TD factor

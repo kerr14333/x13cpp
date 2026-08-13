@@ -315,15 +315,21 @@ void agr3s(X13Context& ctx, const int* begspn, bool lx11) {
     // Everything over the OBSERVED span -- isf, isa, ie5/ie6, i18, and the
     // whole agr2 comparison block -- is bit-exact (~5e-15) and gated.
     if (ag.indnfc > 0) {
-        writln(ctx, " NOTE: The indirect adjustment past the end of the series "
+        // `(Mt2, Mt2)` is the same unit twice, and writln writes flhdnl and
+        // flhdn2 in turn -- so every line of this notice came out DOUBLED, and
+        // the leading space in the literal put it a column right of every
+        // other block. Third instance of that pair of slips (x11mdl.f:316's
+        // AIC-reject NOTE was the other); none was visible until
+        // test_err_block compared the `.err` of a run that completes.
+        writln(ctx, "NOTE: The indirect adjustment past the end of the series "
                     "is not computed:",
-               ctx.units.mt2, ctx.units.mt2, true);
-        writln(ctx, "       the SEATS forecast decomposition (Setfsa) is not "
+               stdio::STDERR, ctx.units.mt2, true);
+        writln(ctx, "      the SEATS forecast decomposition (Setfsa) is not "
                     "implemented, so the",
-               ctx.units.mt2, ctx.units.mt2, false);
-        writln(ctx, "       indirect tables are reliable only over the observed "
+               stdio::STDERR, ctx.units.mt2, false);
+        writln(ctx, "      indirect tables are reliable only over the observed "
                     "span.",
-               ctx.units.mt2, ctx.units.mt2, false);
+               stdio::STDERR, ctx.units.mt2, false);
     }
 }
 

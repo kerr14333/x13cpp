@@ -7897,3 +7897,190 @@ airline_pickmdl-backcast-oos]` fail with the harness exiting 3221225477
 reproduced: 40 concurrent runs, 40 serial runs, the gate file alone under `-n 8`,
 and two more full suites are all clean. Not attributed to this increment and not
 claimed fixed.
+
+## 109. The `.err` of a run that COMPLETES was compared by no gate at all -- 396 of 525 goldens differed (2026-08-13)
+
+Board item 10 was "`spcrsd.f:140-184`'s residual-spectrum peak WARNINGs are
+unported", carried as the single entry of `test_halt_err._UNPORTED_BLOCKS`. It
+was a true statement about a much larger hole.
+
+`test_halt_err.py` (entry 108) compared the `.err` of the **8** goldens whose run
+ended in an ERROR. **525** blessed goldens ship a non-empty `.err`. The other
+~490 carried the oracle's WARNING and NOTE text and nothing read a line of it:
+`test_m1_parse` compares ERROR text only on specs it classifies as parse
+REJECTIONS, `test_transform_err` covers one family, `test_slidingspans_tables`
+two NOTEs, `test_composite_psuadd` one case.
+
+Measured the day the scope was widened: **396 of the 525 differed.**
+
+### The warnings themselves
+
+313 of the 396 were the peak WARNINGs, and there are five texts, not three:
+`spcrsd.f:149-184` has the seasonal / trading-day / both trio (each with a SEATS
+and a regARIMA wording -- only the regARIMA one is reachable, because
+`arima.f:1126` passes `Lseats=F` and `seatpr.f:145`'s call is unported), and
+`spcdrv.f:594-617` has its own two over the ori/sa/irr tables. The PEAKS have
+been computed and gated as numbers since entry 46. Nothing ever emitted the
+text.
+
+`Prttab(Tblptr)` gates all three spcrsd arms and this port has no print-table
+dictionary, so it is taken as TRUE. That precondition is **saturated**: of the
+293 goldens whose `peaks.seas`/`peaks.td` name `rsd`, all 293 carry the warning.
+A `print=` that suppressed LSPCRS would diverge, and cannot be written until
+Prttab exists.
+
+### Placement, which is the only reason this needed a code move
+
+The residual numbers were being derived inside `run_spectrum`, with the other
+three tables, and were bit-exact there. A WARNING is not a number: it is a line
+in the Mt2 stream, and the `.err` compares in ORDER. The oracle runs `spcrsd`
+from `arima.f:1126`, in the ESTIMATION phase, before `x11pt2` has run at all.
+
+So the residual block moved out to `run_residual_spectrum(ctx)`, called from
+`run_pre_model` immediately after `arima.f:1216`'s convergence halt, keeping its
+results in their own `spr_peaks`/`spr_tukey` fields because `run_spectrum` clears
+the two lists it owns and now re-seeds them from there. The estimator itself was
+hoisted into a free `spec_est_impl` rather than transcribed twice --
+`tools/dup_transcription.py` exists to find the other choice.
+
+**The spread between the two placements is every Mt2 write x11pt2/x11pt3 make**,
+and no corpus golden pairs one with a residual peak, so both placements produce
+the same file on all 525. That is exactly the accident CLAUDE.md's "which buffer,
+at which moment" rule says not to build on. The one ordering that a spec COULD
+separate turned out to belong to somebody else:
+
+`editor.f:2071-2097`'s 3x15-seasonal-filter WARNING. The DEMOTE it describes
+(`Lterm=4 -> 5` under twenty years) was ported into `x11_prestage`, a phase after
+estimation -- fine for a value nothing reads before x11pt2, wrong for a line in
+the stream. `extra/airline_sma-s3x15-rsdpeak` (`x11{seasonalma=s3x15}` on
+airline: twelve years, and residuals with a significant seasonal peak) came out
+with the two WARNINGs swapped. The message now goes out from
+`x11_editor_geometry` under `set_setpri`, which is already the flag that says
+"this call is standing in for the editor", so it is written once on the model
+path and once on the no-model path. Only the message moved; the demote stays
+where Posffc is convenient.
+
+The residual-vs-x11pt3 order is still ungated, and openly so: it needs a spec
+pairing a residual peak with a ported x11pt3-phase NOTE, and today all three of
+those (`x11force.f`'s negative-value NOTEs) are unported.
+
+### The three defects that had nothing to do with spectra
+
+**`x11mdl.f:316`'s AIC-reject NOTE went through `writln(.., Mt2, Mt2, ..)`** --
+the same unit twice. writln writes flhdnl and then flhdn2, so every line came out
+DOUBLED, and with the FORMAT's own leading blank plus writln's `(' ',a)` each was
+indented one column too far. Two more instances of the same slip fell out of the
+same sweep: `agr3s.cpp`'s indirect-forecast NOTE (doubled identically), and three
+`writln(.., lblnk=true)` calls in a row for `gtxreg.f:840`'s refusal, which put a
+blank line between every line of one message.
+
+**`gtxreg.f:894`'s refusal was emitting a blank line its FORMAT does not have.**
+Second instance of that exact thing -- `x11mdl.f:614`'s reweight abend was the
+first, entry 108 -- and both were invisible for the same reason: the only `.err`
+comparison in the suite compared ERROR LINES rather than the block.
+
+**`gtrvst.f:1020`'s three-line WARNING was transcribed as one string**, so
+writln's 131-character truncation cut it mid-word at "...to get a revision". Its
+`:1030` twin and the `:1040` tail under them had the same shape; all three are
+now one writln per FORMAT line.
+
+### CB-45, and a THIRD outcome for a blessed run
+
+`extra/airline_x11regression-aictest-tdrej` had the AIC-reject NOTE twice and two
+spectrum WARNINGs the oracle never wrote. The oracle never wrote them because
+**the oracle was dead**: `x11mdl.f:378` writes `'finalxreg01: none'` through
+FORMAT `1060`, which in that scope is the weekday-header format with a `7F9.4` in
+it, and gfortran terminates the program. Exit code 2. CB-45.
+
+A previous session read that block, spotted the wrong FORMAT, and wrote that "the
+string is dropped and the .udg gets a stray column header instead of the key" --
+correct, and one line short of the consequence. The write does not lose a key, it
+ends the run: no regARIMA estimation, no X-11, no spectrum, and no second
+(C-iteration) x11mdl call. This engine produced all of it at `OUTCOME: OK`.
+
+What kept it hidden is that **"the oracle halted" and "the oracle stopped" are
+not the same predicate.** `oracle_halted()` reads the `.err` for an `ERROR:`
+line; this run writes a NOTE and no ERROR, so every phase gate classified it as
+"completed" and demanded exit 0 of a run that never finished. The blessing
+manifest has recorded `exit_code` all along -- `oracle_died()` now reads it, and
+`expected_exit` treats the class as a halt. Three goldens are in it: these two,
+and a SIGFPE in `census-examples/composite/total` the engine does not yet
+reproduce.
+
+Reproducing the stop then broke two gates, in the way that is by now familiar:
+`x13run_x11` dumped the `aictest.*` savelog canaries BELOW its table guard, so
+the moment the engine started halting where the oracle halts, the two specs
+compared zero keys. The dumps self-gate on their own `*_ran` flags and now sit
+above it. Third instance in this one harness -- entry 81 (Mt2 on success), entry
+85 (tables on a late fatal), now the savelog block.
+
+### The gate
+
+`tests/parity/test_err_block.py`, replacing `test_halt_err.py`. Discovery is
+every golden with a non-empty `.err` and a corpus spec to run: **525 cases**,
+composite ones included (the composite harness emits one `===ERR <base>===` block
+per member, which is exactly what the oracle writes to each component's own
+file).
+
+Four lists, each with its own guard:
+
+* `_UNPORTED_BLOCKS` -- **19 entries**, matched by PREFIX (the outlier NOTE names
+  its outlier, so a whole-line entry would match one spec and silently stop
+  matching the next). `test_unported_blocks_still_unported` asserts BOTH
+  directions: every entry is still carried by a golden, and no entry is being
+  emitted by the engine. The second half matters more -- a block the engine
+  starts writing stays subtracted from the golden side, so the comparison would
+  pass whatever it wrote.
+* `_ENGINE_WALLS` -- three specs where the engine REFUSES and the oracle does
+  not. The run stops, so all that is comparable is that the wall is present and
+  that everything ahead of it matches line for line; a walled spec cannot
+  quietly acquire an earlier divergence.
+* `_ENGINE_NOTES` -- two where the engine writes an extra NOTE and CARRIES ON.
+  Opposite treatment: the block is cut out of the ENGINE side and the whole rest
+  compared, plus an exactly-once count. See the mutation table for why all three
+  of those requirements exist.
+* a spec whose golden carried an unported block is compared with runs of blank
+  lines collapsed, and only such a spec: cutting a block out of a text stream
+  cannot preserve the blank structure around it, since `writln`'s `lblnk` owns
+  the blank AHEAD of a block while the FORMAT writers own one or two AFTER.
+  Everywhere else the comparison is exact -- which is where it earns its keep,
+  because two of the defects above are a blank line in the wrong place.
+
+Net: **525 goldens compared, 129 -> 525 identical**, and the 19 unported blocks
+are an inventory that cannot rot instead of an absence nobody had counted.
+
+### Gated by
+
+`extra/airline_sma-s3x15-rsdpeak` (new -- the editor-vs-estimation order), plus
+the whole corpus through the widened discovery.
+
+Eleven mutations, counted over
+`test_err_block` + `test_aictest_savelog` + `test_x11regression_tables` +
+`test_spectrum_peaks`:
+
+| mutation | fails |
+|---|---|
+| `run_residual_spectrum` never called | **661** |
+| spcrsd's peak WARNING suppressed | 294 |
+| spcdrv's peak WARNING suppressed | 28 |
+| `x13run_x11` dumps the aictest canaries below its table guard again | 14 |
+| CB-45's halt removed | 4 |
+| `x11mdl.f:316`'s NOTE back to `writln(.., Mt2, Mt2, ..)` | 2 |
+| `agr3s`'s NOTE back to `writln(.., Mt2, Mt2, ..)` | 2 |
+| the 3x15 WARNING written from `x11_prestage` instead of the editor | 2 |
+| `gtxreg.f:840`'s refusal blank lines back | 1 |
+| `gtxreg.f:894`'s refusal blank line back | 1 |
+| `gtrvst.f:1020`'s WARNING collapsed to one writln | 1 |
+
+**The agr3s one PASSED first time round, and that is the finding.** Its spec was
+in `_ENGINE_WALLS`, whose contract is "the block's first line is present and
+everything AHEAD of it matches" -- correct for a refusal, which STOPS the run so
+there is nothing after it to compare, and blind for a NOTE, which does not. Split
+into `_ENGINE_NOTES`, where the block is cut out of the ENGINE side (the mirror
+of `_UNPORTED_BLOCKS`) and the whole rest is compared. That still passed: a note
+emitted TWICE is two blocks, `_block_end` ends each at the next
+`NOTE`/`WARNING`/`ERROR`, and the cut removes both. What kills it is asserting
+the count is exactly one -- the same defect this entry found in `x11mdl.f`,
+hiding one level up in the machinery built to find it.
+
+Suite **9008 passed, 0 failed, 938 skipped, 0 xfailed**; ctest 12/12; WALLS unchanged 22 gaps / 4 faithful.

@@ -170,6 +170,51 @@ void x11_editor_geometry(X13Context& ctx, bool lsadj, bool set_setpri) {
     // so keeps tdaic.f:600-623's direct Sprior write alive; on the no-model
     // path nothing runs earlier and x11_prestage is the editor.
     if (set_setpri) ctx.adj.setpri = ctx.x11ptr.pos1bk;
+
+    // editor.f:2071-2097's two WARNINGs. The DEMOTE they describe is done in
+    // x11_prestage, a phase later, with the rest of the editor.f:2042-2103
+    // block -- and that is fine for a value nothing reads before x11pt2. It is
+    // NOT fine for a line in the Mt2 stream: the oracle writes these before
+    // `CALL arima`, so they must land ahead of spcrsd's residual-peak WARNING,
+    // and from x11_prestage they landed after it
+    // (extra/airline_sma-s3x15-rsdpeak is the spec that separates the two).
+    //
+    // `set_setpri` is already the flag that says "this call is standing in for
+    // the editor": on the model path that is run_pre_model's call, on the
+    // no-model path x11_prestage's own. So the message is written exactly once
+    // either way, which is what the oracle's single editor pass does.
+    //
+    // Only the message moves. The condition is evaluable here because Posffc
+    // is set by the setxpt above and `Lterm`/`Lter` are whatever seasonalma=
+    // parsed -- the NOTSET->6 default resolved later cannot turn into a 4.
+    if (set_setpri) {
+        int nyr = ctx.x11ptr.posffc / sp;
+        if (ctx.x11ptr.posffc % sp > 0) nyr += 1;
+        const int fhnote = stdio::STDERR;
+        const int mt2 = ctx.units.mt2;
+        bool prtwrn = true;
+        if (ctx.x11opt.lterm == 4 && nyr < 20) {
+            writln(ctx, "WARNING: The program will not use a 3x15 seasonal "
+                        "filter for", fhnote, mt2, true);
+            writln(ctx, "         series shorter than 20 years.", fhnote, mt2,
+                   false);
+            prtwrn = false;
+        }
+        // The per-period text is NOT the same string: it ends "3x15 seasonal
+        // filter for series" and its continuation then says "series shorter
+        // than 20 years", so the oracle prints the word twice. As written.
+        if (prtwrn) {
+            for (int i = 1; i <= sp; ++i) {
+                if (ctx.x11opt.lter(i) == 4 && nyr < 20) {
+                    writln(ctx, "WARNING: The program will not use a 3x15 "
+                                "seasonal filter for series", fhnote, mt2, true);
+                    writln(ctx, "         series shorter than 20 years.",
+                           fhnote, mt2, false);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
@@ -273,6 +318,10 @@ bool x11_prestage(X13Context& ctx, bool has_model, std::vector<double>& trnsrs,
     // before reaching :2071. Lstabl is what f3cal reads to decide whether M8-M11
     // exist at all, so without this the engine reported four quality statistics
     // the oracle suppresses.
+    //
+    // Its two WARNINGs are written from x11_editor_geometry, not from here --
+    // see the note at the end of that function for why the message and the
+    // demote had to be separated.
     {
         int nyr = ctx.x11ptr.posffc / sp;
         if (ctx.x11ptr.posffc % sp > 0) nyr += 1;

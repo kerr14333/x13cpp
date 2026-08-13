@@ -1865,3 +1865,82 @@ differs.
   `User-defined Cycle`. One type, two group names, in one program. Transcribed
   both ways; not filed as a bug because no corpus spec builds a transitory user
   regressor and the effect is a label, not a number.
+
+## CB-45
+
+**`x11mdl.f:378` writes a CHARACTER through a numeric FORMAT, and the Fortran
+runtime kills the program.** Any run whose x11regression AIC test rejects every
+trading-day / stock-TD / holiday group, with diagnostics on, terminates there.
+
+```fortran
+        IF(ldiag)THEN
+         WRITE(Nform,1025)'nfinalxreg:   1'
+         WRITE(Nform,1060)'finalxreg01: none'
+        END IF
+```
+
+`1025` is `FORMAT(a)`. `1060` is not — in this routine's scope it is the
+WEEKDAY-HEADER format three hundred lines further down:
+
+```fortran
+ 1060       FORMAT('         Mon      Tue      Wed     Thur      Fri',
+     &            '      Sat     Sun(*)',/,3X,7F9.4,//)
+```
+
+so the string meets an `F9.4`:
+
+```
+At line 378 of file x11mdl.f (unit = 14, file = '<base>.udg')
+Fortran runtime error: Expected REAL for item 1 in formatted transfer,
+got CHARACTER
+Error termination.
+```
+
+- **Measured, not inferred.** Stock `x13as_ascii_O2.exe` on
+  `tests/corpus/extra/airline_x11regression-aictest-tdrej.spc`, exit code **2**.
+  The blessed golden's own `manifest.json` records it: `"exit_code": 2`,
+  `"run_ok": false`. `x11mdl.f:883` is the same pair of WRITEs on the ACCEPT
+  arm and has the same defect; no corpus spec reaches it, because the accept
+  arm needs a surviving group and then goes on to write real numbers first.
+
+- **What survives the crash.** The literal text ahead of the offending
+  descriptor is already in the record, so the `.udg` ends on a stray column
+  header:
+
+  ```
+  nfinalxreg:   1
+           Mon      Tue      Wed     Thur      Fri      Sat     Sun(*)
+  ```
+
+  and the `.out` ends at the NOTE the block prints just above. **Nothing after
+  this point in the program happens**: on the two corpus specs the crash lands
+  inside `xrgdrv`'s transparent X-11 pass, so there is no regARIMA estimation,
+  no X-11 adjustment, no spectrum — 65 lines of `.udg` where a completed run of
+  the same spec would write several hundred.
+
+- **`ldiag` is the switch.** `x11mdl.f:86` sets it to
+  `Lsumm.gt.0 .and. (Issap.LT.2 .and. Irev.lt.4)`, so without `-s` the WRITE
+  never executes and the same spec completes normally, and inside a
+  sliding-spans or history replay it is skipped too. Every blessed golden here
+  carries `-s`.
+
+- **Port:** the EFFECT is reproduced — `x11reg.cpp`'s reject arm halts under the
+  same `ldiag`. The crash itself is not (and cannot be) reproduced, and the two
+  savelog lines that trigger it are still unported: this engine emits the
+  `nfinalxreg`/`finalxreg01` family on no path at all. The trigger CONDITION is
+  ported, because it is what decides whether the run stops.
+
+- **How it stayed invisible.** `oracle_halted()` reads the `.err` for an
+  `ERROR:` line and this run writes only a NOTE, so every phase gate classified
+  it as "the oracle completed" and demanded exit 0 — of a run that never
+  finished. The engine obliged: it ran the whole adjustment, emitted the AIC
+  NOTE a second time on the C iteration, and added two spectrum WARNINGs the
+  oracle never wrote, at `OUTCOME: OK`. `oracle_died()` (the blessing
+  manifest's exit code) is the predicate that separates the third outcome from
+  the other two.
+
+- **Pinned by:** `tests/parity/test_err_block.py` on
+  `extra/airline_x11regression-aictest-tdrej` and
+  `extra/airline_x11regression-aictest-tduser-reject` — the `.err` block, and
+  `test_exit_matches_oracle`. Removing the halt fails both plus their
+  `test_aictest_savelog` and `test_x11regression_tables` entries.

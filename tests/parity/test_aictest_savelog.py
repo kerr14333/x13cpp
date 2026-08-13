@@ -55,6 +55,8 @@ import subprocess
 
 import pytest
 
+from oracle_outcome import oracle_died
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 CORPUS = ROOT / "tests" / "corpus"
 GOLDEN = ROOT / "tests" / "golden"
@@ -166,8 +168,16 @@ def _compare(binary, base, spec, golden):
     assert binary.exists(), f"missing harness {binary}"
     proc = subprocess.run([str(binary), spec.name], cwd=str(spec.parent),
                           capture_output=True, text=True, timeout=300)
-    assert "OUTCOME: FATAL" not in proc.stdout, (
-        f"{base}: harness fatal\n{proc.stdout[:800]}\n{proc.stderr[-800:]}")
+    # A FATAL is only wrong where the ORACLE completed. The two
+    # `x11regression{aictest=}` reject specs are CB-45: the oracle writes every
+    # `aictest.xtd.*` key here, then dies in the Fortran runtime on the next
+    # savelog line, so the keys below are fully comparable and the run MUST end.
+    # Demanding a clean run of them is how the engine came to adjust a whole
+    # series past the point the oracle stopped.
+    gdir = next((d for d in GOLDEN.rglob(base) if d.is_dir()), None)
+    if gdir is None or not oracle_died(str(gdir)):
+        assert "OUTCOME: FATAL" not in proc.stdout, (
+            f"{base}: harness fatal\n{proc.stdout[:800]}\n{proc.stderr[-800:]}")
 
     got = {}
     for line in proc.stdout.splitlines():

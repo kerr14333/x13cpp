@@ -299,7 +299,161 @@ bool tukey_spectrum(const double* x, int n1, int n2, bool ltk120,
     return true;
 }
 
+// The estimator selector shared by spcdrv's three tables and spcrsd's one
+// (spcdrv.f:210-217 / spcrsd.f:75-86): the AR spectrum for `type=arspec`, the
+// periodogram for `type=periodogram`. One fit fills BOTH the 61-point plot grid
+// and the enhanced peak grid, then idpeak runs on the pair (svpeak.f reads
+// both). A free function rather than a lambda inside run_spectrum because
+// run_residual_spectrum is a separate entry point on the estimation phase, and
+// the same twelve lines transcribed in two places is the shape
+// tools/dup_transcription.py exists to find.
+struct SpecEstOpts {
+    int spctyp;
+    int mxarsp;
+    int sp;
+    double thtapr;
+    double spclim;
+    double plocal;
+    bool ldecbl;
+};
+
+bool spec_est_impl(const double* series, int n1, int n2, bool ltdfrq,
+                   const char* prefix, std::vector<double>& sxx,
+                   const std::vector<double>& frq, const SpecPeakGrid& pkgrid,
+                   const SpecEstOpts& o, std::vector<SpecPeaks>* sink) {
+    std::vector<double> sxx2;
+    if (o.spctyp == 0) {
+        const ArFit f = spgrh_fit(series, n1, n2, 61, o.sp, o.mxarsp, o.thtapr);
+        if (!f.ok) return false;
+        spgrh_eval(f, frq, 61, o.ldecbl, sxx);
+        if (pkgrid.ok) spgrh_eval(f, pkgrid.frqpk, pkgrid.nfreq, o.ldecbl, sxx2);
+    } else {
+        spgrh2(series, frq, n1, n2, o.ldecbl, sxx);
+        if (pkgrid.ok) spgrh2(series, pkgrid.frqpk, n1, n2, o.ldecbl, sxx2);
+    }
+    if (pkgrid.ok && sink)
+        sink->push_back(spectrum_peaks(sxx, sxx2, pkgrid, o.spclim, o.ldecbl,
+                                       ltdfrq, o.plocal, o.sp, prefix));
+    return true;
+}
+
 }  // namespace
+
+// spcrsd.f, from arima.f:1121-1129 -- the spectrum of the regARIMA model
+// residuals, its Tukey twin, and the peak WARNING.
+//
+// Placement is the whole point of this being its own entry point. The numbers
+// used to be derived inside run_spectrum with everything else and were
+// bit-exact there; the WARNING is not a number, it is a line in the Mt2 stream
+// that the `.err` compares IN ORDER, and the oracle writes it before x11pt2 has
+// run at all.
+bool run_residual_spectrum(X13Context& ctx) {
+    const int sp = ctx.model.sp;
+    // arima.f:1123's own `Sp.eq.12` (spcrsd.f:50 would refuse anything but 12
+    // or 4 in any case), and the residuals themselves: run_pre_model records
+    // them only under `Ldestm .and. Convrg`, which is arima.f:321/:1046.
+    if (sp != 12 || ctx.resid_na <= 0) return true;
+
+    auto& out = ctx.spcout;
+    const bool ldecbl = ctx.rho.ldecbl;
+    const SpecEstOpts eo{ctx.rho.spctyp, ctx.rho.mxarsp, sp, ctx.rho.thtapr,
+                         ctx.rho.spclim, ctx.rho.plocal, ldecbl};
+
+    // Same grids run_spectrum builds; built here too because this runs first
+    // and run_spectrum rebuilds them identically from the same /rho/ options.
+    out.frq = mkfreq(sp, ctx.rho.peakwd, ctx.rho.lfqalt, ctx.rho.lprsfq);
+    const SpecPeakGrid pkgrid = spectrum_peak_grid(sp, ctx.rho.peakwd,
+                                                   ctx.rho.lfqalt,
+                                                   ctx.rho.lprsfq);
+    out.grid = pkgrid;
+
+    // No detrend, no log: the residuals `a` are used directly. Their start date
+    // Begrsd = Begspn + (Nspobs - na) is recorded at ESTIMATION time
+    // (ctx.resid_begdate, arima.f:1125); the span is [rpos, na] where rpos =
+    // dfdate(Bgspec, Begrsd)+1, clamped to 1 if Bgspec precedes the residuals.
+    // Bgspec is read here BEFORE spcdrv's `startdiff=` branch can shift it.
+    const int na = ctx.resid_na;
+    const int bgspec[2] = {ctx.rho.bgspec(1), ctx.rho.bgspec(2)};
+    const int begrsd[2] = {ctx.resid_begdate[0], ctx.resid_begdate[1]};
+    int rpos = 0;
+    dfdate(bgspec, begrsd, sp, rpos);
+    if (rpos < 0) rpos = 1;
+    else rpos += 1;
+    std::vector<double> ra(PLEN, 0.0);
+    for (int i = 1; i <= na; ++i) ra[i - 1] = ctx.resid_a[i - 1];
+
+    out.have_spr_peaks = false;
+    std::vector<SpecPeaks> sink;
+    // spcrsd.f:74 derives its OWN Ltdfrq from the residual span.
+    out.have_spr = spec_est_impl(ra.data(), rpos, na, (na - rpos + 1) > 60,
+                                 "spcrsd", out.spr, out.frq, pkgrid, eo, &sink);
+    if (!sink.empty()) {
+        out.spr_peaks = sink.front();
+        out.have_spr_peaks = true;
+    }
+
+    // spcrsd.f:110-119 -- the residual Tukey peaks, and its own gates: the span
+    // must be at least 80 long (`ntmp.ge.80`, note `>=` where spcdrv.f:252 uses
+    // a strict `>`) and Sp must be 12.
+    //
+    // CB-28, transcribed: the `IF(ipos.gt.1)` block copies a(ipos..na) into Temp
+    // and the call on the very next line passes `a`, not `Temp` -- so the shift
+    // to the diagnostic start date is computed and thrown away, and the residual
+    // Tukey spectrum is always taken from element 1. Only the LENGTH (ntmp)
+    // reflects ipos. spcdrv's three call sites do the same repack correctly,
+    // which is what makes this one a slip rather than a convention.
+    const int ntmp = na - rpos + 1;
+    out.have_spr_tukey = false;
+    if (ntmp >= 80) {
+        TukeyPeaks tpk;
+        std::vector<double> rst, rfrq;
+        if (tukey_spectrum(ra.data(), 1, ntmp, ctx.rho.ltk120, rst, rfrq, &tpk,
+                           sp, /*min_nz=*/80)) {
+            out.spr_tukey = tpk;
+            out.have_spr_tukey = true;
+        }
+    }
+
+    // spcrsd.f:149-184 -- the peak WARNING.
+    //
+    // `Lseats` here is spcrsd's ARGUMENT, and arima.f:1126 passes F: these ARE
+    // the regARIMA residuals. The three SEATS wordings belong to seatpr.f:145's
+    // second call site (the SEATS extended residuals `Srsdex`), which is
+    // unported and unreachable from `-s` alone -- seatpr.f:142 gates it on
+    // Prttab/Savtab(LSPERS), not on Lsumm, and no corpus golden carries a
+    // single `spcextrsd` key. So a SEATS run still gets the regARIMA wording,
+    // which is what all 293 goldens that carry this block show.
+    //
+    // `Prttab(Tblptr)` gates all three arms. This port has no print-table
+    // dictionary (see specparse/tbldic.cpp), so it is taken as TRUE -- and that
+    // precondition is SATURATED across the corpus: of the 293 goldens whose
+    // `peaks.seas`/`peaks.td` name `rsd`, all 293 carry the warning, i.e. no
+    // spec turns LSPCRS printing off. A `print=` that did would diverge here,
+    // and cannot be written until Prttab exists.
+    if (out.have_spr_peaks) {
+        const int ltdrsd = out.spr_peaks.ltdpk;
+        const int lsrsd = out.spr_peaks.lsapk;
+        const int fhnote = stdio::STDERR;   // spcrsd.f:47; Lquiet is not ported
+        const int mt2 = ctx.units.mt2;
+        if (ltdrsd > 0 && lsrsd > 0) {
+            writln(ctx, "WARNING: Visually significant seasonal and trading "
+                        "day peaks have ", fhnote, mt2, true);
+            writln(ctx, "         been found in the estimated spectrum of the "
+                        "regARIMA residuals.", fhnote, mt2, false);
+        } else if (ltdrsd > 0) {
+            writln(ctx, "WARNING: At least one visually significant trading "
+                        "day peak has been", fhnote, mt2, true);
+            writln(ctx, "         found in the estimated spectrum of the "
+                        "regARIMA residuals.", fhnote, mt2, false);
+        } else if (lsrsd > 0) {
+            writln(ctx, "WARNING: At least one visually significant seasonal "
+                        "peak has been found", fhnote, mt2, true);
+            writln(ctx, "         in the estimated spectrum of the regARIMA "
+                        "residuals.", fhnote, mt2, false);
+        }
+    }
+    return true;
+}
 
 bool run_spectrum(X13Context& ctx, bool iagr4) {
     // NO gate on ctx.spcout.requested: x11ari.f:282-287 calls spcdrv under a
@@ -343,9 +497,9 @@ bool run_spectrum(X13Context& ctx, bool iagr4) {
     int bgspec[2] = {ctx.rho.bgspec(1), ctx.rho.bgspec(2)};
     int begbk2[2];
     addate(begspn, sp, pos1bk - pos1ob, begbk2);
-    // spcrsd (spr) runs in the regARIMA phase, before spcdrv applies any Lstdff
-    // shift to Bgspec -- snapshot the default Bgspec for the residual span.
-    const int bgspec_rsd[2] = {bgspec[0], bgspec[1]};
+    // (spcrsd reads Bgspec too, and reads it BEFORE the `startdiff=` branch
+    // below can shift it -- which is now automatic, since run_residual_spectrum
+    // runs a whole phase earlier. It used to need a snapshot taken here.)
 
     // Relative starting position for the spectrum span (spcdrv.f:137-151).
     int ipos = 0;
@@ -393,7 +547,16 @@ bool run_spectrum(X13Context& ctx, bool iagr4) {
     // x11ari.f:344's second spcdrv APPENDS: savpk.f splits the accumulated
     // peak strings at the direct pass's own count, so the direct entries have to
     // survive. Its table/peak results go to the `*_ind` fields instead.
-    if (!iagr4) out.peaks.clear();
+    // ...and the residual entry, which run_residual_spectrum filed back in the
+    // ESTIMATION phase, is re-seeded rather than recomputed. It goes FIRST in
+    // both lists: spcdrv.f:750-794 appends rsd, ori, sa, irr in that order, and
+    // Itukey has rsd first for the same reason.
+    if (!iagr4) {
+        out.peaks.clear();
+        out.tukey.clear();
+        if (out.have_spr_peaks) out.peaks.push_back(out.spr_peaks);
+        if (out.have_spr_tukey) out.tukey.push_back({"rsd", out.spr_tukey});
+    }
     out.peaks_ind.clear();
     out.tukey_ind.clear();
     out.grid = pkgrid;
@@ -405,25 +568,12 @@ bool run_spectrum(X13Context& ctx, bool iagr4) {
     // 61-point plot grid AND the enhanced peak grid from one fit, then runs the
     // peak diagnostics on the pair (svpeak.f reads both). Returns whether a
     // table was produced.
+    const SpecEstOpts eo{spctyp, mxarsp, sp, ctx.rho.thtapr, ctx.rho.spclim,
+                         ctx.rho.plocal, ldecbl};
     auto spec_est = [&](const double* series, int n1, int n2, bool ltdfrq,
                         const char* prefix, std::vector<double>& sxx) -> bool {
-        std::vector<double> sxx2;
-        if (spctyp == 0) {
-            const ArFit f = spgrh_fit(series, n1, n2, 61, sp, mxarsp,
-                                      ctx.rho.thtapr);
-            if (!f.ok) return false;
-            spgrh_eval(f, out.frq, 61, ldecbl, sxx);
-            if (pkgrid.ok)
-                spgrh_eval(f, pkgrid.frqpk, pkgrid.nfreq, ldecbl, sxx2);
-        } else {
-            spgrh2(series, out.frq, n1, n2, ldecbl, sxx);
-            if (pkgrid.ok) spgrh2(series, pkgrid.frqpk, n1, n2, ldecbl, sxx2);
-        }
-        if (pkgrid.ok)
-            peaks_sink.push_back(spectrum_peaks(sxx, sxx2, pkgrid, ctx.rho.spclim,
-                                                ldecbl, ltdfrq, ctx.rho.plocal,
-                                                sp, prefix));
-        return true;
+        return spec_est_impl(series, n1, n2, ltdfrq, prefix, sxx, out.frq,
+                             pkgrid, eo, &peaks_sink);
     };
     // spcdrv.f:152-153 -- the trading-day frequencies are only searched when the
     // spectrum span is longer than NTDLIM=60 observations.
@@ -598,44 +748,46 @@ bool run_spectrum(X13Context& ctx, bool iagr4) {
             if (hst2) tukey_sink.push_back({iagr4 ? "indirr" : "irr", tpk});
         }
     }
-    // --- spr: regARIMA model residuals (spcrsd.f, periodogram path) --------
-    // No detrend, no log: the residuals `a` are used directly. Their start date
-    // Begrsd = Begspn + (Nspobs - na); the span is [rpos, na] where rpos =
-    // dfdate(Bgspec, Begrsd)+1 (clamped to 1 if Bgspec precedes the residuals).
-    // The residual block belongs to the regARIMA phase, so the INDIRECT pass
-    // (which runs after agr3, on a total that has no model of its own) never
-    // re-derives it -- spcrsd is called from arima.f:1126, not from spcdrv.
-    if (!iagr4 && ctx.resid_na > 0) {
-        const int na = ctx.resid_na;
-        // arima.f:1125's idate, recorded at estimation time (see ctx.resid_begdate).
-        const int begrsd[2] = {ctx.resid_begdate[0], ctx.resid_begdate[1]};
-        int rpos = 0;
-        dfdate(bgspec_rsd, begrsd, sp, rpos);
-        if (rpos < 0) rpos = 1;
-        else rpos += 1;
-        std::vector<double> ra(PLEN, 0.0);
-        for (int i = 1; i <= na; ++i) ra[i - 1] = ctx.resid_a[i - 1];
-        // spcrsd.f:74 derives its OWN Ltdfrq from the residual span.
-        out.have_spr = spec_est(ra.data(), rpos, na, (na - rpos + 1) > 60,
-                                "spcrsd", out.spr);
-        // spcrsd.f:110-119 -- the residual Tukey peaks, and its own gates: the
-        // span must be at least 80 long (`ntmp.ge.80`, note `>=` where
-        // spcdrv.f:252 uses a strict `>`) and Sp must be 12.
-        //
-        // CB-28, transcribed: the `IF(ipos.gt.1)` block copies a(ipos..na) into
-        // Temp and the call on the very next line passes `a`, not `Temp` -- so
-        // the shift to the diagnostic start date is computed and thrown away,
-        // and the residual Tukey spectrum is always taken from element 1. Only
-        // the LENGTH (ntmp) reflects ipos. spcdrv's three call sites do the
-        // same repack correctly, which is what makes this one a slip rather
-        // than a convention.
-        const int ntmp = na - rpos + 1;
-        if (ntmp >= 80 && sp == 12) {
-            TukeyPeaks tpk;
-            std::vector<double> rst, rfrq;
-            if (tukey_spectrum(ra.data(), 1, ntmp, ltk120, rst, rfrq, &tpk, sp,
-                               /*min_nz=*/80))
-                out.tukey.insert(out.tukey.begin(), {"rsd", tpk});
+    // --- spcdrv.f:594-617: the peak WARNING across the three spcdrv tables --
+    // Note what this does NOT gate on: unlike spcrsd's, these two arms have no
+    // `Prttab`. The seasonal side takes `ori` only under `nosa` -- searching the
+    // ORIGINAL for a seasonal peak is only meaningful when nothing removed one;
+    // the trading-day side takes it unconditionally. Same `nosa` the savpk block
+    // below uses, hoisted here because the warning is written first.
+    const bool nosa = !((lx11 && kfulsm == 0) || ctx.captured.has_seats);
+    {
+        auto pk = [&](const char* prefix) -> const SpecPeaks* {
+            for (const auto& p : peaks_sink)
+                if (p.prefix == prefix) return &p;
+            return nullptr;
+        };
+        // spcdrv.f:585-590 -- ltdsa/lssa and ltdirr/lsirr are zero unless their
+        // table was computed, which a missing `peaks_sink` entry already says.
+        auto td = [&](const char* p) { const SpecPeaks* q = pk(p); return q && q->ltdpk > 0; };
+        auto sa = [&](const char* p) { const SpecPeaks* q = pk(p); return q && q->lsapk > 0; };
+        // spcdrv.f:158's `goori = Iagr.le.3`: the INDIRECT pass has no original
+        // to search at all, so both its ori terms are 0 by construction.
+        const char* const sax = iagr4 ? "spcindsa" : "spcsa";
+        const char* const irr = iagr4 ? "spcindirr" : "spcirr";
+        const bool anytd = (!iagr4 && td("spcori")) || td(sax) || td(irr);
+        const bool anyseas = sa(sax) || sa(irr) ||
+                             (!iagr4 && nosa && sa("spcori"));
+        const int fhnote = stdio::STDERR;
+        const int mt2 = ctx.units.mt2;
+        if (anytd && anyseas) {
+            writln(ctx, "WARNING: Visually significant seasonal and trading "
+                        "day peaks have ", fhnote, mt2, true);
+            writln(ctx, "         been found in one or more of the estimated "
+                        "spectra.", fhnote, mt2, false);
+        } else if (anytd || anyseas) {
+            // spcdrv.f:613 builds one string from pkstr, so the two variants
+            // differ only in the noun -- unlike spcrsd's, where the seasonal
+            // arm also moves "found" to the end of the first line.
+            const std::string what = anytd ? "trading day" : "seasonal";
+            writln(ctx, "WARNING: At least one visually significant " + what +
+                        " peak has been", fhnote, mt2, true);
+            writln(ctx, "         found in one or more of the estimated "
+                        "spectra.", fhnote, mt2, false);
         }
     }
 
@@ -646,7 +798,6 @@ bool run_spectrum(X13Context& ctx, bool iagr4) {
     // done (spcdrv.f:755 `nosa`) -- searching the original for a seasonal peak
     // is only meaningful then. savpk.f turns an empty list into "none".
     {
-        const bool nosa = !((lx11 && kfulsm == 0) || ctx.captured.has_seats);
         std::string cs, ct;
         auto add = [](std::string& s, const char* lab) {
             if (!s.empty()) s += ' ';

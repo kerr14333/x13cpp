@@ -39,6 +39,8 @@ import subprocess
 
 import pytest
 
+from oracle_outcome import oracle_died
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", ".."))
 _CORPUS = os.path.join(_REPO, "tests", "corpus", "extra")
@@ -123,6 +125,11 @@ def _oracle_abended(base: str) -> bool:
     Derived from the golden rather than from a name list, so a spec cannot drift
     onto the wrong side of it. Passing specs' .err files hold WARNING lines (the
     spectrum peak canaries); only an abend writes ' ERROR:'.
+
+    This means DIAGNOSED, and ABEND_CASES below depends on it meaning exactly
+    that -- it compares the ERROR block. A run the oracle never finished is a
+    different thing (`oracle_died`, CB-45) and is excluded from the passing
+    CASES separately.
     """
     path = os.path.join(_GOLDEN, base, base + ".err")
     if not os.path.exists(path):
@@ -142,6 +149,10 @@ CASES = sorted(
     b for b in _all_specs()
     if "x11regression" in b
     and not _oracle_abended(b)
+    # CB-45: the oracle's own process was killed by the Fortran runtime part
+    # way through. Its `.err` has no ERROR line, so the test above cannot see
+    # it, and this gate would demand a clean exit of a run that never finished.
+    and not oracle_died(os.path.join(_GOLDEN, b))
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".xrm"))
 )
 
@@ -237,6 +248,10 @@ AIC_CASES = sorted(
     b for b in _all_specs()
     if "x11regression" in b and "aictest" in b
     and not _oracle_abended(b)
+    # CB-45: the oracle's own process was killed by the Fortran runtime part
+    # way through. Its `.err` has no ERROR line, so the test above cannot see
+    # it, and this gate would demand a clean exit of a run that never finished.
+    and not oracle_died(os.path.join(_GOLDEN, b))
     and os.path.exists(os.path.join(_GOLDEN, b, b + ".udg"))
 )
 

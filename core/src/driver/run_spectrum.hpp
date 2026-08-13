@@ -56,6 +56,14 @@ struct SpectrumOutput {
     // per Tukey table in Itukey order -- `rsd` first, because spcrsd.f files its
     // entry during the regARIMA phase, before spcdrv runs at all.
     std::vector<TukeyEntry> tukey;
+    // ...and it is `run_residual_spectrum` that files it, from the estimation
+    // phase, so it has to survive run_spectrum's own clear of the two lists
+    // above. Kept here rather than left in place because run_spectrum is called
+    // once per pass and clears what it owns.
+    bool have_spr_peaks = false;
+    SpecPeaks spr_peaks;
+    bool have_spr_tukey = false;
+    TukeyPeaks spr_tukey;
     // svtukp.f -- the four accumulated `peaks.tukey.*` label lists.
     TukeyLabels tukey_labels;
 
@@ -87,6 +95,17 @@ struct SpectrumOutput {
 // `spcindsa`/`spcindirr`, and the results land in the `*_ind` fields so the
 // direct pass's own output survives.
 bool run_spectrum(X13Context& ctx, bool iagr4 = false);
+
+// spcrsd.f, called from arima.f:1126 -- the spectrum of the regARIMA model
+// RESIDUALS, and the peak WARNING that goes with it. Split out of run_spectrum
+// because the oracle runs it in the ESTIMATION phase, before x11pt2: the
+// numbers are the same either way, but the warning is a line in the Mt2 stream
+// and its POSITION there is observable. (The spread between the two placements
+// is every Mt2 write x11pt2/x11pt3 make -- the force NOTEs, the seasonal-filter
+// WARNING, x11mdl's reweight NOTE. No corpus golden happens to pair one with a
+// residual peak, which is exactly the kind of accident CLAUDE.md's
+// "which buffer, at which moment" rule says not to build on.)
+bool run_residual_spectrum(X13Context& ctx);
 
 }  // namespace x13
 

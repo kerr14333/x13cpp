@@ -19,6 +19,7 @@
 #include "x11/x11reg.hpp"            // pritd, tdset_td (x11regression tdprior)
 #include "x11/xrgdrv.hpp"            // xrgdrv (x11regression OLS prior TD, Ixreg>=2)
 #include "driver/x11_prestage.hpp"   // x11_editor_geometry (editor.f:206-233 + :851)
+#include "driver/run_spectrum.hpp"   // run_residual_spectrum (arima.f:1126 spcrsd)
 #include "regarima/estimate.hpp"
 #include "regarima/forecast.hpp"
 #include "regarima/outlier.hpp"     // idotlr, setcv
@@ -894,6 +895,14 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 abend(ctx);
                 return false;
             }
+
+            // arima.f:1121-1129 -- spcrsd, the residual spectrum and its peak
+            // WARNING. The numbers were derived in run_spectrum with the other
+            // three tables and were bit-exact there; what moved here is the
+            // POSITION of the warning in the Mt2 stream, which the oracle
+            // writes before x11pt2 runs at all. See run_spectrum.hpp.
+            run_residual_spectrum(ctx);
+            if (ctx.error.lfatal) return false;
 
             // NOTE (deferred): forecasting on a post-outlier model with other
             // regressors (TD) is not yet exact. idotlr's coladd/addotl fill only
