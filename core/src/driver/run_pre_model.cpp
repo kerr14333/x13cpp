@@ -34,6 +34,7 @@
 #include "gen/srslen.hpp"           // prm::PLEN (residual work-vector sizing)
 #include "gen/model.hpp"            // prm::PORDER
 #include "gen/notset.hpp"           // prm::DNOTST
+#include "gen/tbltab.hpp"           // prm::LESTES (arima.f:935's Prttab guard)
 
 #include <algorithm>
 #include <cmath>
@@ -752,6 +753,69 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 if (ctx.error.lfatal) return false;
                 ctx.arima.nrxy = nrxya;
                 if (out_trnsrs) *out_trnsrs = trnsrs;
+            }
+
+            // arima.f:935-960 -- the fixed-coefficient NOTE, which says the
+            // information criteria below it are not comparable. Two arms, and
+            // they are exclusive: any FIXED ARMA lag takes the first (whose
+            // text names both the regression and the ARIMA coefficients), and
+            // only if none is fixed does a fixed regression coefficient take
+            // the second. Sits here, after :907-914 has put the fixed
+            // regressors back, because the Fortran puts it here -- the `.err`
+            // compares in order.
+            //
+            // `Prttab(LESTES)` defaults TRUE (deftab(63)), so unlike Lprier
+            // this fires on a spec that never mentions `print=`.
+            {
+                auto& M = ctx.model;
+                const bool gudrun =
+                    ctx.hiddn.issap < 2 && ctx.hiddn.irev < 4;
+                if (ctx.arima.lestim && ctx.tbllog.prttab(prm::LESTES) &&
+                    gudrun) {
+                    const int begopr = M.opr(M.mdl(prm::AR - 1) - 1);
+                    const int endopr = M.opr(M.mdl(prm::MA) - 1) - 1;
+                    bool arma_fixed = false;   // istrue(Arimaf,begopr,endopr)
+                    for (int i = begopr; i <= endopr; ++i)
+                        if (M.arimaf(i)) { arma_fixed = true; break; }
+                    bool reg_fixed = false;    // istrue(Regfx,1,Nb)
+                    for (int i = 1; i <= M.nb; ++i)
+                        if (M.regfx(i)) { reg_fixed = true; break; }
+                    const int mt1 = ctx.units.mt1;
+                    const int mt2 = ctx.units.mt2;
+                    if (arma_fixed) {
+                        writln(ctx, " NOTE: Fixed values have been assigned to "
+                                    "some regression and ARIMA model",
+                               mt1, mt2, true);
+                        writln(ctx, "       coefficients.  If these values are "
+                                    "estimates calculated by " +
+                                        std::string(stdio::PRGNAM) + ",",
+                               mt1, mt2, false);
+                        writln(ctx, "       then the model comparison statistics "
+                                    "(AIC, AICC, Hannan Quinn, and BIC)",
+                               mt1, mt2, false);
+                        writln(ctx, "       and the P-values of the Q's of the "
+                                    "sample autocorrelations of the",
+                               mt1, mt2, false);
+                        writln(ctx, "       residuals below are invalid and "
+                                    "should not be used.",
+                               mt1, mt2, false);
+                    } else if (reg_fixed) {
+                        writln(ctx, " NOTE: Fixed values have been assigned to "
+                                    "some regression coefficients.",
+                               mt1, mt2, true);
+                        writln(ctx, "       If these values are estimates "
+                                    "calculated by " +
+                                        std::string(stdio::PRGNAM) +
+                                        ", then the",
+                               mt1, mt2, false);
+                        writln(ctx, "       model comparison statistics (AIC, "
+                                    "AICC, Hannan Quinn and BIC)",
+                               mt1, mt2, false);
+                        writln(ctx, "       below are invalid and should not be "
+                                    "used.",
+                               mt1, mt2, false);
+                    }
+                }
             }
 
             // arima.f:465 / :583 / :607 / :630 / :649. The oracle calls svaict

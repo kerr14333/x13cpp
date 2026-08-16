@@ -237,25 +237,25 @@ _KNOWN_GAPS: dict[tuple[str, str], str] = {}
 
 # NOTE blocks the oracle writes to Mt2 from a routine this port has not ported.
 # Same family as ssphdr (entry 81) and prterx (entry 73) -- a load-bearing Mt2
-# fragment swallowed by a routine skipped for what it MOSTLY does. Here it is
-# arima.f:936-960's fixed-coefficient NOTE (two arms: `istrue(Arimaf,...)` for a
-# fixed ARIMA parameter, `istrue(Regfx,1,Nb)` for a fixed regression one; the
-# specs below reach only the second).
+# fragment swallowed by a routine skipped for what it MOSTLY does.
 #
-# Filtered out of the GOLDEN side rather than skipping the spec, so the ssphdr
-# NOTE on the same file is still compared. Porting it makes this gate fail
-# (produced gains a block gold does not have), which is the point: the list
-# cannot outlive the gap.
+# EMPTY as of entry 111. Its one entry was arima.f:935-960's fixed-coefficient
+# NOTE, and this list is how that port announced itself: the block is emitted
+# now, `produced` gained a block `gold` did not have, and three specs here
+# failed the moment it landed. That is the designed outcome, written into the
+# comment below before it happened -- "porting it makes this gate fail ... the
+# list cannot outlive the gap."
 #
-# A SIBLING is unported and deliberately NOT listed here: prtmdl.f:174-177's
+# Kept, empty, with its freshness check: the next unported NOTE goes here and
+# gets the same treatment.
+#
+# A SIBLING is unported and deliberately NOT listed: prtmdl.f:174-177's
 # `Nliter > 200` estimation-iteration NOTE. It appeared on an early draft of
 # airline_slidingspans-regfixed whose fixed coefficients (0.39) were so far from
 # the data that the ARMA maximisation ran past the udg's `niter` field width,
 # and it left when the coefficients became plausible. No corpus spec carries it
 # today, so an entry here would fail the freshness check below on day one.
-_UNPORTED_NOTES = (
-    "  NOTE: Fixed values have been assigned to some regression coefficients.",
-)
+_UNPORTED_NOTES: tuple[str, ...] = ()
 
 
 def test_slidingspans_cases_discovered() -> None:

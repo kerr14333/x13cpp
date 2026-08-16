@@ -129,10 +129,9 @@ _UNPORTED_BLOCKS = (
     # They are PORTED -- the blocker was never the message, it was `Lprier` =
     # `Prttab(LESTIE)`, i.e. the print-table store. chkrt2.f writes a different
     # sentence that no golden carries.)
-    # arima.f:936-960 -- the fixed-coefficient NOTE (board item 5). Two
-    # wordings: regression-only, and regression + ARIMA.
-    "NOTE: Fixed values have been assigned to some regression coefficients.",
-    "NOTE: Fixed values have been assigned to some regression and ARIMA model",
+    # (arima.f:935-960's two fixed-coefficient wordings used to sit here. They
+    # are PORTED -- they were behind Prttab(LESTES), the same store that was
+    # blocking fcnar's; entry 110 landed it and entry 111 read it.)
     # x11ari.f / prtsum -- the "nothing was adjusted" line.
     "No seasonal adjustment this run",
     # amdfct.f -- fewer than three years of forecasts to average.

@@ -3286,6 +3286,38 @@ match the code changed -- which reads exactly like "the mutation worked."
 specs that carry them (list 19 -> 16). Mutations: `fcnar`'s block never writes
 **20**; `automx`'s `lauto` back to false **1**.
 
+## This session, part 62: the second `_UNPORTED_BLOCKS` family, and a retraction
+
+`arima.f:935-960`'s fixed-coefficient NOTE, both arms, gated. `docs/M5_PORT_NOTES.md`
+entry 111. Short, because the transcription held no surprises -- the two things
+worth carrying are about the GATES and about part 61's own conclusion.
+
+**The slidingspans note gate announced the port by failing.** The same NOTE was
+subtracted from the golden side of `test_slidingspans_tables._UNPORTED_NOTES`,
+whose comment said in advance: "porting it makes this gate fail ... the list
+cannot outlive the gap." It did, on three specs, in the first full-suite run
+after the block landed. That list is now EMPTY and kept, with its freshness
+check, for the next one. Two independent both-directions guards over one text,
+each catching the other's stale half.
+
+**Part 61's "deftab's values are never observed" is RETRACTED.** It was measured
+correctly -- `Prttab` initialised all-false failed 0 gates -- and it stopped
+being true one increment later, because `deftab(LESTES)` is **T** and this NOTE
+therefore fires on specs that never mention `print=`. The same mutation now
+costs **16**. Nothing in the store changed; it acquired a reader whose default
+is true.
+
+Generalised, and it belongs beside entry 86's version: **an inertness measured
+over the corpus is scoped to the CONSUMERS that existed when it was measured,
+exactly as a measured inertness is scoped to the probe spec.** Write such a note
+so it names what would falsify it -- here, "the first consumer of a slot whose
+deftab entry is T".
+
+Mutations: NOTE never writes **16**; regression-only arm suppressed **10**;
+`Prttab(LESTES)` ignored **0** (saturated -- no spec turns LESTES printing off,
+same shape as LSPCRS); `gudrun` forced true **0** (no span replay reaches this
+with a fixed coefficient). Both zeros are corpus gaps, not theorems.
+
 ## Open, in the order I would take them
 
 1. **Two slidingspans ports that are ungated for want of a spec.** The
@@ -3363,11 +3395,14 @@ specs that carry them (list 19 -> 16). Mutations: `fcnar`'s block never writes
    a span-local outlier that survives a `critical=` the ORACLE also survives --
    2.0 kills both on the design-size limit. Same shape as the `rind=1`
    `bakusr`/`addusr` path in item 1.
-5. **Two unported Mt2 NOTEs** (task #43): `arima.f:936-960`'s fixed-coefficient
-   NOTE, subtracted from the golden side of the slidingspans note gate by
-   `_UNPORTED_NOTES` with `test_unported_notes_still_unported` guarding the
-   list; and `prtmdl.f:174-177`'s `Nliter>200` NOTE, unported with no corpus
-   carrier and deliberately NOT listed.
+5. ~~**Two unported Mt2 NOTEs** (task #43)~~ **ONE LEFT, 2026-08-16 (entry
+   111).** `arima.f:935-960`'s fixed-coefficient NOTE is **PORTED**, both arms
+   (6 specs reach the ARIMA wording, 10 the regression-only one), and
+   `_UNPORTED_NOTES` is now EMPTY -- the slidingspans note gate announced the
+   port by failing on three specs, which its own comment had predicted in
+   writing. What remains is `prtmdl.f:174-177`'s `Nliter>200` NOTE, unported,
+   with no corpus carrier and deliberately NOT listed anywhere (an entry would
+   fail its list's freshness check on day one).
 6. ~~`x11ref.f`'s `IF(Holgrp.gt.0)` fold guard, the uninitialized `Trumlt`, and
    `x11mdl.f:597-602`'s stale `icol`~~ **ALL THREE CLOSED 2026-08-09, entry
    100.** The guard was this port's own missing writer (`x11aic.f:318-322`);
@@ -3470,11 +3505,12 @@ specs that carry them (list 19 -> 16). Mutations: `fcnar`'s block never writes
       literal are exactly the thing to re-derive rather than read** -- an AST
       count takes a minute.
 
-      Two of the remaining 16 sit behind the print-table store that entry 110
-      landed and are the cheapest next ones: `arima.f:940`'s fixed-coefficient
-      NOTE (`IF(Lestim.and.Prttab(LESTES).and.gudrun)`) and `mkback.f:291`'s
-      prior-factor WARNING (`Prttab(LFORBC).or.Savtab(LFORBC)`). The rest have
-      no print-table guard.
+      **14 as of entry 111**, which ported `arima.f:935-960`'s two
+      fixed-coefficient wordings -- the first family the print-table store was
+      landed for. The one remaining entry with a print-table guard is
+      `mkback.f:291`'s prior-factor WARNING
+      (`Prttab(LFORBC).or.Savtab(LFORBC).or.Lgraf`); the other 13 have none, so
+      from here it is ordinary transcription against a gate already in place.
     * ~~**The residual-spectrum placement is ported faithfully and still
       ungated.**~~ **GATED**, same day. The leverage was exactly as predicted:
       porting `x11pt3.f`'s three negative-value NOTEs (`:647`, `:796`, `:863`)

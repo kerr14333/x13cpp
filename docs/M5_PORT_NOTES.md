@@ -8316,3 +8316,67 @@ the signal that is easiest to read as "the mutation worked."
 `_UNPORTED_BLOCKS` **19 -> 16**, this time in the tuple. Suite
 **9034 passed, 0 failed, 942 skipped**; ctest 12/12; WALLS unchanged
 22 gaps / 4 faithful.
+
+## 111. `arima.f:935-960`'s fixed-coefficient NOTE -- and entry 110's "deftab is never observed" retired one increment later (2026-08-16)
+
+The second `_UNPORTED_BLOCKS` family, and the first one entry 110's print-table
+store was landed FOR. Two wordings, one guard, no surprises in the transcription:
+`IF(Lestim.and.Prttab(LESTES).and.gudrun)`, then `istrue(Arimaf,begopr,endopr)`
+takes the arm whose text names the regression AND the ARIMA coefficients, and
+only if no ARMA lag is fixed does `istrue(Regfx,1,Nb)` take the regression-only
+one. The arms are exclusive, which is the whole content of the block: **6** specs
+reach the first, **10** the second.
+
+Placed after `arima.f:907-914`'s `addfix` restore because that is where the
+Fortran puts it. The `.err` compares in order.
+
+`_UNPORTED_BLOCKS` **16 -> 14**.
+
+### The other gate announced the port by failing, exactly as its comment said
+
+`test_slidingspans_tables._UNPORTED_NOTES` carried this same NOTE, subtracted
+from the GOLDEN side so that the `ssphdr` NOTE in the same file stayed compared.
+Its comment, written when the list was created:
+
+> Porting it makes this gate fail (produced gains a block gold does not have),
+> which is the point: the list cannot outlive the gap.
+
+It did, on three specs, in the first full-suite run after the block landed. The
+list is now **empty** and kept that way, with its freshness check, for the next
+one. Two independent both-directions guards over the same text, and each one
+found the other's stale half -- this is what the pattern is for.
+
+### Mutations
+
+| mutation | fails |
+|---|---|
+| the NOTE never writes | **16** |
+| the regression-only arm suppressed (ARIMA arm intact) | 10 |
+| `Prttab(LESTES)` ignored (guard forced true) | 0 |
+| `gudrun` forced true | 0 |
+| **`Prttab` initialised all-false instead of from `deftab`** | **16** |
+
+### The last row retires a finding from entry 110
+
+Entry 110 measured the `deftab` initialisation at **zero** and said so plainly:
+"`deftab`'s values are never observed because no reader consumes a slot whose
+default is true -- `LESTIE` is F, and so is all of `[LSETRN, NTBL-11]`." That was
+a correct measurement and it stopped being true in the next increment.
+`deftab(LESTES)` is **T**, so this NOTE fires on a spec that never mentions
+`print=` at all, and mutating the initialiser now costs 16 gates.
+
+Nothing changed in the store. What changed is that it acquired a reader whose
+default is true. **An inertness measured over the corpus is scoped to the
+CONSUMERS that exist when it is measured, exactly as entry 86 showed an
+inertness is scoped to the probe spec.** The honest form of entry 110's sentence
+was "no reader consumes such a slot *yet*", and the way to write such a note is
+to name what would falsify it -- here, the first consumer of a slot whose deftab
+entry is T.
+
+The two guards that measure zero this time are saturated in the ordinary way:
+no corpus spec turns `LESTES` printing off (same shape as `Prttab(LSPCRS)`), and
+no span replay reaches this block with a fixed coefficient. Both are corpus gaps,
+not theorems.
+
+Suite **9034 passed, 0 failed, 942 skipped**; ctest 12/12; WALLS unchanged
+22 gaps / 4 faithful.
