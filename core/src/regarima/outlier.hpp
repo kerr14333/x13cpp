@@ -60,10 +60,15 @@ double setcvl(int nspobs, double cvalfa);
 // robust mse is taken from the raw residuals, and each re-estimation is a regx11
 // OLS instead of rgarma. Requires nxcld==0 (with a holiday/AO group present the
 // upstream tdxtrm exclusion is skipped, so the excluded-row lxreg case is unported).
+// `lauto` is IN-OUT, as in the Fortran: it says the caller is an automatic pass
+// that must not abend, and idotlr.f:892 / :1008 CLEARS it on an estimation
+// failure so the caller sees the failure (amidot.f:60 reads it straight back).
+// It also reaches fcnar through rgarma, where it picks the wording of the
+// non-invertible-root WARNING.
 void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
             const double* critvl, double cvrduc, const int* begtst,
             const int* endtst, int& nefobs, bool lestim, int mxiter, int mxnlit,
-            bool lauto, double* a, bool lxreg = false);
+            bool& lauto, double* a, bool lxreg = false);
 
 // makotl.f: build the outlier regressor column(s) for an effect at time t0 over
 // nr rows. ltest is the 3-element [AO,LS,TC] test-flag slice (1 = build that

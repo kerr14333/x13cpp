@@ -17,6 +17,7 @@
 #include "gen/model.hpp"            // prm::DIFF, prm::MA, prm::PORDER, error codes
 #include "gen/srslen.hpp"           // prm::PLEN (PA sizing)
 #include "gen/notset.hpp"           // prm::DNOTST (not-set sentinel)
+#include "x13/fformat.hpp"          // fwrite_fmt (fcnar's Lprier message formats)
 
 namespace x13 {
 
@@ -159,18 +160,42 @@ void upespm(X13Context& ctx, const double* estprm) {
     }
 }
 
-// fcnar.f -- optimizer objective. The info!=0 warning prints (Lprier block) are
-// deferred to the print milestone; the sentinel-fill / info / err resets below
-// them run unconditionally and ARE reproduced, as is the exact-ML scaling.
+// fcnar.f -- optimizer objective. The info!=0 Lprier block writes the run's
+// most numerous `.err` diagnostic (374 lines on one pickmdl spec): the objective
+// is called once per lmdif function evaluation, so a non-invertible operator is
+// reported on EVERY evaluation that hits one, not once per estimation.
+//
+// Only the Mt2 half is emitted. `fh2` is Mt1, the main printout, which this port
+// defers wholesale -- it is written here for shape, and `prtitr`'s parameter
+// dump under the non-auto arm stays deferred with the rest of the print engine.
+//
+// DORMANT, and deliberately so: `Lprier` is `Prttab(LESTIE)` (gtestm.f:208) and
+// this port defers the print-table STORE, so m.lprier is false on every run and
+// nothing below fires. It is transcribed rather than walled because it was
+// verified against the goldens first: forcing the flag on reproduces
+// `extra/airline_pickmdl`'s block byte for byte, trailing space included. The
+// flag is NOT saturated -- forcing it on emits the warning on 55 specs whose
+// goldens are silent (they carry a bare `estimate{ }`; every spec that carries
+// the warning carries `estimate{print=all}`), so this cannot be closed by taking
+// Prttab true the way run_spectrum.cpp does for LSPCRS. It needs the store.
 void fcnar(X13Context& ctx, int& na, int testpm, const double* estprm, double* a,
            bool lauto, bool gudrun, int& err, bool lckinv) {
     (void)testpm;   // dummy that should equal Nestpm (Estprm's declared length)
-    (void)lauto;    // used only by the deferred diagnostic prints
-    (void)gudrun;
     constexpr double TWO = 2.0;
     auto& m = ctx.model;
     auto& d = ctx.mdldat;
     constexpr int PA = prm::PLEN + 2 * prm::PORDER;
+
+    // fcnar.f:69-75. cdot ends the 1010 line: a period on the explicit-model
+    // path, a BLANK under Lauto, because there the sentence continues into
+    // 1049's "for model ...". The trailing space is in the goldens.
+    const char* cdot = ".";
+    if (lauto) cdot = " ";
+    int fh2 = 0;
+    if (!lauto) {
+        fh2 = ctx.units.mt1;
+        if (!gudrun) fh2 = 0;
+    }
 
     // Insert the estimated parameters into the ARIMA filter structures.
     upespm(ctx, estprm);
@@ -180,7 +205,77 @@ void fcnar(X13Context& ctx, int& na, int testpm, const double* estprm, double* a
     armafl(ctx, d.nspobs, 1, true, lckinv, a, na, PA, info);
 
     if (info != 0) {
-        // (fcnar.f Lprier diagnostics deferred -- do not affect a/na/info/err.)
+        if (m.lprier) {
+            const int Mt2 = ctx.units.mt2;
+            auto& mt2 = ctx.channels_.unit(Mt2);
+            if (info == prm::PINVER) {
+                std::string str;
+                int ntmpcr = 0;
+                getstr(ctx, m.oprttl.data(), m.oprptr.data(), m.noprtl, d.prbfac,
+                       str, ntmpcr);
+                if (ctx.error.lfatal) return;
+                const std::string opr =
+                    str.substr(0, static_cast<std::size_t>(ntmpcr));
+                const std::string rec =
+                    fwrite_fmt("(/,' WARNING: ',a,' roots inside the unit circle',a)",
+                               opr, std::string(cdot)) + "\n";
+                if (fh2 > 0) ctx.channels_.unit(fh2).put(rec);
+                errhdr(ctx);
+                mt2.put(rec);
+            } else if (info == prm::PGPGER) {
+                const std::string rec =
+                    fwrite_fmt("(/,' WARNING: Problem with MA parameter estimation.  ',a,"
+                               "' can''t',/,'          invert the G''G matrix. Try a "
+                               "simpler ARIMA ','model without',/,'          parameter "
+                               "constraints. Please send us the ','data and spec file',"
+                               "/,'          that produced this message ',"
+                               "'(x12@census.gov)',a)",
+                               std::string(stdio::PRGNAM), std::string(cdot)) + "\n";
+                if (fh2 > 0) ctx.channels_.unit(fh2).put(rec);
+                errhdr(ctx);
+                mt2.put(rec);
+            } else if (info == prm::PACFER) {
+                const std::string rec =
+                    fwrite_fmt("(/,' WARNING: Problem calculating the theoretical ARMA "
+                               "ACF',a)", std::string(cdot)) + "\n";
+                if (fh2 > 0) ctx.channels_.unit(fh2).put(rec);
+                errhdr(ctx);
+                mt2.put(rec);
+            } else if (info == prm::PVWPER) {
+                const std::string rec =
+                    fwrite_fmt("(/,' WARNING: Problem calculating var(w_p|z)',a)",
+                               std::string(cdot)) + "\n";
+                if (fh2 > 0) ctx.channels_.unit(fh2).put(rec);
+                errhdr(ctx);
+                mt2.put(rec);
+            }
+            // fcnar.f:114-130 -- the tail. Note Lckinv, not the info code,
+            // picks it, so an unrecognized info writes a bare tail and no head.
+            if (lckinv) {
+                errhdr(ctx);
+                if (lauto) {
+                    mt2.put(fwrite_fmt("('          for model ',a,'.  Will',/,"
+                                       "'          attempt to fix the problem, and "
+                                       "continue.')",
+                                       m.mdldsn.raw().substr(
+                                           0, static_cast<std::size_t>(m.nmddcr))) +
+                            "\n");
+                } else {
+                    const std::string rec =
+                        fwrite_fmt("('          Will print out the parameters,',/,"
+                                   "'          attempt to fix the problem, and "
+                                   "continue.')") + "\n";
+                    // (fh2's prtitr parameter dump is deferred with the print engine.)
+                    if (fh2 > 0) ctx.channels_.unit(fh2).put(rec);
+                    mt2.put(rec);
+                }
+            } else {
+                const std::string rec = fwrite_fmt("(/)") + "\n";
+                errhdr(ctx);
+                if (fh2 > 0) ctx.channels_.unit(fh2).put(rec);
+                mt2.put(rec);
+            }
+        }
         // Flood the residuals so a bad jump is brought back in bounds.
         setdp(ctx.series.lrgrsd, na, a);
         info = 0;

@@ -7,6 +7,7 @@
 #include "notset.hpp"
 #include "srslen.hpp"
 #include "gen/model.hpp"   // prm::PB (gtrgvl's bvec/fixvec bound)
+#include "gen/tbltab.hpp"  // prm::LEVEL (getprt.f:207's level fill)
 
 #include <string>
 
@@ -871,9 +872,13 @@ void gtdcvc(X13Context& ctx, int grpchr, bool flgnul, int pelt, std::string_view
 
 // --- print / save / savelog readers --------------------------------------
 // All three VALIDATE against the calling spec's own slice of a shared
-// dictionary; applying the selection (Prttab/Savtab/Svltab, and getprt's
-// level() fill at getprt.f:205-209) stays deferred to the output milestone.
-// The lookup is the half that decides OUTCOME, and it is ported.
+// dictionary. getprt's and getsav's STORES are now ported too (entry 110):
+// Prttab carries getprt.f:205-208's level() fill, Savtab getsav.f:57. Only
+// Svltab's store is still deferred -- it has no reader in this engine.
+//
+// Almost none of the store is gated: `deftab`'s defaults, the tblmsk guard and
+// Savtab all mutate to zero failures on this corpus. The one slot with an
+// observable consumer is LESTIE, read back as Lprier by gt_estimate.
 //
 // getprt.f:28 -- the five print LEVELS, tried BEFORE the table dictionary and
 // shared by every spec. `alltables` and `all` are distinct levels here, unlike
@@ -885,7 +890,8 @@ constexpr int NLVL = 5;
 // getprt.f:75-91 / getsav.f:35-46 -- one table name, already known not to be a
 // level. Reports the spec-appropriate refusal and consumes the token.
 static void tbl_lookup(X13Context& ctx, bool save, int lsp, int nsp,
-                       bool& locok, std::vector<std::string>* cap = nullptr) {
+                       bool& locok, std::vector<std::string>* cap = nullptr,
+                       int* tblout = nullptr) {
     LexState& L = ctx.lex;
     // The name has to be taken BEFORE the lookup: gtdcnm consumes the token on
     // a hit. `run_pre_model`'s wants_save() reads this list, so validating the
@@ -897,7 +903,15 @@ static void tbl_lookup(X13Context& ctx, bool save, int lsp, int nsp,
                 c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         cap->push_back(std::move(s));
     }
-    if (tbldic_lookup(ctx, save, lsp, nsp) != 0) return;   // Prttab/Savtab store deferred
+    // getprt.f:97 / getsav.f:56 -- the dictionary index counts LONG and SHORT
+    // names, two per table, so the table is `Spcdsp+(tblidx+1)/2`.
+    const int idx = tbldic_lookup(ctx, save, lsp, nsp);
+    if (idx != 0) {
+        const int tbl = lsp + (idx + 1) / 2;
+        if (tblout) *tblout = tbl;
+        if (save) ctx.tbllog.savtab(tbl) = true;   // getsav.f:57
+        return;
+    }
     if (save) {
         inpter(ctx, PERROR, L.lstpos.data() + 1, "Save argument is not defined.");
         writln(ctx, "        Check the available table names for this spec.",
@@ -927,15 +941,20 @@ static void tbl_lookup(X13Context& ctx, bool save, int lsp, int nsp,
 // getprt.f:67 (single value) ends `or nothing.` and getprt.f:148 (inside a
 // list) ends `or nothing` with no period.
 static bool prt_element(X13Context& ctx, int lsp, int nsp, bool inlist,
-                        bool& locok) {
+                        bool& locok, int& lvlidx, std::vector<bool>& tblmsk) {
     LexState& L = ctx.lex;
     int itmp = 0;
     bool argok = true;
     gtdcnm(ctx, LVLDIC, lvlptr, NLVL, itmp, argok);
-    if (argok && itmp > 0) return true;                     // lvlidx = itmp, deferred
+    if (argok && itmp > 0) {
+        lvlidx = itmp;                                      // getprt.f:56 / :136
+        return true;
+    }
+    bool addtbl = true;
     if (!argok) {
         if (L.nxtktp == MINUS || L.nxtktp == PLUS) {
-            lex(ctx);                                       // addtbl = (tok != MINUS)
+            if (L.nxtktp == MINUS) addtbl = false;
+            lex(ctx);
         } else {
             inpter(ctx, PERROR, L.lstpos.data() + 1,
                    inlist ? "Prefix must be \"+\", \"-\", or nothing"
@@ -945,7 +964,14 @@ static bool prt_element(X13Context& ctx, int lsp, int nsp, bool inlist,
             if (inlist) return false;
         }
     }
-    tbl_lookup(ctx, /*save=*/false, lsp, nsp, locok);
+    int tbl = 0;
+    tbl_lookup(ctx, /*save=*/false, lsp, nsp, locok, nullptr, &tbl);
+    if (tbl != 0) {
+        // getprt.f:98-99 / :179-180 -- a NAMED table is set directly and taken
+        // out of the level fill below, whichever order the two appear in.
+        tblmsk[static_cast<std::size_t>(tbl - lsp - 1)] = false;
+        ctx.tbllog.prttab(tbl) = addtbl;
+    }
     return true;
 }
 
@@ -955,13 +981,35 @@ static bool prt_element(X13Context& ctx, int lsp, int nsp, bool inlist,
 static void read_prtsav(X13Context& ctx, bool save, int lsp, int nsp,
                         bool& locok, std::vector<std::string>* cap) {
     LexState& L = ctx.lex;
+    // getprt.f:41-44 -- the mask starts TRUE over this spec's slice and the
+    // level starts at `default`, or at `none` under the -n flag. Both are
+    // getprt's own locals; getsav has neither.
+    std::vector<bool> tblmsk(static_cast<std::size_t>(nsp), true);
+    int lvlidx = ctx.hiddn.lnoprt ? 2 : 1;
+    // getprt.f:205-208 -- every table the user did NOT name takes the level's
+    // value. Guarded on the SAME flag the Fortran guards it on: `Inptok`, the
+    // accumulated parse-ok flag the caller passes in, not a local -- a spec
+    // that failed to parse leaves the defaults alone.
+    struct LevelFill {
+        X13Context& ctx; bool save; int lsp, nsp; bool& ok;
+        const std::vector<bool>& msk; const int& lvl;
+        ~LevelFill() {
+            if (save || !ok) return;
+            for (int i = 1; i <= nsp; ++i)
+                if (msk[static_cast<std::size_t>(i - 1)])
+                    ctx.tbllog.prttab(lsp + i) =
+                        prm::LEVEL[lsp + i - 1][lvl - 1];
+        }
+    } fill{ctx, save, lsp, nsp, locok, tblmsk, lvlidx};
+
     if (L.nxtktp == EOFTOK) {
         locok = false;
         return;
     }
     if (L.nxtktp != LPAREN) {
         if (save) tbl_lookup(ctx, true, lsp, nsp, locok, cap);
-        else      prt_element(ctx, lsp, nsp, /*inlist=*/false, locok);
+        else      prt_element(ctx, lsp, nsp, /*inlist=*/false, locok, lvlidx,
+                              tblmsk);
         return;
     }
     bool opngrp = true, hvcmma = false;
@@ -986,7 +1034,8 @@ static void read_prtsav(X13Context& ctx, bool save, int lsp, int nsp,
             }
             if (save) {
                 tbl_lookup(ctx, true, lsp, nsp, locok, cap);
-            } else if (!prt_element(ctx, lsp, nsp, /*inlist=*/true, locok)) {
+            } else if (!prt_element(ctx, lsp, nsp, /*inlist=*/true, locok,
+                                    lvlidx, tblmsk)) {
                 continue;   // getprt.f:151's GO TO 10 -- hvcmma/opngrp unchanged
             }
             if (ctx.error.lfatal) return;

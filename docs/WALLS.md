@@ -34,7 +34,7 @@ reproduce.
 - **`core/src/automdl/automd.cpp:77`**
   automdl{} with regression{aictest=} naming anything other than td, easter or user -- td1coef / tdstock / lom have no automd path
 
-- **`core/src/automdl/automx.cpp:468`**
+- **`core/src/automdl/automx.cpp:469`**
   pickmdl{} with user-defined holiday chi-square testing is not yet ported (chkchi.f has no C++; automx.f:484-500 runs it inside the candidate loop). The user-regressor half of this wall came down when usraic.f was ported.
   *Fortran:* `automx.f:484-500`
 
@@ -109,10 +109,10 @@ reproduce.
 - **`core/src/x11/x11reg.cpp:1028`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1870`**
+- **`core/src/x11/x11reg.cpp:1874`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1887`**
+- **`core/src/x11/x11reg.cpp:1891`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:57`**
@@ -130,16 +130,16 @@ inventory.
 
 ## Automatic model selection
 
-- **`core/src/automdl/automx.cpp:490`**
+- **`core/src/automdl/automx.cpp:491`**
   Must have user supplied models stored in
 
-- **`core/src/automdl/automx.cpp:524`**
+- **`core/src/automdl/automx.cpp:525`**
   No ARIMA models stored in
 
-- **`core/src/automdl/automx.cpp:533`**
+- **`core/src/automdl/automx.cpp:534`**
   Every pickmdl candidate model failed to estimate.
 
-- **`core/src/automdl/automx.cpp:812`**
+- **`core/src/automdl/automx.cpp:813`**
   pickmdl{}: the selected model failed to re-estimate.
 
 

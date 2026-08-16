@@ -698,11 +698,17 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                     double critvl[prm::POTLR] = {ctx.arima.critvl(1),
                                                  ctx.arima.critvl(2),
                                                  ctx.arima.critvl(3)};
+                    // arima.f:120-124 -- `lautid = lauto .and. gudrun`, where
+                    // lauto is `Lautom.or.Lautox` and gudrun is the main-run
+                    // test. This port hardcoded false, which is right only
+                    // while no automatic model selection reaches here.
+                    bool lautid = (ctx.arima.lautom || ctx.arima.lautox) &&
+                                  (ctx.hiddn.issap < 2 && ctx.hiddn.irev < 4);
                     idotlr(ctx, ctx.arima.ltstao, ctx.arima.ltstls,
                            ctx.arima.ltsttc, ctx.arima.ladd1, critvl,
                            ctx.arima.cvrduc, begtst, endtst, nefobs,
                            ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
-                           /*lauto=*/false, a.data());
+                           lautid, a.data());
                     if (ctx.error.lfatal) return false;
                     // arima.f:772 -- and again after outlier identification,
                     // which re-estimates. Gated on !Convrg here, where :711 is

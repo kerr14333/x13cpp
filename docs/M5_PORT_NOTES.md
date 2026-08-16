@@ -8149,3 +8149,170 @@ noise from the cheapest way to write the mutation.
 
 `_UNPORTED_BLOCKS` **19 -> 16**. Suite **9034 passed, 0 failed, 942 skipped**;
 ctest 12/12.
+
+## 110. The three "chkrt2" root WARNINGs were `fcnar.f`'s -- and the print-table store was the real blocker (2026-08-16)
+
+Entry 109 left `_UNPORTED_BLOCKS` as the standing inventory of `.err` text this
+engine does not write, and the board said to work it down. The first family on
+the list -- the ARMA-root WARNINGs credited to `chkrt2.f` -- turned out to be
+wrong in its attribution, wrong in its count, and blocked on something that is
+not a message at all.
+
+### Three corrections before any code
+
+**The list has 19 entries, not 16.** Entry 109 closes with "`_UNPORTED_BLOCKS`
+**19 -> 16**" and the file's own docstring says "nineteen when this file was
+widened, sixteen by the end of the same day". The tuple was never edited; an AST
+count says 19. Nothing was wrong in the ENGINE -- the guard
+`test_unported_blocks_still_unported` asserts every entry both is still carried
+by a golden and is still not emitted, and it passes -- so all 19 were real. Only
+the prose moved.
+
+**The texts are `fcnar.f:89-131`'s, not `chkrt2.f`'s.** The goldens carry
+
+    [ WARNING: Nonseasonal MA roots inside the unit circle ]
+    [          for model (0 2 2)(0 1 1).  Will]
+    [          attempt to fix the problem, and continue.]
+
+which is `fcnar.f`'s FORMAT 1010 plus its 1049 tail. `chkrt2.f:86-88` writes a
+different sentence -- `<operator> roots inside the unit circle.  Will attempt to
+invert them.` -- that **no golden carries**, because its only two call sites are
+`prterr.f:173/195` (which pass `Lprmsg=F`) and `rgarma.f:277`.
+
+**And `chkrt2`'s C++ stub is faithful, not a gap.** It reads
+`inverr = 0; return;`, which looks like a stub of a 106-line routine. But
+`Inverr` is assigned exactly once in the Fortran, at `chkrt2.f:45`, to 0, and
+nothing else in the routine has a non-print effect: the header comment says it
+"makes them invertible" and the body only WRITES. The stub is the whole
+non-print routine.
+
+### Why the message could not simply be ported
+
+`fcnar.f:90`'s block is `IF(Lprier)`, and `Lprier` has exactly one writer:
+`gtestm.f:208`, `Lprier=Prttab(LESTIE)`, under `estimate{print=}`. This port
+VALIDATES `print=`/`save=` against the table dictionary (entry 106) and defers
+the STORE, so `ctx.tbllog.prttab` -- a 396-slot array that has existed all along
+-- had **no writer**, and `m.lprier` was false on every run. The transcription
+was verified against the goldens before that was known: forcing the flag on
+reproduces `extra/airline_pickmdl`'s block byte for byte, trailing space
+included.
+
+**The flag is not saturated, which is what forced the real port.** Entry 109
+closed `Prttab(LSPCRS)` by taking it TRUE and measuring the precondition
+saturated at 293 of 293. That is not available here. Forcing `Lprier` true fails
+**55** specs whose goldens are silent -- they carry a bare `estimate{ }` -- while
+every spec that carries the warning carries `estimate{print=all}`. The tables say
+why: `deftab(LESTIE)` is **F**, and `level(LESTIE, :)` is
+`F F F T T` over `default / none / brief / alltables / all`, so the corpus splits
+precisely on whether a spec names a print level at all.
+
+### What landed: the print/save table store
+
+`tools/tbltab2hpp.py` (new) generates `core/prm/gen/tbltab.hpp` from
+`deftab.var`, `sumtab.var`, `level.var` and the `*tbl*.i` PARAMETER blocks:
+**396 tables x 5 levels, plus 300 `L*` index constants**. `prm2hpp.py` had
+emitted three EMPTY headers for these -- it reads `.prm` and these are DATA in
+`.var`, so it correctly recorded "skipped runtime vars" and correctly produced
+nothing. They are constant in every sense that matters; nothing assigns them.
+
+Wired, each to its Fortran line:
+
+* `gtinpt.f:116-125` -- `Prttab` from `deftab` (or all-false under `-n`),
+  `Savtab` from `sumtab` (or all-false without `-s`). `Lsumm` has no writer in
+  this port and every golden was blessed with `-s`, so `-s` is the modelled run,
+  as `x11reg.cpp:1400` already assumed.
+* `getprt.f:41-44, 97-99, 179-180, 205-208` -- `tblmsk` starts true over the
+  spec's slice, a NAMED table sets `Prttab` directly and drops out of the mask, a
+  level sets `lvlidx`, and the tail fills every still-masked slot from
+  `level(i,lvlidx)`. Guarded on `Inptok`, the accumulated flag the caller passes,
+  exactly as the Fortran guards it.
+* `getsav.f:56-57` -- `Savtab(tblidx)=T`, no levels, no mask.
+* `gtestm.f:208` -- the one line this was all for.
+
+`Svltab` (savelog) is still unstored; it has no reader.
+
+### The second defect, and it is the one worth remembering
+
+With the flag live, `extra/airline_pickmdl-aictest-otl` came out with the right
+COUNT of warnings (91, both sides) and the wrong WORDING on 53 of them: the
+oracle's are all the `Lauto` form, the engine switched to the non-auto form
+partway through. `cdot` is `'.'` when `Lauto` is false and a BLANK when it is
+true, and `Lauto` reaches `fcnar` from `rgarma`'s eighth argument.
+
+`idotlr`'s `Lauto` was **hardcoded `/*lauto=*/false` at three of its four call
+sites**:
+
+| oracle | passes | this port had |
+|---|---|---|
+| `automx.f:516` / `:853` | `argok`, inside `IF(argok)` -- TRUE | `false` |
+| `amidot.f:37` | `Argok`, its own 8th argument | `false` (the argument was dropped entirely) |
+| `arima.f:757` | `lautid` = `lauto .and. gudrun` (`:120-124`) | `false` |
+| `x11mdl.f:442` | `ldum`, assigned `F` at `:434` | `false` -- **correct**, now a named local |
+
+This is entry 71/85's shape again -- an argument the Fortran passes and the port
+dropped -- with the twist that it was invisible because `Lauto` had no READER in
+this port until `fcnar`'s block appeared. It is not only cosmetic: `Lauto` also
+gates `idotlr.f:884-894` / `:1000-1010`, the automatic-pass estimation-failure
+exit, which reports through `prterr` and returns with `Lauto` cleared and
+`Lfatal` UNSET, where the port's collapsed `if (!convrg) lfatal = true` stops the
+run. Both arms are now ported, and `lauto` is `bool&` so the clear reaches the
+caller (`amidot.f:60` reads it straight back).
+
+Not ported, and said so at the site: `amidot.f:59-68`'s read-back abend, whose
+message names the error file through `Cursrs`, which this port has no
+counterpart for. It writes to STDERR/Mt1 and never to Mt2, so it is outside the
+`.err` block, and it cannot fire while the automatic outlier pass converges.
+
+### A side effect that is a fix, and is ungated
+
+`seatopts.cpp:113` resolves SEATS `out` by scanning `Prttab[LSETRN..NTBL-11]`
+(`ansub9.f:1050`), and its comment recorded the gap: "gt_seats token-consumes
+`print=` without populating ctx.tbllog.prttab ... so the istrue() term below is
+presently always false". `gtseat.f:88` calls the same `getprt`, so the store
+closes it -- `seats{print=all}` turns on all 37 slots in that window and `out`
+resolves to 3 where this port always produced 0. The suite is green either way:
+mutating the loop back to dead changes nothing, because the HPOUTPUT tables it
+selects are not gated. Correct now, and still unmeasured.
+
+### Mutations, per half
+
+| mutation | fails |
+|---|---|
+| `fcnar`'s `Lprier` block never writes | **20** |
+| `automx`'s `idotlr` `lauto` back to `false` | 1 |
+| `Prttab` initialised all-false instead of from `deftab` | 0 |
+| the level fill ignores `tblmsk` | 0 |
+| `seatopts`' `Prttab` scan forced dead | 0 |
+| `Savtab` initialised all-false instead of from `sumtab` | 0 |
+
+**Four of the six measure zero, and that is a statement about the corpus, not
+about the code.** `deftab`'s values are never observed because no reader consumes
+a slot whose default is true -- `LESTIE` is F, and so is all of
+`[LSETRN, NTBL-11]`; the mask only matters for a `print=` list that names a table
+AND a level, which no corpus spec does; and `Savtab`'s only reader
+(`estimate.cpp:780`, `LESTIT`) has an EMPTY body, the `savitr` call being
+deferred. The store is transcribed because it is what the Fortran does and
+because two more `_UNPORTED_BLOCKS` entries sit behind it -- `arima.f:940`'s
+fixed-coefficient NOTE is `IF(Lestim.and.Prttab(LESTES).and.gudrun)` and
+`mkback.f:291`'s prior-factor WARNING is
+`IF(Prttab(LFORBC).or.Savtab(LFORBC).or.Lgraf)` -- but only one slot of it is
+gated today, and pretending otherwise is how a coverage claim rots.
+
+### A methodology trap that produced three false readings
+
+The first mutation run reported 20 / 20 / 20 for three mutations that cannot
+possibly share a failure set, including specs that never reach the mutated code.
+The harness restored each file with `shutil.move`, **which preserves mtime**, so
+`make` compared the restored source against an object file built from the MUTATED
+source, found it newer, and kept the mutant. Every run after the first measured a
+compound of all previous mutations, and the tree was left holding a mutant binary
+that a plain rebuild would not fix.
+
+`os.utime(path, None)` after both the write and the restore, plus a rebuild after
+the restore. **A mutation harness that restores a file must touch it** -- and the
+tell is a failure set that does not match the code you changed, which is exactly
+the signal that is easiest to read as "the mutation worked."
+
+`_UNPORTED_BLOCKS` **19 -> 16**, this time in the tuple. Suite
+**9034 passed, 0 failed, 942 skipped**; ctest 12/12; WALLS unchanged
+22 gaps / 4 faithful.

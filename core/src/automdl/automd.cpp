@@ -352,8 +352,14 @@ static void automd_finalize_tail(X13Context& ctx, double* trnsrs, int& frstry,
 // the model-span test window and the current critical values (Critvl(AO)=BIGCV
 // when Lotmod forced it on, so no AO is found), then reforms the full-Nobspf
 // regression design. Convergence/print-branch error handling deferred.
+// `argok` is amidot.f's eighth argument. It is IN (idotlr takes it as Lauto)
+// and OUT (idotlr clears it on an estimation failure and amidot.f:59-68 reads
+// it back). The read-back arm -- an abend whose message names the error file
+// through `Cursrs`, which this port has no counterpart for -- is NOT ported;
+// it writes to STDERR/Mt1 only, never to Mt2, so it is outside the `.err`
+// block, and it cannot fire while the automatic outlier pass converges.
 static void amidot(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
-                   double* a) {
+                   double* a, bool& argok) {
     using namespace prm;
     auto& ar = ctx.arima;
     const int sp = ctx.model.sp;
@@ -370,8 +376,7 @@ static void amidot(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
         if (dpeq(ar.critvl(t), DNOTST)) ar.critvl(t) = cv;
     double critvl[POTLR] = {ar.critvl(1), ar.critvl(2), ar.critvl(3)};
     idotlr(ctx, ar.ltstao, ar.ltstls, ar.ltsttc, ar.ladd1, critvl, ar.cvrduc,
-           begtst, endtst, nefobs, ar.lestim, ar.mxiter, ar.mxnlit,
-           /*lauto=*/false, a);
+           begtst, endtst, nefobs, ar.lestim, ar.mxiter, ar.mxnlit, argok, a);
     if (ctx.error.lfatal) return;
     int nrxy2 = 0;
     regvar(ctx, trnsrs, ctx.extend.nobspf, ar.fctdrp, ctx.extend.nfcst, 0,
@@ -725,7 +730,7 @@ void automd(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
             // amidot and tstmd1's insignificant-lag order reduction is skipped;
             // `automdl{noautooutlier=tramo}` clears Lotmod and selects tstmd1.
             if (lidotl) {
-                amidot(ctx, trnsrs, frstry, nefobs, a);
+                amidot(ctx, trnsrs, frstry, nefobs, a, argok);
                 if (ctx.error.lfatal) return;
             } else if (!ismd0) {
                 tstmd1(ctx, trnsrs, frstry, a, na, nefobs, blpct0, rvr0, rtval0,

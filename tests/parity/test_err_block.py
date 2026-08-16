@@ -12,9 +12,11 @@ What that hid, measured the day this file was widened: **396 of the 525
 differed.** 313 were the spectrum peak WARNINGs -- three texts in `spcrsd.f`
 and two in `spcdrv.f`, on every monthly run that finds a visually significant
 peak, computed and gated as NUMBERS since entry 46 and never once emitted as
-text. The rest is a long tail of unported blocks (`_UNPORTED_BLOCKS` below --
-nineteen when this file was widened, sixteen by the end of the same day), and
-three real defects that had nothing to do with the warnings:
+text. The rest is a long tail of unported blocks (`_UNPORTED_BLOCKS` below -- nineteen
+when this file was widened, and nineteen still: the "sixteen by the end of the
+same day" this docstring and the handoff both claimed was never applied to the
+tuple. Sixteen as of entry 110, which ported the three it named), and three real
+defects that had nothing to do with the warnings:
 
   * `x11mdl.f:316`'s AIC-reject NOTE was routed through `writln(.., Mt2, Mt2,
     ..)` -- the same unit twice -- so every line came out DOUBLED and indented
@@ -123,12 +125,10 @@ HALT_CASES = [c for c in CASES
 _UNPORTED_BLOCKS = (
     # seatop.f -- SEATS asks for a longer forecast horizon than the spec set.
     "NOTE: A longer forecast horizon is required by the SEATS signal extraction",
-    # chkrt2.f -- the ARMA root fix-ups. Four sibling texts (nonseasonal /
-    # seasonal x AR / MA); prterr.f:170's Lprier call reaches them with
-    # Lprmsg=F, so only the non-prterr call sites write these.
-    "WARNING: Nonseasonal MA roots inside the unit circle",
-    "WARNING: Seasonal MA roots inside the unit circle.",
-    "WARNING: Nonseasonal AR roots inside the unit circle.",
+    # (fcnar.f's three root WARNINGs used to sit here, credited to chkrt2.f.
+    # They are PORTED -- the blocker was never the message, it was `Lprier` =
+    # `Prttab(LESTIE)`, i.e. the print-table store. chkrt2.f writes a different
+    # sentence that no golden carries.)
     # arima.f:936-960 -- the fixed-coefficient NOTE (board item 5). Two
     # wordings: regression-only, and regression + ARIMA.
     "NOTE: Fixed values have been assigned to some regression coefficients.",

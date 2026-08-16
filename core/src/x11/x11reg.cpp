@@ -1484,10 +1484,14 @@ void x11mdl_td(X13Context& ctx, int kpart) {
         // almost-outlier re-scans are both `.or.Lxreg` -> GO TO 50
         // (idotlr.f:846, 1046-1048), so on this path Cvxrdc has no reachable
         // consumer even if it could be set.
+        // x11mdl.f:434 assigns `ldum=F` two lines above its call, so false here
+        // is the Fortran's own value and not a dropped argument -- unlike the
+        // three regARIMA call sites, which pass a live flag.
+        bool ldum = false;
         idotlr(ctx, /*ltstao=*/true, /*ltstls=*/false, /*ltsttc=*/false,
                ctx.xrgfct.ladd1x, cvec, ctx.xrgmdl.cvxrdc, begxot, endxot, nefobs,
                ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
-               /*lauto=*/false, aotl.data(), /*lxreg=*/true);
+               ldum, aotl.data(), /*lxreg=*/true);
         if (ctx.error.lfatal) return;
         // x11mdl.f:452 -- rebuild the Nobspf-row design so the inserted AO columns
         // carry their forecast-region values (idotlr fills only the Nspobs span).

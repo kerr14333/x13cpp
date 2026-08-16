@@ -9,6 +9,8 @@
 #include "specparse/specparse.hpp"
 #include "notset.hpp"
 #include "gen/model.hpp"
+#include "gen/tbllog.hpp"   // prm::NTBL
+#include "gen/tbltab.hpp"   // prm::DEFTAB, prm::SUMTAB (gtinpt.f:116-125)
 #include "numeric/numeric.hpp"   // dpeq (dpeq.f tolerance equality)
 #include "composite/agr.hpp"      // agr1 (composite aggregation init)
 
@@ -166,6 +168,18 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
     ctx.model.lextar = true;
     ctx.model.lextma = true;
     ctx.arima.lestim = true;
+
+    // gtinpt.f:116-125 -- the print / save table defaults, BEFORE any spec is
+    // read, so a `print=`/`save=` argument overwrites them and a spec with
+    // neither keeps them. `Lsumm` is the `-s` flag: this port has no command
+    // line, every golden in the corpus was blessed with `-s`, and every other
+    // Lsumm reader in the engine already hardcodes that (x11reg.cpp:1400), so
+    // `-s` is the modelled run and Savtab starts from sumtab.
+    ctx.hiddn.lsumm = 1;
+    for (int i = 1; i <= prm::NTBL; ++i) {
+        ctx.tbllog.prttab(i) = ctx.hiddn.lnoprt ? false : prm::DEFTAB[i - 1];
+        ctx.tbllog.savtab(i) = ctx.hiddn.lsumm > 0 ? prm::SUMTAB[i - 1] : false;
+    }
 
     // gtinpt.f 188-207 (+ mdlint.f): regression-group / ARIMA-operator state.
     intlst(prm::PB, ctx.model.colptr.data(), ctx.model.ncoltl);

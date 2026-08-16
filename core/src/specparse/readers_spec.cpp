@@ -12,6 +12,7 @@
 #include "notset.hpp"
 #include "srslen.hpp"
 #include "model.hpp"   // prm::POTLR
+#include "gen/tbltab.hpp"   // prm::LESTIE (gtestm.f:208's Lprier)
 #include "x11/loadxr.hpp"   // loadxr, xrg_clear_working (x11regression model store)
 #include "regarima/outlier.hpp"   // setcv / setcvl (editor.f:1749's Critxr derivation)
 #include "regarima/usrbak.hpp"    // bakusr (editor.f:1541-1544's backup)
@@ -1760,6 +1761,13 @@ void gt_estimate(X13Context& ctx, bool& inptok) {
         if (argidx == 8) {
             getprt(ctx, tbllog::LSPEST, tbllog::NSPEST, inptok);
             if (ctx.error.lfatal) return;
+            // gtestm.f:208 -- the ONE print-table slot that is read as a flag
+            // rather than as an output selection: Lprier gates fcnar.f's
+            // non-invertible-root WARNING and stpitr's deviance-increase one.
+            // Assigned only under `print=`, so a spec without one keeps
+            // gtinpt's default -- and deftab(LESTIE) is FALSE, which is why
+            // the corpus splits on `estimate{print=all}`.
+            ctx.model.lprier = ctx.tbllog.prttab(prm::LESTIE);
             continue;
         }
         if (argidx == 9) {

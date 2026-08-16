@@ -102,12 +102,15 @@ SeatsOptions seats_resolve_options(const X13Context& ctx) {
     // override must come LAST -- verified against the oracle, `seats{print=all
     // out=0}` still suppresses HPOUTPUT.
     //
-    // GAP (not this file's): gt_seats token-consumes `print=` without
-    // populating ctx.tbllog.prttab -- the seats table dictionary (DSEDIC,
-    // seatpr.f) is unported print surface -- so the istrue() term below is
-    // presently always false and `out` resolves to 0 for every spec that does
-    // not say `out=` explicitly. Do NOT read `out == 0` as "the oracle would
-    // have written HPOUTPUT's cyc/ltt here". See tools/seats_hp_scouting.md.
+    // That GAP is CLOSED as of entry 110: gt_seats calls the same getprt the
+    // oracle does (gtseat.f:88) and the Prttab store is ported, so the loop
+    // below reads real values -- `seats{print=all}` sets all 37 slots in this
+    // window and `out` resolves to 3, where this port used to produce 0 for
+    // every spec that did not say `out=` explicitly.
+    //
+    // UNGATED, though: forcing the loop dead again fails nothing, because the
+    // HPOUTPUT cyc/ltt tables it selects are not compared by any gate. See
+    // tools/seats_hp_scouting.md.
     r.out = 0;
     if (o.out2 != prm::NOTSET) r.out = o.out2;
     for (int i = LSETRN; i <= prm::NTBL - 11; ++i) {

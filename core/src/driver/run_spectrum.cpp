@@ -424,12 +424,16 @@ bool run_residual_spectrum(X13Context& ctx) {
     // single `spcextrsd` key. So a SEATS run still gets the regARIMA wording,
     // which is what all 293 goldens that carry this block show.
     //
-    // `Prttab(Tblptr)` gates all three arms. This port has no print-table
-    // dictionary (see specparse/tbldic.cpp), so it is taken as TRUE -- and that
-    // precondition is SATURATED across the corpus: of the 293 goldens whose
+    // `Prttab(Tblptr)` gates all three arms and this port takes it as TRUE --
+    // which is SATURATED across the corpus: of the 293 goldens whose
     // `peaks.seas`/`peaks.td` name `rsd`, all 293 carry the warning, i.e. no
-    // spec turns LSPCRS printing off. A `print=` that did would diverge here,
-    // and cannot be written until Prttab exists.
+    // spec turns LSPCRS printing off.
+    //
+    // The old reason for taking it true ("this port has no print-table
+    // dictionary") stopped being true in entry 110: `ctx.tbllog.prttab` IS
+    // populated now, from deftab and getprt's level fill. Reading it here is
+    // therefore a real port waiting to be done, not a blocked one -- but it
+    // needs the spec that turns LSPCRS off, or the read is unmeasured.
     if (out.have_spr_peaks) {
         const int ltdrsd = out.spr_peaks.ltdpk;
         const int lsrsd = out.spr_peaks.lsapk;

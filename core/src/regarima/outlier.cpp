@@ -15,6 +15,7 @@
                                     // adrgef, dlrgef, eltlen, getstr, copy, setint
 #include "regarima/armafl.hpp"      // armafl
 #include "regarima/estimate.hpp"    // rgarma
+#include "automdl/iddiff.hpp"       // prterr (idotlr.f:891/:1007)
 #include "x11/x11reg.hpp"        // regx11, prterx_if_singular (idotlr.f:878/995)
 #include "gen/model.hpp"            // prm::PB, POTLR, AO, LS, TC, RP, TLS, ...
 #include "gen/notset.hpp"           // prm::NOTSET
@@ -622,10 +623,27 @@ void coladd(int begcol, int endcol, int nrxy, int /*peltxy*/, double* xy,
 // regarima -> x11 dependency out of the header).
 bool regx11(X13Context& ctx, double* aout, int* naout, int* nefout);
 
+// idotlr.f:884-894 / :1000-1010 -- the automatic-pass estimation-failure exit.
+// Both blocks are identical: report, clear Lauto, and RETURN without Lfatal, so
+// the caller retries or gives up rather than the program stopping. Returns true
+// when the caller must return.
+static bool idotlr_auto_fail(X13Context& ctx, int nefobs, bool lautmp,
+                             bool& lauto) {
+    if ((!lautmp || !ctx.mdldat.convrg) && !ctx.error.lfatal && lauto) {
+        if (!ctx.error.lfatal &&
+            (ctx.mdldat.armaer == prm::POBFN0 ||
+             ctx.mdldat.armaer == prm::PSNGER || !ctx.mdldat.convrg))
+            prterr(ctx, nefobs, lauto);
+        lauto = false;
+        return true;
+    }
+    return false;
+}
+
 void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
             const double* critvl, double /*cvrduc*/, const int* begtst,
             const int* endtst, int& nefobs, bool lestim, int mxiter, int mxnlit,
-            bool lauto, double* a, bool lxreg) {
+            bool& lauto, double* a, bool lxreg) {
     using namespace prm;
     constexpr double ZERO = 0.0;
     constexpr int PA = PLEN + 2 * PORDER;
@@ -857,6 +875,7 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
             na = nn;
         } else {
             rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs, lautmp);
+            if (idotlr_auto_fail(ctx, nefobs, lautmp, lauto)) return;
         }
         if (ctx.error.lfatal) return;
         if (!D.convrg) {
@@ -893,6 +912,7 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
                 } else {
                     rgarma(ctx, lestim, mxiter, mxnlit, false, a, na, nefobs,
                            lautmp);
+                    if (idotlr_auto_fail(ctx, nefobs, lautmp, lauto)) return;
                 }
                 if (ctx.error.lfatal) return;
                 if (!D.convrg) {

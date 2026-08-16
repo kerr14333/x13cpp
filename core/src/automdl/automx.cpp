@@ -315,9 +315,10 @@ void amx_idotlr(X13Context& ctx, double* trnsrs, int& frstry, int& nefobs,
     for (int t = 1; t <= POTLR; ++t)
         if (dpeq(ar.critvl(t), DNOTST)) ar.critvl(t) = cv;
     double critvl[POTLR] = {ar.critvl(1), ar.critvl(2), ar.critvl(3)};
+    // automx.f:516/:853 pass `argok`, and both call sites sit inside
+    // `IF(argok)`, so it is TRUE here -- not the `false` this port hardcoded.
     idotlr(ctx, ar.ltstao, ar.ltstls, ar.ltsttc, ar.ladd1, critvl, ar.cvrduc,
-           begtst, endtst, nefobs, ar.lestim, ar.mxiter, ar.mxnlit,
-           /*lauto=*/false, a);
+           begtst, endtst, nefobs, ar.lestim, ar.mxiter, ar.mxnlit, argok, a);
     if (ctx.error.lfatal) return;
     if (!ctx.mdldat.convrg) { argok = false; return; }
     int nrxy2 = 0;
