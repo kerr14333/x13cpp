@@ -46,7 +46,13 @@ double lpfac(int year, int period, int sp, bool lom) {
     return (lpyr == 2) ? P29FEB : P28FEB;
 }
 
-bool adjsrs_factors(X13Context& ctx, const int* begspn, int sp, int n,
+// NOTE ON THE PARAMETER NAME: `begspn` is what BOTH call sites pass as
+// adjsrs.f:39's BEGADJ (Begspn shifted back Nbcst) and `n` is its NADJ. The
+// name is a leftover and it cost something: the body used to re-derive
+// `begadj = begspn - Nbcst` from it, subtracting the backcasts a second time.
+// That was invisible for as long as the only paths reaching it had Nbcst == 0
+// or were walled -- the addadj shift below is exactly the wall that hid it.
+bool adjsrs_factors(X13Context& ctx, const int* begadj, int sp, int n,
                     bool suppress_predef, double* fac) {
     const int priadj = ctx.prior.priadj;
     const bool has_predef = (priadj > 1);          // 2 lom / 3 loq / 4 lpyear
@@ -59,12 +65,12 @@ bool adjsrs_factors(X13Context& ctx, const int* begspn, int sp, int n,
     // prior span (Begadj = Begspn shifted back Nbcst), and the pad-out of its
     // tail to Nadj (addadj.f:85-86). The pad is not cosmetic: x11pt3 divides D11
     // and D13 by these arrays over the WHOLE padded span, so an unfilled tail
-    // would divide by zero. Only the aligned case (Frstad==0) is ported.
-    struct { int n; double* v; int* beg; int* frst; } sets[2] = {
-        {nuspad, ctx.priadj.usrpad.data(), ctx.priusr.bgupad.data(),
-         &ctx.priusr.frstap},
-        {nustad, ctx.priadj.usrtad.data(), ctx.priusr.bgutad.data(),
-         &ctx.priusr.frstat},
+    // would divide by zero.
+    struct { int* n; double* v; int* beg; int* frst; } sets[2] = {
+        {&ctx.priusr.nuspad, ctx.priadj.usrpad.data(),
+         ctx.priusr.bgupad.data(), &ctx.priusr.frstap},
+        {&ctx.priusr.nustad, ctx.priadj.usrtad.data(),
+         ctx.priusr.bgutad.data(), &ctx.priusr.frstat},
     };
     // editor.f:744-762 resolves Percnt/Adjmod for the user factor sets: on an
     // ADDITIVE run an unset mode means DIFFERENCES (Percnt=2, Adjmod=2), and a
@@ -80,34 +86,63 @@ bool adjsrs_factors(X13Context& ctx, const int* begspn, int sp, int n,
         return false;
     }
 
-    int begadj[2];
-    addate(begspn, sp, -ctx.extend.nbcst, begadj);   // adjsrs.f:39
-    for (const auto& s : sets) {
-        if (s.n <= 0) continue;
+    // addadj.f:42-57 -- Frstad is the DISPLACEMENT of the user series inside the
+    // prior span, `dfdate(Begadj,Bgusra)` = Begadj - Bgusra.
+    //
+    //   Frstad < 0  the user factors start AFTER the prior span does, which the
+    //               Fortran's own comment says to read as "this is due to
+    //               backcasts": the series is shifted RIGHT by |Frstad| and the
+    //               opened head filled with Base, then Nusrad grows and Bgusra
+    //               is re-anchored at Begadj so the displacement is now 0. This
+    //               is the ONLY writer that moves Bgutad/Bgupad, and moving it
+    //               is what makes mkback's coverage test pass -- see the dead-
+    //               code proof in forecast.cpp's bcstout.
+    //   Frstad > 0  the user factors start BEFORE the prior span; nothing moves,
+    //               the combine below just reads from `iprd + Frstad`.
+    //
+    // The percent -> ratio conversion that the Fortran does inside both arms is
+    // NOT here: this port does it once at parse (readers_spec.cpp:316), because
+    // adjsrs runs once in the oracle (editor.f:849) and twice here.
+    int frstad_of[2] = {0, 0};
+    for (int k = 0; k < 2; ++k) {
+        const auto& s = sets[k];
+        if (*s.n <= 0) continue;
         int frstad = 0;
         dfdate(begadj, s.beg, sp, frstad);
-        if (frstad != 0) {
-            errhdr(ctx);
-            writln(ctx, "ERROR: addadj user-prior span shift (Frstad!=0) not yet "
-                        "ported.", stdio::STDERR, ctx.units.mt2, true);
-            abend(ctx);
-            return false;
+        if (frstad < 0) {
+            const int shift = -frstad;
+            for (int iprd = *s.n; iprd >= 1; --iprd) {
+                s.v[iprd + shift - 1] = s.v[iprd - 1];
+                if (iprd <= shift) s.v[iprd - 1] = base;
+            }
+            *s.n += shift;                            // addadj.f:50
+            frstad = 0;                               // addadj.f:51
+            s.beg[0] = begadj[0];                     // addadj.f:52 cpyint
+            s.beg[1] = begadj[1];
         }
-        *s.frst = 1;                                  // addadj.f:92 Frstad+1
-        for (int i = s.n; i < n; ++i) s.v[i] = base;  // addadj.f:85-86
+        frstad_of[k] = frstad;
+        *s.frst = frstad + 1;                         // addadj.f:92
+        // addadj.f:84-86 -- the ELSE arm of the combine loop: every slot the
+        // combine would have read past the end of the user series is set to
+        // Base, which is the pad x11pt3 later divides by.
+        for (int iprd = 1; iprd <= n; ++iprd)
+            if (iprd + frstad > *s.n) s.v[iprd + frstad - 1] = base;
     }
 
     for (int tpnt = 1; tpnt <= n; ++tpnt) {
         double f = 1.0;
         if (has_predef && !suppress_predef) {
             int idate[2];
-            addate(begspn, sp, tpnt - 1, idate);
+            addate(begadj, sp, tpnt - 1, idate);
             f *= lpfac(idate[0], idate[1], sp, lom);   // td7var factor
         }
-        // addadj.f:61-87 -- fold in the user factors (ratio mode, Frstad==0).
+        // addadj.f:61-83 -- fold in the user factors (ratio mode).
         // adjsrs.f:89-97 applies BOTH sets to the same Adj, in Prtype order.
-        for (const auto& s : sets)
-            if (s.n > 0 && tpnt <= s.n) f *= s.v[tpnt - 1];
+        for (int k = 0; k < 2; ++k) {
+            const auto& s = sets[k];
+            const int iprd2 = tpnt + frstad_of[k];
+            if (*s.n > 0 && iprd2 <= *s.n) f *= s.v[iprd2 - 1];
+        }
         fac[tpnt - 1] = f;
     }
     return true;

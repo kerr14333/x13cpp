@@ -15,7 +15,8 @@ peak, computed and gated as NUMBERS since entry 46 and never once emitted as
 text. The rest is a long tail of unported blocks (`_UNPORTED_BLOCKS` below -- nineteen
 when this file was widened, and nineteen still: the "sixteen by the end of the
 same day" this docstring and the handoff both claimed was never applied to the
-tuple. Sixteen as of entry 110, which ported the three it named), and three real
+tuple. Sixteen after entry 110, fourteen after entry 111, THIRTEEN after entry
+112 -- do not write a number here that the tuple does not show), and three real
 defects that had nothing to do with the warnings:
 
   * `x11mdl.f:316`'s AIC-reject NOTE was routed through `writln(.., Mt2, Mt2,
@@ -136,8 +137,12 @@ _UNPORTED_BLOCKS = (
     "No seasonal adjustment this run",
     # amdfct.f -- fewer than three years of forecasts to average.
     "NOTE: Insufficient data to compute average forecast error diagnostic.",
-    # x11pt1.f -- a user prior factor set that stops before the forecast span.
-    "WARNING:  User-defined prior adjustment factor not provided",
+    # (the "User-defined prior adjustment factor not provided" WARNING used to
+    # sit here, credited to x11pt1.f. It has TWO emitters and neither is that
+    # one: prtfct.f:489 for the FORECAST window and mkback.f:288 for the
+    # BACKCAST window. The forecast half is PORTED and gated by the three
+    # goldens that carry it. The backcast half is behind Prttab(LFORBC), whose
+    # deftab entry is F -- see forecast.cpp's bcstout.)
     # prlkhd.f -- the AIC block on an approximate (conditional) likelihood.
     "NOTE:  AIC and related statistics are printed only for exact",
     # checkres -- the normality battery on a short series. Two siblings.

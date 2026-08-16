@@ -8380,3 +8380,163 @@ not theorems.
 
 Suite **9034 passed, 0 failed, 942 skipped**; ctest 12/12; WALLS unchanged
 22 gaps / 4 faithful.
+
+## 112. The prior-adjustment WARNING has TWO emitters, neither of them the one the gate named -- and porting the reachable half walked into `addadj`'s backcast shift (2026-08-16)
+
+The third `_UNPORTED_BLOCKS` family. `_UNPORTED_BLOCKS` **14 -> 13**.
+
+The entry read:
+
+```python
+    # x11pt1.f -- a user prior factor set that stops before the forecast span.
+    "WARNING:  User-defined prior adjustment factor not provided",
+```
+
+`x11pt1.f` does not contain that string. Two files do: **`prtfct.f:489`**, which
+ends "for the forecast period.", and **`mkback.f:288`**, which ends "for the
+backcast period." Same attribution error as entry 110's `chkrt2.f`, from the same
+cause -- the tuple is matched by PREFIX and the prefix stops one line above the
+only word that separates them. Third time now that a `_UNPORTED_BLOCKS` comment
+has named the wrong `.f`; the comment is prose, the tuple is the test.
+
+Three goldens carry it, all three the FORECAST wording:
+`extra/airline_prior-temp`, `extra/airline_prior-temp-trend`,
+`generated/airline_user-permprior-x11`.
+
+### The forecast half
+
+`prtfct.f:453-497`. `lpria` asks whether any prior-factor set COVERS the forecast
+window; when factors exist and stop short, the confidence band is relabelled
+"After Prior Adjustments" and the oracle says so on Mt2. The guard is
+`Prttab(LFOROS).or.Savtab(LFOROS).or.Lgraf` -- which is ALSO the enclosing IF at
+`:428`, so the oracle re-tests it for nothing. Verified by pairing IF/END IF with
+a script rather than by reading the indentation (`:489..:493` sits inside
+`:428..:606`), which is the standing rule and which mattered here: the block is
+seven levels deep and looks top-level.
+
+`deftab(LFOROS)` is **T**, so this fires on a spec that never mentions `print=` --
+`airline_user-permprior-x11` has a bare `estimate{}`. That is the second reader
+of a deftab-true slot (entry 111's `LESTES` was the first), which is worth
+noting only because entry 110 measured that array at zero.
+
+Written with `fwrite_fmt` on the whole FORMAT rather than through `writln`: the
+`/` at each end of FORMAT 1120 is an EMPTY record, where `writln`'s own blank is
+`(' ',a)` with a blank -- two spaces. The `.err` gate compares the block verbatim,
+so those two spaces are a transcription bug like any other.
+
+### The backcast half, and why it can never fire
+
+`mkback.f:285-289` is the same block against `Begbak`/`Nbcst`. `deftab(LFORBC)`
+is **F**, so it needs the spec to ask for the `bct` table, and no corpus spec
+had backcasts and user priors and that request at once. The spec written for it
+is `extra/airline_prior-backcast`.
+
+The oracle's `.err` for that spec carries the FORECAST warning and NOT the
+backcast one. Not a corpus gap -- **the backcast WARNING is unreachable**:
+
+* `mkback` runs only when `Nbcst > 0`, and `adjsrs.f:39-40` sets
+  `Begadj = Begspn - Nbcst`, which IS `Begbak` (`editor.f:207`), and
+  `Nadj = Nspobs + Nbcst + max(Sp, Nfcst-Fctdrp) >= Nbcst`. So
+  `chkcvr(Begadj,Nadj,Begbak,Nbcst)` is true and the third clause of `lpria`
+  fires for **any** `Priadj > 0`.
+* With no predefined prior the guard needs a user set -- and `addadj.f:29` has
+  already refused the run unless that set covers `[Begspn,Nspobs]`, while
+  `addadj.f:43-52` re-anchors `Bgusra` at `Begadj` and grows `Nusrad`. It
+  therefore covers `[Begbak,Nbcst]` as well, and clause 1 or 2 fires.
+* `.not.lpria` needs `Priadj==0 .and. Nustad==0 .and. Nuspad==0`, which fails the
+  guard.
+
+Transcribed anyway, with the proof in the comment. This is entry 95's
+INERT-BY-CONSTRUCTION case rather than its SATURATED one, and the two are only
+distinguishable by doing the algebra: both measure zero. What makes the claim
+checkable is that the MECHANISM is measurable even though the outcome is not --
+delete `addadj.f:52`'s re-anchor and this WARNING starts firing, one gate.
+
+### What the probe spec actually found: `addadj`'s Frstad arm
+
+The first run of the new spec did not reach any of that. It hit a wall:
+
+```
+ ERROR: addadj user-prior span shift (Frstad!=0) not yet ported.
+```
+
+`Frstad = dfdate(Begadj,Bgusra)` is the displacement of the user factor series
+inside the prior span. `maxback=12` moves `Begadj` a year earlier than the
+factors, so `Frstad = -12`, and `addadj.f:43-52` -- ten lines -- shifts the
+series right by `|Frstad|`, fills the head with `Base`, grows `Nusrad`, and
+re-anchors `Bgusra`. The `Frstad > 0` arm needs no shift at all; the combine
+loop just reads from `iprd + Frstad`. Both are now ported, so
+**user prior factors and backcasts work together for the first time.**
+
+Costs, measured: removing the shift again fails **15** gates; removing only the
+re-anchor fails **1** (and it is the `.err`, by the mechanism above).
+
+### The bug the wall was standing in front of
+
+`adjsrs_factors`'s first parameter is named `begspn`. Both call sites pass
+`Begadj`. The body re-derived `begadj = begspn - Nbcst` from it -- subtracting
+the backcasts a SECOND time -- and used that only for the `dfdate` that decides
+whether to wall.
+
+That was inert, and provably so: with `Nbcst == 0` the two agree, and every path
+with `Nbcst > 0` and user factors hit the wall. But it is the shape this project
+keeps paying for -- **a wall in front of a rearrangement looks exactly like a
+wall in front of a gap** (entry 89's `Irev==4` sites), and here the wall was also
+hiding the arithmetic error that would have made the port wrong the moment the
+wall came down. The parameter is renamed `begadj`.
+
+Note the mutation that measures this is NOT "restore the old line": reassigning
+the parameter also corrupts the `lpfac` loop, which the old code did not. That
+mutation fails **210** gates, and what it measures is that the parameter's
+IDENTITY is load-bearing across the corpus -- which is why the wrong name was
+worth fixing -- not that the old line was live.
+
+### Mutations
+
+| mutation | fails |
+|---|---|
+| the forecast WARNING never writes | **4** |
+| `lpria` ignored on the forecast side (warn whenever factors exist) | **77** |
+| `Prttab/Savtab(LFOROS)` ignored (guard forced true) | 0 -- saturated |
+| the backcast WARNING never writes | 0 -- **inert by construction, see the proof** |
+| `lpria` ignored on the backcast side | **7** (the block IS reached) |
+| `addadj.f:43-52`'s backcast shift removed | **15** |
+| the shift kept, `addadj.f:52`'s re-anchor removed | **1** |
+| `begadj` re-derived as `begadj - Nbcst` (parameter identity) | **210** |
+
+The 0 and the 7 belong together: without the second row the first would read as
+dead code, and with it the block is live and the coverage test is what silences
+it. A zero measured on a block nothing reaches and a zero measured on a block
+whose guard is provably false look identical from the mutation alone.
+
+### The count did NOT move, and that is the last finding
+
+Entry 94's rule is to delete a wall and confirm `walls.py`'s count MOVES. This
+wall came down and the count stayed at **22 gaps / 4 faithful**, because the
+refusal was never in the inventory: it called `errhdr` + `writln` + `abend`
+directly instead of going through one of the names in `walls.py`'s `HELPERS`
+tuple. It had a message -- so it is not entry 88's "bare `abend` with the lights
+off" -- and it was invisible anyway.
+
+This is entry 69's rule one level up: **a discovery predicate is a hand-written
+case list that has learned to hide**, and `HELPERS` is literally one. Swept: **8
+gap-language refusals** (`not yet ported` / `not yet supported` next to an
+`abend` or an `inptok=false`) are outside it today, in four files that appear in
+`WALLS.md` not at all --
+
+| file | lines |
+|---|---|
+| `driver/run_history.cpp` | 541 |
+| `regarima/priadj.cpp` | 83 |
+| `specparse/gtinpt.cpp` | 539, 715 |
+| `specparse/readers_spec.cpp` | 277, 307, 1378, 4877 |
+
+-- plus the one deleted here, which would have been a ninth. `WALLS.md`'s own
+promise is "this cannot go stale: delete a wall and it leaves the list"; that
+holds only for refusals routed through a helper, and nothing tests that they
+are. Left open on the board rather than fixed in this commit: the fix has to
+preserve every message byte-for-byte (they are compared by the `.err` gate) and
+it moves the METRICS marker.
+
+Suite **9053 passed, 0 failed, 946 skipped**; ctest 12/12; WALLS **22 gaps /
+4 faithful, unchanged -- see above for why that is the wrong number.**

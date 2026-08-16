@@ -17,6 +17,8 @@
 #include "specparse/specparse.hpp"  // polyml, eltlen, copy, setdp
 #include "gen/model.hpp"            // prm::DIFF, AR, MA, PB, PORDER, PDIFOR, POPR
 #include "gen/srslen.hpp"           // prm::PLEN, prm::PFCST
+#include "gen/tbltab.hpp"           // prm::LFOROS, prm::LFORBC
+#include "x13/fformat.hpp"          // fwrite_fmt
 
 namespace x13 {
 
@@ -215,6 +217,54 @@ void fcstout(X13Context& ctx, int nfcst, int fctdrp, double ciprob, bool lognrm)
         if (ctx.error.lfatal) return;
     }
 
+    // prtfct.f:453-497 -- the prior-adjustment arm of the LFOROS block. The
+    // NUMERIC half (eltfcn'ing Adj/X11hol/Stptd back onto the band) is the
+    // `lpria` branch and is not in this slice; what IS here is the ELSE, whose
+    // whole content is a WARNING. `lpria` asks whether the user's prior factors
+    // COVER the forecast window; when there are factors and they stop short,
+    // the band is labelled "After Prior Adjustments" and the oracle says so.
+    //
+    // The guard is `Prttab(LFOROS).or.Savtab(LFOROS).or.Lgraf`, which is also
+    // the enclosing IF at prtfct.f:428 -- the oracle re-tests it here for
+    // nothing (verified by pairing IF/END IF, not by indentation: :489's guard
+    // closes at :493, well inside :428..:606). deftab(LFOROS) is TRUE, so this
+    // fires on a spec that never mentions `print=`. Lgraf is false throughout
+    // this port (no graphics files are written).
+    //
+    // prtfct.f:73-76: bgfcst = endspn - Fctdrp + 1, endspn = Begspn + Nspobs-1.
+    // Note the third clause tests `Priadj.gt.0` where the outer IF tests
+    // `.gt.1` -- transcribed as written.
+    {
+        const int sp = ctx.model.sp;
+        const auto& pu = ctx.priusr;
+        if ((pu.nustad > 0 || pu.nuspad > 0 || ctx.prior.priadj > 1) &&
+            (ctx.tbllog.prttab(prm::LFOROS) || ctx.tbllog.savtab(prm::LFOROS))) {
+            int endspn[2], bgfcst[2];
+            addate(ctx.mdldat.begspn.data(), sp, ctx.mdldat.nspobs - 1, endspn);
+            addate(endspn, sp, -fctdrp + 1, bgfcst);
+            const bool lpria =
+                (pu.nustad > 0 &&
+                 chkcvr(pu.bgutad.data(), pu.nustad, bgfcst, nfcst, sp)) ||
+                (pu.nuspad > 0 &&
+                 chkcvr(pu.bgupad.data(), pu.nuspad, bgfcst, nfcst, sp)) ||
+                (ctx.prior.priadj > 0 &&
+                 chkcvr(ctx.adj.begadj.data(), ctx.adj.nadj, bgfcst, nfcst, sp));
+            if (!lpria) {
+                // prtfct.f:1120. Written whole rather than through writln: the
+                // FORMAT's leading and trailing `/` are EMPTY records, where
+                // writln's own blank is `(' ',a)` with a blank -- two spaces.
+                const std::string rec = fwrite_fmt(
+                    "(/,"
+                    "' WARNING:  User-defined prior adjustment factor not "
+                    "provided',/,"
+                    "'           for the forecast period.',/)") + "\n";
+                ctx.channels_.unit(stdio::STDERR).put(rec);   // Lquiet not ported
+                errhdr(ctx);
+                ctx.channels_.unit(ctx.units.mt2).put(rec);
+            }
+        }
+    }
+
     // prtfct.f reapplies predefined prior factors after mapping forecasts back
     // to the original scale. In the fixed-model path Adj only spans observed
     // data, but these factors are date-only (td7var/lpfac), so build the
@@ -278,6 +328,63 @@ void bcstout(X13Context& ctx, int nbcst, const double* trnsrs, bool lognrm) {
     // backcasts (Ltrans=F: mkback corrects Bcst itself, not a separate array).
     if (lognrm && dpeq(ctx.arima.lam, 0.0))
         lgnrmc(nbcst, bcst.data(), bse.data(), bcst.data(), /*ltrans=*/false);
+
+    // mkback.f:267-293 -- the BACKCAST twin of the WARNING in fcstout above,
+    // same shape and same redundant inner guard (:285..:289 sits inside
+    // :248..:387, which tests the same three flags). Two differences, both
+    // transcribed: the window is `Begbak` for `Nbcst` periods rather than
+    // bgfcst for Nfcst, and the sentence ends "for the backcast period."
+    //
+    // deftab(LFORBC) is FALSE where deftab(LFOROS) is TRUE, so unlike the
+    // forecast half this one needs the spec to ask for the `bct` table --
+    // `extra/airline_prior-backcast` is that spec, and it reaches this block
+    // (mutating `lpria` away here fails 7 gates). What it does NOT do is make
+    // the WARNING fire, and that is not a corpus gap -- the WARNING is
+    // UNREACHABLE IN THE ORACLE. The proof, in the sense entry 95 asks for
+    // (routes tried, not assumed):
+    //
+    //   mkback runs only for Nbcst > 0, and adjsrs.f:39-40 sets
+    //   Begadj = Begspn - Nbcst -- which IS Begbak (editor.f:207) -- and
+    //   Nadj = Nspobs + Nbcst + max(Sp, Nfcst-Fctdrp) >= Nbcst. So
+    //   chkcvr(Begadj,Nadj,Begbak,Nbcst) is true and the third clause fires
+    //   for ANY Priadj > 0.
+    //   With no predefined prior the guard needs a user set, and addadj.f:29
+    //   has already REFUSED the run unless that set covers [Begspn,Nspobs];
+    //   addadj.f:43-52 then re-anchors Bgusra at Begadj and grows Nusrad, so
+    //   it covers [Begbak,Nbcst] too and clause 1 or 2 fires.
+    //   `.not.lpria` therefore needs Priadj==0 AND Nustad==0 AND Nuspad==0,
+    //   which fails the guard above.
+    //
+    // Kept transcribed rather than walled because it is not a gap: the oracle
+    // has the lines and never executes them. The mechanism is measurable even
+    // though the outcome is not -- drop addadj's re-anchor (addadj.f:52) and
+    // this WARNING starts firing, one gate. Mutating the WARNING away costs 0,
+    // and that zero is a theorem here, not a saturated precondition.
+    {
+        const int sp = ctx.model.sp;
+        const auto& pu = ctx.priusr;
+        if ((pu.nustad > 0 || pu.nuspad > 0 || ctx.prior.priadj > 1) &&
+            (ctx.tbllog.prttab(prm::LFORBC) || ctx.tbllog.savtab(prm::LFORBC))) {
+            const int* begbak = ctx.extend.begbak.data();
+            const bool lpria =
+                (pu.nustad > 0 &&
+                 chkcvr(pu.bgutad.data(), pu.nustad, begbak, nbcst, sp)) ||
+                (pu.nuspad > 0 &&
+                 chkcvr(pu.bgupad.data(), pu.nuspad, begbak, nbcst, sp)) ||
+                (ctx.prior.priadj > 0 &&
+                 chkcvr(ctx.adj.begadj.data(), ctx.adj.nadj, begbak, nbcst, sp));
+            if (!lpria) {
+                const std::string rec = fwrite_fmt(
+                    "(/,"
+                    "' WARNING:  User-defined prior adjustment factor not "
+                    "provided',/,"
+                    "'           for the backcast period.',/)") + "\n";
+                ctx.channels_.unit(stdio::STDERR).put(rec);   // Lquiet not ported
+                errhdr(ctx);
+                ctx.channels_.unit(ctx.units.mt2).put(rec);
+            }
+        }
+    }
 
     auto& out = ctx.forecasts;
     out.nbcst = nbcst;
