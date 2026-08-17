@@ -3690,6 +3690,28 @@ tree deliberately, as its own reviewable unit.
       Only `x11mdl.f:637-645` has been right. Grep the oracle for the string
       before believing the comment; the tuple is the test, the comment is prose.
 
+      **`amdfct.f:56` was ATTEMPTED and REVERTED, 2026-08-16 -- read this
+      before retrying it.** The transcription is trivial (one `writln`, guarded
+      `IF(.not.Lauto)`, at the `return` already sitting at `amdfct.cpp:101`) and
+      the text came out byte-exact. It fails on ORDER: the engine emits it AFTER
+      the `nrmtst` kurtosis NOTE and the oracle emits it BEFORE. `arima.f` calls
+      `amdfct` at `:364/:733/:816/:874`, all well ahead of the residual
+      diagnostics at `:1050+`; this port calls `aape_diagnostics` from
+      `run_pre_model.cpp:948`, i.e. AFTER `check_residuals`. 7 gates, all
+      `.err` ordering, no numeric difference.
+
+      Entry 109's class exactly (the residual spectrum, whose numbers were
+      bit-exact from either position and whose WARNING was not). So the work is
+      not the message -- it is deciding which of `arima.f`'s four call sites
+      `run_pre_model.cpp:948` actually stands in for, and whether the NOTE moves
+      to that point or the call does. Do NOT just move the `writln` up: the
+      guard reads `Lauto`, and the four sites pass different values.
+
+      One consequence worth keeping: porting it moves five specs off `_collapse`
+      and back onto the strict comparison, which is what makes entry 113's
+      leading-blank mutation measurable on them (1 -> 6). That is the payoff, and
+      it is why this one is worth doing properly rather than skipping.
+
       **Working order from here**, by golden count and cost: `amdfct.f:56` (6
       goldens, and it unblocks entry 113's blank-line measurement on five specs)
       -> `editor.f:400` longer-forecast (11) -> `editor.f:2831` no-seasonal-
