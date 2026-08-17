@@ -3,6 +3,7 @@
 
 #include "common/x13context.hpp"
 #include "numeric/numeric.hpp"   // chisq, dpeq
+#include "specparse/specparse.hpp"  // writln
 #include "gen/notset.hpp"          // prm::DNOTST
 #include "gen/model.hpp"         // prm::PORDER
 
@@ -133,7 +134,21 @@ namespace {
 // point. The Fortran RETURNS EARLY out of the middle of the routine when a
 // statistic's table cannot cover `nobs`, which suppresses every statistic
 // AFTER it as well; the have_* flags reproduce that.
-void nrmtst(CheckDiagnostics& ck, const double* y, int nobs) {
+//
+// Each of those five early returns writes a NOTE first, to Mt1 AND Mt2, and
+// unconditionally -- `Lprt` guards the tables above and below but not these.
+// The port had the returns and none of the NOTEs, which is why two of the texts
+// sat in test_err_block's `_UNPORTED_BLOCKS`. Note the port had also FUSED the
+// low and high bound of Geary's a into one `return` and likewise for kurtosis;
+// the Fortran's two arms write DIFFERENT sentences, so they are split again
+// here. Nothing about the numbers changes.
+void nrmtst(X13Context& ctx, CheckDiagnostics& ck, const double* y, int nobs) {
+    const int mt1 = ctx.units.mt1;
+    const int mt2 = ctx.units.mt2;
+    auto note = [&](const char* l1, const char* l2) {
+        writln(ctx, l1, mt1, mt2, true);
+        writln(ctx, l2, mt1, mt2, false);
+    };
     if (nobs <= 0) return;
     const double dnobs = static_cast<double>(nobs);
     // totals(Y,1,Nobs,1,1) -- Iopt==1 is the AVERAGE, and it SKIPS DNOTST
@@ -166,7 +181,12 @@ void nrmtst(CheckDiagnostics& ck, const double* y, int nobs) {
 
     // ---- skewness -------------------------------------------------------
     double ppu = 0.0, ppl = 0.0;
-    if (nobs < 25) return;                       // nrmtst.f:53-57 early RETURN
+    if (nobs < 25) {                             // nrmtst.f:53-57 early RETURN
+        note("NOTE: The program cannot compute the significance of skewness "
+             "statistic",
+             "      on less than 25 observations.");
+        return;
+    }
     if (nobs < 50)        ppu = intrpp(SPP1, NS1, nobs, ((nobs - 25) / 5) + 1, false);
     else if (nobs < 100)  ppu = intrpp(SPP2, NS2, nobs, ((nobs - 50) / 10) + 1, false);
     else if (nobs < 200)  ppu = intrpp(SPP3, NS3, nobs, ((nobs - 100) / 25) + 1, false);
@@ -178,7 +198,18 @@ void nrmtst(CheckDiagnostics& ck, const double* y, int nobs) {
     ck.skew_mark = (yskew < ppl) ? '-' : (yskew > ppu ? '+' : ' ');
 
     // ---- Geary's a ------------------------------------------------------
-    if (nobs < 11 || nobs > 1001) return;        // nrmtst.f:101-105 / :123-127
+    if (nobs < 11) {                             // nrmtst.f:101-105
+        note("NOTE: The program cannot compute the significance of Geary's a "
+             "statistic",
+             "      on less than 11 observations.");
+        return;
+    }
+    if (nobs > 1001) {                           // nrmtst.f:123-127
+        note("NOTE: The program cannot compute the significance of Geary's a "
+             "statistic",
+             "      on more than 1001 observations.");
+        return;
+    }
     if (nobs < 41) {
         const int ppi = ((nobs - 11) / 5) + 1;
         ppu = intrpp(APP1U, NA1, nobs, ppi, true);
@@ -200,7 +231,19 @@ void nrmtst(CheckDiagnostics& ck, const double* y, int nobs) {
     ck.geary_mark = (ga < ppl || ga > ppu) ? '*' : ' ';
 
     // ---- kurtosis -------------------------------------------------------
-    if (nobs < 50 || nobs >= 1001) return;       // nrmtst.f:147-151 / :165-169
+    if (nobs < 50) {                             // nrmtst.f:147-151
+        note("NOTE: The program cannot perform hypothesis tests for kurtosis on",
+             "      less than 50 observations.");
+        return;
+    }
+    if (nobs >= 1001) {                          // nrmtst.f:165-169
+        // The bound and the sentence disagree in the ORACLE: the guard is
+        // `Nobs.ge.1001` and the text says "more than 1000". Transcribed.
+        note("NOTE: The program cannot perform hypothesis tests for kurtosis on "
+             "more",
+             "      than 1000 observations.");
+        return;
+    }
     if (nobs < 100) {
         const int ppi = ((nobs - 50) / 25) + 1;
         ppu = intrpp(KPP1U, NK1, nobs, ppi, true);
@@ -376,7 +419,7 @@ void check_residuals(X13Context& ctx, const double* a, int na, int nefobs) {
     }
 
     // ---- normality (nrmtst.f) --------------------------------------------
-    nrmtst(ck, z, nefobs);
+    nrmtst(ctx, ck, z, nefobs);
 
     // ---- Durbin-Watson (arima.f:1075-1090) --------------------------------
     {

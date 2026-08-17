@@ -145,9 +145,9 @@ _UNPORTED_BLOCKS = (
     # deftab entry is F -- see forecast.cpp's bcstout.)
     # prlkhd.f -- the AIC block on an approximate (conditional) likelihood.
     "NOTE:  AIC and related statistics are printed only for exact",
-    # checkres -- the normality battery on a short series. Two siblings.
-    "NOTE: The program cannot perform hypothesis tests for kurtosis on",
-    "NOTE: The program cannot compute the significance of skewness statistic",
+    # (checkres' normality NOTEs used to sit here. All FIVE of nrmtst.f's are
+    # ported -- the two the corpus carries plus the kurtosis upper bound and
+    # both of Geary's a, which no golden reaches. See checkres.cpp.)
     # ssmdl.f:150-241's change-of-regime arm (CB-39, deliberately a wall).
     "NOTE: The following change of regime regression variables are not",
     # revdrv.f -- the history{} option NOTEs.

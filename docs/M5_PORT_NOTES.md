@@ -8540,3 +8540,81 @@ it moves the METRICS marker.
 
 Suite **9053 passed, 0 failed, 946 skipped**; ctest 12/12; WALLS **22 gaps /
 4 faithful, unchanged -- see above for why that is the wrong number.**
+
+## 113. `nrmtst.f`'s five normality NOTEs -- and the gate that hides a missing blank line while a sibling block is still unported (2026-08-16)
+
+The fourth `_UNPORTED_BLOCKS` family. `_UNPORTED_BLOCKS` **13 -> 11**, re-derived
+by AST rather than read.
+
+`nrmtst.f` returns early out of the MIDDLE of itself whenever a statistic's
+one-percent table cannot cover `Nobs`, and each of those returns writes a NOTE
+first -- to `Mt1` AND `Mt2`, unconditionally. `Lprt` guards the tables above and
+below and NOT these. The port had all the returns and none of the NOTEs.
+
+There are **five**, not the two the corpus carries:
+
+| statistic | bound | text ends |
+|---|---|---|
+| skewness | `Nobs < 25` | `on less than 25 observations.` |
+| Geary's a | `Nobs < 11` | `on less than 11 observations.` |
+| Geary's a | `Nobs > 1001` | `on more than 1001 observations.` |
+| kurtosis | `Nobs < 50` | `less than 50 observations.` |
+| kurtosis | `Nobs >= 1001` | `than 1000 observations.` |
+
+The port had **fused** each pair into one `return` -- `if (nobs < 11 || nobs >
+1001) return;` and `if (nobs < 50 || nobs >= 1001) return;`. Correct for the
+numbers and wrong the moment the arms have to speak, because the two arms write
+different sentences. Split again. Nothing numeric moved.
+
+Note the last row: the oracle's guard is `Nobs.ge.1001` and its sentence says
+"more than 1000". Transcribed as written.
+
+### The interesting part is the mutation that measured 1
+
+| mutation | fails |
+|---|---|
+| the kurtosis < 50 NOTE never writes | **5** |
+| the skewness < 25 NOTE never writes | **1** |
+| the Geary's a < 11 NOTE never writes | 0 -- no golden reaches it |
+| the kurtosis >= 1001 NOTE never writes | 0 -- no golden reaches it |
+| the first line routed `Mt2/Mt2` (entry 109's doubling shape) | **6** |
+| **the FORMAT's leading blank line dropped** | **1** |
+
+5 and 1 are exactly the golden counts, and 6 is their sum. The last row should
+have been 6 too, and was not.
+
+`_drop_unported` cuts an unported block out of the GOLDEN side, and cutting a
+block out of a text stream cannot preserve the blank structure around it -- so
+any spec whose golden still carries one is compared through `_collapse`, which
+merges runs of blank lines on both sides. All five kurtosis specs still carry
+`amdfct.f:56`'s NOTE, so on those five a MISSING blank merges away invisibly.
+The sixth, `expgs_sfshort-x11`, is strict: its skewness NOTE follows an `fcnar`
+root WARNING whose own FORMAT supplies a trailing blank, and `_collapse` can
+merge duplicate blanks but cannot restore a missing one.
+
+So the blank is gated once out of six, and it becomes six the moment `amdfct`'s
+NOTE lands. **This is not a defect in the gate** -- `_collapse` is documented and
+deliberate, and its docstring says the exact thing this measured ("as blocks get
+ported, specs move back to the strict comparison by themselves"). It is a
+property worth stating because of what it does to MEASUREMENT: while a spec
+carries any unported block, a whitespace mutation on a DIFFERENT block of the
+same spec measures zero. A mutation that comes back smaller than the golden
+count is the tell, and the fix is to attribute the difference rather than accept
+the number -- one build and one filtered run, which is what turned "1, unclear"
+into "1, and here is which spec and why."
+
+### Method note, again
+
+The sweep ran while a SEPARATE agent was editing `tools/coverage_map.py`,
+`tools/metrics.py` and `tests/parity/test_doc_tooling.py` in the same working
+tree. That moved the suite's collected total 9999 -> 10003 mid-sweep. It did not
+invalidate the failure counts -- the new tests are doc-tooling and pass -- but it
+was noticed only because a total that had been stable all session changed by
+four. **A mutation harness measures a DELTA against a tree it does not own.**
+Record the collected total beside the failure count, not just the count.
+
+That agent also wrote `--parity 9056,1,946,0` into `METRICS.md` and
+`SESSION_HANDOFF.md` from a suite run taken while the N6 mutation was applied,
+i.e. it recorded a phantom failure. Regenerated at `9057,0,946,0`.
+
+Suite **9057 passed, 0 failed, 946 skipped** (10003 collected); ctest 12/12.
