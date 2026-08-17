@@ -52,7 +52,7 @@ reproduce.
 
 ## Diagnostics
 
-- **`core/src/diag/amdfct.cpp:195`**
+- **`core/src/diag/amdfct.cpp:210`**
   out-of-sample BACKCASTS with an outlier regressor inside the first three years are not yet ported exactly (amdfct.f:92-148 under Bckcst): measured 6.6959 against the oracle's 6.71.
   *Fortran:* `amdfct.f:92-148`
 

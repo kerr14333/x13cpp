@@ -8618,3 +8618,82 @@ That agent also wrote `--parity 9056,1,946,0` into `METRICS.md` and
 i.e. it recorded a phantom failure. Regenerated at `9057,0,946,0`.
 
 Suite **9057 passed, 0 failed, 946 skipped** (10003 collected); ctest 12/12.
+
+## 114. `amdfct.f:56`'s NOTE was never a transcription problem -- it was WHERE amdfct runs (2026-08-17)
+
+The fifth `_UNPORTED_BLOCKS` family, and the first one where the message was the
+easy half. `_UNPORTED_BLOCKS` **11 -> 10**.
+
+The text is one `writln`, guarded `IF(.not.Lauto)`, at the `return` already
+sitting at `amdfct.cpp:101`. It came out byte-exact on all six goldens on the
+first try -- and failed **7 gates**, every one of them `.err` ORDER, no numeric
+difference anywhere. The oracle writes it BEFORE `nrmtst`'s kurtosis NOTE; this
+engine wrote it after.
+
+### The move is bigger than it looks
+
+`arima.f:874` precedes **both** `prlkhd` (`:968`) and `chkres` (`:1044`). This
+port called `aape_diagnostics` from `run_pre_model.cpp:948`, i.e. after both --
+so the fix is a ~50-line hoist above `prlkhd`, not a nudge above checkres.
+
+Which of `arima.f`'s FOUR `amdfct` call sites `:948` stands in for had to be
+settled first, because they are not interchangeable: `:364` is `Lrejfc`
+(rejectfcst), `:733` is inside the outlier-iteration print, `:816` is the
+`Nseq>0` sequence print, and `:874` is the general "average forecast error from
+original X-11-ARIMA", sitting right after `ssprep(T,F,F)`. `:874` is the one.
+
+The comment that used to sit on the C++ block said it was placed "between the
+estimation savelog block and the forecasts, exactly as in the Fortran." It was
+not, and nothing could tell while `amdfct` emitted no text. **A comment
+asserting placement fidelity is a claim about a POSITION, and a position is only
+observable once something at it writes.**
+
+### The guard the port had dropped
+
+`arima.f:873` is `Prttab(LESAFC).or.Svltab(LSLAFC).or.ldiag`, with
+`ldiag = Lsumm.gt.0.and.gudrun` (`arima.f:123`). The port tested only `Var>0`.
+`deftab(LESAFC)` is **TRUE**, which is exactly why the missing guard cost
+nothing -- until the call started writing, at which point being BROADER than the
+oracle becomes observable. Now transcribed.
+
+`Svltab(LSLAFC)` is deliberately NOT transcribed. The array exists
+(`svllog_cmn.hpp`) and has **no writer** (`readers_val.cpp:877`), so the term
+would read a permanently false slot; and `LSLAFC = 14` lives in `mdlsvl.i`'s
+index space, which is NOT the `LSL*` space already in `specparse.hpp`. Guessing
+that index is entry 91's trap verbatim -- a wrong dictionary slice that happens
+to contain the right name is invisible. The guard is therefore narrower than the
+oracle on exactly one input (`savelog=afc` with estimate printing off), no
+corpus spec has it, and the comment names what would falsify it.
+
+### Mutations, and one PREDICTION tested
+
+| mutation | fails |
+|---|---|
+| the amdfct NOTE never writes | **7** |
+| `IF(.not.Lauto)` ignored | 0 -- saturated |
+| `Prttab(LESAFC).or.ldiag` forced true | 0 -- saturated, as `deftab` predicted |
+| **entry 113's leading blank, re-measured** | **6** (was **1**) |
+
+That last row is the point. Entry 113 measured the leading-blank mutation at 1
+where the golden count said 6, and explained it: five of the six specs still
+carried this NOTE, so they were compared through `_collapse` and a MISSING blank
+merged away invisibly. The explanation predicted the number would become 6 the
+moment amdfct landed. It was written down before the run, and it is 6.
+
+**An explanation of an anomalous measurement is itself a hypothesis, and it is
+worth stating in a form the next increment will falsify.** "Collapse hides it"
+is a description; "this goes to 6 when amdfct lands" is a test.
+
+### Two mechanical notes
+
+`tools/build.ps1` swallowed the compile error behind a PowerShell
+`NativeCommandError` -- `Select-String "error:"` matched nothing and the real
+`error:` lines were only readable by re-running `cmake --build` under Bash.
+Worth knowing before chasing a phantom.
+
+And a revert that is not rebuilt is not a revert: reverting the source left the
+BINARY carrying the change, and the gate failed on a tree whose sources were
+clean. The gate was right and the tree was lying.
+
+Suite **9057 passed, 0 failed, 946 skipped**; ctest 12/12; WALLS 22 gaps /
+4 faithful.

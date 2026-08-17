@@ -135,8 +135,12 @@ _UNPORTED_BLOCKS = (
     # blocking fcnar's; entry 110 landed it and entry 111 read it.)
     # x11ari.f / prtsum -- the "nothing was adjusted" line.
     "No seasonal adjustment this run",
-    # amdfct.f -- fewer than three years of forecasts to average.
-    "NOTE: Insufficient data to compute average forecast error diagnostic.",
+    # (amdfct.f:56's "Insufficient data ..." NOTE used to sit here. PORTED --
+    # and the work was not the message, it was WHERE amdfct runs: arima.f:874
+    # precedes prlkhd and chkres, this port called it after both. Porting it
+    # also moves five specs off `_collapse` and back onto the strict
+    # comparison, which is what makes entry 113's leading-blank mutation
+    # measurable on them -- it went from 1 to 6.)
     # (the "User-defined prior adjustment factor not provided" WARNING used to
     # sit here, credited to x11pt1.f. It has TWO emitters and neither is that
     # one: prtfct.f:489 for the FORECAST window and mkback.f:288 for the

@@ -3690,8 +3690,19 @@ tree deliberately, as its own reviewable unit.
       Only `x11mdl.f:637-645` has been right. Grep the oracle for the string
       before believing the comment; the tuple is the test, the comment is prose.
 
-      **`amdfct.f:56` was ATTEMPTED and REVERTED, 2026-08-16 -- read this
-      before retrying it.** The transcription is trivial (one `writln`, guarded
+      **`amdfct.f:56` is CLOSED (entry 114, 2026-08-17).** `_UNPORTED_BLOCKS`
+      **11 -> 10**. It was an ORDERING port: `arima.f:874` precedes BOTH
+      `prlkhd` (`:968`) and `chkres` (`:1044`), so `aape_diagnostics` moved
+      ~50 lines above `prlkhd` in `run_pre_model.cpp`, and `arima.f:873`'s
+      guard was transcribed (`Prttab(LESAFC).or.ldiag`; the `Svltab(LSLAFC)`
+      disjunct is deliberately omitted -- no writer, and its index lives in a
+      different dictionary space). Mutations: NOTE off **7**, `Lauto` ignored
+      **0**, guard forced true **0**. And entry 113's leading-blank mutation
+      re-measured at **6**, up from 1, which was written down as a PREDICTION
+      before the run. The account below is kept because the diagnosis is the
+      reusable part.
+
+      **What it looked like on 2026-08-16, before the fix:** The transcription is trivial (one `writln`, guarded
       `IF(.not.Lauto)`, at the `return` already sitting at `amdfct.cpp:101`) and
       the text came out byte-exact. It fails on ORDER: the engine emits it AFTER
       the `nrmtst` kurtosis NOTE and the oracle emits it BEFORE. `arima.f` calls
@@ -3712,9 +3723,8 @@ tree deliberately, as its own reviewable unit.
       leading-blank mutation measurable on them (1 -> 6). That is the payoff, and
       it is why this one is worth doing properly rather than skipping.
 
-      **Working order from here**, by golden count and cost: `amdfct.f:56` (6
-      goldens, and it unblocks entry 113's blank-line measurement on five specs)
-      -> `editor.f:400` longer-forecast (11) -> `editor.f:2831` no-seasonal-
+      **Working order from here**, by golden count and cost:
+      `editor.f:400` longer-forecast (11) -> `editor.f:2831` no-seasonal-
       adjustment (6, and its specs are refused runs) -> `prlkhd.f:249` (3) ->
       `idotlr.f:479` (3). Then `revchk.f`'s whole history-NOTE family (the
       corpus reaches 2 of ~8 texts), `x11mdl.f:640` (1), `spectrum.f:2583`'s

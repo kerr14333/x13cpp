@@ -894,6 +894,53 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 }
             }
 
+            // arima.f:870-905 (amdfct.f) -- the average absolute percentage
+            // forecast error over the last three years. It forecasts from
+            // origins INSIDE the span using the design regvar has already
+            // built, so it must run before anything rebuilds Xy for the real
+            // forecast.
+            //
+            // POSITION IS LOAD-BEARING and this block used to sit ~50 lines
+            // BELOW, after prlkhd and after check_residuals, under a comment
+            // claiming it was placed "exactly as in the Fortran". It was not:
+            // `arima.f:874` precedes `prlkhd` at `:968` and `chkres` at
+            // `:1044`. Invisible while amdfct emitted no text, and the moment
+            // `amdfct.f:56`'s NOTE was ported the oracle wrote it BEFORE the
+            // nrmtst kurtosis NOTE and this engine wrote it after -- 7 gates,
+            // all `.err` ordering, no numeric difference. Entry 109's class:
+            // the numbers do not care where a diagnostic runs and the Mt2
+            // stream does.
+            //
+            // The guard is `arima.f:873`'s, with TWO of its three disjuncts.
+            // `Prttab(LESAFC)` has deftab TRUE, so the previous `Var>0`-only
+            // test agreed with the oracle on every corpus spec -- which is
+            // exactly why dropping the rest of it cost nothing until the call
+            // started writing. `ldiag` is `arima.f:123`'s
+            // `Lsumm.gt.0 .and. gudrun`.
+            //
+            // `Svltab(LSLAFC)` is NOT transcribed, deliberately. The array
+            // exists (`svllog_cmn.hpp`) and has no WRITER -- see
+            // `readers_val.cpp:877` -- so the term would read a permanently
+            // false slot, and `LSLAFC` lives in `mdlsvl.i`'s index space, which
+            // is NOT the `LSL*` space already in specparse.hpp. Guessing that
+            // index is entry 91's trap exactly: a wrong dictionary slice that
+            // happens to contain the right name is invisible. The guard is
+            // therefore NARROWER than the oracle's on one input -- a spec that
+            // asks `savelog=afc` with estimate printing off -- which no corpus
+            // spec has. Restore the term when the savelog store lands.
+            if (ctx.mdldat.var > 0.0) {
+                const bool gudrun_ = ctx.hiddn.issap < 2 && ctx.hiddn.irev < 4;
+                const bool ldiag = ctx.hiddn.lsumm > 0 && gudrun_;
+                if (ctx.tbllog.prttab(prm::LESAFC) || ldiag) {
+                    // gtinpt.f:1203-1216 -- `Outfct` (resolved in gtinpt from
+                    // estimate{outofsample=}) selects the OUT-OF-SAMPLE
+                    // variant; amdfct reads it itself. This is the
+                    // non-automatic caller, so no `lauto`.
+                    aape_diagnostics(ctx, trnsrs.data());
+                    if (ctx.error.lfatal) return false;
+                }
+            }
+
             // Likelihood statistics (arima.f:742 prlkhd): the transform-Jacobian-
             // adjusted log likelihood + AIC/AICC/BIC/HQ into ctx.lkhd. Y is the
             // original untransformed series over the span (aptr == Y(Frstsy)); the
@@ -934,20 +981,9 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             est_diagnostics(ctx, ctx.captured.has_outlier);
             if (ctx.error.lfatal) return false;
 
-            // arima.f:870-905 (amdfct.f) -- the average absolute percentage
-            // forecast error over the last three years. Sits here, between the
-            // estimation savelog block and the forecasts, exactly as in the
-            // Fortran: it forecasts from origins INSIDE the span using the
-            // design regvar has already built, so it must run before anything
-            // rebuilds Xy for the real forecast. Gated on Var>0 (arima.f:872).
-            if (ctx.mdldat.var > 0.0) {
-                // gtinpt.f:1203-1216 -- `Outfct` (resolved in gtinpt from
-                // estimate{outofsample=}) selects the OUT-OF-SAMPLE variant;
-                // amdfct reads it itself. This is the non-automatic caller, so
-                // no `lauto`.
-                aape_diagnostics(ctx, trnsrs.data());
-                if (ctx.error.lfatal) return false;
-            }
+            // (amdfct.f used to be called HERE, after prlkhd and
+            // check_residuals. It now runs above them, where arima.f:874 puts
+            // it -- see the note there.)
 
             // arima.f:1216-1218 -- "If estimation did not converge, exit with
             // an error". A BARE `CALL abend`: the oracle writes nothing here,

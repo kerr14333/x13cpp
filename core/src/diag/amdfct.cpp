@@ -98,7 +98,22 @@ void aape_diagnostics(X13Context& ctx, const double* trnsrs, bool* lauto,
     // amdfct.f:55-60 -- not enough observations BEFORE the three-year window to
     // have estimated the model there. The oracle prints a NOTE and returns
     // Fctok=F, which arima.f:904 turns into `aape.mode: none`.
-    if (!bckcst && ((nobsot - (m.mxdflg + m.mxarlg)) * m.ncxy) + 1 <= 0) return;
+    //
+    // `IF(.not.Lauto)` -- Lauto is amdfct's SEVENTH argument, not a property of
+    // the caller: arima.f's four call sites pass the literal `F`, automx.f
+    // passes `argok` and idotlr.f passes its own `Lauto`. This port carries it
+    // as a POINTER and `outf` above reads the pointer's NULLNESS as the flag,
+    // which agrees with the Fortran only while that variable is true. The NOTE
+    // reads the VALUE, which is the faithful test; `outf` is left alone rather
+    // than changed unmeasured, and the two agree on every gated spec.
+    if (!bckcst && ((nobsot - (m.mxdflg + m.mxarlg)) * m.ncxy) + 1 <= 0) {
+        if (!(lauto && *lauto))
+            writln(ctx,
+                   "NOTE: Insufficient data to compute average forecast error "
+                   "diagnostic.",
+                   ctx.units.mt1, ctx.units.mt2, true);
+        return;
+    }
     if (nobsot <= 0 || nspobs <= 0) return;
 
     // amdfct.f:65-67 -- Fctdrp is forced to 0 for the whole diagnostic and
