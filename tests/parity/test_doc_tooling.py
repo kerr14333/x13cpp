@@ -122,3 +122,71 @@ def test_walls_check_runs():
     assert p.returncode in (0, 1), f"unexpected exit {p.returncode}: {p.stdout}"
     assert re.search(r"\d+ gaps", p.stdout), (
         f"walls.py printed no gap count: {p.stdout!r}")
+
+
+# --- coverage_map's routine-level tier ------------------------------------
+#
+# The ledger is FILE-level; the port is ROUTINE-level, and 37 .f files hold more
+# than one routine (matrix.f holds 90). Those files could not be described by a
+# `stem: status` line at all, so they sat at `pending` however much of them was
+# ported -- and the 58.8% that produced was read as "41% of the program left".
+# The SPLIT tier and the routine-level figure exist to make that visible.
+#
+# The figure is computed with a one-pass symbol set (_def_names) rather than
+# 1100+ anchored scans of a 2.7MB blob, purely for speed: 34.4s -> 0.03s. That
+# is an optimisation of the MEASUREMENT, which is exactly the kind of thing that
+# silently stops agreeing with what it replaced. So assert the two agree, over
+# the real corpus of names, rather than trusting the comment that says they do.
+
+def _coverage_map():
+    sys.path.insert(0, TOOLS)
+    import coverage_map
+    return coverage_map
+
+
+def test_def_names_agrees_with_defines():
+    cm = _coverage_map()
+    blob = "\n".join(t for _, t in cm._cpp_sources())
+    routines = cm.f_routines(os.path.join(ROOT, "oracle", "fortran"))
+    names = sorted({n for v in routines.values() for n in v}
+                   | set(cm.ALIASES) | set(routines))
+    assert len(names) > 500, f"only {len(names)} names -- the parse shrank"
+
+    fast = cm._def_names(blob)
+    disagree = [n for n in names if (n in fast) != cm._defines(blob, n)]
+    assert not disagree, (
+        "_def_names and _defines disagree on: " + " ".join(disagree[:20]))
+
+
+def test_def_names_can_fail():
+    """The check above is worthless if it cannot fail. Feed it a blob whose
+    definition the fast path must see and the slow path must not."""
+    cm = _coverage_map()
+    assert cm._defines("void zzq_probe(int x) {", "zzq_probe")
+    assert "zzq_probe" in cm._def_names("void zzq_probe(int x) {")
+    assert not cm._defines("// zzq_probe(x) in a comment", "zzq_probe")
+    assert "zzq_probe" not in cm._def_names("// zzq_probe(x) in a comment")
+
+
+def test_cite_names_is_word_anchored_on_both_edges():
+    """The per-stem CITE probe was `stem + r'\\.f\\b'` -- open on the LEFT -- so
+    `dot` matched inside `amidot.f`. The hoisted version captures `(\\w+)`, which
+    anchors both edges. This asserts the fix, not the old behaviour."""
+    cm = _coverage_map()
+    names = cm._cite_names("// see amidot.f:59 and ddot.f for the helper\n")
+    assert "amidot" in names and "ddot" in names
+    assert "dot" not in names, "substring match is back"
+
+
+def test_routine_parse_finds_the_multi_routine_files():
+    """A discovery predicate that SHRINKS reports green, so floor-assert it."""
+    cm = _coverage_map()
+    routines = cm.f_routines(os.path.join(ROOT, "oracle", "fortran"))
+    total = sum(len(v) for v in routines.values())
+    multi = [s for s, v in routines.items() if len(v) > 1]
+    assert total > 1100, f"only {total} Fortran routines parsed"
+    assert len(multi) >= 30, f"only {len(multi)} multi-routine .f found"
+    # The file that motivated the tier. If this stops parsing, the routine
+    # figure quietly loses 90 units and nothing else complains.
+    assert len(routines["matrix"]) > 80, (
+        f"matrix.f parsed as {len(routines['matrix'])} routines")

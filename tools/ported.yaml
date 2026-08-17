@@ -26,12 +26,12 @@ addotl: ported
 addsef: ported
 addsub: pending
 addtd: ported
-addusr: pending
+addusr: ported
 adestr: ported
 adjreg: ported
 adjsrs: ported
 adlabr: ported
-adotss: pending
+adotss: ported
 adpdrg: partial   # const/seasonal/sincos/td-family/easter/labor/thank parsed; outlier + change-of-regime branches abend (rdotlr/adrgim)
 adrgef: gated
 adrgim: ported
@@ -78,7 +78,7 @@ automx: ported
 avedur: ported
 aver: pending
 averag: ported
-bakusr: pending
+bakusr: ported
 bench: pending
 bestmd: ported
 bkdfmd: ported
@@ -111,7 +111,7 @@ chkzro: ported
 chqsea: pending
 chrt: pending
 chsppf: ported
-chusrg: pending
+chusrg: ported
 clrotl: ported
 clsgrp: ported
 cmpchi: pending
@@ -147,7 +147,7 @@ ctoi: ported
 cumnor: ported
 cvcmma: pending
 cvdttm: pending
-cvrerr: pending
+cvrerr: ported
 daxpy: ported
 dcopy: ported
 ddot: ported
@@ -165,7 +165,7 @@ divgud: ported
 divsub: ported
 dlrgef: ported
 dlrgrw: ported
-dlusrg: pending
+dlusrg: ported
 dot: pending
 dpeq: ported
 dpmpar: ported
@@ -342,7 +342,7 @@ ispos: ported
 issame: ported
 istrue: pending
 itoc: ported
-itrerr: pending
+itrerr: ported
 kfcn: pending
 kwtest: ported
 lassol: ported
@@ -433,7 +433,7 @@ ppnd: ported
 pracf2: pending
 prafce: pending
 pragr2: pending
-prarma: pending
+prarma: ported
 prfcrv: pending
 pritd: ported
 prlkhd: ported
@@ -454,7 +454,7 @@ prtdft: n-a
 prtdtb: pending
 prtdwr: pending
 prterr: ported
-prterx: pending
+prterx: ported
 prtf2: pending
 prtf2w: pending
 prtfct: pending
@@ -483,7 +483,7 @@ prtukp: pending
 prtxrg: pending
 punch: gated
 putbak: ported
-putrev: pending
+putrev: ported
 putstr: ported
 qcmmnt: ported
 qcontr: pending
@@ -520,14 +520,14 @@ revdrv: ported
 revhdr: pending
 revrse: ported
 rgarma: ported
-rgtdhl: pending
+rgtdhl: ported
 rho2: ported
 rmatot: ported
 rmfix: ported
 rmlnvr: ported
 rmlpyr: ported
 rmotrv: ported
-rmotss: pending
+rmotss: ported
 rmpadj: pending
 rmtadj: pending
 rndsa: ported
@@ -651,7 +651,7 @@ svrvhd: pending
 svspan: pending
 svtukp: pending
 table: pending
-taper: pending
+taper: ported
 tblhdr: pending
 td6var: ported
 td7var: ported
@@ -665,7 +665,7 @@ testodf: ported
 tfmts: pending
 tfmts3: pending
 totals: ported
-transc: pending
+transc: ported
 trbias: ported
 trnaic: ported
 trnfcn: gated
@@ -677,7 +677,7 @@ uconv: ported
 upbuf.g77: n-a
 upespm: ported
 upmeta.g77: n-a
-usraic: pending
+usraic: ported
 value: pending
 varian: ported
 varlog: ported

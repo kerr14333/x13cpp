@@ -148,19 +148,61 @@ def _ported_counts():
     return counts
 
 
-def m_routines_done():
+# NOTE THE UNIT. ported.yaml has one line per .f FILE, so everything derived
+# from it counts files. These three were labelled "Fortran routines" for months
+# and the 58.8% they produced was duly read as "41% of the program is unwritten"
+# -- when 37 of the pending files hold more than one routine (matrix.f holds 90)
+# and most of the residue was the deferred print engine or routines already
+# ported under another name. The routine-level pair below is the other bracket.
+def m_files_done():
     c = _ported_counts()
     return c.get("ported", 0) + c.get("gated", 0)
 
 
-def m_routines_total():
+def m_files_total():
     c = _ported_counts()
     return sum(c.values()) - c.get("n-a", 0)
 
 
+def m_files_pct():
+    tot = m_files_total()
+    return "{:.1f}".format(100.0 * m_files_done() / tot) if tot else "0.0"
+
+
+def _routine_coverage():
+    """(resolved, total) Fortran SUBROUTINE/FUNCTION definitions.
+
+    Derived by coverage_map from BOTH trees on every call -- imported rather
+    than reimplemented, so the two tools cannot drift into disagreeing about
+    what a routine is.
+    """
+    sys.path.insert(0, HERE)
+    import coverage_map as cm
+    defined = cm._def_names("\n".join(t for _, t in cm._cpp_sources()))
+    status = cm.load_yaml(cm.PORTED_YAML)
+    routines = cm.f_routines(os.path.join(REPO, "oracle", "fortran"))
+    tot = got = 0
+    for stem, names in routines.items():
+        if cm.bare(status.get(stem, "pending")) == "n-a":
+            continue
+        tot += len(names)
+        got += sum(1 for n in names if n in defined)
+    if not tot:
+        raise MetricUnavailable("no Fortran routines parsed")
+    return got, tot
+
+
+def m_routines_total():
+    return _routine_coverage()[1]
+
+
+def m_routines_samename():
+    return _routine_coverage()[0]
+
+
 def m_routines_pct():
-    tot = m_routines_total()
-    return "{:.1f}".format(100.0 * m_routines_done() / tot) if tot else "0.0"
+    got, tot = _routine_coverage()
+    return "{:.1f}".format(100.0 * got / tot)
 
 
 def m_commits():
@@ -259,9 +301,13 @@ METRICS = [
     ("cpp_files",       m_cpp_files,       "C++ files (excl. generated)"),
     ("fortran_lines",   m_fortran_lines,   "Fortran reference, non-blank lines"),
     ("fortran_files",   m_fortran_files,   "Fortran reference, files"),
-    ("routines_done",   m_routines_done,   "Fortran routines ported or gated"),
+    ("files_done",      m_files_done,      "Fortran FILES ported or gated"),
+    ("files_total",     m_files_total,     "Fortran files in scope (excl. n-a)"),
+    ("files_pct",       m_files_pct,       "Percent of files ported"),
+    ("routines_samename", m_routines_samename,
+     "Fortran ROUTINES with a same-named C++ definition"),
     ("routines_total",  m_routines_total,  "Fortran routines in scope (excl. n-a)"),
-    ("routines_pct",    m_routines_pct,    "Percent of routines ported"),
+    ("routines_pct",    m_routines_pct,    "Percent of routines same-named (renames count as missing)"),
     ("census_bugs",     m_census_bugs,     "Census bugs catalogued"),
     ("commits",         m_commits,         "Commits"),
     ("active_time",     m_active_time,     "Active development time"),
