@@ -121,11 +121,21 @@ HALT_CASES = [c for c in CASES
 # by some golden AND to still be absent from every engine run.
 #
 # This list IS the inventory of what the `.err` front is missing, and it is
-# meant to shrink. SIXTEEN entries as of 2026-08-13 -- it opened at nineteen
-# and x11pt3.f's three force NOTEs came off it the same day.
+# meant to shrink. It opened at nineteen; x11pt3.f's three force NOTEs came
+# off it the same day. Count the tuple, do not read a number here.
+#
+# EVERY `.f` attribution below was re-derived on 2026-08-18 by joining the
+# oracle's continuation records and grepping the message text, because SEVEN
+# of them had been wrong. Do that again rather than trusting these -- a
+# citation is a claim, and this file is where that has been proved most
+# often.
 _UNPORTED_BLOCKS = (
-    # seatop.f -- SEATS asks for a longer forecast horizon than the spec set.
-    "NOTE: A longer forecast horizon is required by the SEATS signal extraction",
+    # (the SEATS longer-forecast NOTE used to sit here, credited to seatop.f.
+    # It is editor.f:387-406, and it is PORTED. The RAISE had been ported
+    # alone months earlier -- parse_spec.cpp already forced nfcst up to
+    # max(12,3*Sp) and said so in a comment -- so the gap was three writln
+    # lines under a rule the port had already agreed with. A silent horizon
+    # change is precisely what the NOTE exists to prevent.)
     # (fcnar.f's three root WARNINGs used to sit here, credited to chkrt2.f.
     # They are PORTED -- the blocker was never the message, it was `Lprier` =
     # `Prttab(LESTIE)`, i.e. the print-table store. chkrt2.f writes a different
@@ -133,7 +143,8 @@ _UNPORTED_BLOCKS = (
     # (arima.f:935-960's two fixed-coefficient wordings used to sit here. They
     # are PORTED -- they were behind Prttab(LESTES), the same store that was
     # blocking fcnar's; entry 110 landed it and entry 111 read it.)
-    # x11ari.f / prtsum -- the "nothing was adjusted" line.
+    # editor.f:2831 -- the trailer on a run editor itself refused. NOT
+    # x11ari.f/prtsum, which is what this comment used to say.
     "No seasonal adjustment this run",
     # (amdfct.f:56's "Insufficient data ..." NOTE used to sit here. PORTED --
     # and the work was not the message, it was WHERE amdfct runs: arima.f:874
@@ -147,26 +158,31 @@ _UNPORTED_BLOCKS = (
     # BACKCAST window. The forecast half is PORTED and gated by the three
     # goldens that carry it. The backcast half is behind Prttab(LFORBC), whose
     # deftab entry is F -- see forecast.cpp's bcstout.)
-    # prlkhd.f -- the AIC block on an approximate (conditional) likelihood.
+    # prlkhd.f:251 -- the AIC block on an approximate (conditional)
+    # likelihood. Its FORMAT opens with a `/`, so the blank above it is an
+    # EMPTY record, not writln's two-space one.
     "NOTE:  AIC and related statistics are printed only for exact",
     # (checkres' normality NOTEs used to sit here. All FIVE of nrmtst.f's are
     # ported -- the two the corpus carries plus the kurtosis upper bound and
     # both of Geary's a, which no golden reaches. See checkres.cpp.)
-    # ssmdl.f:150-241's change-of-regime arm (CB-39, deliberately a wall).
+    # ssmdl.f:285,300's change-of-regime arm (CB-39, deliberately a wall).
     "NOTE: The following change of regime regression variables are not",
-    # revdrv.f -- the history{} option NOTEs.
+    # revchk.f:803 and :1007/:1124 -- the history{} option NOTEs. NOT
+    # revdrv.f.
     "NOTE: regARIMA model parameters will not be re-estimated once a year",
     "NOTE: Not enough data to perform a history analysis for seasonal adjustments",
-    # x11mdl.f:637-645 -- the reweight NOTE (the ABEND beside it IS ported).
+    # x11mdl.f:639 -- the reweight NOTE (the ABEND beside it IS ported).
     "NOTE: At least one of the parameter estimates above yields a negative",
-    # otlaic.f -- an outlier the regression matrix cannot carry. Matched by
+    # idotlr.f:485 -- an outlier the regression matrix cannot carry. NOT
+    # otlaic.f. Matched by
     # PREFIX, like every entry here: the message names the outlier, so a whole
     # line would be one spec's `TC2020.Mar` and would silently stop matching
     # the next spec's `AO2020.Apr`.
     "NOTE: Unable to test ",
-    # checkres -- the squared-residual ACF on too short a series.
+    # pracf2.f:2 -- the squared-residual ACF on too short a series. The NOTE
+    # fronts an ENTIRELY unported routine: there is no `ac2` table at all.
     "NOTE: X-13ARIMA-SEATS will not compute the ACF of the squared residuals for",
-    # seats -- and this one is a CENSUS DEFECT in its own right: the message is
+    # spectrum.f:2583 -- and a CENSUS DEFECT in its own right: the message is
     # assembled from two pieces in the wrong order, so the oracle prints
     # "transitoryThe innovation variance of the greater than one is".
     "transitoryThe innovation variance of the greater than one is",
