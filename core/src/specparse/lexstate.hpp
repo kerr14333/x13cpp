@@ -138,6 +138,25 @@ struct ParseSettings {
     std::vector<std::string> regression_vars;   // regression{ variables = ... }
     std::vector<std::string> aictest_vars;      // regression{ aictest = ... }
     std::vector<std::string> spec_order;        // spec names in order encountered
+
+    // Readok -- editor.f's OWN input-check flag, and it is not gtinpt's.
+    // x12run.f threads one variable (`Rok`) through both, but it gates them
+    // differently: gtinpt.f writes it at x12run.f:89, and x12run.f:105 then
+    // calls editor at all only `IF(Rok.and.Lexok)`. So an error found by a
+    // SPEC READER skips editor entirely and editor.f:2830's "No seasonal
+    // adjustment this run" never prints, while an error found by editor
+    // itself falls into the `ELSE IF(.not.Readok)` at the bottom of that same
+    // routine and does. Measured on the corpus: 6 goldens carry the trailer,
+    // 31 carry an ERROR without it, and not one message in those 31 is
+    // emitted by editor.f.
+    //
+    // This port has no separate editor stage -- editor.f's checks are folded
+    // into gtinpt.cpp and readers_spec.cpp -- so the single `inptok` conflated
+    // the two flags and could not tell those two sets apart. Set it through
+    // `editor_refusal()` so the distinction is named at the site rather than
+    // remembered: a future editor.f check that reaches for a bare
+    // `inptok = false` is exactly how this goes stale.
+    bool readok = true;
 };
 
 } // namespace x13

@@ -8761,23 +8761,136 @@ remaining unported block, so all eleven are on the strict comparison. **The
 mutation number is a property of the gate's mode, not only of the code**, and
 the mode is a function of what is still unported elsewhere in the same file.
 
-### Four more wrong `.f` attributions in `_UNPORTED_BLOCKS`
+### Every remaining `.f` attribution, re-derived rather than read
 
-Re-derived mechanically for every remaining entry, and corrected in place:
+The handoff already carried six corrections found one at a time. This pass did
+all of them at once and CORRECTED THE COMMENTS IN PLACE, which the earlier
+passes had not:
 
 | block | comment said | actually |
 |---|---|---|
 | longer forecast horizon | `seatop.f` | `editor.f:387-406` |
 | No seasonal adjustment this run | `x11ari.f / prtsum` | `editor.f:2831` |
-| parameters will not be re-estimated once a year | `revdrv.f` | `revchk.f:803` |
-| Not enough data ... history analysis | `revdrv.f` | `revchk.f:1007,1124` |
+| parameters not re-estimated once a year | `revdrv.f` | `revchk.f:801-805` |
+| Not enough data ... history analysis | `revdrv.f` | `revchk.f:1131` (a FORMAT) |
 | Unable to test ... | `otlaic.f` | `idotlr.f:485` |
 | change of regime ... | `ssmdl.f:150-241` | `ssmdl.f:285,300` |
+| ACF of the squared residuals | `checkres` (a C++ file) | `pracf2.f:2` |
 
-Correct as written: `prlkhd.f:251`, `x11mdl.f:639`, `pracf2.f:2`,
-`spectrum.f:2583`. **The method is the durable part**: joining continuation
+Correct as written: `prlkhd.f:251`, `x11mdl.f:639`, `spectrum.f:2583`.
+
+**The method is the durable part**, and it has one trap. Joining continuation
 records and keeping the SOURCE line number turns "which file says this" into a
-one-minute grep, and the answer cannot be argued with. Reading the comment
-cannot.
+one-minute grep. But grepping a PREFIX of the message finds siblings: "Not
+enough data" matches four places in `revchk.f` alone, and the one the golden
+carries -- "perform **a** history analysis" -- is none of them. Grep the
+longest contiguous fragment the golden actually shows, then read the hit.
 
 Suite **9057 passed, 0 failed, 946 skipped**; ctest 12/12.
+
+## 116. `editor.f:2831`'s "No seasonal adjustment this run" -- one `writln`, and the work was that `Readok` is not `inptok` (2026-08-18)
+
+`_UNPORTED_BLOCKS` **10 -> 9**. Six goldens carry the trailer:
+`edge/psuadd-irregular-calendar`, `edge/psuadd-prioradj`,
+`edge/psuadd-regarima-preadj`, `extra/airline_x11regression-reweight-fixneg`,
+`extra/airline_x11regression-tdprior-add`,
+`extra/expgs_x11regression-aictest-tdflip-qtr`.
+
+The transcription is a single line. Everything that mattered was the guard.
+
+### Two flags the Fortran spells with one variable
+
+`x12run.f` threads ONE logical -- `Rok` -- through both stages, and
+`editor.f` calls it `Readok`. But the two stages are gated differently:
+
+```fortran
+      CALL gtinpt(..., Rok)          ! x12run.f:88
+      IF(Rok.and.Lexok)THEN          ! x12run.f:105
+       CALL editor(..., Rok)         ! x12run.f:131
+```
+
+so an error found by a **spec reader** means editor is never called, and the
+`ELSE IF(.not.Readok)` at the bottom of editor -- which pairs with `IF(Readok)`
+at `editor.f:2687`, counted rather than read off the indentation -- cannot
+print. An error found by **editor itself** falls straight into it.
+
+This port has no separate editor stage: `editor.f`'s checks are folded into
+`gtinpt.cpp` and `readers_spec.cpp`, and every one of them cleared the same
+`inptok`. So the port had the two flags collapsed into one, and the naive
+reading -- write the trailer when `!inptok` -- is wrong on five specs for every
+one it is right on.
+
+### The corpus says exactly how wrong
+
+Six goldens carry the trailer; **thirty-one** carry an `ERROR:` and do not. So
+the discriminator is not a subtlety, it is five sixths of the population. And
+it is derivable rather than guessable: taking every distinct `ERROR:` line out
+of those thirty-one and grepping the oracle for its emitter gives
+`getfrc.f`, `gtxreg.f`, `getprt.f`, `getsav.f`, `getsvl.f`, `gtarg.f`,
+`gtpdrg.f`, `gtotlr.f`, `getsrs.f`, `itrerr.f` -- readers, and phases that run
+AFTER editor. **Not one of the thirty-one is emitted by `editor.f`.** The
+model and the corpus agree on both sides before a line of code was written.
+
+### Finding the sites without reading the comments
+
+The port's fourteen editor-derived refusals were located by attributing every
+`inptok = false;` in `specparse/` and `driver/` to its nearest preceding
+`<file>.f:<line>` citation, then checking each candidate against the eighty-one
+`Readok=F` lines in `editor.f`. Thirteen of the fifteen candidates landed on
+one; `readers_spec.cpp:4111` -- a bare
+`IF(dpeq(Critxr,DNOTST))Readok=F` with no message above it -- landed on
+`editor.f:1757` and would have been missed by any search keyed on message text.
+The one false positive was `readers_spec.cpp:216`, where a `getadj.f` citation
+is followed on the NEXT line by a parenthetical `(editor.f:430)`, and the
+heuristic took the later one.
+
+That last one is the caveat worth keeping: **the attribution is a heuristic and
+the `Readok=F` cross-check is the evidence.** The heuristic alone would have
+added a fifteenth site and written the trailer on a spec that must not have it.
+
+### `editor_refusal()` rather than a second assignment
+
+The sites call `editor_refusal(ctx, inptok)` instead of setting the new flag
+beside the old one. The distinction is now named at the point of use, so the
+next `editor.f` check that gets ported has to choose; a bare `inptok = false`
+is how this would have gone stale, silently, exactly once.
+
+### Mutations
+
+| mutation | fails |
+|---|---|
+| the trailer never writes | **6** |
+| **keyed on `inptok` instead of `Readok`** | **19** |
+| `lblnk` T -> F | **6** |
+| the message's OWN leading space dropped | **6** |
+| the `!Lfatal` guard dropped | **0** |
+| ONE site reverted to a bare `inptok = false` | **1** |
+
+The 19 is not 31, and the difference is the whole account. Attributed by
+applying the mutation and reading the ids rather than reasoning about the
+number:
+
+* **18** `.err` gates (+1 elsewhere) get the trailer written on a run the
+  oracle never wrote it on.
+* **8** are post-parse errors -- `itrerr`, the singular-matrix reports,
+  `log-zero-series` -- where `inptok` was never cleared, so even the naive
+  keying is silent. Those specs are not evidence either way.
+* **5** are suppressed by the `!Lfatal` guard alone:
+  `force-invalid-{mode,round,type}`, `print-prefix-bad`,
+  `x11regression-umtrimzero`.
+
+That last bullet is why the `!Lfatal` row reads **0**. **The guard's entire
+observable effect is conditional on the other half being wrong.** Measured on
+its own, against the correct `Readok` keying, it is inert -- `readok` is never
+set on those five specs, so removing the guard changes nothing. Drop BOTH and
+the count goes 18 -> 23, exactly the five named above. Predicted, then
+measured.
+
+This is the "a null measured under the wrong preconditions is not a null" rule
+in a shape it had not taken here before: not a saturated precondition, but
+**two guards whose only evidence is joint**. Mutating either alone measures
+zero or an incomplete number; the pair is what the corpus can see. When a
+guard measures 0 beside a guard that measures a partial count, mutate them
+together before writing either one off.
+
+Suite **9057 passed, 0 failed, 946 skipped**.

@@ -632,7 +632,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                                true);
                         writln(ctx, "       multiplicative seasonal adjustment.",
                                stdio::STDERR, ctx.units.mt2, false);
-                        inptok = false;
+                        editor_refusal(ctx, inptok);
                     } else if (!dpeq(xr.dwt(i), 0.0)) {
                         ctx.x11opt.kswv = 1;
                     }
@@ -666,7 +666,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
                                    "seasonal adjustment.", stdio::STDERR,
                                    ctx.units.mt2, false);
                         }
-                        inptok = false;
+                        editor_refusal(ctx, inptok);
                     }
                 } else if (muladd == 0) {
                     for (int i = 1; i <= 7; ++i) xr.dwt(i) = 1.0;
@@ -814,7 +814,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             auto err2 = [&](const char* a, const char* b) {
                 writln(ctx, a, stdio::STDERR, ctx.units.mt2, true);
                 writln(ctx, b, stdio::STDERR, ctx.units.mt2, false);
-                inptok = false;
+                editor_refusal(ctx, inptok);
             };
             if (pa == 4) {
                 if (!dpeq(lam0, 0.0))
@@ -995,7 +995,7 @@ void gtinpt(X13Context& ctx, bool& lx11, bool& lseats, bool& lmodel, bool& inpto
             auto err2 = [&](const char* a, const char* b) {
                 writln(ctx, a, stdio::STDERR, ctx.units.mt2, true);
                 writln(ctx, b, stdio::STDERR, ctx.units.mt2, false);
-                inptok = false;
+                editor_refusal(ctx, inptok);
             };
             if (xa.adjtd == 1 || xa.adjls == 1 || xa.adjhol == 1 ||
                 xa.adjao == 1 || xa.adjtc == 1 || xa.adjusr == 1 ||

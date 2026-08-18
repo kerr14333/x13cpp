@@ -152,6 +152,12 @@ void inslg(X13Context& ctx, const bool* subvec, int ielt, const int* ptrvec,
 void abend(X13Context& ctx);
 void errhdr(X13Context& ctx);
 void writln(X13Context& ctx, std::string_view oline, int flhdnl, int flhdn2, bool lblnk);
+
+// An input error found by EDITOR rather than by a spec reader: editor.f's
+// `Readok=F`. Clears gtinpt's flag too -- the Fortran has one variable -- but
+// records WHICH STAGE refused, which is what editor.f:2830's trailer is keyed
+// on. See ParseSettings::readok.
+void editor_refusal(X13Context& ctx, bool& inptok);
 void inpter(X13Context& ctx, int errtyp, const int* ptr, std::string_view errmsg);
 // cvrerr.f -- the two-date detail lines that follow a failed chkcvr.
 void cvrerr(X13Context& ctx, std::string_view srsttl, const int* begsrs,

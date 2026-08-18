@@ -143,9 +143,12 @@ _UNPORTED_BLOCKS = (
     # (arima.f:935-960's two fixed-coefficient wordings used to sit here. They
     # are PORTED -- they were behind Prttab(LESTES), the same store that was
     # blocking fcnar's; entry 110 landed it and entry 111 read it.)
-    # editor.f:2831 -- the trailer on a run editor itself refused. NOT
-    # x11ari.f/prtsum, which is what this comment used to say.
-    "No seasonal adjustment this run",
+    # (editor.f:2831's "No seasonal adjustment this run" used to sit here,
+    # credited to x11ari.f/prtsum. It is PORTED, and the transcription was one
+    # writln: the work was that `Readok` is NOT `inptok`. x12run.f:105 calls
+    # editor only `IF(Rok.and.Lexok)`, so a reader-level error skips editor and
+    # the trailer never prints -- 6 goldens carry it, 31 carry an ERROR without
+    # it. See ParseSettings::readok and editor_refusal().)
     # (amdfct.f:56's "Insufficient data ..." NOTE used to sit here. PORTED --
     # and the work was not the message, it was WHERE amdfct runs: arima.f:874
     # precedes prlkhd and chkres, this port called it after both. Porting it
@@ -167,8 +170,8 @@ _UNPORTED_BLOCKS = (
     # both of Geary's a, which no golden reaches. See checkres.cpp.)
     # ssmdl.f:285,300's change-of-regime arm (CB-39, deliberately a wall).
     "NOTE: The following change of regime regression variables are not",
-    # revchk.f:803 and :1007/:1124 -- the history{} option NOTEs. NOT
-    # revdrv.f.
+    # revchk.f:801-805 and :1131 -- the history{} option NOTEs. NOT revdrv.f,
+    # and the second is a FORMAT (leading `/` = an EMPTY record), not a writln.
     "NOTE: regARIMA model parameters will not be re-estimated once a year",
     "NOTE: Not enough data to perform a history analysis for seasonal adjustments",
     # x11mdl.f:639 -- the reweight NOTE (the ABEND beside it IS ported).

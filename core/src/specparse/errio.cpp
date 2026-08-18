@@ -202,4 +202,10 @@ void inpter(X13Context& ctx, int errtyp, const int* ptr, std::string_view errmsg
     }
 }
 
+
+void editor_refusal(X13Context& ctx, bool& inptok) {
+    inptok = false;
+    ctx.captured.readok = false;
+}
+
 } // namespace x13

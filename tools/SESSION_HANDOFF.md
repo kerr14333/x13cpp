@@ -3409,6 +3409,83 @@ level tier + `ALIASES`, `metrics.py`'s `files_*`/`routines_*` split,
 `ported.yaml`'s 15 promotions, and 5 new `test_doc_tooling.py` cases. Left in the
 tree deliberately, as its own reviewable unit.
 
+## This session, part 65: `editor.f:400`'s longer-forecast NOTE -- the RAISE had been ported alone
+
+`docs/M5_PORT_NOTES.md` entry 115. `_UNPORTED_BLOCKS` **11 -> 10**. Suite
+**9057 / 0 / 946**.
+
+`parse_spec.cpp` has raised an explicit `forecast{maxlead=}` up to
+`max(12,3*Sp)` on a `seats{}` run for months, with a comment explaining why.
+What it never did was SAY so, which is the entire purpose of
+`editor.f:396-406`. **A ported rule whose diagnostic is unported is a rule the
+user cannot see fire** -- and that shape is invisible by construction, because
+the numbers are already right.
+
+Mutations: NOTE off **11**, leading blank **11**, `clen` not cut back to
+`ip2-1` **11**, horizon hardcoded to 36 **2**, `max(12,3*Sp)` -> `3*Sp` **0**.
+
+Two of those are worth keeping. The **2** is the two QUARTERLY specs
+(`expgs_finite-seats`, `expgs_fixed-airline-seats`, horizon 12 not 36) -- the
+only specs that can tell a derived number from a pasted one. The **0** is
+inert BY CONSTRUCTION: `max(12,3*Sp) == 3*Sp` for every `Sp>=4`, so the floor
+is algebraically unreachable on monthly and quarterly data, and `Sp=2` with
+`seats{}` is a corpus gap rather than a defect.
+
+And the leading blank measured **11** on the first try where entry 113's
+measured 1: none of these eleven carries a remaining unported block, so all
+eleven are on the strict comparison rather than `_collapse`. **A mutation
+number is a property of the gate's MODE, and the mode depends on what is still
+unported elsewhere.**
+
+Also re-derived EVERY remaining `.f` attribution in the tuple and corrected the
+comments in place (the handoff had six of these; nobody had fixed the file).
+Two new: `otlaic.f` is really `idotlr.f:485`, and the ACF entry cited a C++
+file. Method: join the oracle's continuation records, keep the SOURCE line
+number, grep the LONGEST contiguous fragment the golden shows -- a prefix finds
+siblings ("Not enough data" matches four places in `revchk.f`, and the golden's
+is none of them).
+
+## This session, part 66: `editor.f:2831`'s trailer -- `Readok` is not `inptok`
+
+`docs/M5_PORT_NOTES.md` entry 116. `_UNPORTED_BLOCKS` **10 -> 9**. Suite
+**9057 / 0 / 946**.
+
+One `writln`. All the work was the guard. `x12run.f` threads ONE logical
+through both stages but gates them differently -- `x12run.f:105` calls editor
+only `IF(Rok.and.Lexok)` -- so an error found by a SPEC READER skips editor and
+the trailer never prints, while an error found by editor itself falls into the
+`ELSE IF(.not.Readok)` at the bottom of the same routine. This port has no
+editor stage, so both cleared the same `inptok`.
+
+The corpus sizes the mistake exactly: **6 goldens carry the trailer, 31 carry
+an `ERROR:` and do not**, and taking every distinct `ERROR:` line out of those
+31 and grepping the oracle for its emitter returns readers (`getfrc`, `gtxreg`,
+`getprt`, `getsav`, `getsvl`, `gtarg`, `gtpdrg`, `gtotlr`, `getsrs`) and
+post-editor phases (`itrerr`) -- **not one from `editor.f`**. Both sides
+predicted before any code was written.
+
+Fourteen sites now call `editor_refusal(ctx, inptok)`, found by attributing
+every `inptok = false` to its nearest `<file>.f:` citation and cross-checking
+each candidate against the 81 `Readok=F` lines in `editor.f`. The cross-check
+is the evidence, not the citation: one candidate
+(`readers_spec.cpp:216`) was a false positive from a parenthetical `(editor.f:430)`
+on the line after a `getadj.f` one, and one real site
+(`readers_spec.cpp:4111`, `IF(dpeq(Critxr,DNOTST))Readok=F`) has NO message
+above it and would be missed by any search keyed on text.
+
+Mutations: trailer off **6**, keyed on `inptok` **19**, leading blank **6**,
+own leading space **6**, `!Lfatal` guard dropped **0**, one site reverted to a
+bare `inptok = false` **1**.
+
+**The 19 was attributed, not accepted**, and the account is the finding: 18
+`.err` gates take the wrongly-written trailer, 8 of the 31 are post-parse
+errors where `inptok` was never cleared, and **5 are suppressed by the
+`!Lfatal` guard alone** -- which is why that guard measures 0 on its own.
+Dropping BOTH takes it 18 -> 23, exactly the five named. So: **two guards
+whose only evidence is joint.** Mutating either alone measures zero or a
+partial count. When a guard reads 0 next to a guard reading a partial number,
+mutate the pair before writing either off.
+
 ## Open, in the order I would take them
 
 0a. **`prlkhd.f`'s THIRD arm is missing, and every caller reads the value it
@@ -3683,12 +3760,20 @@ tree deliberately, as its own reviewable unit.
       all reach it through `print=all` -- it would be the first gated consumer
       of the LEVEL fill rather than of `deftab`.
 
-      **Attributions in this tuple are wrong more often than they are right.**
-      Six now: `chkrt2.f` (was `fcnar.f`), `x11pt1.f` (was `prtfct.f`/`mkback.f`),
-      `seatop.f` and `x11pt1.f`/`prtsum` (both really `editor.f:400` and
-      `:2831`), and `revdrv.f` twice (both `revchk.f`, `:801` and `:1131`).
-      Only `x11mdl.f:637-645` has been right. Grep the oracle for the string
-      before believing the comment; the tuple is the test, the comment is prose.
+      **Attributions in this tuple were wrong more often than they were
+      right, and as of 2026-08-18 they are all re-derived and CORRECTED IN THE
+      FILE** (entry 115) -- which is what the six earlier one-at-a-time
+      findings never did. Eight were wrong in total: `chkrt2.f` (really
+      `fcnar.f`), `x11pt1.f` (really `prtfct.f`/`mkback.f`), `seatop.f` and
+      `x11ari.f`/`prtsum` (really `editor.f:400` and `:2831`), `revdrv.f` twice
+      (both `revchk.f`, `:801-805` and `:1131`), `otlaic.f` (really
+      `idotlr.f:485`), and the ACF entry, which cited a C++ file rather than
+      `pracf2.f`. Right as written: `prlkhd.f:251`, `x11mdl.f:639`,
+      `spectrum.f:2583`.
+
+      Re-derive rather than believe, and grep the LONGEST contiguous fragment
+      the golden shows -- a prefix finds siblings. "Not enough data" matches
+      four places in `revchk.f` and the golden's line is none of them.
 
       **`amdfct.f:56` is CLOSED (entry 114, 2026-08-17).** `_UNPORTED_BLOCKS`
       **11 -> 10**. It was an ORDERING port: `arima.f:874` precedes BOTH
@@ -3723,10 +3808,15 @@ tree deliberately, as its own reviewable unit.
       leading-blank mutation measurable on them (1 -> 6). That is the payoff, and
       it is why this one is worth doing properly rather than skipping.
 
-      **Working order from here**, by golden count and cost:
-      `editor.f:400` longer-forecast (11) -> `editor.f:2831` no-seasonal-
-      adjustment (6, and its specs are refused runs) -> `prlkhd.f:249` (3) ->
-      `idotlr.f:479` (3). Then `revchk.f`'s whole history-NOTE family (the
+      **Working order from here**, by golden count and cost. `editor.f:400`
+      longer-forecast (11) and `editor.f:2831` no-seasonal-adjustment (6) are
+      DONE (entries 115, 116). Next: `prlkhd.f:251` (3) ->
+      `idotlr.f:485` (3). `prlkhd` is board item 0a and the port already has
+      its shape wrong -- `estimate.cpp:875` fuses `IF(.not.lclaic)` and
+      `ELSE IF(Convrg)` into one `if (!lclaic || !d.convrg) return;`, which
+      drops both the NOTE and the `IF(Irev.eq.4)RETURN` beside it. Its FORMAT
+      opens with a `/`, so the blank above it is an EMPTY record, not writln's
+      two-space one -- the golden shows the difference plainly. Then `revchk.f`'s whole history-NOTE family (the
       corpus reaches 2 of ~8 texts), `x11mdl.f:640` (1), `spectrum.f:2583`'s
       assembled-backwards Census defect (2). **`pracf2.f` last**: its NOTE sits
       in front of an entirely unported routine (no `ac2` table exists), so

@@ -121,6 +121,27 @@ bool parse_spec(X13Context& ctx, const std::string& spec_text,
         if (fcntyp == 4 || fcntyp == 0 || dpeq(ctx.arima.lam, 1.0))
             ctx.x11opt.muladd = 1;
     }
+    // editor.f:2830-2831 -- the trailer on a run that EDITOR refused. The
+    // `ELSE IF(.not.Readok)` pairs with `IF(Readok)` at editor.f:2687 (counted,
+    // not read off the indentation), so it is the last thing editor writes and
+    // this is the last thing the parse phase does.
+    //
+    // Keyed on ParseSettings::readok rather than on `inptok`, and that is the
+    // whole of the work: x12run.f:105 calls editor only `IF(Rok.and.Lexok)`, so
+    // an error found by a SPEC READER never reaches this line. Six goldens carry
+    // the trailer and thirty-one carry an ERROR without it, and every message in
+    // those thirty-one is emitted by a reader (getfrc/gtxreg/getprt/getsav/...)
+    // or by a phase that runs after editor (itrerr, the singular-matrix
+    // reports) -- not one of them by editor.f. A bare `!inptok` would have
+    // written the line on all thirty-seven.
+    //
+    // `!lfatal` because editor's Readok arm returns on Lfatal before reaching
+    // the bottom of the routine. The writln text carries its OWN leading space
+    // on top of the FORMAT's, which is why the golden line has two.
+    if (!ctx.captured.readok && !ctx.error.lfatal)
+        writln(ctx, " No seasonal adjustment this run", stdio::STDERR,
+               ctx.units.mt2, true);
+
     return inptok && !ctx.error.lfatal;
 }
 

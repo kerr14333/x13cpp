@@ -3963,7 +3963,7 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                "regression", stdio::STDERR, ctx.units.mt2, true);
         writln(ctx, "       variables cannot be specified in the same run.",
                stdio::STDERR, ctx.units.mt2, false);
-        inptok = false;
+        editor_refusal(ctx, inptok);
     }
 
     // editor.f:1636-1668 -- with `reweight=yes` and FIXED trading-day
@@ -3997,7 +3997,7 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                    "specifying", stdio::STDERR, ctx.units.mt2, false);
             writln(ctx, "       reweight=yes in the x11regression spec.",
                    stdio::STDERR, ctx.units.mt2, false);
-            inptok = false;
+            editor_refusal(ctx, inptok);
         } else if (alltdf) {
             errhdr(ctx);
             writln(ctx, "NOTE: Cannot reweight trading day coefficients if all "
@@ -4090,7 +4090,7 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                "only", stdio::STDERR, ctx.units.mt2, false);
         writln(ctx, "       regressors in the irregular regression.",
                stdio::STDERR, ctx.units.mt2, false);
-        inptok = false;
+        editor_refusal(ctx, inptok);
     }
     // editor.f:1749-1757 -- derive Critxr from the OUTLIER-SPAN length, once,
     // here. It used to be done at the idotlr call in x11reg.cpp, which was the
@@ -4108,7 +4108,7 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
         ctx.x11reg.critxr = ctx.x11log.cvxtyp
                                 ? setcvl(nobxot, ctx.xrgmdl.cvxalf)
                                 : setcv(nobxot, ctx.xrgmdl.cvxalf);
-        if (dpeq(ctx.x11reg.critxr, prm::DNOTST)) inptok = false;
+        if (dpeq(ctx.x11reg.critxr, prm::DNOTST)) editor_refusal(ctx, inptok);
     }
     //
     // editor.f:1760-1846's "Check options for AIC trading day test" block is
@@ -4164,7 +4164,7 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                    "aictest argument.", stdio::STDERR, ctx.units.mt2, false);
             writln(ctx, "       The type of trading day regressor must agree.",
                    stdio::STDERR, ctx.units.mt2, false);
-            inptok = false;
+            editor_refusal(ctx, inptok);
         } else if (tdgrp > 0 && xr.xtdtst == 2) {           // editor.f:1774-1782
             writln(ctx, "ERROR: A td or td1coef regressors has been specified "
                    "in the variables argument", stdio::STDERR, ctx.units.mt2, true);
@@ -4172,7 +4172,7 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                    "aictest argument. ", stdio::STDERR, ctx.units.mt2, false);
             writln(ctx, "       The type of trading day regressor must agree.",
                    stdio::STDERR, ctx.units.mt2, false);
-            inptok = false;
+            editor_refusal(ctx, inptok);
         } else if (xr.xtdtst == 1 || xr.xtdtst == 3) {      // editor.f:1783-1797
             // THE ALIASED READ, reproduced deliberately (CB-37).
             //
@@ -4208,7 +4208,7 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                        "aictest argument. ", stdio::STDERR, ctx.units.mt2, false);
                 writln(ctx, "       The type of trading day regressor must "
                        "agree.", stdio::STDERR, ctx.units.mt2, false);
-                inptok = false;
+                editor_refusal(ctx, inptok);
             }
         }
 
@@ -4279,12 +4279,12 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                     writln(ctx, "ERROR: Need monthly data to perform aictest "
                            "for stock trading day.", stdio::STDERR,
                            ctx.units.mt2, true);
-                    inptok = false;
+                    editor_refusal(ctx, inptok);
                 } else if (sp != 12 && sp != 4) {
                     writln(ctx, "ERROR: Need monthly or quarterly data to "
                            "perform aictest for trading day.", stdio::STDERR,
                            ctx.units.mt2, true);
-                    inptok = false;
+                    editor_refusal(ctx, inptok);
                 } else if (ctx.arima.begsrs(1) < 1776) {
                     // NOTE the swapped channel order: this one writes Mt2 first
                     // and STDERR second (editor.f:1839/1841/1843), unlike every
@@ -4297,7 +4297,7 @@ static void xrg_editor_setup(X13Context& ctx, bool& inptok) {
                            stdio::STDERR, false);
                     writln(ctx, "       start or modelspan arguments of the "
                            "series spec.", ctx.units.mt2, stdio::STDERR, false);
-                    inptok = false;
+                    editor_refusal(ctx, inptok);
                 }
             }
         }
