@@ -871,8 +871,42 @@ void prlkhd(X13Context& ctx, const double* y, const double* adj, int adjmod,
     }
     lk.olkhd = d.lnlkhd + jacadj;  // dpeq(jacadj,0) -> Olkhd=Lnlkhd (same value)
 
-    // AIC and relatives -- only for exact-ML estimation, and only on convergence.
-    if (!lclaic || !d.convrg) return;
+    // prlkhd.f:248-355 is a THREE-armed chain and this port had fused it into
+    // one early return, which dropped the first and third arms entirely.
+    //
+    //   IF(.not.lclaic)        -> the NOTE below
+    //   ELSE IF(Convrg)        -> the AIC block
+    //   ELSE                   -> every statistic reset to DNOTST
+    //
+    // `IF(Irev.eq.4)RETURN` closes the first and third arms; in this port
+    // nothing follows the chain but `IF(Lprtfm)`'s Mt1 legend, which is the
+    // deferred print engine, so the early return has no counterpart to write.
+    if (!lclaic) {
+        // :250-254 -- the Mt1 half is deferred with the print engine; the Mt2
+        // half is the `.err`, and the guard on it is `gudrun` (arima.f:123's
+        // `Issap.lt.2 .and. Irev.lt.4`), not `lprt`. The FORMAT opens with a
+        // `/`, so the record above the NOTE is EMPTY -- not writln's two-space
+        // blank. The goldens show the difference in the byte column.
+        if (ctx.hiddn.issap < 2 && ctx.hiddn.irev < 4)
+            ctx.channels_.unit(ctx.units.mt2).put(
+                fwrite_fmt("(/,' NOTE:  AIC and related statistics are printed"
+                           " only ','for exact',/,"
+                           "'  maximum likelihood estimation.')") +
+                "\n");
+        return;
+    }
+    if (!d.convrg) {
+        // :346-353 -- an exact-ML fit that did NOT converge publishes nothing.
+        // Note what is absent: `Bic2` is not reset, and `Olkhd` above keeps the
+        // value it was just given. Transcribed, including the asymmetry.
+        lk.aic = prm::DNOTST;
+        lk.aicc = prm::DNOTST;
+        lk.bic = prm::DNOTST;
+        lk.hnquin = prm::DNOTST;
+        d.lnlkhd = prm::DNOTST;
+        lk.eic = prm::DNOTST;
+        return;
+    }
     double dnp = static_cast<double>(np);
     lk.aic = -TWO * (d.lnlkhd + jacadj - dnp);
     if (nefobs > np + 1)

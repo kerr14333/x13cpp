@@ -3486,10 +3486,58 @@ whose only evidence is joint.** Mutating either alone measures zero or a
 partial count. When a guard reads 0 next to a guard reading a partial number,
 mutate the pair before writing either off.
 
+## This session, part 67: `prlkhd.f` is a THREE-armed chain -- board item 0a CLOSED
+
+`docs/M5_PORT_NOTES.md` entry 117. `_UNPORTED_BLOCKS` **9 -> 8**. Suite
+**9057 / 0 / 946**.
+
+`estimate.cpp` had `if (!lclaic || !d.convrg) return;` against a Fortran chain
+with THREE arms. One `||` had swallowed two of them: the NOTE, and the third
+arm that resets `Aic`/`Aicc`/`Bic`/`Hnquin`/`Lnlkhd`/`Eic` to `DNOTST` when an
+exact-ML fit does not converge -- `Lnlkhd` being a COMMON other code reads, so
+that arm is not a print concern. **A fused condition is a lossy transcription
+in the same way a dropped argument is.** `Bic2` is not reset and `Olkhd` keeps
+its value; both asymmetries transcribed.
+
+`WRITE(Mt2,1090)` is a raw FORMAT opening with `/`, so the record above the
+NOTE is EMPTY, where `writln`'s own blank is TWO SPACES. Gated: dropping the
+`/` fails all 3.
+
+Mutations: NOTE off **3**, leading `/` dropped **3**, `!lclaic` falls through
+**3**, `gudrun` forced true **0**, third-arm resets removed **0**, third arm
+instrumented to announce itself **2**.
+
+**The last pair is the finding.** Removing the resets measures 0, which reads
+as an unreachable arm. Instrumenting it shows it IS reached, on
+`extra/airline_automdl-user-reg-noconverge` and
+`extra/airline_estimate-maxiter-noconverge` -- both of which then HALT on
+`itrerr`, so nothing downstream publishes a statistic for the reset to change.
+**A saturated CONSEQUENCE, not a saturated precondition**, and the two are
+indistinguishable from the 0. The arm is ported and ungated; say so.
+
+`gudrun` is unmeasured because `lclaic` is false only under
+`estimate{exact=ma|none}` and no `slidingspans{}`/`history{}` spec carries one.
+**One-line corpus fix**: add `estimate{exact=none}` to an existing
+`*-slidingspans` spec.
+
+`mutate.py` now validates every anchor before the first build. A bad anchor
+used to raise partway through and print the mutations that had already run --
+**a truncated sweep looks exactly like a short one.**
+
 ## Open, in the order I would take them
 
-0a. **`prlkhd.f`'s THIRD arm is missing, and every caller reads the value it
-   would have written.** Found while scouting entry 113's AIC NOTE.
+0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117
+   (2026-08-18).** All three arms ported; the NOTE came with it and took
+   `_UNPORTED_BLOCKS` 9 -> 8. **The prediction at the bottom of this item was
+   right and one word too coarse**: adding the arm moved 0 gates, and
+   instrumenting it showed the arm IS reached -- on
+   `extra/airline_automdl-user-reg-noconverge` and
+   `extra/airline_estimate-maxiter-noconverge` -- but both HALT on `itrerr`
+   immediately after, so no caller ever reads the reset value. Not a saturated
+   PRECONDITION; a saturated CONSEQUENCE. Ported and ungated, and the item
+   below still names the spec that would gate it. Kept for the diagnosis.
+
+   Found while scouting entry 113's AIC NOTE.
    `prlkhd.f:248-354` is a three-arm chain; `estimate.cpp:875` is one fused
    `if (!lclaic || !d.convrg) return;`.
 

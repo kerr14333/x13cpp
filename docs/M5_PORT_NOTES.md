@@ -8894,3 +8894,113 @@ guard measures 0 beside a guard that measures a partial count, mutate them
 together before writing either one off.
 
 Suite **9057 passed, 0 failed, 946 skipped**.
+
+## 117. `prlkhd.f:248-355` is a THREE-armed chain and this port had fused it into one early return (2026-08-18)
+
+`_UNPORTED_BLOCKS` **9 -> 8**. Board item 0a, closed. Three goldens carry the
+NOTE: `generated/airline_exact-ma`, `generated/airline_exact-none`,
+`generated/expgs_exact-ma`.
+
+```
+                                        <- an EMPTY record, not a blank one
+ NOTE:  AIC and related statistics are printed only for exact
+  maximum likelihood estimation.
+```
+
+### The message was the small half
+
+`estimate.cpp` had
+
+```cpp
+    if (!lclaic || !d.convrg) return;
+```
+
+against
+
+```fortran
+       IF(.not.lclaic)THEN
+        IF(Issap.lt.2.and.Irev.lt.4)WRITE(Mt2,1090)
+        IF(lprt)WRITE(Mt1,1090)
+        IF(Irev.eq.4)RETURN
+       ELSE IF(Convrg)THEN
+        ...the AIC block...
+       ELSE
+        Aic=DNOTST
+        ...
+        Lnlkhd=DNOTST
+        IF(Irev.eq.4)RETURN
+       END IF
+```
+
+One `||` had swallowed **two** arms. The first is the NOTE. The third resets
+`Aic`, `Aicc`, `Bic`, `Hnquin`, `Lnlkhd` and `Eic` to `DNOTST` when an
+exact-ML fit does not converge -- and `Lnlkhd` is a COMMON other code reads,
+so that arm is not a print concern at all. **A fused condition is a lossy
+transcription in exactly the way a dropped argument is** (entries 71, 85): the
+numbers agree for as long as no spec lands in the arm that was folded away.
+
+Two asymmetries in the third arm are transcribed rather than tidied: `Bic2` is
+NOT reset, and `Olkhd` keeps the value assigned twenty lines above it.
+
+### The empty record vs the blank record
+
+`WRITE(Mt2,1090)` is a raw FORMAT, not a `writln`, and FORMAT `1090` opens
+with `/`. A leading `/` emits an **empty** record; `writln`'s own leading blank
+is `(' ',a)` with a blank argument and emits **two spaces**. The goldens show
+it in the byte column -- `04-seats` has `"  "` above its NOTE and
+`airline_exact-ma` has `""` -- so this is gated, not merely observed. Same
+distinction entry 113 turned into a mutation; here it decides which emitter to
+reach for before a line is written.
+
+The guard on the Mt2 half is `gudrun` (`arima.f:123`'s
+`Issap.lt.2 .and. Irev.lt.4`), not `lprt`; `lprt` gates only the Mt1 half,
+which is the deferred print engine.
+
+### Mutations
+
+| mutation | fails |
+|---|---|
+| the NOTE never writes | **3** |
+| the FORMAT's leading `/` dropped | **3** |
+| the `!lclaic` arm falls through into the AIC block | **3** |
+| the `gudrun` guard forced true | 0 -- saturated |
+| the third arm's `DNOTST` resets removed | **0** |
+| the third arm instrumented to announce itself | **2** |
+
+The last two rows are the pair worth keeping, and only together do they mean
+anything. Removing the resets measures **0**, which reads exactly like an
+unreachable arm -- and this repo's rule says a mutation that passes usually
+means the precondition is saturated. So the arm was instrumented to write a
+marker instead of guessed about, and it fires on **2** specs:
+`extra/airline_automdl-user-reg-noconverge` and
+`extra/airline_estimate-maxiter-noconverge`.
+
+**Reached, and still unobservable.** Both specs are runs that fail to converge
+and then HALT on `itrerr`'s error, so nothing downstream ever publishes an
+`Aic` or an `Lnlkhd` for the reset to change. That is a saturated CONSEQUENCE,
+not a saturated precondition, and the two are not distinguishable from the
+`0` alone -- one says "no spec gets here", the other says "the specs that get
+here die before it matters". Only the marker separates them, and it costs one
+build.
+
+Worth stating what that leaves: **the third arm is ported and ungated.** It
+becomes gated the first time a spec reaches it and survives, and the corpus has
+none.
+
+`gudrun` is unmeasured for a plainer reason: `lclaic` is false only under
+`estimate{exact=ma|none}` (it is `lar`/`lma` that set it), and no
+`slidingspans{}` or `history{}` spec in the corpus carries one. **The spec that
+would gate it is one line**: any existing `*-slidingspans` spec plus
+`estimate{exact=none}`.
+
+Suite **9057 passed, 0 failed, 946 skipped**.
+
+### The harness earned a fix
+
+Two mutations in this sweep were written with a `\n` that collapsed to a real
+newline inside a C++ string literal. The build caught both -- but the SECOND
+one broke an *anchor* rather than the code, `apply_mut` raised `SystemExit`
+partway through, and the sweep printed the mutations that had already run and
+stopped. **A truncated sweep looks exactly like a short one.** `mutate.py` now
+validates every anchor before the first build, so a bad spec fails in a second
+rather than after half an hour.

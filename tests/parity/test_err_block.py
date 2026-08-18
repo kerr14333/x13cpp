@@ -161,10 +161,12 @@ _UNPORTED_BLOCKS = (
     # BACKCAST window. The forecast half is PORTED and gated by the three
     # goldens that carry it. The backcast half is behind Prttab(LFORBC), whose
     # deftab entry is F -- see forecast.cpp's bcstout.)
-    # prlkhd.f:251 -- the AIC block on an approximate (conditional)
-    # likelihood. Its FORMAT opens with a `/`, so the blank above it is an
-    # EMPTY record, not writln's two-space one.
-    "NOTE:  AIC and related statistics are printed only for exact",
+    # (prlkhd.f:251's AIC NOTE used to sit here. PORTED -- and the message was
+    # the small half: prlkhd.f:248-355 is a THREE-armed chain that this port
+    # had fused into `if (!lclaic || !d.convrg) return;`, dropping the NOTE
+    # AND the third arm, which resets every statistic to DNOTST on an
+    # exact-ML fit that did not converge. Its FORMAT opens with a `/`, so the
+    # record above it is EMPTY, not writln's two-space blank.)
     # (checkres' normality NOTEs used to sit here. All FIVE of nrmtst.f's are
     # ported -- the two the corpus carries plus the kurtosis upper bound and
     # both of Geary's a, which no golden reaches. See checkres.cpp.)
