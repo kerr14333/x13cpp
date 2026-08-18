@@ -8700,7 +8700,7 @@ Suite **9057 passed, 0 failed, 946 skipped**; ctest 12/12; WALLS 22 gaps /
 
 ## 115. `editor.f:400`'s longer-forecast NOTE -- the RAISE had been ported alone, and a silent horizon change is the exact thing the NOTE exists to prevent (2026-08-18)
 
-`_UNPORTED_BLOCKS` **11 -> 10**. Eleven goldens carried the block:
+`_UNPORTED_BLOCKS` **10 -> 9**. Eleven goldens carried the block:
 `census-examples/04-seats`, `extra/airline_seats-qmax-rmod`,
 `extra/airline_seats-tabtables`, and the eight `*_finite-seats` /
 `*_fixed-airline-seats` specs.
@@ -8790,7 +8790,7 @@ Suite **9057 passed, 0 failed, 946 skipped**; ctest 12/12.
 
 ## 116. `editor.f:2831`'s "No seasonal adjustment this run" -- one `writln`, and the work was that `Readok` is not `inptok` (2026-08-18)
 
-`_UNPORTED_BLOCKS` **10 -> 9**. Six goldens carry the trailer:
+`_UNPORTED_BLOCKS` **9 -> 8**. Six goldens carry the trailer:
 `edge/psuadd-irregular-calendar`, `edge/psuadd-prioradj`,
 `edge/psuadd-regarima-preadj`, `extra/airline_x11regression-reweight-fixneg`,
 `extra/airline_x11regression-tdprior-add`,
@@ -8897,7 +8897,7 @@ Suite **9057 passed, 0 failed, 946 skipped**.
 
 ## 117. `prlkhd.f:248-355` is a THREE-armed chain and this port had fused it into one early return (2026-08-18)
 
-`_UNPORTED_BLOCKS` **9 -> 8**. Board item 0a, closed. Three goldens carry the
+`_UNPORTED_BLOCKS` **8 -> 7**. Board item 0a, closed. Three goldens carry the
 NOTE: `generated/airline_exact-ma`, `generated/airline_exact-none`,
 `generated/expgs_exact-ma`.
 
@@ -9004,3 +9004,89 @@ partway through, and the sweep printed the mutations that had already run and
 stopped. **A truncated sweep looks exactly like a short one.** `mutate.py` now
 validates every anchor before the first build, so a bad spec fails in a second
 rather than after half an hour.
+
+## 118. `idotlr.f:485`'s singularity NOTE -- the first gated consumer of `getprt`'s LEVEL fill (2026-08-18)
+
+`_UNPORTED_BLOCKS` **7 -> 6**. Three goldens:
+`extra/payems_outlier-lsrun`, `generated/payems_fixed-airline-x11`,
+`generated/unrate_fixed-airline-x11`.
+
+```
+ NOTE: Unable to test AO2020.Mar due to regression matrix singularity.
+       The effect of this outlier is already accounted for by other regressors 
+       (usually user-specified or previously identified outliers).
+```
+
+The port already dropped the singular test points -- `if (singlr[i-1] &&
+TP(i,t0) == 1) TP(i,t0) = 0;` is `idotlr.f:494` exactly -- and said nothing
+about it. Same shape as entry 115: the ACTION was ported, the SENTENCE
+explaining it was not.
+
+### Three things the transcription turns on
+
+**`Priter` is `Prttab(LOTLIT)`**, at all four call sites (`arima.f:759`,
+`automx.f:520`, `amidot.f:40`, `x11mdl.f:444`), and `LOTLIT`'s `deftab` entry
+is **F**. So this NOTE is unreachable by default and all three goldens arrive
+through `outlier{print=all}` -- making it the first block in this file's
+inventory whose gate depends on `getprt`'s LEVEL fill actually working. Entry
+110 built that fill; this is the first thing that would notice it breaking.
+
+**`.not.lalmst` is true by construction, not by test.** `lalmst` marks the
+"almost outliers" re-pass (`idotlr.f:842`, `:1059`) -- a second sweep at
+relaxed critical values whose entire product is an Mt1 listing -- and this port
+does not run it at all. So the second half of the guard has nothing to test.
+Written down in the code rather than silently dropped: **if that pass is ever
+ported, this guard needs its other half back**, and nothing else would say so.
+
+**`errhdr` is transcribed and does nothing here, and the reason is worth
+knowing.** The Fortran calls it explicitly before `WRITE(Mt2,1050)` because
+this is a raw FORMAT write rather than a `writln`, and `writln` is where
+`errhdr` normally comes from. Removing it fails **0** gates -- which I had
+predicted it would fail at least one, on the grounds that
+`payems_outlier-lsrun`'s NOTE is the first thing in its `.err` and so has no
+earlier message to have emitted a banner.
+
+That reasoning was wrong about what `errhdr` emits. It is not the two-line
+`.err` header (that is `genfor`); it is the "Error/Warning Messages for sliding
+span # n" banner, and `errhdr.f`'s first line returns immediately unless
+`Issap>=2` or `Irev>=4`. All three goldens are main runs, so the call is a
+no-op on every one of them. Correct, transcribed, and **unmeasured until an
+`outlier{print=all}` spec runs inside a `slidingspans{}` or `history{}`
+replay** -- which no corpus spec does.
+
+### The counts in entries 115-117 were each one too high, and the file says why
+
+`_UNPORTED_BLOCKS` went **10 -> 9 -> 8 -> 7 -> 6** across entries 115, 116,
+117 and this one. The three commit messages and the first drafts of those
+entries said 11 -> 10, 10 -> 9, 9 -> 8: a number carried forward from a summary
+of an earlier session instead of counted. The docs are corrected; the commit
+messages are not, and this paragraph is the correction of record.
+
+The tuple's own docstring has said "do not write a number here that the tuple
+does not show" since entry 113 wrote it, and there is an AST count for exactly
+this -- which is how the error was found, one increment too late. **A rule
+about not trusting remembered counts protects nothing if the count you type
+comes from your own previous sentence.** Count the tuple; the commit message is
+prose and prose is where this rots.
+
+### Mutations
+
+| mutation | fails |
+|---|---|
+| the NOTE never writes | **3** |
+| the FORMAT's leading `/` dropped | **3** |
+| the outlier TYPE hardcoded to `AO` instead of `i` | **3** |
+| **`Prttab(LOTLIT)` forced true** | **2** |
+| `errhdr` not called | 0 -- a no-op outside a span replay |
+
+The **2** is the one to keep. Forcing the guard true makes two specs emit a
+NOTE the oracle does not, so `LOTLIT`'s `deftab` entry of **F** is not a
+detail -- it is observed, and by specs that reach a singular test point without
+asking to hear about it. A `deftab` default that nothing reads is exactly the
+class entry 110 spent an increment on; this one reads.
+
+The **3** on the type index is `idotlr.f:492`'s own marginal note --
+"outlier printed out in tmpttl corresponds to i, not mxtype", BCM Dec 1995 --
+still doing its job thirty years later: the loop index and the max-type array
+are different things, and using the wrong one names the wrong outlier on all
+three goldens.

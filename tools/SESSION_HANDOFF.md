@@ -3411,7 +3411,7 @@ tree deliberately, as its own reviewable unit.
 
 ## This session, part 65: `editor.f:400`'s longer-forecast NOTE -- the RAISE had been ported alone
 
-`docs/M5_PORT_NOTES.md` entry 115. `_UNPORTED_BLOCKS` **11 -> 10**. Suite
+`docs/M5_PORT_NOTES.md` entry 115. `_UNPORTED_BLOCKS` **10 -> 9**. Suite
 **9057 / 0 / 946**.
 
 `parse_spec.cpp` has raised an explicit `forecast{maxlead=}` up to
@@ -3447,7 +3447,7 @@ is none of them).
 
 ## This session, part 66: `editor.f:2831`'s trailer -- `Readok` is not `inptok`
 
-`docs/M5_PORT_NOTES.md` entry 116. `_UNPORTED_BLOCKS` **10 -> 9**. Suite
+`docs/M5_PORT_NOTES.md` entry 116. `_UNPORTED_BLOCKS` **9 -> 8**. Suite
 **9057 / 0 / 946**.
 
 One `writln`. All the work was the guard. `x12run.f` threads ONE logical
@@ -3488,7 +3488,7 @@ mutate the pair before writing either off.
 
 ## This session, part 67: `prlkhd.f` is a THREE-armed chain -- board item 0a CLOSED
 
-`docs/M5_PORT_NOTES.md` entry 117. `_UNPORTED_BLOCKS` **9 -> 8**. Suite
+`docs/M5_PORT_NOTES.md` entry 117. `_UNPORTED_BLOCKS` **8 -> 7**. Suite
 **9057 / 0 / 946**.
 
 `estimate.cpp` had `if (!lclaic || !d.convrg) return;` against a Fortran chain
@@ -3524,11 +3524,40 @@ indistinguishable from the 0. The arm is ported and ungated; say so.
 used to raise partway through and print the mutations that had already run --
 **a truncated sweep looks exactly like a short one.**
 
+## This session, part 68: `idotlr.f:485`'s singularity NOTE -- and the first gated read of `Prttab(LOTLIT)`
+
+`docs/M5_PORT_NOTES.md` entry 118. `_UNPORTED_BLOCKS` **7 -> 6** (counted by
+AST -- see below). Suite **9057 / 0 / 946**.
+
+The port already dropped the singular test points and said nothing about it.
+Entry 115's shape again: the ACTION ported, the SENTENCE not.
+
+Mutations: NOTE off **3**, leading `/` dropped **3**, outlier type hardcoded to
+`AO` **3**, `Prttab(LOTLIT)` forced true **2**, `errhdr` removed **0**.
+
+Three things the transcription turned on. `Priter` is `Prttab(LOTLIT)` at all
+four call sites, and LOTLIT's `deftab` is **F** -- so all three goldens arrive
+via `outlier{print=all}`, and forcing the guard true makes 2 OTHER specs emit
+it. **The first block in this inventory whose gate depends on `getprt`'s LEVEL
+fill.** `.not.lalmst` is true by construction: the "almost outliers" re-pass
+does not exist in this port, and the code now says so, because nothing else
+would if it is ever added. `errhdr` is transcribed and inert -- it returns
+immediately unless `Issap>=2 or Irev>=4`, so it is a no-op on a main run; I
+predicted it would fail a gate and it failed none, which is in the entry.
+
+**Correction of record: the tuple counts in entries 115-117 and their commit
+messages were each one too high.** The real progression is 10 -> 9 -> 8 -> 7
+-> 6. The docs are fixed; the commit messages say 11 -> 10, 10 -> 9, 9 -> 8 and
+cannot be. The number came from a summary of an earlier session rather than
+from the AST count that exists for exactly this -- **a rule about not trusting
+remembered counts protects nothing when the number you type comes from your own
+previous sentence.**
+
 ## Open, in the order I would take them
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117
    (2026-08-18).** All three arms ported; the NOTE came with it and took
-   `_UNPORTED_BLOCKS` 9 -> 8. **The prediction at the bottom of this item was
+   `_UNPORTED_BLOCKS` 8 -> 7. **The prediction at the bottom of this item was
    right and one word too coarse**: adding the arm moved 0 gates, and
    instrumenting it showed the arm IS reached -- on
    `extra/airline_automdl-user-reg-noconverge` and

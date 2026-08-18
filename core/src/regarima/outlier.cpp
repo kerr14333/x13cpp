@@ -20,6 +20,8 @@
 #include "gen/model.hpp"            // prm::PB, POTLR, AO, LS, TC, RP, TLS, ...
 #include "gen/notset.hpp"           // prm::NOTSET
 #include "gen/srslen.hpp"           // prm::PLEN
+#include "gen/tbltab.hpp"           // prm::LOTLIT (idotlr.f:480's Priter)
+#include "x13/fformat.hpp"          // fwrite_fmt (idotlr.f:1050)
 
 namespace x13 {
 
@@ -804,9 +806,42 @@ void idotlr(X13Context& ctx, bool ltstao, bool ltstls, bool ltsttc, bool ladd1,
             setint(NOTSET, POTLR, mxtype);
             ttest(txa.data(), na, oldnc, D.chlxpx.data(), otlvar.data(),
                   slice(t0), mxtype, tvalt0, singlr);
-            // Drop singular test points.
+            // Drop singular test points -- and SAY so. idotlr.f:433-495.
             for (int i = 1; i <= POTLR; ++i)
-                if (singlr[i - 1] && TP(i, t0) == 1) TP(i, t0) = 0;
+                if (singlr[i - 1] && TP(i, t0) == 1) {
+                    // :480 -- `Priter` is `Prttab(LOTLIT)` at every call site
+                    // (arima.f:759, automx.f:520, amidot.f:40, x11mdl.f:444),
+                    // and LOTLIT's `deftab` entry is F, so this is reached only
+                    // through `outlier{print=all}` -- the first gated consumer of
+                    // getprt's LEVEL fill.
+                    //
+                    // `.not.lalmst` is true here by construction rather than by
+                    // test: `lalmst` marks the "almost outliers" re-pass
+                    // (idotlr.f:842, :1059), which this port does not run at all
+                    // -- it exists to fill an Mt1 listing. If that pass is ever
+                    // ported, this guard needs its second half back.
+                    //
+                    // The Mt1 half is deferred with the print engine. `errhdr` is
+                    // NOT: the Fortran calls it explicitly here, so the banner is
+                    // part of the transcription, not a side effect of writln.
+                    if (ctx.tbllog.prttab(prm::LOTLIT)) {
+                        std::string ttl =
+                            wrtotl(i, t0, itmp, D.begspn.data(), sp);
+                        if (ctx.error.lfatal) return;
+                        errhdr(ctx);
+                        ctx.channels_.unit(ctx.units.mt2).put(
+                            fwrite_fmt(
+                                "(/,' NOTE: Unable to test ',a,"
+                                "' due to regression matrix singularity.',/,"
+                                "'       The effect of this outlier is already ',"
+                                "'accounted for by other regressors ',/,"
+                                "'       (usually user-specified or ',"
+                                "'previously identified outliers).')",
+                                ttl) +
+                            "\n");
+                    }
+                    TP(i, t0) = 0;
+                }
 
             // Add (ADDALL) or track (ADDONE) the largest significant outlier.
             bool otlrno = true;

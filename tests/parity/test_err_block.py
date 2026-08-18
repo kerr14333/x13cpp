@@ -178,12 +178,13 @@ _UNPORTED_BLOCKS = (
     "NOTE: Not enough data to perform a history analysis for seasonal adjustments",
     # x11mdl.f:639 -- the reweight NOTE (the ABEND beside it IS ported).
     "NOTE: At least one of the parameter estimates above yields a negative",
-    # idotlr.f:485 -- an outlier the regression matrix cannot carry. NOT
-    # otlaic.f. Matched by
-    # PREFIX, like every entry here: the message names the outlier, so a whole
-    # line would be one spec's `TC2020.Mar` and would silently stop matching
-    # the next spec's `AO2020.Apr`.
-    "NOTE: Unable to test ",
+    # (idotlr.f:485's "Unable to test ..." used to sit here, credited to
+    # otlaic.f. PORTED -- and it is the FIRST gated consumer of getprt's LEVEL
+    # fill: its guard is `Prttab(LOTLIT)`, whose `deftab` entry is F, so all
+    # three goldens reach it through `outlier{print=all}`. It was matched by
+    # PREFIX because the message names the outlier -- one spec's `TC2020.Mar`
+    # against the next spec's `AO2020.Apr` -- which is still how any new entry
+    # here should be written.)
     # pracf2.f:2 -- the squared-residual ACF on too short a series. The NOTE
     # fronts an ENTIRELY unported routine: there is no `ac2` table at all.
     "NOTE: X-13ARIMA-SEATS will not compute the ACF of the squared residuals for",
