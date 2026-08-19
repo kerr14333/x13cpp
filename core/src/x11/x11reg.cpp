@@ -27,6 +27,7 @@
 #include "gen/model.hpp"           // PRG* regressor types, PSNGER
 #include "gen/notset.hpp"          // prm::DNOTST
 #include "x13/fformat.hpp"         // fwrite_fmt (prterx's two-channel diagnostic)
+#include "gen/tbltab.hpp"          // prm::LXRXRG (x11mdl.f:226's fext)
 
 namespace x13 {
 namespace {
@@ -1747,10 +1748,60 @@ void x11mdl_td(X13Context& ctx, int kpart) {
                             dx11[i - 1] *= (7.0 - tdwfix) / tdwsum;
                         if (i <= ncol0) md.b(icol2) = dx11[i - 1] - 1.0;
                     }
-                    // x11mdl.f:628-658's "NOTE: At least one of the parameter
-                    // estimates above yields a negative daily weight" table is
-                    // part of the deferred .out print engine: it is guarded by
-                    // Prttab(fext) and writes only to Mt1/Mt2, never STDERR.
+                    // x11mdl.f:628-658 -- the reweighting SAYS so. This block
+                    // was skipped as ".out print engine, Mt1/Mt2 only, never
+                    // STDERR", which was true and is not a reason: Mt2 IS the
+                    // `.err`, and entry 109 made that channel compared. The
+                    // Mt1 half stays deferred; the Mt2 half is transcribed.
+                    //
+                    // :226 -- `fext = LXRXRG + Kpart - 2`, so the B iteration
+                    // and the C iteration are gated by DIFFERENT table entries
+                    // and one spec can print one without the other.
+                    if (ctx.tbllog.prttab(prm::LXRXRG + kpart - 2)) {
+                        auto& mt2 = ctx.channels_.unit(ctx.units.mt2);
+                        // :629-631 -- FORMAT 1020 is `(/,' ',a)` with a blank
+                        // argument: an empty record, then TWO spaces. Not
+                        // writln's leading blank, which would be the second
+                        // half of that alone.
+                        errhdr(ctx);
+                        mt2.put(fwrite_fmt("(/,' ',a)", std::string(" ")) + "\n");
+                        const bool prelim = (kpart == 2);
+                        const std::string tbl = prelim ? "B" : "C";
+                        mt2.put(fwrite_fmt(
+                            "(' NOTE: At least one of the parameter estimates ',"
+                            "'above yields a negative',/,"
+                            "'       daily weight for the ',a,' 16 table.  The ',"
+                            "'reweighting done to avoid',/,"
+                            "'       negative daily weights in Table ',a,' 16 ',"
+                            "'produced the following',/,"
+                            "'       parameter estimates, which were used to ',"
+                            "'obtain the ',a,/,"
+                            "'       trading day factors of ',a,' 16:',/)",
+                            tbl, tbl,
+                            std::string(prelim ? "preliminary" : "final"),
+                            tbl) + "\n");
+                        // :648-658 -- the single-column arm is the dead one
+                        // documented above; both are transcribed for the same
+                        // reason the guard above them is.
+                        if (begcol == endcol)
+                            mt2.put(fwrite_fmt(
+                                "('        Weekday     Weekend(**)',/,"
+                                "3X,2(3x,F8.4),//)",
+                                md.b(begcol), dx11[6] - 1.0) + "\n");
+                        else {
+                            // The Fortran implied-DO runs begcol..endcol
+                            // and then appends Dx11(7)-1, so the record is
+                            // 7 wide only when the group is 6 columns.
+                            // Transcribed as such rather than padded.
+                            mt2.put(fwrite_fmt(
+                                "('         Mon      Tue      Wed     Thur      Fri',"
+                                "'      Sat     Sun(*)',/,3X,7F9.4,//)",
+                                md.b(begcol), md.b(begcol + 1),
+                                md.b(begcol + 2), md.b(begcol + 3),
+                                md.b(begcol + 4), md.b(begcol + 5),
+                                dx11[6] - 1.0) + "\n");
+                        }
+                    }
                 }
             }
         } else {

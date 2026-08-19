@@ -3553,6 +3553,39 @@ from the AST count that exists for exactly this -- **a rule about not trusting
 remembered counts protects nothing when the number you type comes from your own
 previous sentence.**
 
+## This session, part 69: `x11mdl.f:639`'s reweight NOTE -- WRITTEN, NOT COMMITTED
+
+`docs/M5_PORT_NOTES.md` entry 119. `_UNPORTED_BLOCKS` **6 -> 5** in the working
+tree. Gate `extra/airline_x11regression-reweight` passes; full suite was green
+(after `walls.py --write` for line drift -- 22 gaps / 4 faithful, unchanged).
+
+Mutations: NOTE off **1**, `Prttab(LXRXRG+Kpart-2)` forced true **2**, the
+`Kpart-2` offset dropped **1**, B/C arms swapped **1**, Sun without the `-1`
+**1**, FORMAT 1020 replaced by a `writln` blank **0**.
+
+**That 0 is the increment's real finding, and it is about the GATE.**
+`test_err_block.py`'s `_trim` does `[ln.rstrip() for ln in lines]`, so a
+two-space record and an empty one compare EQUAL. The empty-vs-blank
+distinction this file has cited three times is therefore invisible to the
+test: what those mutations actually measured is the RECORD COUNT. Every number
+stands; two sentences did not, and entries 117 and 119 are corrected in place.
+**Before citing a golden's byte column as evidence, check what the comparison
+does to those bytes** -- a mutation that changes bytes the normaliser removes
+measures zero and reads exactly like a mutation that changes nothing.
+
+Worth noting how it was caught: the sweep's 0 contradicted the bytes, so the
+mutation was re-applied BY HAND with `cmake --build` (not `build.ps1`, which
+swallows compile errors) and the single gate run directly. It passed. The
+harness was the first suspect and was innocent.
+
+The finding is in the entry: the block was **skipped with a stated reason**
+that was true and did not follow -- ".out print engine, Mt1/Mt2 only, never
+STDERR" -- when Mt2 IS the `.err` that entry 109 made compared. A skip with a
+justification reads like a decision, and `walls.py` cannot see a decision. The
+sibling sweep for the same reasoning came back CLEAN (7 other print-engine
+skips, all naming the Mt1 half specifically), which is a fact worth having
+rather than an absence.
+
 ## Open, in the order I would take them
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117

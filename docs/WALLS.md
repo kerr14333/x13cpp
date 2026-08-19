@@ -100,19 +100,19 @@ reproduce.
 - **`core/src/x11/x11parts.cpp:566`**
   x11pt2 x11reg factor combine+emit
 
-- **`core/src/x11/x11reg.cpp:347`**
+- **`core/src/x11/x11reg.cpp:348`**
   x11regression{holidaynonlin=yes} -- the Bell-Hilmer nonlinear Easter (rgtdhl.f / kfcn.f / estrmu.f)
 
-- **`core/src/x11/x11reg.cpp:428`**
+- **`core/src/x11/x11reg.cpp:429`**
   x11ref forcecal= combined calendar factor
 
-- **`core/src/x11/x11reg.cpp:1028`**
+- **`core/src/x11/x11reg.cpp:1029`**
   x11aic user branch with umdata= (Haveum)
 
-- **`core/src/x11/x11reg.cpp:1874`**
+- **`core/src/x11/x11reg.cpp:1925`**
   x11mdl Kswv=3 with no Trading Day group
 
-- **`core/src/x11/x11reg.cpp:1891`**
+- **`core/src/x11/x11reg.cpp:1942`**
   x11mdl Kswv=3 forcecal= combine
 
 - **`core/src/x11/xrgdrv.cpp:57`**

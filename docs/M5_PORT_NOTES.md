@@ -8948,9 +8948,13 @@ NOT reset, and `Olkhd` keeps the value assigned twenty lines above it.
 with `/`. A leading `/` emits an **empty** record; `writln`'s own leading blank
 is `(' ',a)` with a blank argument and emits **two spaces**. The goldens show
 it in the byte column -- `04-seats` has `"  "` above its NOTE and
-`airline_exact-ma` has `""` -- so this is gated, not merely observed. Same
-distinction entry 113 turned into a mutation; here it decides which emitter to
-reach for before a line is written.
+`airline_exact-ma` has `""`.
+
+**Corrected 2026-08-18 (entry 119): that byte column is NOT what the gate
+checks.** `_trim` rstrips every line, so a two-space record and an empty one
+compare equal. D3's **3** is real but it measures the RECORD COUNT -- dropping
+the `/` deletes a record. The distinction still decides which emitter to reach
+for, on the oracle's authority rather than the test's.
 
 The guard on the Mt2 half is `gudrun` (`arima.f:123`'s
 `Issap.lt.2 .and. Irev.lt.4`), not `lprt`; `lprt` gates only the Mt1 half,
@@ -9090,3 +9094,112 @@ The **3** on the type index is `idotlr.f:492`'s own marginal note --
 still doing its job thirty years later: the loop index and the max-type array
 are different things, and using the wrong one names the wrong outlier on all
 three goldens.
+
+## 119. `x11mdl.f:628-658`'s reweight NOTE -- skipped for a reason that was true and irrelevant (2026-08-18)
+
+`_UNPORTED_BLOCKS` **6 -> 5**. One golden:
+`extra/airline_x11regression-reweight`.
+
+The block was not overlooked. `x11reg.cpp` carried a comment explaining the
+skip:
+
+> x11mdl.f:628-658's "NOTE: ..." table is part of the deferred .out print
+> engine: it is guarded by Prttab(fext) and writes only to Mt1/Mt2, never
+> STDERR.
+
+Every clause of that is **true**, and the conclusion does not follow, because
+**Mt2 IS the `.err`**. Entry 109 made that channel compared -- 396 of 525
+goldens differed the day it was wired -- and the note beside this skip was
+never revisited. The skip's own justification is what kept it invisible: it
+reads like a decision rather than a gap, and `walls.py` cannot see a decision.
+
+That is the third distinct form of this class in the archive. Entry 73 was a
+routine skipped for the FAMILY it was named into (`prterx.f` went with the
+print engine and took an `abend` with it). Entry 76 was a path that returned
+success. This one is a comment that names a real channel and stops one word
+short of noticing the channel is now gated. **When a channel becomes
+observable, grep for the skips that cited it.**
+
+### What the transcription turns on
+
+`fext = LXRXRG + Kpart - 2` (`x11mdl.f:226`), so the **B** iteration and the
+**C** iteration are gated by different table entries -- a spec can print one
+without the other, and dropping the offset is not cosmetic.
+
+`WRITE(Mt2,1020)' '` with FORMAT `(/,' ',a)` and a blank argument is an EMPTY
+record followed by **two spaces** -- the empty half is the format's leading
+`/`, the two spaces are the `' '` plus the blank argument. A `writln` leading
+blank produces the same TWO records with the contents the other way round.
+Transcribed as the oracle writes it; see the mutation section for why the gate
+cannot tell the two apart, and what that costs.
+
+The single-column arm (`begcol == endcol`, the "Weekday/Weekend" wording) is
+transcribed and dead, for the reason already documented forty lines above it:
+`addtd.f:75-77` titles every one-column TD group `1-Coefficient <title>` and
+`x11mdl.f:545` searches for exactly `Trading Day`, so no group this program
+builds reaches it with one column.
+
+### The sibling sweep, and it came back clean
+
+The lesson only pays if the class is swept, so every skip in `core/src/` that
+cites the print engine was read: `mdlset.cpp:76`, `estimate.cpp:170` and `:268`,
+`x11reg.cpp:284`, `slidingspans.cpp:1851` and `:1895`, `amdest.cpp:71`. All of
+them name the **Mt1 half** specifically, and the two that have an Mt2 half say
+so and emit it (`estimate.cpp:170` is explicit: "Only the Mt2 half is
+emitted"). `x11reg.cpp:1752` was the only one whose stated reason reached
+across both channels.
+
+**One instance, swept to zero.** Worth the ten minutes precisely because the
+answer could have been "four more"; a class checked and found empty is a
+different fact from a class never checked, and only the first one can be
+written down.
+
+### Mutations
+
+| mutation | fails |
+|---|---|
+| the NOTE never writes | **1** |
+| **`Prttab(LXRXRG + Kpart - 2)` forced true** | **2** |
+| the `Kpart-2` offset dropped | **1** |
+| the B/C (preliminary/final) arms swapped | **1** |
+| Sun printed as `Dx11(7)` rather than `Dx11(7)-1` | **1** |
+| FORMAT 1020's record replaced by a `writln` blank | **0** |
+
+The **2** on the guard is the same shape as entry 118's: forcing it true makes
+two OTHER specs emit a NOTE the oracle does not, so `Prttab` is doing real work
+rather than being always-true in practice.
+
+The **0** on the last row refutes what the section above it originally said,
+and the refutation is the most useful thing in this entry.
+
+### The gate cannot see trailing whitespace, and two entries claimed it could
+
+`writln(ctx, "", Mt1, Mt2, true)` emits `"  "` then `" "`. FORMAT `(/,' ',a)`
+with a blank argument emits `""` then `"  "`. Those are different bytes in a
+different order, and swapping one for the other fails **nothing** -- verified
+by hand outside the sweep, with the build errors surfaced, because a 0 that
+contradicts the bytes is exactly the case where the harness is the first
+suspect.
+
+The reason is `test_err_block.py`'s `_trim`: `[ln.rstrip() for ln in lines]`.
+**A line of two spaces and an empty line are the same line to this gate.**
+
+So the distinction that IS gated is the RECORD COUNT, not the record contents.
+Entry 117's D3 (dropping FORMAT 1090's leading `/`) failed 3 because it deletes
+a record; entry 113's leading-blank mutations failed because they delete a
+record. Every one of those numbers stands. What does not stand is the sentence
+wrapped around them in two places -- entry 117's ("the goldens show it in the
+byte column ... so this is gated, not merely observed") and this entry's first
+draft, both asserting that the two-space-versus-empty CONTENT is what the gate
+checks. It never was. (Entry 113 makes no such claim; its numbers were always
+about record counts.)
+
+**Corrected in place in both.** The transcriptions are unchanged and
+remain faithful: `writln`'s blank and a FORMAT's leading `/` really are
+different in the oracle, and the port really does use the right one in each
+place. The claim that was wrong is about the TEST, not the code -- which is the
+harder kind to notice, because every number it was cited beside was correct.
+
+Generalised: **a mutation that changes bytes the normaliser removes measures
+zero, and reads exactly like a mutation that changes nothing.** Before citing a
+golden's byte column as evidence, check what the comparison does to those bytes.

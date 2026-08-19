@@ -176,8 +176,11 @@ _UNPORTED_BLOCKS = (
     # and the second is a FORMAT (leading `/` = an EMPTY record), not a writln.
     "NOTE: regARIMA model parameters will not be re-estimated once a year",
     "NOTE: Not enough data to perform a history analysis for seasonal adjustments",
-    # x11mdl.f:639 -- the reweight NOTE (the ABEND beside it IS ported).
-    "NOTE: At least one of the parameter estimates above yields a negative",
+    # (x11mdl.f:639's reweight NOTE used to sit here. PORTED -- and the reason
+    # it was skipped is the interesting part: the code beside it said "part of
+    # the deferred .out print engine: writes only to Mt1/Mt2, never STDERR",
+    # which was TRUE and is not a reason. Mt2 is the `.err`. Entry 109 made
+    # that channel compared and the note beside the skip was never revisited.)
     # (idotlr.f:485's "Unable to test ..." used to sit here, credited to
     # otlaic.f. PORTED -- and it is the FIRST gated consumer of getprt's LEVEL
     # fill: its guard is `Prttab(LOTLIT)`, whose `deftab` entry is F, so all
