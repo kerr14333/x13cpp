@@ -3586,6 +3586,29 @@ sibling sweep for the same reasoning came back CLEAN (7 other print-engine
 skips, all naming the Mt1 half specifically), which is a fact worth having
 rather than an absence.
 
+## This session, part 70: `revchk.f`'s two history NOTEs
+
+`docs/M5_PORT_NOTES.md` entry 120. `_UNPORTED_BLOCKS` **5 -> 3**, counted by
+AST. Suite **9057 / 0 / 946**.
+
+Fifth and sixth instances of one shape: the rule ported, the sentence not, and
+the C++ comment already admitting it parenthetically. If you are looking for
+the next one, **grep the tree for comments that say the oracle prints or writes
+something** -- that phrasing has been a reliable marker four times now.
+
+`Fixper` is a local here where the oracle has a COMMON. That is entry 117's gap
+shape, so it was checked: `ctx.rev.fixper` is written once and read nowhere
+else, and revdrv.f:481-487's reader gets the local. Equivalent.
+
+`usstrt` is ported INCOMPLETE and says so in the code: revchk.f:678/:756 flip
+it to F after the "start has been advanced" NOTEs, neither of which is ported.
+**Port the flip in the same commit as either block.**
+
+**MUTATIONS NOT RUN for this increment** -- budget. Unprobed: the `usstrt` arm
+selection (no spec takes FORMAT 1060), the `'trends'` label (no spec drops a
+trend lag), and whether both halves of the `Fixper` guard matter. Write
+`muts10.py` first thing.
+
 ## Open, in the order I would take them
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117

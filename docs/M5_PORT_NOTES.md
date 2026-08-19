@@ -9203,3 +9203,63 @@ harder kind to notice, because every number it was cited beside was correct.
 Generalised: **a mutation that changes bytes the normaliser removes measures
 zero, and reads exactly like a mutation that changes nothing.** Before citing a
 golden's byte column as evidence, check what the comparison does to those bytes.
+
+## 120. `revchk.f`'s two history NOTEs -- and a FORMAT split in the one place the gate can still see (2026-08-19)
+
+`_UNPORTED_BLOCKS` **5 -> 3** (counted by AST). Two goldens, one each:
+`extra/airline_history-fixper-fixmdl` and
+`extra/airline_history-sadjlags-drop`.
+
+Both are the shape this session has now hit five times: **the rule was ported,
+the sentence explaining it was not**, and in both cases the C++ comment already
+said so parenthetically. `run_history.cpp:394` read "(and the oracle prints a
+NOTE saying so)"; the `validate` lambda read "(the oracle prints a NOTE and
+zeroes the entry)". Two years of correct behaviour with the diagnostic missing.
+
+### `Fixper` -- a local where the oracle has a COMMON, checked rather than assumed
+
+`revchk.f:803` sets `Fixper=0`; this port sets a LOCAL and threads it onward.
+That is the exact shape of `prlkhd`'s third arm (entry 117), where the same
+substitution WAS a gap -- so it was checked instead of waved through:
+`ctx.rev.fixper` is written once (`series.cpp:343`) and read nowhere else, and
+`revdrv.f:481-487`'s reader is fed the local. Equivalent here, and the check is
+recorded so the next reader does not have to redo it.
+
+### `usstrt` is ported INCOMPLETE, on purpose and in writing
+
+`revchk.f:54` sets `usstrt = Rvstrt(1) > 0` before the default fills `Rvstrt`
+in; it picks FORMAT 1050 ("starting in <date>") over 1060 ("from default
+starting date"). But `revchk.f:678` and `:756` flip it back to F after printing
+"the start of the history analysis has been advanced to", and **neither of
+those blocks is ported** -- no golden carries them, so nothing forces it.
+
+So the flag is right only while they are missing. The code says exactly that,
+and names the condition: **port the flip in the same commit as either block.**
+An unported diagnostic that silently makes a ported flag correct is the
+`Lindot`/`Aicstk` class in miniature -- right by absence, not by design.
+
+### The split that lost a record
+
+FORMAT 1050 ends `'.',/,` **`/`**`,'       See ',a,...` -- two consecutive
+slashes, so an EMPTY record sits between the "at lag" line and the "See" line.
+FORMAT 1060, fifteen lines below it, has only one. The first attempt emitted
+the body and the tail as two `fwrite_fmt` calls concatenated, which dropped
+precisely that record, and the gate caught it.
+
+Worth noting *why* it caught it, one increment after entry 119 established that
+`_trim` rstrips every line: a missing record is the one whitespace defect this
+gate can still see, because `_trim` strips content but never deletes a line.
+The distinction is narrow and it is the whole of the safety margin. **Emit a
+FORMAT as one write; the moment you split it, the slashes at the seam are
+yours to get right, and only one of the two ways of getting them wrong is
+visible.**
+
+### Mutations: NOT RUN
+
+Deliberately unmeasured at time of commit -- the session hit its budget with
+the sweep unstarted, and an absent measurement must not read as a zero. Both
+NOTEs are gated by a golden apiece and the suite is green; what has NOT been
+probed is the `usstrt` arm selection (no corpus spec takes the 1060 branch),
+the `'trends'` label (no corpus spec drops a trend lag), and whether the
+`Fixper` guard's two halves are independently load-bearing. `muts10.py` is the
+next thing to write.

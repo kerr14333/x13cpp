@@ -29,6 +29,7 @@
 #include "x11/loadxr.hpp"          // loadxr (regARIMA <-> x11reg model swap)
 #include "regarima/rvfixd.hpp"     // rvfixd (fixreg= group walk, shared with ssmdl/ssxmdl)
 #include "regarima/outlier.hpp"    // wrtdat (errhdr's per-span date string)
+#include "x13/fformat.hpp"        // fwrite_fmt (revchk.f:1131/1135)
 #include "specparse/specparse.hpp"   // dfdate, addate
 #include "gen/model.hpp"            // prm:: regression-type constants (PRG*), AR/MA
 #include "gen/notset.hpp"           // prm::DNOTST (prtrev's "no such estimate yet")
@@ -218,6 +219,18 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
 
     // --- revchk.f / setrvp.f: loop bounds -------------------------------------
     int rvstrt[2] = {rev.rvstrt(1), rev.rvstrt(2)};
+    // revchk.f:54 -- `usstrt` is "the user gave a start date", tested BEFORE
+    // the default below fills rvstrt in. It picks FORMAT 1050 over 1060 for the
+    // dropped-lag NOTEs: 1050 names the start date, 1060 says "from default
+    // starting date".
+    //
+    // INCOMPLETE, and deliberately so: revchk.f:678 and :756 flip it back to F
+    // after printing "the start of the history analysis has been advanced to",
+    // and neither of those blocks is ported (no golden carries them). So this
+    // flag is right only while they are missing. **Port the flip in the same
+    // commit as either block** -- otherwise a run whose start was advanced
+    // will name a date the oracle stopped naming.
+    const bool usstrt = rev.rvstrt(1) > 0;
     int rvend[2] = {rev.rvend(1), rev.rvend(2)};
     // revchk.f:569-608 -- history{start=} is optional; with none given the
     // analysis begins a fixed number of years into the span. strtyr(-1:5) is
@@ -312,11 +325,45 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
         // together with a `trendlags=` that is not also a 1yr/2yr pair silently
         // costs the SA table its (1yr-2yr) column -- and vice versa. Transcribed
         // as written; see tools/census_bugs.md.
-        auto validate = [&](farray1<int, 5>& targ, int& ntarg) {
+        auto validate = [&](farray1<int, 5>& targ, int& ntarg,
+                            const char* what) {
             std::sort(targ.data(), targ.data() + ntarg);
             int i2 = 0;
             for (int i = ntarg; i >= 1; --i) {
                 if (nyrev <= targ(i)) {            // no room for this lag
+                    // revchk.f:1058-1071 (and :1089-1102 for trends) -- and the
+                    // oracle SAYS which lag it dropped. The drop was ported and
+                    // the sentence was not, which is the fourth time in this
+                    // inventory (editor.f:400, editor.f:2831's neighbour,
+                    // idotlr.f:494, revchk.f:801). The Mt2 half only; the
+                    // STDERR half is `IF(.not.Lquiet)` and Lquiet is not
+                    // modelled here.
+                    // The FORMAT is ONE write, not two: after the date there
+                    // are TWO consecutive slashes, so an empty record sits
+                    // between the "at lag" line and the "See" line. Splitting
+                    // it into a body plus a tail lost exactly that record --
+                    // which is the only thing the gate can see, since _trim
+                    // rstrips content but never drops a line (entry 119).
+                    auto& mt2 = ctx.channels_.unit(ctx.units.mt2);
+                    const std::string sec = "Section 7";
+                    const std::string prg = "X-13ARIMA-SEATS";
+                    const std::string doc = "Reference Manual";
+                    if (usstrt)
+                        mt2.put(fwrite_fmt(
+                            "(/,' NOTE: Not enough data to perform a history ',"
+                            "'analysis for ',a,/,"
+                            "'       at lag ',i2,' starting in ',a,'.',/,"
+                            "/,'       See ',a,' of the ',a,' ',a,'.')",
+                            std::string(what), targ(i), wrtdat(rvstrt, ny),
+                            sec, prg, doc) + "\n");
+                    else
+                        mt2.put(fwrite_fmt(
+                            "(/,' NOTE: Not enough data to perform a history ',"
+                            "'analysis for ',a,/,"
+                            "'       at lag ',i2,' from default starting date.',"
+                            "/,'       See ',a,' of the ',a,' ',a,'.')",
+                            std::string(what), targ(i), sec, prg, doc) +
+                            "\n");
                     targ(i) = 0;
                     ntarg -= 1;
                 } else if (targ(i) == ny || targ(i) == 2 * ny) {
@@ -325,8 +372,9 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
             }
             r1y2y = (i2 == 2);
         };
-        if (rt.ntarsa > 0) validate(rt.targsa, rt.ntarsa);
-        if (rt.ntartr > 0) validate(rt.targtr, rt.ntartr);
+        if (rt.ntarsa > 0)
+            validate(rt.targsa, rt.ntarsa, "seasonal adjustments");
+        if (rt.ntartr > 0) validate(rt.targtr, rt.ntartr, "trends");
     }
     const int ntarsa = rt.ntarsa, ntartr = rt.ntartr;
     const bool cnctar = ctx.rev.cnctar;
@@ -389,10 +437,30 @@ bool run_history(X13Context& ctx, const std::vector<double>& trnsrs_full,
     }
 
     // revchk.f:801-805 -- fixmdl=yes already holds every parameter fixed, so the
-    // "re-estimate once a year" convention is switched off (and the oracle prints
-    // a NOTE saying so).
+    // "re-estimate once a year" convention is switched off, and the oracle SAYS
+    // so. The comment here has claimed that parenthetically since the rule was
+    // ported; the two writln lines under it were not, which is the third time
+    // in this file's inventory that a ported rule kept its diagnostic unported
+    // (see also editor.f:400 and idotlr.f:494).
+    //
+    // `Fhnote` is `STDERR` (revdrv.f:85) -- `Lquiet` would make it 0, and this
+    // port does not model Lquiet, so there is no second arm to write.
+    //
+    // The oracle zeroes the COMMON `Fixper`; this port zeroes a LOCAL and
+    // threads it on. Checked rather than assumed: `ctx.rev.fixper` is written
+    // once (series.cpp:343) and read nowhere else, and revdrv.f:481-487's
+    // reader is fed the local here -- so the two are equivalent, unlike
+    // prlkhd's third arm, where the same shape was a real gap.
     int fixper = ctx.rev.fixper;
-    if (fixper > 0 && rev.revfix) fixper = 0;
+    if (fixper > 0 && rev.revfix) {
+        fixper = 0;
+        writln(ctx,
+               "NOTE: regARIMA model parameters will not be re-estimated once "
+               "a year",
+               stdio::STDERR, ctx.units.mt2, true);
+        writln(ctx, "      during the history analysis.", stdio::STDERR,
+               ctx.units.mt2, false);
+    }
     // (revchk.f:812-816 also clears Lrfrsh here; refresh is not read by this
     // port, so there is nothing to clear.)
 

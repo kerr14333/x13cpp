@@ -174,8 +174,6 @@ _UNPORTED_BLOCKS = (
     "NOTE: The following change of regime regression variables are not",
     # revchk.f:801-805 and :1131 -- the history{} option NOTEs. NOT revdrv.f,
     # and the second is a FORMAT (leading `/` = an EMPTY record), not a writln.
-    "NOTE: regARIMA model parameters will not be re-estimated once a year",
-    "NOTE: Not enough data to perform a history analysis for seasonal adjustments",
     # (x11mdl.f:639's reweight NOTE used to sit here. PORTED -- and the reason
     # it was skipped is the interesting part: the code beside it said "part of
     # the deferred .out print engine: writes only to Mt1/Mt2, never STDERR",
