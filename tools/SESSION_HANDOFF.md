@@ -3609,6 +3609,42 @@ selection (no spec takes FORMAT 1060), the `'trends'` label (no spec drops a
 trend lag), and whether both halves of the `Fixper` guard matter. Write
 `muts10.py` first thing.
 
+## This session, part 71: `pracf2.f`'s refusals -- and `editor.f:908-916` ported at half
+
+`docs/M5_PORT_NOTES.md` entry 121. `_UNPORTED_BLOCKS` **3 -> 2** (AST). Suite
+**9057 / 0 / 946**.
+
+This entry was marked LAST in the working order, on the reasoning that its NOTE
+"fronts an entirely unported routine". **That was wrong.** `pracf2.f:37-60` is
+an entry guard and two early returns; everything under `:60` is deferred print
+surface. An unported BODY is not an unported FEATURE -- and deferring a table is
+a decision about Mt1 that says nothing about what the same routine writes to Mt2.
+
+Landing it made 16 specs emit a NOTE the oracle does not, and the cause was a
+DIFFERENT half-ported rule. `editor.f:908-916` is
+`IF(Lsumm.gt.0.and.Mxcklg.eq.0)` + `Mxcklg=2*Sp` + **six `Prttab` clears**; this
+port had the assignment alone, under a comment citing a two-line range for a
+nine-line rule. Nothing could tell, because `Prttab(LCKACF..LCKNRM)` had no
+reader in this engine until pracf2's guard became one. Control:
+`airline_hp-short-seats` is a `seats{}` run, takes `gtinpt.f:1169` instead,
+keeps the entries TRUE, and the oracle DOES write the NOTE there.
+
+**Standing lesson, sharpened: an unread dictionary SLICE is the `(void)param;`
+defect one level up.** The first reader is what audits it, and you cannot know
+in advance which unported thing will become that reader.
+
+Entry 120's mutations, run late: fixper NOTE off **1**, `Revfix` half dropped
+**11**, `Fixper>0` half dropped **2**, `usstrt` inverted **1**, sadj list
+labelled `'trends'` **1**. The FORMAT 1060 arm is transcribed and UNGATED.
+
+**`_UNPORTED_BLOCKS` is now at its irreducible core: 2 entries, both
+structurally blocked.** `ssmdl.f:285`'s change-of-regime sits behind the
+deliberate CB-39 wall (`edge/airline_slidingspans-regime-td` is in
+`_ENGINE_WALLS`); `spectrum.f:2583`'s backwards-assembled message sits behind
+the SEATS-inadmissible wall (`seatopts.cpp:219`, `qt1 < 0`), and its trigger is
+the component-model variance check inside the unported decomposition
+derivation. Neither is transcription work; both need the subsystem first.
+
 ## Open, in the order I would take them
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117

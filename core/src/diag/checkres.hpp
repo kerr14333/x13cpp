@@ -92,6 +92,10 @@ double kendalls(const double* x, int nz, int mq);
 // record it on ctx.check. No-op unless the model converged with a variance.
 void check_residuals(X13Context& ctx, const double* a, int na, int nefobs);
 
+// pracf2.f:37-60 -- the two NOTEs the oracle writes INSTEAD of the
+// squared-residual ACF. The table itself is deferred print surface.
+void pracf2_notes(X13Context& ctx, int nefobs);
+
 }  // namespace x13
 
 #endif  // X13_DIAG_CHECKRES_HPP

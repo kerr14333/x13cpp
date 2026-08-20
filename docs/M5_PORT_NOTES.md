@@ -9263,3 +9263,108 @@ probed is the `usstrt` arm selection (no corpus spec takes the 1060 branch),
 the `'trends'` label (no corpus spec drops a trend lag), and whether the
 `Fixper` guard's two halves are independently load-bearing. `muts10.py` is the
 next thing to write.
+
+## 121. `pracf2.f`'s two refusals -- a guard chain in front of an unported body, which is not the same as an unported feature (2026-08-20)
+
+`_UNPORTED_BLOCKS` **3 -> 2**. One golden:
+`generated/airline_hp-short-seats`.
+
+```
+ NOTE: X-13ARIMA-SEATS will not compute the ACF of the squared residuals for
+       a set of residuals that is less than ten years long.
+```
+
+The handoff had this entry marked **last**, on the reasoning that the NOTE
+"fronts an entirely unported routine (no `ac2` table exists), so porting the
+text alone would be right on short series and silently absent on long ones."
+That reasoning was wrong, and the correction is the point.
+
+### An unported BODY is not an unported FEATURE
+
+`pracf2.f:37-60` is an entry guard and two early returns, and everything after
+`:60` is the ACF/PACF of the squared residuals, its Ljung-Box Q, and a
+histogram -- **a print/save surface**, which this port defers wholesale, the
+same as every other table producer. So there is nothing to be "silently absent"
+about on a long series: the port declines to produce a table it declines to
+produce everywhere, consistently and by design.
+
+What was actually missing is the pair of messages the oracle writes **instead
+of** that table, and those are not print surface at all -- they go to Mt2.
+That is the same distinction entry 119 turned on one increment earlier, arrived
+at from the other side: there, a block was skipped because it "writes only to
+Mt1/Mt2"; here, a block was skipped because the routine around it is a print
+routine. **Deferring a table is a decision about Mt1. It says nothing about
+what the same routine writes to Mt2.**
+
+Note also what made the wrong call plausible: the golden that carries this NOTE
+is a `seats{}` spec whose whole point is the hpcycle minimum-span rule, and the
+`.err` was not the reason it was written. The block rode along.
+
+### Why this is not a wall
+
+The rule in this repo is that an unported path either fatals or is a wall.
+Neither applies: `DEFTAB[LCKAC2]` is **true**, so the entry guard passes on
+every spec that never mentions `check{}`, and a wall there would refuse
+hundreds of runs that the port otherwise completes correctly. The table is
+deferred print surface -- inventoried by the print engine's absence, not by
+`walls.py` -- and the refusals in front of it are now emitted exactly where the
+oracle emits them.
+
+`Lgraf` is in the entry guard and in NEITHER note guard, so a graphics-only run
+enters the routine and writes nothing. This port has no `Lgraf`; the term is
+dropped and the difference cannot be observed until graphics exist. Written
+down rather than silently simplified.
+
+### What it exposed: `editor.f:908-916` was ported at half
+
+Landing the NOTE made **16 specs** emit it where the oracle does not. The cause
+was not the NOTE. `run_pre_model.cpp` carried the assignment
+
+```cpp
+if (ctx.chkopt.mxcklg == 0) {
+    if (ctx.captured.has_seats) ctx.chkopt.mxcklg = 3 * sp;
+    else ctx.chkopt.mxcklg = 2 * sp;
+}
+```
+
+against a Fortran arm reading `IF(Lsumm.gt.0.and.Mxcklg.eq.0)`, which sets
+`Mxcklg=2*Sp` **and then clears six check-spec print entries** -- purpose stated
+outright in the source: *"turn off the printout for the tables in the check
+spec, as the spec was not specified by the user."*
+
+The port took the assignment and neither the `Lsumm>0` guard nor the clears.
+The C++ comment above it even cited `editor.f:909-910` -- a two-line range for
+a nine-line rule.
+
+**Nothing could tell.** `Prttab(LCKACF..LCKNRM)` had no reader in this engine at
+all, so half the rule and the whole rule were indistinguishable. That is the
+`(void)param;` shape one level up: not an unread argument but an unread
+dictionary SLICE. The first reader is what audits it, and there is no knowing
+in advance which unported thing becomes that reader.
+
+The control makes it certain rather than plausible: `airline_hp-short-seats` is
+a `seats{}` run, so `gtinpt.f:1169` sets `Mxcklg` before this arm is reached,
+the arm is skipped, the entries stay TRUE -- and the oracle DOES write the NOTE
+there. Sixteen specs on one side of the rule, one on the other, and the rule
+explains both.
+
+### Mutations (entry 120's increment, run late)
+
+| mutation | fails |
+|---|---|
+| the `Fixper` NOTE never writes | **1** |
+| **the `Revfix` half of that guard dropped** | **11** |
+| the `Fixper>0` half dropped | **2** |
+| `usstrt` inverted | **1** |
+| the sadj list labelled `'trends'` | **1** |
+
+`usstrt` inverted fails 1: the corpus forces the FORMAT **1050** arm and nothing
+exercises 1060 positively, so that branch is transcribed and UNGATED. Knowing
+which of two arms a number covers is the point of running it.
+
+One process note. The sweep ran against `run_history.cpp` while the pracf2 work
+was being written into three other files -- which would have inflated every
+remaining count. The edits were parked and restored afterwards, and G1 came
+back **1** rather than 3, confirming no sweep build had picked them up. **A
+mutation harness measures against a tree it does not own**; entry 113 learned
+that from another agent, and this time the other agent was me.

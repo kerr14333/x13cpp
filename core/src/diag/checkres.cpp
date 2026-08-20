@@ -6,6 +6,8 @@
 #include "specparse/specparse.hpp"  // writln
 #include "gen/notset.hpp"          // prm::DNOTST
 #include "gen/model.hpp"         // prm::PORDER
+#include "gen/tbltab.hpp"        // prm::LCKAC2 (pracf2.f:37)
+#include "x13/fformat.hpp"       // fwrite_fmt (pracf2.f:1010/1011)
 
 #include <algorithm>
 #include <cmath>
@@ -446,6 +448,44 @@ void check_residuals(X13Context& ctx, const double* a, int na, int nefobs) {
     }
 
     ck.ran = true;
+}
+
+// pracf2.f:37-60 -- the ENTRY GUARD and the two early-return NOTEs in front of
+// the squared-residual ACF. The routine BODY (the ACF/PACF of a^2, its Ljung-Box
+// Q and the histogram) is a print/save surface and is deferred with the rest of
+// the `.out` engine, exactly like every other table producer here -- so this is
+// NOT a wall: nothing is refused that the port otherwise computes.
+//
+// What was missing is the pair of refusals the oracle writes INSTEAD of that
+// table, and they are not print surface -- they go to Mt2. `DEFTAB[LCKAC2]` is
+// true, so the entry guard passes on a spec that never mentions `check{}`, and
+// the second arm fires on any residual set shorter than ten years.
+//
+// `Lgraf` is in the entry guard and NOT in either NOTE guard: a graphics-only
+// run enters the routine and writes no message. Transcribed as such; this port
+// has no Lgraf, so the term is dropped and the difference is invisible until
+// graphics exist.
+void pracf2_notes(X13Context& ctx, int nefobs) {
+    const int iacf = prm::LCKAC2, iacp = prm::LCKAC2 + 1;
+    const bool want = ctx.tbllog.prttab(iacf) || ctx.tbllog.savtab(iacf) ||
+                      ctx.tbllog.prttab(iacp);
+    if (!want) return;                       // (|| Lgraf -- see above)
+    auto& mt2 = ctx.channels_.unit(ctx.units.mt2);
+    if (ctx.mdldat.var <= 0.0) {
+        mt2.put(fwrite_fmt(
+                    "(/,' NOTE: Can''t calculate an ACF of the squared ',"
+                    "'residuals for a model with no variance.')") +
+                "\n");
+        return;
+    }
+    if (nefobs <= 10 * ctx.model.sp)
+        mt2.put(fwrite_fmt(
+                    "(/,' NOTE: ',a,' will not compute the ACF of the',"
+                    "' squared residuals for',/,"
+                    "'       a set of residuals that is less than ten ',"
+                    "'years long.')",
+                    std::string(stdio::PRGNAM)) +
+                "\n");
 }
 
 }  // namespace x13

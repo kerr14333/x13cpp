@@ -963,14 +963,44 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
             // here rather than in the parser because it needs Lmodel, and this
             // is the model path. gtinpt.f:1169 (Lseats && still 0 -> 3*Sp) runs
             // first, and getchk's own default first of all.
+            //
+            // AND editor.f:908-916 is a TWO-PART rule of which this port had
+            // one part. The Fortran's arm is
+            // `IF(Lsumm.gt.0.and.Mxcklg.eq.0)`, and under it, beside the
+            // assignment, it CLEARS six check-spec print entries -- its own
+            // comment says why: "turn off the printout for the tables in the
+            // check spec, as the spec was not specified by the user."
+            //
+            // The port took the assignment and neither the guard nor the
+            // clears, and nothing could tell: `Prttab(LCKACF..LCKNRM)` had no
+            // reader in this engine until pracf2's entry guard became one
+            // (entry 121). The moment it did, 16 specs emitted a NOTE the
+            // oracle does not -- every one of them a `Lsumm>0` run with no
+            // `check{}` spec, i.e. exactly the population this block exists to
+            // silence. `airline_hp-short-seats` is the control: it is a
+            // `seats{}` run, so gtinpt.f:1169 sets Mxcklg first, this arm is
+            // never taken, the entries stay TRUE and the oracle does write the
+            // NOTE.
             if (ctx.chkopt.mxcklg == 0) {
-                if (ctx.captured.has_seats) ctx.chkopt.mxcklg = 3 * sp;
-                else ctx.chkopt.mxcklg = 2 * sp;
+                if (ctx.captured.has_seats) {
+                    ctx.chkopt.mxcklg = 3 * sp;        // gtinpt.f:1169
+                } else if (ctx.hiddn.lsumm > 0) {      // editor.f:908
+                    ctx.chkopt.mxcklg = 2 * sp;
+                    for (int t : {prm::LCKACF, prm::LCKACF + 1, prm::LCKAC2,
+                                  prm::LCKAC2 + 1, prm::LCKHST, prm::LCKNRM})
+                        ctx.tbllog.prttab(t) = false;
+                }
             }
             // arima.f:1046's `IF(Convrg)` again -- prtacf and everything under
             // it are inside it. See the residual-capture note above.
             if (ctx.mdldat.convrg) {
                 check_residuals(ctx, a.data(), na, nefobs);
+                if (ctx.error.lfatal) return false;
+                // arima.f:1053-1059 -- `IF(gudrun)` then acfdgn, then pracf2.
+                // acfdgn's savelog block is elsewhere; what is added here is
+                // pracf2's two refusals, which are Mt2 and therefore compared.
+                if (ctx.hiddn.issap < 2 && ctx.hiddn.irev < 4)
+                    pracf2_notes(ctx, nefobs);
                 if (ctx.error.lfatal) return false;
             }
 

@@ -186,9 +186,11 @@ _UNPORTED_BLOCKS = (
     # PREFIX because the message names the outlier -- one spec's `TC2020.Mar`
     # against the next spec's `AO2020.Apr` -- which is still how any new entry
     # here should be written.)
-    # pracf2.f:2 -- the squared-residual ACF on too short a series. The NOTE
-    # fronts an ENTIRELY unported routine: there is no `ac2` table at all.
-    "NOTE: X-13ARIMA-SEATS will not compute the ACF of the squared residuals for",
+    # (pracf2.f:50-58's "will not compute the ACF of the squared residuals"
+    # used to sit here, marked LAST on the reasoning that it fronts an
+    # entirely unported routine. That reasoning was wrong: pracf2.f:37-60 is a
+    # guard chain, and everything under it is the deferred .out print surface.
+    # An unported BODY is not an unported FEATURE -- see entry 121.)
     # spectrum.f:2583 -- and a CENSUS DEFECT in its own right: the message is
     # assembled from two pieces in the wrong order, so the oracle prints
     # "transitoryThe innovation variance of the greater than one is".
