@@ -9562,3 +9562,66 @@ of refusals.** The parser's `inpter` refusals were never going to be found by
 looking for `abend`, because they do not abend -- they are just as final, and
 they were invisible for the whole life of the tool. When a tool measures "all of
 X", ask what X's members can look like that the matcher has never been shown.
+
+---
+
+## 124. `series{format=}` was parsed and dropped -- found by the tool from entry 123 (2026-08-21)
+
+Immediate dividend from widening `walls.py`. With the inventory finally showing
+all ten helper-less refusals, three of them turned out to be the SAME feature at
+three of its call sites:
+
+| Fortran | port | state |
+|---|---|---|
+| `getadj.f:532` (prior factors) | `readers_spec.cpp:285` | refused |
+| `getreg.f:560` (user regressors) | `readers_spec.cpp:1284` | refused |
+| `gtxreg.f:624` (x11reg user regressors) | `readers_spec.cpp:4875` | refused |
+| `gtxreg.f:810` (`umfile=`) | -- | behind the `Haveum` wall |
+| **`getsrs.f:466` (the SERIES itself)** | `series.cpp` | **silently ignored** |
+
+`series.cpp:171` set `havfmt = true` and **nothing ever read it**. A spec naming
+a file layout got the free-format read and `OUTCOME: OK` with whatever that
+produced. This port's standing description of its own most common defect,
+sitting in the one spec block every single run has.
+
+Nothing caught it because no corpus spec uses `format=` anywhere -- so the
+option was inert by absence, not by design, and `walls.py` could not list it
+because the port did not refuse. Entry 123's rule in its sharpest form: **the
+gap inventory was not just undercounting, it was undercounting a feature whose
+other four call sites were all present in it.** Fix the whole family (the rule
+from entry 101/103) reads differently when the tool only shows you four fifths
+of the family.
+
+Walled now, and the count MOVED, 32 -> 33.
+
+**The wall covers `format="free"` too, deliberately.** That arm sounds like a
+no-op -- the port's reader IS free-format -- but `gtfldt.f:72-75` runs before
+the dispatch:
+
+```fortran
+       IF(Havfmt)THEN
+        xfmind=strinx(F,X12FMT,x12ptr,1,PX12F,Datfmt)
+        IF(.not.Hvfreq.and.Hvstrt.and.xfmind.ne.9)THEN
+         Freq=12
+         Hvfreq=T
+        END IF
+```
+
+so naming ANY layout except `tramo` defaults the period to 12 when the spec gave
+a start date and no period. The free path below does not. An arm that is
+algebraically the same operator can still differ by its preamble -- the entry-94
+lesson, one level up from the `force{indforce=}` case.
+
+What is behind the wall, for whoever ports it: sixteen named layouts
+(`1r 2r 1l 2l cansim datevalue x12save cs tramo cansim2 cs2 2l2 freecomma
+datevaluecomma free x13save`) with three readers between them -- `gtedit.f`
+(datevalue), `gtx12s.f` (x12save/x13save), `gttrmo.f` (tramo, refused outright
+for user regressors) -- plus the fall-through, which hands the string to a
+Fortran `READ` as an actual FORMAT and reports `ERROR: Problem reading <file>
+using format=<fmt>` if it does not parse. That last arm needs a formatted-READ
+interpreter, the read-side twin of `fwrite_fmt`.
+
+**UNGATED.** No corpus spec carries `format=`, and the discriminating one is
+cheap -- `series{format="free"}` on `airline.dat`, where the oracle runs and the
+engine now refuses -- so it belongs in `_ENGINE_WALLS` next to the other three.
+On the board.

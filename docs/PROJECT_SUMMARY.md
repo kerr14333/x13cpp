@@ -107,15 +107,15 @@ number here is a build failure. Full table: [`docs/METRICS.md`](METRICS.md).
 
 | Metric | Value | Notes |
 |---|---|---|
-| C++ written | **<!--x13:cpp_lines-->54732<!--/x13--> non-blank lines**, <!--x13:cpp_files-->188<!--/x13--> files | excludes generated COMMON headers |
+| C++ written | **<!--x13:cpp_lines-->54758<!--/x13--> non-blank lines**, <!--x13:cpp_files-->188<!--/x13--> files | excludes generated COMMON headers |
 | Fortran reference | <!--x13:fortran_lines-->166076<!--/x13--> lines, <!--x13:fortran_files-->712<!--/x13--> files | not all on the port's critical path |
 | Fortran **files** ported | **<!--x13:files_done-->421<!--/x13--> of <!--x13:files_total-->690<!--/x13-->** (<!--x13:files_pct-->61.0<!--/x13-->%) | `tools/ported.yaml`; excludes 22 not-applicable files, and counts 3 `partial` as neither |
 | Fortran **routines** same-named in C++ | <!--x13:routines_samename-->399<!--/x13--> of <!--x13:routines_total-->1141<!--/x13--> (<!--x13:routines_pct-->35.0<!--/x13-->%) | the other bracket: counts SUBROUTINE/FUNCTION, so `matrix.f` weighs 90 and not 1 — but a port that RENAMED a routine counts as missing here. Truth is between the two rows, never either alone |
 | Parity result | <!--x13:parity_pass-->9059<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->946<!--/x13--> skip | plus ctest <!--x13:ctest-->12/12<!--/x13-->, R bindings 165/165 |
 | Corpus | <!--x13:corpus_specs-->531<!--/x13--> spec files, <!--x13:parity_modules-->36<!--/x13--> test modules | real + synthetic series |
 | Census bugs catalogued | <!--x13:census_bugs-->46<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->46<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
-| Active development time | **<!--x13:active_time-->67h 53m<!--/x13-->** over <!--x13:calendar_days-->32<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
-| Commits | <!--x13:commits-->461<!--/x13--> | 2026-07-18 → 2026-07-29 |
+| Active development time | **<!--x13:active_time-->68h 06m<!--/x13-->** over <!--x13:calendar_days-->32<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
+| Commits | <!--x13:commits-->462<!--/x13--> | 2026-07-18 → 2026-07-29 |
 | Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
 *Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*

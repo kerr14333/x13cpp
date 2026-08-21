@@ -26,7 +26,7 @@ they are ports rather than gaps -- but they are no longer invisible either:
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**32 walls.**
+**33 walls.**
 
 
 ## Automatic model selection
@@ -117,6 +117,9 @@ reproduce.
 
 - **`core/src/specparse/readers_spec.cpp:4875`**
   formatted x11regression user-regressor files (format=) are not yet supported; use free-format data.
+
+- **`core/src/specparse/series.cpp:333`**
+  series{format=} (formatted / named-layout file reads) is not yet supported; use free-format data.
 
 
 ## X-11

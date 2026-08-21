@@ -3716,7 +3716,47 @@ re-deriving with it gives the same 32/4, so none of the ten is an artifact.
 
 See entry 123.
 
+## This session, part 74: `series{format=}` was parsed and dropped
+
+Found by the tool from part 73, within minutes of it working. With all ten
+helper-less refusals finally visible, three of them turned out to be one
+feature at three call sites -- and the FOURTH call site, the one that reads the
+series itself, was not refusing at all.
+
+`series.cpp:171` set `havfmt = true` and nothing read it. A spec naming a file
+layout got the free-format read and `OUTCOME: OK`. Its siblings
+(`getreg.f:560`, `gtxreg.f:624`, `getadj.f:532`) all refuse; `gtxreg.f:810` is
+behind the `Haveum` wall. Only `getsrs.f:466` was open.
+
+Invisible because **no corpus spec uses `format=` anywhere** -- inert by
+absence, not by design.
+
+Walled. Count 32 -> 33. The wall covers `format="free"` on purpose:
+`gtfldt.f:72-75` defaults the period to 12 whenever a format is named with a
+start date and no period, which the free path does not do, so the arm that
+sounds like a no-op is not one.
+
+Behind it: sixteen named layouts, three readers (`gtedit.f`, `gtx12s.f`,
+`gttrmo.f`), and a fall-through that hands the string to a Fortran READ as a
+FORMAT -- which would need a read-side twin of `fwrite_fmt`. See entry 124.
+
+Also tightened `test_walls_check_runs`: a STALE `WALLS.md` used to fail with
+"walls.py printed no gap count", which names the wrong cause. It now says what
+happened and what to run.
+
 ## Open, in the order I would take them
+
+0. **Gate the `series{format=}` wall.** The spec is cheap and already
+   identified: `series{format="free"}` on `airline.dat`, where the oracle runs
+   normally and the engine refuses. Bless the golden, add the spec to
+   `tests/corpus/edge/`, and register it in `test_err_block._ENGINE_WALLS`
+   alongside `edge/airline_slidingspans-regime-td`. Until then the wall is
+   inventory only -- and the standing rule is that measuring a divergence
+   without landing a spec leaves nothing behind but prose. Entry 124.
+
+   While there: no corpus spec uses `format=` at ANY of its five call sites, so
+   the other four walls are ungated in the same way.
+
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117
    (2026-08-18).** All three arms ported; the NOTE came with it and took

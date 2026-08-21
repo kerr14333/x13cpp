@@ -120,6 +120,9 @@ def test_walls_check_runs():
     p = _run_tool([os.path.join(TOOLS, "walls.py"), "--check"])
     assert "Traceback" not in p.stderr, f"walls.py raised:\n{p.stderr[-2000:]}"
     assert p.returncode in (0, 1), f"unexpected exit {p.returncode}: {p.stdout}"
+    assert "STALE" not in p.stdout, (
+        "docs/WALLS.md is out of date -- a wall was added or removed without\n"
+        "regenerating it. Run: python tools/walls.py --write\n" + p.stdout)
     assert re.search(r"\d+ gaps", p.stdout), (
         f"walls.py printed no gap count: {p.stdout!r}")
 

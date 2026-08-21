@@ -310,11 +310,37 @@ void getsrs(X13Context& ctx, bool& havsrs, bool& havesp, bool& lagr, bool ldata,
             locok = false;
         }
         if (locok && havfil && !havsrs) {
-            bool hvfreq = havesp;
-            int freq = sp;
-            gtfldt_free(ctx, prm::PLEN, file, nflchr, y, nobs, hvfreq, freq, hvstrt, argok, locok);
-            havesp = hvfreq; sp = freq;
-            if (argok) havsrs = true;
+            // getsrs.f:466 -> gtfldt.f:71. `series{format=}` was PARSED AND
+            // DROPPED: havfmt was set above and read nowhere, so a spec naming
+            // a layout got the free-format read and `OUTCOME: OK` with whatever
+            // numbers that produced. That is this port's most common defect
+            // shape, in the one spec block every run has.
+            //
+            // The whole Havfmt branch is unported, and that includes
+            // `format="free"`: gtfldt.f:72-75 defaults Freq to 12 whenever a
+            // format is named without one, which the free path below does not
+            // do, so even the arm that sounds like a no-op is not one. The
+            // named layouts (1r/2r/1l/2l/cansim/datevalue/x12save/cs/tramo/
+            // cansim2/cs2/2l2/freecomma/datevaluecomma/free/x13save) each have
+            // their own reader -- gtedit.f, gtx12s.f, gttrmo.f -- and an
+            // unrecognised string is handed to a Fortran READ as a FORMAT.
+            //
+            // The sibling call sites already refuse this: getreg.f:560 at
+            // readers_spec.cpp:1284 and gtxreg.f:624 at :4875. getadj.f:532 is
+            // refused at :285, and gtxreg.f:810's umfile= read sits behind the
+            // Haveum wall. This was the last one open.
+            if (havfmt) {
+                inpter(ctx, PERRNP, L.errpos.data() + 1,
+                       "series{format=} (formatted / named-layout file reads) "
+                       "is not yet supported; use free-format data.");
+                locok = false;
+            } else {
+                bool hvfreq = havesp;
+                int freq = sp;
+                gtfldt_free(ctx, prm::PLEN, file, nflchr, y, nobs, hvfreq, freq, hvstrt, argok, locok);
+                havesp = hvfreq; sp = freq;
+                if (argok) havsrs = true;
+            }
         }
         if (!havsrs) {
             if (locok) { inpter(ctx, PERRNP, L.errpos.data() + 1, "No time series specified"); locok = false; }
