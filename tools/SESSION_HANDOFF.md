@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9059<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->946<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9061<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->947<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -430,7 +430,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->9059<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->9061<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -3744,18 +3744,52 @@ Also tightened `test_walls_check_runs`: a STALE `WALLS.md` used to fail with
 "walls.py printed no gap count", which names the wrong cause. It now says what
 happened and what to run.
 
+## This session, part 75: gating a wall the oracle walks straight past
+
+`edge/airline_series-format-free.spc`, blessed. The golden is a **complete
+successful oracle run** -- exit 0, full `.udg`, an `.err` with two spectrum
+WARNINGs -- and that is the evidence the wall is a GAP rather than a faithful
+refusal.
+
+`free` is the value on purpose: it is the arm that looks like a no-op and is
+not one, and giving `period = 12` explicitly makes the oracle's read identical
+to the free path, so the golden is a clean baseline rather than a second
+variable.
+
+**`test_m1_parse` had to EXCLUDE the spec, not xfail it.** A strict xfail is
+what `_UNPARSED_BLOCKS` uses and it has the right go-loud property -- but this
+suite's green condition is `NNN passed, 0 failed, 0 xfailed`, and one
+documented xfail makes the next real one indistinguishable from bookkeeping.
+The loudness moves rather than disappears: `_ENGINE_WALLS`'s own assertion
+already says "remove the _ENGINE_WALLS entry if it is gone". See
+`_ENGINE_WALL_SPECS` in `test_m1_parse.py`, and entry 125 for the general form
+-- **a suite-wide invariant is a measuring instrument; spending it on
+bookkeeping costs more than the bookkeeping saves.**
+
+Mutation-checked: `if (havfmt)` -> `if (false)` fails both gates (the wall text
+and the exit code).
+
 ## Open, in the order I would take them
 
-0. **Gate the `series{format=}` wall.** The spec is cheap and already
-   identified: `series{format="free"}` on `airline.dat`, where the oracle runs
-   normally and the engine refuses. Bless the golden, add the spec to
-   `tests/corpus/edge/`, and register it in `test_err_block._ENGINE_WALLS`
-   alongside `edge/airline_slidingspans-regime-td`. Until then the wall is
-   inventory only -- and the standing rule is that measuring a divergence
-   without landing a spec leaves nothing behind but prose. Entry 124.
+0. ~~**Gate the `series{format=} wall`**~~ **CLOSED, entry 125 (2026-08-21).**
+   `edge/airline_series-format-free.spc` is landed and blessed; the golden is a
+   COMPLETE successful oracle run (exit 0, full `.udg`), which is the evidence
+   that the wall is a GAP and not a faithful refusal.
+   `test_err_block._ENGINE_WALLS` asserts the wall text, asserts everything the
+   oracle wrote ahead of it still matches, and pins the exit to 1. Mutating
+   `if (havfmt)` to `if (false)` fails both gates.
 
-   While there: no corpus spec uses `format=` at ANY of its five call sites, so
-   the other four walls are ungated in the same way.
+   `test_m1_parse::test_outcome_matches_oracle` had to EXCLUDE it rather than
+   xfail it: the suite's green condition is `NNN passed, 0 failed, 0 xfailed`,
+   and an xfail marker -- even a strict documented one -- spends the invariant
+   that makes a real xfail visible. Same treatment as `_POST_PARSE_FATAL`. See
+   `_ENGINE_WALL_SPECS` there.
+
+   Still open, and it is the same shape one level out: **no corpus spec uses
+   `format=` at any of its four OTHER call sites** (`transform{format=}`,
+   `regression{format=}`, `x11regression{format=}`, and the multi-set prior
+   arm). Four more `edge/` specs of the same pattern would gate them; each is
+   ~10 minutes now that the mechanism exists.
 
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117

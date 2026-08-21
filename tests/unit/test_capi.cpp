@@ -57,6 +57,14 @@ TEST("null_handle_is_safe") {
     CHECK_EQ(x13_diag_count(nullptr), 0);
     double v = 0.0;
     CHECK_EQ(x13_diag_value(nullptr, "f3.q", &v), 0);
+    CHECK_EQ(x13_vector_count(nullptr), 0);
+    CHECK(x13_vector_name(nullptr, 0) != nullptr);
+    CHECK_EQ(x13_vector_length(nullptr, "spectrum.sp0"), 0);
+    CHECK_EQ(x13_vector_values(nullptr, "spectrum.sp0", &v, 1), 0);
+    CHECK_EQ(x13_text_count(nullptr), 0);
+    CHECK(x13_text_name(nullptr, 0) != nullptr);
+    CHECK(x13_text_value(nullptr, "x11.trendma") != nullptr);
+    CHECK_EQ(std::strlen(x13_text_value(nullptr, "x11.trendma")), 0u);
     x13_run_free(nullptr);           // must not crash
 }
 
@@ -295,8 +303,66 @@ TEST("run_restores_the_host_fp_control_word") {
     CHECK_EQ(x13_host_fp_control(), before);
 }
 
+// The spectrum block is computed on every MONTHLY run whether or not the spec
+// asks for it (x11ari.f:282-287), so a plain x11 run must publish it.
+TEST("vectors_enumerate_and_resolve") {
+    x13_run* r = x13_run_spec_text(kSpec, "capi");
+    CHECK_EQ(x13_ok(r), 1);
+    const int n = x13_vector_count(r);
+    CHECK(n > 0);
+    bool sawFreq = false, sawSp0 = false;
+    for (int i = 0; i < n; ++i) {
+        const char* nm = x13_vector_name(r, i);
+        if (std::strcmp(nm, "spectrum.freq") == 0) sawFreq = true;
+        if (std::strcmp(nm, "spectrum.sp0") == 0) sawSp0 = true;
+    }
+    CHECK(sawFreq);
+    CHECK(sawSp0);
+
+    CHECK_EQ(x13_vector_length(r, "spectrum.freq"), 61);
+    CHECK_EQ(x13_vector_length(r, "spectrum.sp0"), 61);
+    CHECK_EQ(x13_vector_length(r, "no.such.vector"), 0);
+    CHECK(x13_vector_name(r, -1) != nullptr);
+    CHECK_EQ(std::strlen(x13_vector_name(r, n)), 0u);
+
+    // Same size-then-fill protocol as the tables: too small reports the need
+    // and writes nothing.
+    double small[4] = {-1.0, -1.0, -1.0, -1.0};
+    CHECK_EQ(x13_vector_values(r, "spectrum.freq", small, 4), -61);
+    CHECK_EQ(small[0], -1.0);
+
+    std::vector<double> frq(61, -1.0);
+    CHECK_EQ(x13_vector_values(r, "spectrum.freq", frq.data(), 61), 61);
+    CHECK_EQ(frq[0], 0.0);            // mkfreq.f: the grid starts at zero
+    CHECK(frq[60] > frq[0]);
+    CHECK_EQ(x13_vector_values(r, "no.such.vector", frq.data(), 61), 0);
+    x13_run_free(r);
+}
+
+TEST("texts_enumerate_and_resolve") {
+    x13_run* r = x13_run_spec_text(kSpec, "capi");
+    CHECK_EQ(x13_ok(r), 1);
+    const int n = x13_text_count(r);
+    CHECK(n > 0);
+    bool sawTrend = false;
+    for (int i = 0; i < n; ++i)
+        if (std::strcmp(x13_text_name(r, i), "x11.trendma") == 0) sawTrend = true;
+    CHECK(sawTrend);
+    // The Henderson length is resolved by vtc during the run, so the label is
+    // the one this series actually got, not a spec default.
+    CHECK(std::strlen(x13_text_value(r, "x11.trendma")) > 0);
+    CHECK_EQ(std::strlen(x13_text_value(r, "no.such.text")), 0u);
+    CHECK(x13_text_name(r, n) != nullptr);
+    CHECK_EQ(std::strlen(x13_text_name(r, n)), 0u);
+
+    double nterm = 0.0;
+    CHECK_EQ(x13_diag_value(r, "x11.trendma.nterm", &nterm), 1);
+    CHECK(nterm > 0.0);
+    x13_run_free(r);
+}
+
 TEST("version_reporting") {
-    CHECK_EQ(x13_abi_version(), 1);
+    CHECK_EQ(x13_abi_version(), 2);
     CHECK(std::strlen(x13_engine_version()) > 0);
 }
 

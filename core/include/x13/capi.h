@@ -67,7 +67,9 @@ typedef struct x13_run x13_run;
 
 /* --- library metadata ---------------------------------------------------- */
 
-/* Version of the C ABI itself. Bumped only on incompatible changes. */
+/* Version of the C ABI itself. Bumped only on incompatible changes.
+ * 1: tables + scalar diagnostics.
+ * 2: adds the vector and text registries (additive -- a v1 caller still works). */
 X13_CAPI int x13_abi_version(void);
 
 /* The engine's own version string (the ported Census release). */
@@ -171,6 +173,59 @@ X13_CAPI const char* x13_diag_name(const x13_run* run, int index);
 /* Fetch one diagnostic. Returns 1 and writes *out on success, 0 if there is no
  * such diagnostic (*out untouched). */
 X13_CAPI int x13_diag_value(const x13_run* run, const char* name, double* out);
+
+/* --- named numeric vectors (no calendar) --------------------------------- */
+
+/* Some engine output is a vector but not a time series: the 61-point spectrum
+ * grid and the spectra on it, the Tukey spectra on their own grid, the point
+ * forecasts before they are dated, the per-period seasonal-filter codes. Those
+ * live here rather than in the table registry, whose whole contract is that
+ * every element carries a year/period.
+ *
+ * Names currently registered (all optional -- a run publishes what it computed):
+ *   spectrum.freq         61 frequencies (cycles/period), mkfreq.f grid
+ *   spectrum.sp0/.sp1/.sp2/.spr
+ *                         10*log10 spectrum of the detrended original / SA /
+ *                         irregular / regARIMA residuals, on spectrum.freq
+ *   spectrum.tukey.freq   the Tukey grid, i/m for i = 0..m/2
+ *   spectrum.st0/.st1/.st2
+ *                         Tukey-smoothed spectra of the same three series
+ *   spectrum.tukey.p.<ori|sa|irr|rsd>
+ *                         7 peak probabilities: trading day, then seasonal 1..6
+ *   x11.seasonalma.code   one code per period (1 3x3, 2 3x5, 3 3x9, 4 3x15,
+ *                         5 stable, 7 3x1), as resolved for THIS run
+ *   forecast.trn/.trnse   point forecast and its standard error, transformed
+ *                         scale (the dated original-scale forecast is the
+ *                         `fct`/`fctlo`/`fcthi` TABLES)
+ *   backcast.trn/.trnse   the same for backcasts, most-recent-first
+ */
+X13_CAPI int x13_vector_count(const x13_run* run);
+X13_CAPI const char* x13_vector_name(const x13_run* run, int index);
+
+/* Length of `name`, or 0 if this run has no such vector. */
+X13_CAPI int x13_vector_length(const x13_run* run, const char* name);
+
+/* Copy `name` into `out`. Same convention as x13_table_values: the number
+ * written, 0 if absent, or -needed when `capacity` is too small. */
+X13_CAPI int x13_vector_values(const x13_run* run, const char* name, double* out,
+                               int capacity);
+
+/* --- named text values --------------------------------------------------- */
+
+/* Labels a caller would otherwise have to reconstruct from codes:
+ *   spectrum.peaks.seas / .td     the visually-significant peak label lists
+ *                                 ("none" when nothing cleared the test)
+ *   spectrum.tukey.peaks.seas / .td / .p90.seas / .p90.td
+ *   x11.seasonalma                the seasonal filter as a label, e.g. "3x5",
+ *                                 or "3x3,3x5,..." when it varies by period
+ *   x11.trendma                   e.g. "13-term Henderson"
+ *   x11.seasonalma.selected       "msr" when the MSR rule chose it, else "spec"
+ */
+X13_CAPI int x13_text_count(const x13_run* run);
+X13_CAPI const char* x13_text_name(const x13_run* run, int index);
+
+/* The value of `name`, or "" when absent. Owned by the handle. Never NULL. */
+X13_CAPI const char* x13_text_value(const x13_run* run, const char* name);
 
 #ifdef __cplusplus
 }  /* extern "C" */

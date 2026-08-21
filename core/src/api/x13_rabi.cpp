@@ -258,4 +258,72 @@ X13_CAPI void x13r_diag_value(int* handle, char** name, double* out, int* found)
     });
 }
 
+// out[0] <- number of named vectors, out[1] <- number of named texts.
+//
+// A SEPARATE entry point rather than two more slots on x13r_meta: an existing
+// caller allocates exactly the seven integers that signature documents, and
+// widening it would have this side write past the end of their buffer.
+X13_CAPI void x13r_counts(int* handle, int* out) {
+    out[0] = 0;
+    out[1] = 0;
+    guarded([&] {
+        withRun(*handle, [&](const x13_run* r) {
+            out[0] = x13_vector_count(r);
+            out[1] = x13_text_count(r);
+            return 0;
+        });
+    });
+}
+
+X13_CAPI void x13r_vector_name(int* handle, int* index, char** buf, int* cap) {
+    guarded([&] {
+        withRun(*handle, [&](const x13_run* r) {
+            putStr(buf[0], *cap, x13_vector_name(r, *index));
+            return 0;
+        });
+    });
+}
+
+X13_CAPI void x13r_vector_length(int* handle, char** name, int* len) {
+    *len = 0;
+    guarded([&] {
+        withRun(*handle, [&](const x13_run* r) {
+            *len = x13_vector_length(r, name[0]);
+            return 0;
+        });
+    });
+}
+
+// Fill a caller-allocated buffer of length *n (x13r_vector_length's answer).
+// n <- what was actually written, 0 on mismatch.
+X13_CAPI void x13r_vector(int* handle, char** name, double* values, int* n) {
+    const int want = *n;
+    *n = 0;
+    guarded([&] {
+        withRun(*handle, [&](const x13_run* r) {
+            if (x13_vector_values(r, name[0], values, want) != want) return 0;
+            *n = want;
+            return 0;
+        });
+    });
+}
+
+X13_CAPI void x13r_text_name(int* handle, int* index, char** buf, int* cap) {
+    guarded([&] {
+        withRun(*handle, [&](const x13_run* r) {
+            putStr(buf[0], *cap, x13_text_name(r, *index));
+            return 0;
+        });
+    });
+}
+
+X13_CAPI void x13r_text_value(int* handle, char** name, char** buf, int* cap) {
+    guarded([&] {
+        withRun(*handle, [&](const x13_run* r) {
+            putStr(buf[0], *cap, x13_text_value(r, name[0]));
+            return 0;
+        });
+    });
+}
+
 }  // extern "C"

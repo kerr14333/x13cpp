@@ -101,6 +101,30 @@ _POST_PARSE_FATAL = {
 }
 
 
+# Specs the ENGINE refuses at parse time and the ORACLE runs to completion: a
+# walled feature reached from inside a spec block the parser otherwise handles.
+# `_UNPARSED_BLOCKS` above cannot express these -- the block IS dispatched, one
+# of its arguments is not implemented.
+#
+# EXCLUDED here rather than xfailed, and the distinction matters: this suite's
+# green condition is "NNN passed, 0 failed, 0 xfailed", so an xfail marker --
+# even a strict, documented one -- would spend the invariant that makes a real
+# xfail visible. The spec is not untested: test_err_block.py has the matching
+# `_ENGINE_WALLS` entry, which asserts the wall's TEXT, asserts every line the
+# oracle wrote AHEAD of it still matches, and pins the exit code to 1. That
+# gate is also what goes loud when the feature lands -- "expected the wall ...
+# remove the _ENGINE_WALLS entry if it is gone". Delete the entry here, the one
+# there, and the wall itself in one commit.
+#
+# Same shape as _POST_PARSE_FATAL above: excluded from the OUTCOME comparison,
+# gated for real somewhere that can say more than OK/not-OK.
+_ENGINE_WALL_SPECS = {
+    "edge/airline_series-format-free.spc":
+        "series{format=} is walled (getsrs.f:466 -> gtfldt.f:71); the oracle "
+        "reads the file and completes",
+}
+
+
 def _corpus_specs():
     out = []
     for root, _dirs, files in os.walk(_CORPUS):
@@ -109,7 +133,7 @@ def _corpus_specs():
                 continue
             spc = os.path.join(root, f)
             rel = os.path.relpath(spc, _CORPUS).replace(os.sep, "/")
-            if rel in _POST_PARSE_FATAL:
+            if rel in _POST_PARSE_FATAL or rel in _ENGINE_WALL_SPECS:
                 continue
             # The M1 gate compares against the Fortran oracle goldens; skip any
             # spec that has no golden (e.g. synthetic fixtures for later-milestone

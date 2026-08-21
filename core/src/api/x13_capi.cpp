@@ -37,6 +37,7 @@
 
 #include "x13/version.hpp"
 #include "common/x13context.hpp"
+#include "gen/notset.hpp"   // x13::prm::DNOTST (genqs / x11opt "never computed" sentinel)
 #include "specparse/specparse.hpp"
 
 namespace {
@@ -53,6 +54,19 @@ struct Table {
 struct Diag {
     std::string name;
     double value = 0.0;
+};
+
+// A numeric result that is NOT a time series: the spectrum grid and the spectra
+// on it, peak probabilities, per-period filter codes. Kept apart from Table
+// because Table's contract is that every element has a year/period.
+struct Vector {
+    std::string name;
+    std::vector<double> values;
+};
+
+struct Text {
+    std::string name;
+    std::string value;
 };
 
 }  // namespace
@@ -72,10 +86,26 @@ struct x13_run {
 
     std::vector<Table> tables;
     std::vector<Diag> diags;
+    std::vector<Vector> vectors;
+    std::vector<Text> texts;
 
     const Table* find(const char* name) const {
         if (!name) return nullptr;
         for (const auto& t : tables)
+            if (t.name == name) return &t;
+        return nullptr;
+    }
+
+    const Vector* findVector(const char* name) const {
+        if (!name) return nullptr;
+        for (const auto& v : vectors)
+            if (v.name == name) return &v;
+        return nullptr;
+    }
+
+    const Text* findText(const char* name) const {
+        if (!name) return nullptr;
+        for (const auto& t : texts)
             if (t.name == name) return &t;
         return nullptr;
     }
@@ -116,9 +146,233 @@ void addTableVec(x13_run& h, const char* name, const int* begspn, int sp,
     h.tables.push_back(std::move(t));
 }
 
+// The .err channel (Mt2): every message the engine emitted this run, which
+// is where a spec conflict explains itself. Blank lines and the boilerplate
+// header the oracle prints are stripped, leaving the messages themselves.
+std::string errorText(x13::X13Context& ctx) {
+    std::string raw;
+    try {
+        raw = ctx.channels_.unit(ctx.units.mt2).str();
+    } catch (...) {
+        return std::string();
+    }
+    std::string out;
+    std::size_t i = 0;
+    while (i < raw.size()) {
+        std::size_t j = raw.find('\n', i);
+        if (j == std::string::npos) j = raw.size();
+        std::string line = raw.substr(i, j - i);
+        i = j + 1;
+        std::size_t b = line.find_first_not_of(" \t\r");
+        if (b == std::string::npos) continue;
+        std::size_t e = line.find_last_not_of(" \t\r");
+        line = line.substr(b, e - b + 1);
+        // The two-line banner the error file opens with says nothing a caller
+        // who already knows they called X-13 does not know.
+        if (line.rfind("Error messages generated from processing", 0) == 0)
+            continue;
+        if (!line.empty() && line.back() == ':' &&
+            line.find(".spc") != std::string::npos)
+            continue;
+        if (!out.empty()) out += ' ';
+        out += line;
+    }
+    return out;
+}
+
 void addDiag(x13_run& h, const std::string& name, double v) {
     h.diags.push_back(Diag{name, v});
 }
+
+// Same shape as addTableVec, but for values with no calendar at all.
+void addVector(x13_run& h, const std::string& name, const std::vector<double>& v) {
+    if (v.empty()) return;
+    h.vectors.push_back(Vector{name, v});
+}
+
+void addText(x13_run& h, const std::string& name, const std::string& v) {
+    if (v.empty()) return;
+    h.texts.push_back(Text{name, v});
+}
+
+// A dated series that starts `offset` observations after the table anchor --
+// the forecasts, which begin one period past the end of the span.
+void addTableAt(x13_run& h, const char* name, const int* begspn, int sp,
+                int offset, const std::vector<double>& v) {
+    if (v.empty()) return;
+    Table t;
+    t.name = name;
+    int d[2];
+    x13::addate(begspn, sp, offset, d);
+    t.startYear = d[0];
+    t.startPeriod = d[1];
+    t.values = v;
+    h.tables.push_back(std::move(t));
+}
+
+// genqs statistics are DNOTST when their series was never formed. Each name has
+// TWO values, not one: genqs runs every test twice, over the whole span and
+// over the shortened span spectrum{start=} asks for (genqs.cpp both_spans), and
+// the short one is only present when that argument was given. Neither is a
+// p-value -- QS is chi-square on 2 df, so a caller derives it.
+void addQs(x13_run& h, const char* name, double full, double span) {
+    if (full != x13::prm::DNOTST) addDiag(h, std::string("qs.") + name, full);
+    if (span != x13::prm::DNOTST)
+        addDiag(h, std::string("qs.") + name + ".span", span);
+}
+
+// x11opt.Lterm / Lter codes, as the seasonalma dictionary orders them
+// (readers_spec.cpp:431). 6 (msr) is resolved to 1..3 before harvest, and 0
+// (x11default) means the engine never had to pick one.
+const char* seasonalMaLabel(int code) {
+    switch (code) {
+    case 1: return "3x3";
+    case 2: return "3x5";
+    case 3: return "3x9";
+    case 4: return "3x15";
+    case 5: return "stable";
+    case 6: return "msr";
+    case 7: return "3x1";
+    default: return "";
+    }
+}
+
+// The parts of a run that are neither X-11 nor SEATS specific: the spectrum
+// block (computed on every monthly run, spectrum{} or not), the QS seasonality
+// statistics and the forecasts.
+void harvestCommon(x13_run& h, const x13::X13Context& ctx) {
+    const int sp = ctx.model.sp;
+    const int* begspn = ctx.mdldat.begspn.data();
+    const x13::SpectrumOutput& s = ctx.spcout;
+
+    // --- spectra ---------------------------------------------------------
+    if (s.ran) {
+        addVector(h, "spectrum.freq", s.frq);
+        if (s.have_sp0) addVector(h, "spectrum.sp0", s.sp0);
+        if (s.have_sp1) addVector(h, "spectrum.sp1", s.sp1);
+        if (s.have_sp2) addVector(h, "spectrum.sp2", s.sp2);
+        addVector(h, "spectrum.tukey.freq", s.frq_tukey);
+        if (s.have_st0) addVector(h, "spectrum.st0", s.st0);
+        if (s.have_st1) addVector(h, "spectrum.st1", s.st1);
+        if (s.have_st2) addVector(h, "spectrum.st2", s.st2);
+        addText(h, "spectrum.peaks.seas", s.peaks_seas);
+        addText(h, "spectrum.peaks.td", s.peaks_td);
+        addText(h, "spectrum.tukey.peaks.seas", s.tukey_labels.seas);
+        addText(h, "spectrum.tukey.peaks.td", s.tukey_labels.td);
+        addText(h, "spectrum.tukey.peaks.p90.seas", s.tukey_labels.p90_seas);
+        addText(h, "spectrum.tukey.peaks.p90.td", s.tukey_labels.p90_td);
+    }
+    // spr is filed in the estimation phase, so it survives a run with no
+    // decomposition and is published on its own flag.
+    if (s.have_spr) {
+        if (h.findVector("spectrum.freq") == nullptr)
+            addVector(h, "spectrum.freq", s.frq);
+        addVector(h, "spectrum.spr", s.spr);
+    }
+
+    // The AR-spectrum peak heights, under the oracle savelog names
+    // (spcori.s1.stars, spcsa.t1.stars, ...) so a caller that knows the .udg
+    // knows these.
+    auto emitPeaks = [&h](const x13::SpecPeaks& pk) {
+        if (pk.prefix.empty()) return;
+        addDiag(h, pk.prefix + ".median", pk.median);
+        addDiag(h, pk.prefix + ".range", pk.range);
+        const std::vector<x13::SpecPeakRow>* rows[2] = {&pk.seas, &pk.td};
+        for (const auto* rowset : rows)
+            for (const auto& r : *rowset) {
+                if (r.nopeak) continue;
+                addDiag(h, pk.prefix + "." + r.label + ".stars", r.stars);
+            }
+    };
+    for (const auto& pk : s.peaks) emitPeaks(pk);
+    if (s.have_spr_peaks) emitPeaks(s.spr_peaks);
+
+    // Tukey peak probabilities: trading day first, then seasonal 1..6, which is
+    // the order the .udg prints them in.
+    auto tukeyVec = [](const x13::TukeyPeaks& t) {
+        std::vector<double> v;
+        v.push_back(t.ptd);
+        for (int i = 0; i < 6; ++i) v.push_back(t.ps[i]);
+        return v;
+    };
+    for (const auto& e : s.tukey)
+        if (e.pk.ok) addVector(h, "spectrum.tukey.p." + e.label, tukeyVec(e.pk));
+    if (s.have_spr_tukey && s.spr_tukey.ok &&
+        h.findVector("spectrum.tukey.p.rsd") == nullptr)
+        addVector(h, "spectrum.tukey.p.rsd", tukeyVec(s.spr_tukey));
+
+    // --- QS seasonality ---------------------------------------------------
+    if (ctx.qs.ran) {
+        addQs(h, "ori", ctx.qs.qsori, ctx.qs.qsoris);
+        addQs(h, "orievadj", ctx.qs.qsori2, ctx.qs.qsoris2);
+        addQs(h, "rsd", ctx.qs.qsrsd, ctx.qs.qsrsd2);
+        addQs(h, "sadj", ctx.qs.qssadj, ctx.qs.qssadjs);
+        addQs(h, "sadjevadj", ctx.qs.qssadj2, ctx.qs.qssadjs2);
+        addQs(h, "irr", ctx.qs.qsirr, ctx.qs.qsirrs);
+        addQs(h, "irrevadj", ctx.qs.qsirr2, ctx.qs.qsirrs2);
+    }
+
+    // --- forecasts --------------------------------------------------------
+    // Dated from one period past the end of the span; the transformed-scale
+    // pair has no calendar of its own and rides along as vectors.
+    const auto& f = ctx.forecasts;
+    if (f.nfcst > 0) {
+        addTableAt(h, "fct", begspn, sp, h.nobs, f.fcst);
+        addTableAt(h, "fctlo", begspn, sp, h.nobs, f.lwrci);
+        addTableAt(h, "fcthi", begspn, sp, h.nobs, f.uprci);
+        addVector(h, "forecast.trn", f.trnfct);
+        addVector(h, "forecast.trnse", f.trnse);
+    }
+    if (f.nbcst > 0) {
+        addVector(h, "backcast.trn", f.trnbct);
+        addVector(h, "backcast.trnse", f.trnbse);
+    }
+}
+
+// The filter lengths X-11 actually used. Only meaningful on the X-11 path --
+// SEATS has no moving averages to report.
+void harvestX11Filters(x13_run& h, const x13::X13Context& ctx) {
+    const x13::x11opt_cmn& o = ctx.x11opt;
+    const int ny = (o.ny > 0 && o.ny <= 12) ? o.ny : 0;
+
+    if (o.nterm > 0) {
+        addDiag(h, "x11.trendma.nterm", static_cast<double>(o.nterm));
+        addText(h, "x11.trendma", std::to_string(o.nterm) + "-term Henderson");
+    }
+    if (o.ratic != x13::prm::DNOTST) addDiag(h, "x11.ic", o.ratic);
+    if (o.ratis != x13::prm::DNOTST) addDiag(h, "x11.msr", o.ratis);
+    if (o.mcd > 0) addDiag(h, "x11.mcd", static_cast<double>(o.mcd));
+
+    const char* global = seasonalMaLabel(o.lterm);
+    if (*global) addDiag(h, "x11.seasonalma.lterm", static_cast<double>(o.lterm));
+    addText(h, "x11.seasonalma.selected",
+            ctx.x11_sfmsr_filter != 0 ? "msr" : "spec");
+
+    if (ny == 0) {
+        if (*global) addText(h, "x11.seasonalma", global);
+        return;
+    }
+    // One code per period. They agree with each other on almost every run, so
+    // the label collapses to a single filter name when it can.
+    std::vector<double> codes;
+    std::string label;
+    bool uniform = true;
+    for (int i = 1; i <= ny; ++i) {
+        const int c = o.lter(i);
+        codes.push_back(static_cast<double>(c));
+        if (i > 1 && c != o.lter(1)) uniform = false;
+        if (i > 1) label += ",";
+        const char* nm = seasonalMaLabel(c);
+        label += *nm ? nm : "?";
+    }
+    addVector(h, "x11.seasonalma.code", codes);
+    const char* first = seasonalMaLabel(o.lter(1));
+    if (uniform && *first) addText(h, "x11.seasonalma", first);
+    else if (!uniform)     addText(h, "x11.seasonalma", label);
+    else if (*global)      addText(h, "x11.seasonalma", global);
+}
+
+void harvestCommon(x13_run& h, const x13::X13Context& ctx);
 
 // SEATS leaves its tables 0-indexed from Begspn, all the same length, so they
 // need none of the X-11 punch-range machinery above.
@@ -143,6 +397,8 @@ void harvestSeats(x13_run& h, const x13::X13Context& ctx) {
     addTableVec(h, "s14", begspn, sp, ctx.seats_cycle);
     addTableVec(h, "s16", begspn, sp, ctx.seats_combined_add);
     addTableVec(h, "s18", begspn, sp, ctx.seats_combined_factor);
+
+    harvestCommon(h, ctx);
 }
 
 // Harvest everything the X-11 driver leaves on the context.
@@ -258,6 +514,9 @@ void harvest(x13_run& h, const x13::X13Context& ctx) {
         addDiag(h, "f2.is", ctx.x11_f2ratis);
         addDiag(h, "f2.mcd", static_cast<double>(ctx.x11_f2mcd));
     }
+
+    harvestX11Filters(h, ctx);
+    harvestCommon(h, ctx);
 }
 
 // Pin the x87 floating-point precision-control word for the duration of a run,
@@ -348,13 +607,16 @@ x13_run* runSpec(const std::string& text, const std::string& base) {
                                   : x13::run_x11(*ctxp, text, base);
         if (!ok || ctxp->error.lfatal) {
             h->ok = false;
+            const std::string why = errorText(*ctxp);
             h->error = "engine reported a fatal condition for '" + base + "'";
+            if (!why.empty()) h->error += ": " + why;
             // Harvest anyway where the span is sane: metadata on a failed run is
             // more useful than nothing, and callers gate on x13_ok().
             return h;
         }
         if (wantSeats && ctxp->seats_ran) harvestSeats(*h, *ctxp);
         else                              harvest(*h, *ctxp);
+        addText(*h, "log.messages", errorText(*ctxp));
         h->ok = true;
     } catch (const std::exception& e) {
         h->ok = false;
@@ -372,7 +634,7 @@ const char* kEmpty = "";
 
 extern "C" {
 
-int x13_abi_version(void) { return 1; }
+int x13_abi_version(void) { return 2; }
 
 unsigned x13_host_fp_control(void) {
     unsigned short cw = 0;
@@ -539,6 +801,49 @@ int x13_table_dates(const x13_run* run, const char* name, int* years,
         if (periods) periods[i] = p;
     }
     return n;
+}
+
+int x13_vector_count(const x13_run* run) {
+    return run ? static_cast<int>(run->vectors.size()) : 0;
+}
+
+const char* x13_vector_name(const x13_run* run, int index) {
+    if (!run || index < 0 || index >= static_cast<int>(run->vectors.size()))
+        return kEmpty;
+    return run->vectors[static_cast<std::size_t>(index)].name.c_str();
+}
+
+int x13_vector_length(const x13_run* run, const char* name) {
+    if (!run) return 0;
+    const Vector* v = run->findVector(name);
+    return v ? static_cast<int>(v->values.size()) : 0;
+}
+
+int x13_vector_values(const x13_run* run, const char* name, double* out,
+                      int capacity) {
+    if (!run) return 0;
+    const Vector* v = run->findVector(name);
+    if (!v) return 0;
+    const int n = static_cast<int>(v->values.size());
+    if (!out || capacity < n) return -n;    // report the need, write nothing
+    for (int i = 0; i < n; ++i) out[i] = v->values[static_cast<std::size_t>(i)];
+    return n;
+}
+
+int x13_text_count(const x13_run* run) {
+    return run ? static_cast<int>(run->texts.size()) : 0;
+}
+
+const char* x13_text_name(const x13_run* run, int index) {
+    if (!run || index < 0 || index >= static_cast<int>(run->texts.size()))
+        return kEmpty;
+    return run->texts[static_cast<std::size_t>(index)].name.c_str();
+}
+
+const char* x13_text_value(const x13_run* run, const char* name) {
+    if (!run) return kEmpty;
+    const Text* t = run->findText(name);
+    return t ? t->value.c_str() : kEmpty;
 }
 
 int x13_diag_count(const x13_run* run) {

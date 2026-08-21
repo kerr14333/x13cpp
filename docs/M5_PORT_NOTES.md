@@ -9625,3 +9625,67 @@ interpreter, the read-side twin of `fwrite_fmt`.
 cheap -- `series{format="free"}` on `airline.dat`, where the oracle runs and the
 engine now refuses -- so it belongs in `_ENGINE_WALLS` next to the other three.
 On the board.
+
+---
+
+## 125. Gating a wall the oracle walks straight past (2026-08-21)
+
+Board item 0 from part 74. `edge/airline_series-format-free.spc` --
+`series{format="free"}` on `airline.dat` -- and the golden is a **complete
+successful oracle run**: exit 0, a full `.udg`, and an `.err` carrying two
+spectrum WARNINGs. That is the point. A wall in front of something the oracle
+declines is a FAITHFUL refusal; this golden is the evidence that this one is a
+GAP.
+
+`free` is the value on purpose. It is the arm that looks like a no-op -- the
+port's reader IS free-format -- and `gtfldt.f:72-75` runs before the layout
+dispatch, defaulting the period to 12 whenever a format is named with a start
+date and no period. The spec gives `period = 12` explicitly so the oracle's read
+is byte-identical to the free path, which is what makes the golden a clean
+"the oracle just runs this" baseline rather than a second variable.
+
+### Two gates, and the second one had to be a non-gate
+
+`test_err_block.py::_ENGINE_WALLS` does the real work: it asserts the wall's
+TEXT appears, asserts every line the oracle wrote AHEAD of the refusal still
+matches line for line, and pins `test_exit_matches_oracle` to 1 instead of the
+golden's 0.
+
+`test_m1_parse.py::test_outcome_matches_oracle` then failed, correctly: parser
+`OK=False` vs oracle `OK=True`. The obvious fix is a strict xfail, which is what
+`_UNPARSED_BLOCKS` twenty lines up uses and which has the right honesty property
+-- when the feature lands the test XPASSes and strict turns that loud.
+
+**It is still the wrong tool here, and for a reason worth writing down: this
+suite's green condition is `NNN passed, 0 failed, 0 xfailed`.** An xfail marker
+spends that invariant. One documented xfail makes the next one -- a real
+estimation-frontier failure -- indistinguishable from bookkeeping, and this
+project spent months getting the count to zero. So the spec is EXCLUDED from the
+outcome comparison, exactly as `_POST_PARSE_FATAL` excludes the three
+post-parse abends, with the comment naming the gate that does say something.
+
+The loudness is not lost, it moves: `_ENGINE_WALLS`'s own assertion already
+reads *"expected the wall ... remove the _ENGINE_WALLS entry if it is gone"*.
+Port the layout readers and that fires.
+
+**Generalised: a suite-wide invariant is a measuring instrument, and spending it
+on bookkeeping costs more than the bookkeeping saves.** "0 xfailed" is only
+informative while every xfail means the same thing. The same argument applies to
+`skip` -- which is why the one skip this spec does produce
+(`test_m3_estimate`: "pre-model parser gap (x13run_m2 also fatals)") is fine:
+it names a precondition that is checked, not an absence that is assumed.
+
+### Mutation-checked, because a new gate that has not been shown to fail is not
+### a gate
+
+Replacing the wall's `if (havfmt)` with `if (false)` and rebuilding:
+
+```
+FAILED test_err_block_matches_oracle[edge/airline_series-format-free]
+       -- expected the wall 'ERROR:  series{format=}' in the engine .err
+FAILED test_exit_matches_oracle[edge/airline_series-format-free]
+       -- oracle wanted exit 1, engine gave 0
+```
+
+Two gates, both for the right reason: the message is gone, and the engine went
+back to completing the run. Restored, suite green at 9061 / 947 / 0 / 0.

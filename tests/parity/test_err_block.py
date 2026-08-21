@@ -209,6 +209,12 @@ _ENGINE_WALLS = {
     "generated/expgs_seats": "ERROR: SEATS inadmissible decomposition",
     "edge/airline_slidingspans-regime-td":
         "ERROR: slidingspans{} with a change-of-regime regression variable",
+    # getsrs.f:466 -> gtfldt.f:71. The oracle runs this spec to completion --
+    # the golden is a full successful run with two spectrum WARNINGs -- so the
+    # wall is a GAP, and this entry is what proves the engine refuses INSTEAD
+    # of quietly reading free format, which is what it did until 2026-08-21.
+    "edge/airline_series-format-free":
+        "ERROR:  series{format=}",
 }
 
 # ...and specs where the engine writes something extra and CARRIES ON: a NOTE

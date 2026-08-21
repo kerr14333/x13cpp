@@ -449,6 +449,8 @@ def test_runs_are_independent():
 
 
 def test_abi_version_is_declared():
+    # 2 = the vector/text registries were added alongside the tables. The bump
+    # is additive: everything a version-1 caller used still answers the same.
     lib = x13c.load_library()
-    assert lib.x13_abi_version() == 1
+    assert lib.x13_abi_version() == 2
     assert x13c.engine_version()
