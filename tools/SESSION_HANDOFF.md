@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9057<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->946<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9059<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->946<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -430,7 +430,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->9057<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->9059<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -3676,6 +3676,46 @@ Incidental measurement: `test_err_block._cases()` skips goldens with an EMPTY
 closing -- but it does mean a `writln` probe is not the instrument that proves
 a call never happens. Change the OUTCOME instead.
 
+## This session, part 73: `walls.py` was blind to a refusal that never abends -- board item 0 CLOSED
+
+The inventory said 22 gaps. It is **32**. Two shapes were outside the matcher:
+
+* **`inpter(ctx, PERROR, pos, "...")`** -- the parser's refusal channel, which
+  stops the run by clearing `inptok` and never calls `abend`. Six GAP-class
+  refusals, including `gtinpt.cpp:538`, the one that declines every spec the M1
+  parser does not implement.
+* a raw **`writln(...)` + `abend(ctx)`** pair -- four more.
+
+Ten refusals in five files that were not in `WALLS.md` at all. The 2026-08-16
+audit's estimate of "~30 vs the published 22" was right; it also named
+`run_pre_model.cpp:642`, which my earlier word-list sweep had missed and which
+GAP_RE does catch on "is unported".
+
+**The helper list is derived now, not typed** -- `HELPER_DEF_RE` finds anything
+defined in `core/src` named `*not_ported` (or exactly `fatal`) whose body
+abends, so entry 94's `\b` bug cannot recur, and a MISSPELLED helper still
+joins the inventory under its own name.
+
+**One of the board item's eight is not a wall.** `readers_spec.cpp:1378`
+("unsupported user-defined regressor type") is the `default:` of a switch that
+already covers all fifteen `PRGU*`/`PRGTUH*` types plus 0 -- a defensive
+default, not a refusal to do something the oracle does. Correctly excluded.
+
+`python tools/walls.py --audit` now lists the ~42 messageless `abend`s too.
+They stay OUT of the inventory: spot-checking five shows the message comes from
+the CALLEE (`rgarma`, `rdotlr`, ...), which the tool cannot follow. The audit
+epilogue says exactly that -- its first draft claimed each one produces an empty
+`===ERR===` block, which is false, and an overstated guardrail is the same
+defect as one that cannot fail.
+
+Two new tests in `test_doc_tooling.py`, one of which builds a synthetic tree
+with four refusals and asserts four verdicts. It found a real bug on its first
+run: the 14-line lookback was crossing function boundaries, which both invented
+walls and hid bare abends. The window now stops at the nearest top-level `}`;
+re-deriving with it gives the same 32/4, so none of the ten is an artifact.
+
+See entry 123.
+
 ## Open, in the order I would take them
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117
@@ -3722,7 +3762,16 @@ a call never happens. Change the OUTCOME instead.
    The discriminating spec needs an `aictest=` whose second fit does not
    converge.
 
-0. **`walls.py` does not see 8 of this port's own refusals** -- found because
+0. ~~**`walls.py` does not see 8 of this port's own refusals**~~ **CLOSED,
+   entry 123 (2026-08-21).** It was ten, not eight, in five files; one of the
+   eight (`readers_spec.cpp:1378`) turned out to be a defensive `default:`, not
+   a wall. Count 22 -> 32. The helper set is derived from the definitions
+   rather than typed, both helper-less shapes are collected, `--audit` names
+   the ~42 messageless `abend`s, and two tests in `test_doc_tooling.py` prove
+   the collector can fail -- one of them by building a synthetic tree. Kept
+   below for the diagnosis, which is the durable half.
+
+   Found because -- original text --
    deleting the `Frstad!=0` wall left the count at 22, and entry 94's rule is to
    confirm it MOVES. `walls.py` derives the inventory by matching an explicit
    `HELPERS` tuple; a refusal that calls `errhdr`/`writln`/`abend` directly has

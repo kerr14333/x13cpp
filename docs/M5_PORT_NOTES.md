@@ -9476,3 +9476,89 @@ NUMBER held in a variable. `imt=Mt1 / IF(Lhiddn)imt=Mt2` is two characters of
 control flow that moves a whole block from an ungated channel to a gated one.
 Grep the routine for every `WRITE(` target and resolve each one before deciding
 a print is deferred.
+
+---
+
+## 123. `walls.py` could not see a refusal that never calls `abend` (2026-08-21)
+
+Board item 0, open since 2026-08-16, closed. The wall inventory said 22 gaps.
+It is 32.
+
+`walls.py` builds `docs/WALLS.md` by matching **calls to named helpers** --
+`not_ported(ctx, "...")` and its eight siblings. That predicate is entry 69's
+rule about itself: *a discovery predicate is a hand-written case list that has
+learned to hide.* Two shapes were outside it:
+
+* **`inpter(ctx, PERROR, pos, "...")`** -- the PARSER's refusal channel. It
+  stops the run by clearing `inptok`; it never calls `abend` at all. So a
+  matcher looking for helpers, and a matcher looking for `abend`, both see
+  nothing. Six GAP-class refusals lived here, including `gtinpt.cpp:538` --
+  the one that declines **every spec the M1 parser does not implement**, which
+  is as load-bearing as a wall gets.
+* **a raw `writln(...)` + `abend(ctx)` pair** -- four more, in
+  `run_history.cpp`, `run_pre_model.cpp`, `priadj.cpp` and `gtinpt.cpp`.
+
+Ten refusals, in five files that did not appear in `WALLS.md` at all.
+
+### The helper list is derived now, not typed
+
+Entry 94's bug was that `HELPERS` was a literal tuple matched with `\b`, and
+`\bnot_ported` cannot match inside `agr3_not_ported`. Fixing the tuple would
+have left the same shape in place, so the tuple is gone:
+
+```python
+HELPER_DEF_RE = re.compile(
+    r"^(?!\s*//)[\w:<>,&*\s\[\]]*?(\w*not_ported|fatal)\s*\(\s*X13Context\s*&",
+    re.M)
+```
+
+Anything DEFINED in `core/src` whose name ends in `not_ported`, or is exactly
+`fatal`, and whose body calls `abend`, IS a refusal helper. Add one and it joins
+the inventory by itself; **misspell one and it still joins, under its own
+name**. `_discover_helpers` also returns each helper's body SPAN, because a
+helper's own `abend` is the helper working, not a wall.
+
+### Attribution has to stop at the function boundary
+
+The first version looked back a fixed 14 lines from each `abend` for a message.
+That is wrong in both directions, and the synthetic test caught it: a bare
+`abend` at the top of one function picked up the string literal from the
+function above it, which simultaneously **invented a wall** and **hid the bare
+`abend` from `--audit`**. The window now stops at the nearest preceding
+top-level `}`. Re-deriving the real tree with the tighter window produced the
+same 32/4, so none of the ten is a window artifact.
+
+### `--audit`, and being honest about what it means
+
+The ~42 messageless `abend(ctx)` calls are still outside the inventory -- but
+`python tools/walls.py --audit` now lists every one, with the helper set and the
+counts. The first draft of its epilogue said each of them "stops a run with an
+EMPTY `===ERR===` block", and that is **false**: spot-checking five
+(`insptr`, `dtoc`, `setmdl`, `slidingspans`'s `rdotlr` arm, `aictst`'s `rgarma`
+arm) shows the message is written by the CALLEE, which this tool cannot follow.
+An overstated guardrail message is the same defect as a guardrail that cannot
+fail -- see the `metrics.py` story in `CLAUDE.md` -- so the text now says what it
+actually knows: no message *this tool can see*, mostly faithful, check a NEW
+entry against its `.f` before leaving it.
+
+### The test that proves it can fail
+
+`tests/parity/test_doc_tooling.py` gains two:
+
+* `test_walls_helper_set_is_derived_over_the_whole_tree` re-derives the
+  `*not_ported` definitions independently and asserts `walls.HELPERS` covers
+  them. Entry 94 cannot recur.
+* `test_walls_sees_helperless_refusals_and_can_fail` writes a synthetic
+  `.cpp` with four refusals -- a writln+abend GAP, an `inpter` GAP, a
+  messaged-but-faithful abend, and a bare one -- and asserts four different
+  verdicts, including that the Fortran citation survives into the row. This is
+  the "add the case that proves it can fail" rule, and it earned its keep
+  immediately by finding the window bug above.
+
+**Standing lesson, and it is a sharpening of entry 94's.** That entry said the
+helper's NAME is load-bearing. The real statement is one level up: **an
+inventory keyed on HOW a refusal is spelled will always be narrower than the set
+of refusals.** The parser's `inpter` refusals were never going to be found by
+looking for `abend`, because they do not abend -- they are just as final, and
+they were invisible for the whole life of the tool. When a tool measures "all of
+X", ask what X's members can look like that the matcher has never been shown.

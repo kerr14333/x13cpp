@@ -465,12 +465,20 @@ because by the time you would think to look them up, the damage is done.
   count, and the run's whole `===ERR===` block comes back EMPTY. Two of them
   sat on `rmfix`/`addfix`'s user-regressor arms for months (entry 88). Every
   refusal goes through a `*_not_ported` helper; if you write `abend` directly,
-  give it a message first. **And the helper's NAME is load-bearing, not
-  cosmetic**: `walls.py` matches an explicit `HELPERS` tuple with `\b`, and
-  `\bnot_ported` cannot match inside `agr3_not_ported` because `_` is a word
-  character — two new walls landed invisible, with the count unmoved at 19
-  (entry 94). Reuse an existing helper name or add yours to `walls.py` in the
-  same commit, and confirm the count MOVES.
+  give it a message first. **The helper's NAME used to be load-bearing** —
+  `walls.py` matched an explicit `HELPERS` tuple with `\b`, and `\bnot_ported`
+  cannot match inside `agr3_not_ported` because `_` is a word character, so two
+  new walls landed invisible with the count unmoved at 19 (entry 94).
+  **Both that and the wider blind spot are CLOSED (entry 123):** the helper set
+  is now DERIVED from the definitions in `core/src`, and the collector also
+  reads the two helper-less refusal shapes — the parser's
+  `inpter(ctx, PERROR, …)` channel, which refuses by clearing `inptok` and
+  never calls `abend` at all, and a raw message-then-`abend` pair. That found
+  ten refusals the inventory had never listed (22 gaps → 32).
+  `python tools/walls.py --audit` now names the ~42 messageless `abend`s as
+  well, so a bare one is visible even though it is still not inventoried, and
+  `tests/parity/test_doc_tooling.py` builds a synthetic tree proving each
+  shape is detected. Still: confirm the count MOVES when you add a wall.
 - **An unported path that returns SUCCESS is worse than one that has no code.**
   Walls are inventory — `walls.py` lists them and deleting one leaves the list.
   A silent `return true` guard is in neither the wall list nor the gate count,

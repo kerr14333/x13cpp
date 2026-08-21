@@ -124,6 +124,95 @@ def test_walls_check_runs():
         f"walls.py printed no gap count: {p.stdout!r}")
 
 
+# --- walls.py's own blind spots -------------------------------------------
+#
+# Two of them, and both were live for months.
+#
+# (1) The helper list was a typed tuple matched with `\b`, and `\bnot_ported`
+#     cannot match inside `agr3_not_ported` -- `_` is a word character. Two
+#     walls landed invisible and the printed count did not move. The list is
+#     derived now; this asserts the derivation actually covers the tree.
+# (2) A refusal that does not go through a helper was not a wall at all. Ten of
+#     them existed: six on the parser's `inpter` channel (which refuses by
+#     clearing `inptok`, never by `abend`) and four raw writln+abend pairs.
+#
+# The second test builds a synthetic source tree, because a checker that has
+# never been shown to FAIL is not a checker.
+
+def _walls():
+    sys.path.insert(0, TOOLS)
+    import walls
+    return walls
+
+
+def test_walls_helper_set_is_derived_over_the_whole_tree():
+    w = _walls()
+    core = os.path.join(ROOT, "core", "src")
+    defined = set()
+    for dp, _dirs, fns in os.walk(core):
+        if os.sep + "gen" in dp:
+            continue
+        for fn in fns:
+            if not fn.endswith((".cpp", ".hpp")):
+                continue
+            with open(os.path.join(dp, fn), errors="replace") as fh:
+                for m in re.finditer(r"(\w*not_ported)\s*\(\s*X13Context\s*&",
+                                     fh.read()):
+                    defined.add(m.group(1))
+    assert defined, "no *not_ported helpers found -- the probe itself broke"
+    missing = sorted(defined - set(w.HELPERS))
+    assert not missing, (
+        "walls.py does not know these refusal helpers, so their call sites are "
+        "invisible in the inventory: " + " ".join(missing))
+
+
+def test_walls_sees_helperless_refusals_and_can_fail(tmp_path):
+    """Four refusal shapes, one synthetic file, four different verdicts."""
+    w = _walls()
+    src = tmp_path / "zzq.cpp"
+    src.write_text(
+        "void zzq_gap_writln(X13Context& ctx) {\n"
+        '    writln(ctx, "ERROR: zzq synthetic (zzq.f:1) not yet ported.",\n'
+        "           stdio::STDERR, ctx.units.mt2, true);\n"
+        "    abend(ctx);\n"
+        "}\n"
+        "void zzq_gap_parser(X13Context& ctx, bool& inptok) {\n"
+        '    inpter(ctx, PERROR, ep, "zzq option is not yet supported.");\n'
+        "    inptok = false;\n"
+        "}\n"
+        "void zzq_faithful(X13Context& ctx) {\n"
+        '    writln(ctx, "ERROR: no ARIMA models stored in that file.",\n'
+        "           stdio::STDERR, ctx.units.mt2, true);\n"
+        "    abend(ctx);\n"
+        "}\n"
+        "void zzq_bare(X13Context& ctx) {\n"
+        "    abend(ctx);\n"
+        "}\n")
+    old = (w.CORE, w.REPO)
+    try:
+        # REPO too: _row() relpaths against it, and pytest's tmp_path is on a
+        # different drive on this machine.
+        w.CORE = w.REPO = str(tmp_path)
+        rows, bare = w.collect(with_bare=True)
+    finally:
+        w.CORE, w.REPO = old
+
+    msgs = " | ".join(r["msg"] for r in rows)
+    gaps = [r for r in rows if r["kind"] == "GAP"]
+    assert len(gaps) == 2, f"expected the two GAP refusals, got: {msgs}"
+    assert any("zzq synthetic" in r["msg"] for r in gaps), msgs
+    assert any("zzq option" in r["msg"] for r in gaps), msgs
+    # The messaged-but-not-GAP abend is excluded on purpose: the oracle refuses
+    # the same input, so it is a port. It must not be counted as bare either --
+    # `--audit` would then cry wolf on ~50 faithful error exits.
+    assert not [r for r in rows if r["kind"] != "GAP"], msgs
+    assert [r["line"] for r in bare] == [16], (
+        f"only the messageless abend is bare, got {bare}")
+    # The Fortran citation has to survive into the row, or WALLS.md loses the
+    # one thing that makes an entry actionable.
+    assert any(r["fref"] == "zzq.f:1" for r in gaps), gaps
+
+
 # --- coverage_map's routine-level tier ------------------------------------
 #
 # The ledger is FILE-level; the port is ROUTINE-level, and 37 .f files hold more

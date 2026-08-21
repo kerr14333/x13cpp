@@ -47,7 +47,7 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 - **Oracle-driven parity.** A Python harness (`oracle/run_oracle.py`) blesses save-tables from the Fortran; `tests/parity/` re-runs the C++ and diffs every table.
 - **The frontier is a clean FATAL, not an xfail.** Early on, not-yet-ported paths were marked as strict `xfail`. That was replaced once the port got far enough that the real risk was different: the dangerous failure is not a test that fails, it is an option the engine **accepts and silently ignores**, returning `OUTCOME: OK` with wrong numbers. Unported branches now abend with a message naming the Fortran line, and options are measured against the oracle before being declared inert. The suite has carried **0 xfails** since 2026-07-27.
-- **Census-bug fidelity.** Every genuine bug found in the Fortran is catalogued (`tools/census_bugs.md`, currently **CB-1 … CB-<!--x13:census_bugs-->45<!--/x13-->**) and reproduced deliberately in the C++, with a comment pointing back to the Fortran line — or, where the defect is unreachable or is a save-file artefact this port does not produce, recorded with the reason it is *not* reproduced.
+- **Census-bug fidelity.** Every genuine bug found in the Fortran is catalogued (`tools/census_bugs.md`, currently **CB-1 … CB-<!--x13:census_bugs-->46<!--/x13-->**) and reproduced deliberately in the C++, with a comment pointing back to the Fortran line — or, where the defect is unreachable or is a save-file artefact this port does not produce, recorded with the reason it is *not* reproduced.
 - **Multi-agent execution.** Independent background agents run parallel fronts (e.g. the SEATS decomposition) and perform independent **code review** of completed areas, with the main thread coordinating and triaging.
 - **Layered architecture.** A bit-exact engine core underneath a modern, readable C++ API surface (`core/include/x13/api/`) that R and Python wrappers will bind to. Engine-internal modernization is deliberately deferred until the port is complete, to preserve the bit-exact anchor.
 
@@ -78,10 +78,10 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 ## 5. Testing
 
-- **Parity suite result:** **<!--x13:parity_pass-->9057<!--/x13--> passed · <!--x13:parity_fail-->0<!--/x13--> failed · <!--x13:parity_xfail-->0<!--/x13--> xfailed · <!--x13:parity_skip-->946<!--/x13--> skipped** (as of <!--x13:last_commit-->2026-08-20<!--/x13-->), plus <!--x13:ctest-->12/12<!--/x13--> unit tests and 165/165 R-binding tests. Runs in ~85s on 8 workers.
+- **Parity suite result:** **<!--x13:parity_pass-->9059<!--/x13--> passed · <!--x13:parity_fail-->0<!--/x13--> failed · <!--x13:parity_xfail-->0<!--/x13--> xfailed · <!--x13:parity_skip-->946<!--/x13--> skipped** (as of <!--x13:last_commit-->2026-08-21<!--/x13-->), plus <!--x13:ctest-->12/12<!--/x13--> unit tests and 165/165 R-binding tests. Runs in ~85s on 8 workers.
 - **Corpus:** <!--x13:corpus_specs-->531<!--/x13--> spec files across <!--x13:parity_modules-->36<!--/x13--> parity test modules, spanning the airline model, Census example series, real economic series (unemployment, payroll employment, exports), and unedited production specs from the BLS Current Employment Statistics program.
 - **0 open xfails.** Every front listed in §4 gates bit-exact. The skips are legitimate — a spec whose oracle run ships no golden for that table, or one that exercises a still-unported branch and says so with a reason.
-- **Census bugs catalogued:** <!--x13:census_bugs-->45<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->45<!--/x13-->), each either reproduced bug-for-bug against the oracle or recorded with the reason it cannot be (unreachable, or a save-file artefact this port does not write).
+- **Census bugs catalogued:** <!--x13:census_bugs-->46<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->46<!--/x13-->), each either reproduced bug-for-bug against the oracle or recorded with the reason it cannot be (unreachable, or a save-file artefact this port does not write).
 - **Mutation testing.** A green run on an auto-discovering gate is not evidence that a newly added spec is compared at all, so each increment ends by deliberately perturbing the code it just added and confirming the gate fails — **per half of a routine, not per routine**, because the two halves often turn out to be covered by disjoint specs. Gaps this finds are recorded at the code and at the gate rather than absorbed.
 - **Independent review:** completed areas are re-audited by a separate agent pass, checking port-fidelity axes (integer-power semantics, DO-loop counts, column-major indexing, 1-based↔0-based conversions) and standard C++ correctness. Findings are triaged into *real defects* vs *intentional Census-faithful* vs *unported-feature backlog*.
 
@@ -107,15 +107,15 @@ number here is a build failure. Full table: [`docs/METRICS.md`](METRICS.md).
 
 | Metric | Value | Notes |
 |---|---|---|
-| C++ written | **<!--x13:cpp_lines-->54650<!--/x13--> non-blank lines**, <!--x13:cpp_files-->188<!--/x13--> files | excludes generated COMMON headers |
+| C++ written | **<!--x13:cpp_lines-->54732<!--/x13--> non-blank lines**, <!--x13:cpp_files-->188<!--/x13--> files | excludes generated COMMON headers |
 | Fortran reference | <!--x13:fortran_lines-->166076<!--/x13--> lines, <!--x13:fortran_files-->712<!--/x13--> files | not all on the port's critical path |
 | Fortran **files** ported | **<!--x13:files_done-->421<!--/x13--> of <!--x13:files_total-->690<!--/x13-->** (<!--x13:files_pct-->61.0<!--/x13-->%) | `tools/ported.yaml`; excludes 22 not-applicable files, and counts 3 `partial` as neither |
 | Fortran **routines** same-named in C++ | <!--x13:routines_samename-->399<!--/x13--> of <!--x13:routines_total-->1141<!--/x13--> (<!--x13:routines_pct-->35.0<!--/x13-->%) | the other bracket: counts SUBROUTINE/FUNCTION, so `matrix.f` weighs 90 and not 1 — but a port that RENAMED a routine counts as missing here. Truth is between the two rows, never either alone |
-| Parity result | <!--x13:parity_pass-->9057<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->946<!--/x13--> skip | plus ctest <!--x13:ctest-->12/12<!--/x13-->, R bindings 165/165 |
+| Parity result | <!--x13:parity_pass-->9059<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->946<!--/x13--> skip | plus ctest <!--x13:ctest-->12/12<!--/x13-->, R bindings 165/165 |
 | Corpus | <!--x13:corpus_specs-->531<!--/x13--> spec files, <!--x13:parity_modules-->36<!--/x13--> test modules | real + synthetic series |
-| Census bugs catalogued | <!--x13:census_bugs-->45<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->45<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
-| Active development time | **<!--x13:active_time-->67h 52m<!--/x13-->** over <!--x13:calendar_days-->31<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
-| Commits | <!--x13:commits-->459<!--/x13--> | 2026-07-18 → 2026-07-29 |
+| Census bugs catalogued | <!--x13:census_bugs-->46<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->46<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
+| Active development time | **<!--x13:active_time-->67h 53m<!--/x13-->** over <!--x13:calendar_days-->32<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
+| Commits | <!--x13:commits-->461<!--/x13--> | 2026-07-18 → 2026-07-29 |
 | Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
 *Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*

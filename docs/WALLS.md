@@ -12,9 +12,12 @@ source rather than from anybody's memory. If a wall is here, a spec that reaches
 it stops with this message. If a feature is NOT here and not gated by a test,
 that is the dangerous case and worth a look.
 
-Not included, deliberately: ~90 bare `abend(ctx)` calls, which mostly reproduce
-the Fortran's own error exits -- the oracle refuses those inputs too, so they are
-ports rather than gaps.
+Three refusal shapes are collected: the `*not_ported` / `fatal` helpers, the
+parser's `inpter(ctx, PERROR, ...)` channel (which refuses by clearing `inptok`,
+not by `abend`), and a raw message-then-`abend` pair. Messageless `abend(ctx)`
+calls are NOT here -- they mostly reproduce the Fortran's own error exits, so
+they are ports rather than gaps -- but they are no longer invisible either:
+`python tools/walls.py --audit` lists every one of them.
 
 
 
@@ -23,7 +26,7 @@ ports rather than gaps.
 The honest to-do list. Each names the Fortran it would have to
 reproduce.
 
-**22 walls.**
+**32 walls.**
 
 
 ## Automatic model selection
@@ -59,6 +62,13 @@ reproduce.
 
 ## Drivers
 
+- **`core/src/driver/run_history.cpp:611`**
+  ERROR: history{outlier=auto} (per-span automatic outlier identification) is not yet ported.
+
+- **`core/src/driver/run_pre_model.cpp:642`**
+  no model selected ERROR: pickmdl{}: no candidate model was accepted, and arima.f:476-527's no-model cleanup is unported.
+  *Fortran:* `arima.f:476-527`
+
 - **`core/src/driver/run_seats.cpp:144`**
   transform{constant=} through SEATS (seatpr.f:211-390 constant removal)
   *Fortran:* `seatpr.f:211-390`
@@ -68,6 +78,9 @@ reproduce.
 
 
 ## regARIMA
+
+- **`core/src/regarima/priadj.cpp:85`**
+  ERROR: additive prior adjustment factors (transform mode=diff / Adjmod=2) not yet ported.
 
 - **`core/src/regarima/regvar.cpp:312`**
   change-of-regime base type
@@ -83,6 +96,27 @@ reproduce.
 
 - **`core/src/specparse/getreg_vars.cpp:1142`**
   AOS/LSS outlier regressors (rdotls.f)
+
+- **`core/src/specparse/gtinpt.cpp:538`**
+  This spec is recognized but not yet supported by the M1 parser port.
+
+- **`core/src/specparse/gtinpt.cpp:717`**
+  ERROR: A length of month, length of quarter, or leap year prior adjustment cannot be specified with the td or td1coef regressor. ERROR: x11 type=trend with td regressors (replyf.f) not yet ported.
+
+- **`core/src/specparse/readers_spec.cpp:275`**
+  transform: more than one set of prior adjustment factors (Nprtyp>1) not yet supported.
+
+- **`core/src/specparse/readers_spec.cpp:285`**
+  transform format= (formatted prior-factor read) not yet supported.
+
+- **`core/src/specparse/readers_spec.cpp:306`**
+  transform mode=diff prior factors not yet supported.
+
+- **`core/src/specparse/readers_spec.cpp:1284`**
+  formatted user-regressor files (format=) are not yet supported; use free-format data.
+
+- **`core/src/specparse/readers_spec.cpp:4875`**
+  formatted x11regression user-regressor files (format=) are not yet supported; use free-format data.
 
 
 ## X-11
@@ -146,6 +180,7 @@ inventory.
 ---
 
 *Classification is by keyword on the message text (`GAP_RE` in
-`tools/walls.py`) -- a heuristic. If a wall is filed under the
+`tools/walls.py`) -- a heuristic, except for the `*not_ported`
+helpers, where the NAME decides. If a wall is filed under the
 wrong heading, fix its MESSAGE: that string is what a user
 actually sees when a run stops.*
