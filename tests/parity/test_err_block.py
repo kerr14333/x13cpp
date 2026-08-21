@@ -139,7 +139,8 @@ _UNPORTED_BLOCKS = (
     # (fcnar.f's three root WARNINGs used to sit here, credited to chkrt2.f.
     # They are PORTED -- the blocker was never the message, it was `Lprier` =
     # `Prttab(LESTIE)`, i.e. the print-table store. chkrt2.f writes a different
-    # sentence that no golden carries.)
+    # sentence that no golden carries; its body is ported too as of entry 122,
+    # but an abend at its entry fails ZERO gates, so no corpus spec calls it.)
     # (arima.f:935-960's two fixed-coefficient wordings used to sit here. They
     # are PORTED -- they were behind Prttab(LESTES), the same store that was
     # blocking fcnar's; entry 110 landed it and entry 111 read it.)

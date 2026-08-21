@@ -474,15 +474,97 @@ void setmdl(X13Context& ctx, double* estprm, bool& laumts) {
 }
 
 // chkrt2.f -- re-check theta(B) (and phi(B) when exact AR) after a filter
-// failure. In the vendored version this DOES NOT invert anything: inverr is set
-// to 0 and never changed, and the only other work is the Lprier-gated root-table
-// print (deferred to the .out milestone). Kept as a named routine so rgarma's
-// filter-error branch stays a faithful call rather than an inlined 0. See hpp.
+// failure. In the vendored version this DOES NOT invert anything, despite the
+// header comment saying it does: `Inverr` is set to 0 and never changed, and
+// `roots` is called with `allinv=F` and its rewritten `coef` thrown away. The
+// whole effect is diagnostic -- which is exactly why the previous stub, a body
+// of three `(void)param;` lines, was the shape this project's standing rules
+// name as a defect waiting for its first caller who cares.
+//
+// TWO channels, and only one of them is what the old comment claimed:
+//   * the `Lprmsg` writln goes to (Mt2, STDERR) -- the GATED `.err` channel,
+//     not the deferred printout. Only rgarma.f:277 passes Lprmsg=T; prterr.f's
+//     two calls pass F, which is what let iddiff's PNIFER/PNIMER arm say the
+//     stub was "faithful on the gated channel" there;
+//   * the root TABLE goes to `imt`, which is Mt1 -- EXCEPT under `Lhiddn`,
+//     where it is Mt2. Lhiddn is true for every aictest sub-run (easaic.f:49,
+//     lomaic.f:46, tdaic.f:59, trnaic.f:163, usraic.f:48) and for a
+//     `slidingspans{}`/`history{}` replay carrying a transform test
+//     (sspdrv.f:73, revdrv.f:356). So "Mt1-only" is false on precisely the
+//     runs that reach prterr's forced-Lprier call.
+//
+// DORMANT for the same reason fcnar's block above is: `Lprier` is
+// `Prttab(LESTIE)` (gtestm.f:208), false unless the spec asks for the
+// estimation iterations table. prterr.f:171-175 and :193-197 force it TRUE
+// around their two calls, so that path does not need the store -- it needs a
+// non-invertible operator with fixed or missing lags (PNIFER/PNIMER), which no
+// corpus spec carries yet. No golden contains this routine's sentence.
 void chkrt2(X13Context& ctx, bool lprmsg, int& inverr, bool lhiddn) {
-    (void)ctx;
-    (void)lprmsg;  // steers only the deferred root-table print
-    (void)lhiddn;
+    auto& m = ctx.model;
+    auto& d = ctx.mdldat;
+
+    // dotln is CHARACTER*(POPRCR+1) = 73; the DATA literal is 61 characters
+    // (two spaces + 59 dashes) and Fortran blank-pads the rest.
+    static const std::string DOTLN =
+        std::string(2, ' ') + std::string(59, '-') + std::string(12, ' ');
+
     inverr = 0;
+
+    const int begopr = m.lextar ? m.mdl(prm::AR - 1) : m.mdl(prm::MA - 1);
+    // chkrt2.f:52's `beglag=Opr(begopr-1)` is a dead store -- the loop below
+    // re-derives beglag from iopr on its first pass. Not transcribed.
+    const int endopr = m.mdl(prm::MA) - 1;
+    if (endopr <= 0) return;
+
+    double coef[prm::PORDER + 1], zeror[prm::PORDER], zeroi[prm::PORDER],
+        zerom[prm::PORDER], zerof[prm::PORDER];
+
+    for (int iopr = begopr; iopr <= endopr; ++iopr) {
+        const int beglag = m.opr(iopr - 1);
+        const int endlag = m.opr(iopr) - 1;
+        const int factor = m.oprfac(iopr);
+        int degree = m.arimal(endlag) / factor;   // roots() may reduce it
+        coef[0] = -1.0;
+        setdp(0.0, degree, coef + 1);
+        // The Fortran leaves zeror/zeroi/zerom/zerof undefined when rpoly
+        // fails; zero them so the C++ read is defined. roots() fills 1..degree
+        // on every non-failing call, which is the only path a golden can see.
+        setdp(0.0, prm::PORDER, zeror);
+        setdp(0.0, prm::PORDER, zeroi);
+        setdp(0.0, prm::PORDER, zerom);
+        setdp(0.0, prm::PORDER, zerof);
+        for (int ilag = beglag; ilag <= endlag; ++ilag)
+            coef[m.arimal(ilag) / factor] = d.arimap(ilag);
+
+        bool allinv = false;
+        roots(ctx, coef, degree, allinv, zeror, zeroi, zerom, zerof);
+        if (ctx.error.lfatal) return;
+        if (allinv || !m.lprier) continue;
+
+        std::string tmpttl;
+        int ntmpcr = 0;
+        getstr(ctx, m.oprttl.data(), m.oprptr.data(), m.noprtl, iopr, tmpttl,
+               ntmpcr);
+        if (ctx.error.lfatal) return;
+        const std::string ttl =
+            tmpttl.substr(0, static_cast<std::size_t>(ntmpcr));
+
+        if (lprmsg)
+            writln(ctx,
+                   ttl + " roots inside the unit circle.  Will attempt to "
+                         "invert them.",
+                   ctx.units.mt2, stdio::STDERR, true);
+
+        // imt: Mt1 normally, Mt2 when the run is hidden (see the header note).
+        auto& out = ctx.channels_.unit(lhiddn ? ctx.units.mt2 : ctx.units.mt1);
+        out.put(fwrite_fmt("(' ',a,' Roots',/,'  Root',t25,'Real',t31,"
+                           "'Imaginary',t44,'Modulus',t53,'Frequency',/,a)",
+                           ttl, DOTLN) + "\n");
+        for (int i = 1; i <= degree; ++i)
+            out.put(fwrite_fmt("('   Root',i3,t18,4F11.4)", i, zeror[i - 1],
+                               zeroi[i - 1], zerom[i - 1], zerof[i - 1]) +
+                    "\n");
+    }
 }
 
 // rgarma.f -- the regARIMA IGLS estimation engine (see hpp for the overview).

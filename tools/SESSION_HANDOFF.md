@@ -3645,6 +3645,37 @@ the SEATS-inadmissible wall (`seatopts.cpp:219`, `qt1 < 0`), and its trigger is
 the component-model variance check inside the unported decomposition
 derivation. Neither is transcription work; both need the subsystem first.
 
+## This session, part 72: `chkrt2.f` -- and CB-46, a dead branch the routine itself kills
+
+`chkrt2` was a `(void)param;` stub with `inverr = 0`. Body now ported. Two
+things the old comments got wrong, both about WHICH UNIT:
+
+* the `Lprmsg` message is `writln(..., Mt2, STDERR, T)` -- the gated `.err`
+  channel, not the deferred `.out`;
+* the root TABLE goes to `Mt1` **unless `Lhiddn`**, which is set on every
+  aictest sub-run and on a transform-testing span replay. The "Mt1-only"
+  reading was false on exactly the runs prterr reaches it from -- and that
+  claim had been copied into `iddiff.cpp`, a comment asserting another file's
+  status.
+
+**CB-46.** `PNIMER`(9) and `PNIFER`(10) are assigned NOWHERE in the Fortran.
+The only route to either is `rgarma.f:281`'s `Armaer=inverr`, and `inverr` is
+`chkrt2`'s output, hardwired to 0. So `prterr.f:157-198` -- 42 lines, two
+ERRORs, four sub-arms, two forced-`Lprier` calls, two `abend`s -- is dead code,
+and so is the C++ arm mirroring it. No golden contains `cannot invert the`.
+
+**UNGATED, and measured so.** An `abend(ctx)` at chkrt2's entry fails **zero**
+of 9057 gates: no corpus spec calls the routine at all. `_UNPORTED_BLOCKS` does
+not move. The obvious spec does not reach it either -- a non-invertible fixed
+MA (`ma=(1.5f, ...)`) is refused by `setmdl` before `rgarma` runs. What reaches
+it is `armafl` failing (`PGPGER`/`PACFER`/`PVWPER`) at IGLS entry on a model
+that IS invertible; no candidate spec yet. See entry 122.
+
+Incidental measurement: `test_err_block._cases()` skips goldens with an EMPTY
+`.err`. That is **1 golden out of 529**, so the exclusion is not a hole worth
+closing -- but it does mean a `writln` probe is not the instrument that proves
+a call never happens. Change the OUTCOME instead.
+
 ## Open, in the order I would take them
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117

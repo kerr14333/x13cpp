@@ -9368,3 +9368,111 @@ remaining count. The edits were parked and restored afterwards, and G1 came
 back **1** rather than 3, confirming no sweep build had picked them up. **A
 mutation harness measures against a tree it does not own**; entry 113 learned
 that from another agent, and this time the other agent was me.
+
+---
+
+## 122. `chkrt2.f` -- a `(void)param;` stub whose other two call sites are dead code (2026-08-21)
+
+`chkrt2.f` was in the tree as a named routine with a three-line body:
+
+```cpp
+void chkrt2(X13Context& ctx, bool lprmsg, int& inverr, bool lhiddn) {
+    (void)ctx;
+    (void)lprmsg;  // steers only the deferred root-table print
+    (void)lhiddn;
+    inverr = 0;
+}
+```
+
+which is the exact shape this repo's standing rules name -- *any `(void)param;`
+at the head of a ported routine is this defect waiting for its first caller who
+cares.* Both comments on it, in the `.cpp` and the `.hpp`, said the only work
+left was "the Lprier-gated root-table print, deferred to the `.out` milestone."
+
+**That reading was wrong in two places, and the second one is the interesting
+one.** `chkrt2.f:83-102` has two writers, not one:
+
+* the `Lprmsg` message goes through `writln(..., Mt2, STDERR, T)` -- the GATED
+  `.err` channel. Nothing about it is deferred;
+* the root TABLE goes to `imt`, and `imt` is `Mt1` **except** under `Lhiddn`,
+  where it is `Mt2`. `Lhiddn` is true for every aictest sub-run (`easaic.f:49`,
+  `lomaic.f:46`, `tdaic.f:59`, `trnaic.f:163`, `usraic.f:48`) and for a
+  `slidingspans{}` / `history{}` replay carrying a transform test
+  (`sspdrv.f:73`, `revdrv.f:356`).
+
+So "Mt1-only" was false on precisely the runs the routine is reached from. That
+claim had also been copied down into `iddiff.cpp`'s `PNIFER`/`PNIMER` arm, where
+it read "So the stub is faithful on the gated channel" -- a comment asserting
+another file's status, which is the ownership rule's oldest failure mode.
+
+The body is now transcribed: `Lextar` picks the start operator, `roots` is called
+per operator with `allinv=F` and its rewritten `coef` discarded (the vendored
+routine does NOT invert anything despite its own header comment), and both
+writers are wired.
+
+### The two other call sites are unreachable, and it is `chkrt2` that makes them so -- CB-46
+
+`prterr.f:157-198` is forty-two lines: two ERROR wordings, four `Issap`/`Irev`
+sub-arms, two `Lprier`-forced `chkrt2` calls and two `abend`s. It runs under
+`Armaer.eq.PNIFER` / `Armaer.eq.PNIMER`.
+
+```
+$ grep -rn "PNIFER\|PNIMER" oracle/fortran/*.f | grep -vi "\.eq\."
+$
+```
+
+Neither constant is ever ASSIGNED. `Armaer` has one route to either value --
+`rgarma.f:281`'s `Armaer=inverr` -- and `inverr` is `chkrt2`'s output, which the
+vendored `chkrt2.f` sets to 0 on line 45 and never touches again. Every other
+`Armaer=` site was checked and none can produce 9 or 10; `rgarma.f:416`'s
+`Armaer=info` is reachable only for `info` in 6..8, because `<0`, `0`, `5` and
+`1..4` are all handled above it. Corroborated from the corpus side: no blessed
+golden contains the string `cannot invert the`.
+
+The release that gutted the inversion left both the caller's dispatch and the
+error codes standing. Logged as **CB-46**; the C++ arm is dead by the same
+mechanism and is commented as such rather than walled, because a wall in front of
+unreachable code would be counted as a gap and it is not one.
+
+### Reachability, measured rather than argued
+
+An `abend(ctx)` inserted at `chkrt2`'s entry, rebuilt, full suite:
+
+```
+9057 passed, 946 skipped
+```
+
+**Zero gates.** `chkrt2` is not called by any of the 531 corpus specs -- so its
+one live call site, `rgarma.f:277`, is unreached too. This port is transcription,
+not a gate, and is recorded that way: `_UNPORTED_BLOCKS` does not move and no
+spec was landed.
+
+Two notes on the instrument, since the previous increment's lesson was that a
+probe is only worth what the gate reading it is worth:
+
+* the first probe was a `writln` at entry. `test_err_block._cases()` **skips any
+  golden whose `.err` is empty**, so a writln probe is blind on exactly the quiet
+  specs. Measured, that exclusion is 1 golden out of 529 here -- so the probe was
+  near-decisive -- but the instrument that PROVES a call never happens is one
+  that changes the run's OUTCOME, not one that adds a record to a channel some
+  gate might not read.
+* the obvious spec does not work. `arima{ma=(1.5f, 0.35f)}` is a non-invertible
+  fixed MA, and the oracle refuses it in `setmdl` long before `rgarma`:
+
+  ```
+   ERROR: Nonseasonal MA polynomial with initial parameters is noninvertible
+          with root(s) inside the unit circle. RESPECIFY model with
+          different initial parameters.
+  ```
+
+  A non-invertible START cannot reach `chkrt2`. What reaches it is `armafl`
+  failing with `PGPGER`/`PACFER`/`PVWPER` on the IGLS-entry parameters of a model
+  that IS invertible -- `armafl.f:64/99/181` -- which is a much narrower corner
+  and has no candidate spec yet.
+
+**Standing lesson.** A stub justified by "this only feeds the deferred printout"
+is a claim about WHICH UNIT the Fortran writes to, and Fortran writes to a unit
+NUMBER held in a variable. `imt=Mt1 / IF(Lhiddn)imt=Mt2` is two characters of
+control flow that moves a whole block from an ungated channel to a gated one.
+Grep the routine for every `WRITE(` target and resolve each one before deciding
+a print is deferred.

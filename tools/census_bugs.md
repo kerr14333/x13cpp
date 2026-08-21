@@ -1944,3 +1944,49 @@ Error termination.
   `extra/airline_x11regression-aictest-tduser-reject` — the `.err` block, and
   `test_exit_matches_oracle`. Removing the halt fails both plus their
   `test_aictest_savelog` and `test_x11regression_tables` entries.
+
+---
+
+## CB-46
+
+**`PNIMER` (9) and `PNIFER` (10) are assigned nowhere in the program, so
+`prterr.f:157-198` -- two ERROR messages, four `Issap`/`Irev` sub-arms, two
+forced-`Lprier` `chkrt2` calls and two `abend`s -- is unreachable dead code.**
+
+`Armaer` has exactly one route to either value: `rgarma.f:281`'s
+`Armaer=inverr`, where `inverr` is `chkrt2`'s only output argument. And the
+vendored `chkrt2.f` opens with
+
+```fortran
+      Inverr=0
+```
+
+and never writes it again. The routine's own header still claims it "makes them
+invertible if their roots are inside the unit circle", and it does call `roots`
+-- but with `Allinv=.false.` on input and its rewritten `coef` discarded. A
+release gutted the inversion and left both the caller's dispatch and the error
+codes behind.
+
+Every other `Armaer=` site is checkable and none can produce 9 or 10:
+
+| site | value |
+|---|---|
+| `rgarma.f:204/284/289/323/397/403/407/409` | `POBFN0`, `flterr`, `PSNGER`, `PUNKER`, `PINPER`, `PMXIER`, `PMXFER` |
+| `rgarma.f:416` (`Armaer=info`) | reached only for `info` in 6..8 -- `<0`, `0`, `5` and `1..4` are all handled above it |
+| `armafl.f` (`flterr`) | `PINVER`, `PGPGER`, `PACFER`, `PVWPER` |
+| `idmdl.f:83`, `regx11.f:74` | `PISNER`, `PSNGER` |
+| `amdest.f:69/96` | `-Info`, i.e. an `Armaer` the callee already produced |
+
+Confirms itself from the corpus side: no blessed golden contains the string
+`cannot invert the`.
+
+**Ported as-is.** `chkrt2` in `core/src/regarima/estimate.cpp` sets `inverr = 0`
+and never changes it, so the C++ `PNIFER`/`PNIMER` arm in
+`core/src/automdl/iddiff.cpp` is dead in exactly the same way and by exactly the
+same mechanism. It is transcribed rather than walled because a wall in front of
+unreachable code would be counted as a gap, and it is not one.
+
+**Pinned by:** nothing can pin an unreachable branch by construction. What is
+pinned is the cause -- `tests/parity/test_err_block.py` compares the whole `.err`
+block on every spec, so a `chkrt2` that started returning a non-zero `inverr`
+would surface as an ERROR block the oracle does not write.

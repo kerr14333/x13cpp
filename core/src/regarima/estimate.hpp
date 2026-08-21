@@ -88,10 +88,10 @@ void setmdl(X13Context& ctx, double* estprm, bool& laumts);
 
 // chkrt2.f: re-check the roots of theta(B) (and phi(B) when exact AR) after an
 // ARMA-filter failure. In the vendored version the only persistent effect is
-// inverr=0 -- despite the name it does NOT invert anything; the ".not.allinv"
-// block is entirely the Lprier-gated root-table print, deferred to the .out
-// milestone. lprmsg/lhiddn only steer that deferred print. Kept as a named port
-// so rgarma's filter-error branch stays a faithful call, not an inlined 0.
+// inverr=0 -- despite the name it does NOT invert anything. The ".not.allinv"
+// block is PORTED (see the .cpp): it is Lprier-gated, and it is NOT confined to
+// the deferred .out printout -- lprmsg routes a writln to the `.err` channel,
+// and lhiddn routes the root TABLE there too on every aictest sub-run.
 void chkrt2(X13Context& ctx, bool lprmsg, int& inverr, bool lhiddn);
 
 // rgarma.f: THE regARIMA estimation engine. IGLS outer loop -- at each pass the

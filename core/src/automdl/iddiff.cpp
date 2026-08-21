@@ -217,6 +217,13 @@ void prterr(X13Context& ctx, int nefobs, bool lauto) {
         }
     } else if (ae == PNIFER || ae == PNIMER) {
         // Invertibility errors. Print the estimates, and stop.
+        //
+        // DEAD in the oracle and therefore dead here -- CB-46. `Armaer` reaches
+        // PNIMER(9)/PNIFER(10) only through rgarma.f:281's `Armaer=inverr`, and
+        // `inverr` is chkrt2's output, which the vendored chkrt2.f hardwires to
+        // 0. No blessed golden contains "cannot invert the". Transcribed rather
+        // than walled: a wall in front of unreachable code would be counted as
+        // a gap, and this is not one.
         std::string str;
         int nchr = 0;
         getstr(ctx, m.oprttl.data(), m.oprptr.data(), m.noprtl, d.prbfac, str, nchr);
@@ -232,9 +239,11 @@ void prterr(X13Context& ctx, int nefobs, bool lauto) {
                                "'some are missing',/,'        so cannot invert the "
                                "operator.  Try ','including all lags.',/)", opr) + "\n");
         }
-        // prterr.f:170-175 -- Lprier is forced on for the root listing, which is
-        // Mt1-only: chkrt2's one Mt2 write is under `IF(Lprmsg)` and this call
-        // passes Lprmsg=F. So the stub is faithful on the gated channel.
+        // prterr.f:170-175 -- Lprier is forced on for the root listing. This
+        // call passes Lprmsg=F, so chkrt2's writln (its only unconditional Mt2
+        // write) stays silent; but the root TABLE lands on Mt2 whenever Lhiddn
+        // is set, i.e. inside an aictest sub-run or a transform-testing span
+        // replay. That is why chkrt2 is a real port and not a stub.
         const bool ltmper = m.lprier;
         m.lprier = true;
         int itmp = 0;
