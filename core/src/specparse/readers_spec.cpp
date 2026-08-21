@@ -272,7 +272,7 @@ void gt_transform(X13Context& ctx, bool& inptok) {
         // getadj.f handles up to PNADJ prior sets (one file/type/mode each); only
         // one is ported. Fatal rather than silently using the first: the dropped
         // set would change every table without any sign that it was ignored.
-        inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+        inpter(ctx, PERRNP, ctx.lex.errpos.data() + 1,
                "transform: more than one set of prior adjustment factors "
                "(Nprtyp>1) not yet supported.");
         inptok = false;
@@ -282,7 +282,7 @@ void gt_transform(X13Context& ctx, bool& inptok) {
                    "transform data= and file= cannot both be given.");
             inptok = false;
         } else if (pr_fmt) {
-            inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+            inpter(ctx, PERRNP, ctx.lex.errpos.data() + 1,
                    "transform format= (formatted prior-factor read) not yet "
                    "supported.");
             inptok = false;
@@ -303,7 +303,7 @@ void gt_transform(X13Context& ctx, bool& inptok) {
     if (!pdata.empty()) {
         if (pr_type == 0) pr_type = 2;   // getadj.f:452 default: permanent
         if (pr_mode == 2) {
-            inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+            inpter(ctx, PERRNP, ctx.lex.errpos.data() + 1,
                    "transform mode=diff prior factors not yet supported.");
             inptok = false;
         } else {
@@ -1281,7 +1281,7 @@ void gt_regression(X13Context& ctx, bool havsrs, bool havesp, bool& havtd,
     if (hvfile && !haveux) {
         if (ctx.usrreg.ncusrx > 0) {
             if (havfmt) {
-                inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+                inpter(ctx, PERRNP, ctx.lex.errpos.data() + 1,
                        "formatted user-regressor files (format=) are not yet "
                        "supported; use free-format data.");
                 inptok = false;
@@ -4872,7 +4872,7 @@ void gt_x11regression(X13Context& ctx, bool havsrs, bool havesp, bool& inptok) {
     // gtxreg.f:622-626 -- data from a file.
     if (inptok && hvfile && !haveux) {
         if (havfmt) {
-            inpter(ctx, PERROR, ctx.lex.errpos.data() + 1,
+            inpter(ctx, PERRNP, ctx.lex.errpos.data() + 1,
                    "formatted x11regression user-regressor files (format=) are "
                    "not yet supported; use free-format data.");
             inptok = false;

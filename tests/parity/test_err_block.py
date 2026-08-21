@@ -215,6 +215,16 @@ _ENGINE_WALLS = {
     # of quietly reading free format, which is what it did until 2026-08-21.
     "edge/airline_series-format-free":
         "ERROR:  series{format=}",
+    # The same feature at two more gtfldt call sites -- getreg.f:560 and
+    # gtxreg.f:624. Per-site specs on purpose: entry 71's rule is that a routine
+    # correct at one call site is a defect at the next, and these walls are
+    # per-site too. Both oracles run to completion.
+    "edge/airline_reg-user-format-free":
+        "ERROR:  formatted user-regressor files (format=)",
+    "edge/airline_x11reg-user-format-free":
+        "ERROR:  formatted x11regression user-regressor files (format=)",
+    "edge/airline_transform-prior-format-free":
+        "ERROR:  transform format= (formatted prior-factor read)",
 }
 
 # ...and specs where the engine writes something extra and CARRIES ON: a NOTE

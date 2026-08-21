@@ -122,6 +122,12 @@ _ENGINE_WALL_SPECS = {
     "edge/airline_series-format-free.spc":
         "series{format=} is walled (getsrs.f:466 -> gtfldt.f:71); the oracle "
         "reads the file and completes",
+    "edge/airline_reg-user-format-free.spc":
+        "regression{format=} is walled (getreg.f:560 -> gtfldt.f:71)",
+    "edge/airline_x11reg-user-format-free.spc":
+        "x11regression{format=} is walled (gtxreg.f:624 -> gtfldt.f:71)",
+    "edge/airline_transform-prior-format-free.spc":
+        "transform{format=} is walled (getadj.f:532 -> gtfldt.f:71)",
 }
 
 

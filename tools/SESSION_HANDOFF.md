@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9061<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->947<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9068<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->949<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -430,7 +430,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->9061<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->9068<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -3785,11 +3785,24 @@ and the exit code).
    that makes a real xfail visible. Same treatment as `_POST_PARSE_FATAL`. See
    `_ENGINE_WALL_SPECS` there.
 
-   Still open, and it is the same shape one level out: **no corpus spec uses
-   `format=` at any of its four OTHER call sites** (`transform{format=}`,
-   `regression{format=}`, `x11regression{format=}`, and the multi-set prior
-   arm). Four more `edge/` specs of the same pattern would gate them; each is
-   ~10 minutes now that the mechanism exists.
+   **The rest of the family followed the same day, entry 126.** All four
+   reachable `gtfldt` call sites are gated per site --
+   `edge/airline_reg-user-format-free` (getreg.f:560),
+   `edge/airline_x11reg-user-format-free` (gtxreg.f:624) and
+   `edge/airline_transform-prior-format-free` (getadj.f:532), each with a
+   complete successful oracle golden. The fifth site, `gtxreg.f:810`'s
+   `umfile=` read, is unreachable from a spec (`Haveum` is never set; that is
+   its own wall).
+
+   Per site on purpose: one spec proves the message exists, it does not prove
+   the other three guards fire. Entry 71's rule applies to walls as much as to
+   ports.
+
+   Two of them failed the head comparison first -- "the engine diverges BEFORE
+   its wall" -- because `inpter(PERROR, ...)` echoes the offending source line
+   and the oracle wrote no such record. All five family walls now use `PERRNP`.
+   **A wall is not an error message, it is an INSERTION into a byte-compared
+   stream**; pick the severity that adds the fewest records.
 
 
 0a. ~~**`prlkhd.f`'s THIRD arm is missing**~~ **CLOSED, entry 117

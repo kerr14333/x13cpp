@@ -9689,3 +9689,59 @@ FAILED test_exit_matches_oracle[edge/airline_series-format-free]
 
 Two gates, both for the right reason: the message is gone, and the engine went
 back to completing the run. Restored, suite green at 9061 / 947 / 0 / 0.
+
+---
+
+## 126. The `format=` family, gated per call site (2026-08-21)
+
+Entry 125's mechanism applied to the rest of the family. Four `edge/` specs,
+four `_ENGINE_WALLS` entries, four `_ENGINE_WALL_SPECS` exclusions:
+
+| Fortran call site | spec | wall |
+|---|---|---|
+| `getsrs.f:466` | `edge/airline_series-format-free` | `series.cpp` |
+| `getreg.f:560` | `edge/airline_reg-user-format-free` | `readers_spec.cpp:1284` |
+| `gtxreg.f:624` | `edge/airline_x11reg-user-format-free` | `readers_spec.cpp:4875` |
+| `getadj.f:532` | `edge/airline_transform-prior-format-free` | `readers_spec.cpp:285` |
+
+The fifth `gtfldt` call site, `gtxreg.f:810`'s `umfile=` read, is unreachable
+from a spec: `Haveum` is never set in this port and that is its own wall.
+
+**Per site on purpose.** One spec would have proved the message exists; it would
+not have proved the OTHER three call sites refuse. Entry 71's rule -- a routine
+correct at one call site is a defect at the next -- applies to walls exactly as
+it applies to ports, and the walls here are four separate `if (havfmt)` guards
+in three files.
+
+All four oracle goldens are complete successful runs (exit 0), which is what
+makes each one evidence that its wall is a GAP.
+
+### `PERROR` prints a line the oracle never wrote
+
+The first two specs failed the `_ENGINE_WALLS` head comparison -- *"the engine
+diverges BEFORE its wall"* -- and the diff was two lines the engine adds and the
+oracle does not:
+
+```
+ Line   29:  }
+             ^
+ ERROR:  formatted user-regressor files (format=) are not yet supported; use
+```
+
+`inpter`'s severity code decides that: `errio.cpp:145/176` echo the offending
+source line only for `PERROR`/`PWARN`. `PERRNP` is the same error without the
+echo -- "no print".
+
+For an ORACLE message the echo is faithful and must stay. For a WALL it is
+not: the wall's whole contract is that everything ahead of it matches what the
+oracle wrote, and a source-line echo is output the oracle never produced there.
+`series.cpp`'s wall had used `PERRNP` by luck rather than by argument, which is
+why it gated first time.
+
+All five `format=`-family walls now use `PERRNP` -- including the two the specs
+here do not reach (`transform{}`'s multi-set and `mode=diff` arms), because the
+family rule is the family rule and they will need it when someone gates them.
+
+**Standing lesson: a wall is not an error message, it is an INSERTION into a
+byte-compared stream.** Pick the channel and severity that add the fewest
+records, not the ones that look most like the oracle's own diagnostics.
