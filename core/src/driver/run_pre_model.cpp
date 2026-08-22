@@ -643,21 +643,42 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                     return false;
                 }
                 if (out_trnsrs) *out_trnsrs = trnsrs;
-            } else if (ctx.arima.itdtst > 0 || ctx.arima.lomtst > 0 ||
-                       ctx.arima.leastr ||
-                       (ctx.arima.luser && ctx.usrreg.ncusrx > 0) ||
-                       (ctx.arima.ch2tst && ctx.usrreg.nguhl > 0)) {
+            } else {
+                // arima.f:528's ELSE -- the EXPLICIT-model arm. Its two halves,
+                // the :569 AIC-regressor tests and the :701 plain rgarma, are an
+                // if/else INSIDE it that closes at :718; `Hvmdl=T` (:719) and the
+                // outlier identification at :723 sit AFTER that close, so they
+                // fire on BOTH halves.
+                //
+                // This chain used to spell the two halves as sibling `else if`s
+                // of the automatic arms and keep the idotlr block inside the
+                // rgarma half only, so an explicit model carrying BOTH
+                // `regression{aictest=}` and `outlier{}` identified no outlier at
+                // all -- at `OUTCOME: OK`, with nothing walled. Gated by
+                // `extra/airline_aictest-td-outlier`: oracle nreg 2 / niter 9 and
+                // AO1951.May, engine nreg 1 / niter 6 and outlier.total 0.
+                //
+                // The automatic arms above are NOT part of this: `IF(lauto)`
+                // (:325) closes at :527 and is a SIBLING of this ELSE, so they
+                // never reach :723 either -- automd/automx run their own
+                // identification (amidot / automx's `lidotl`).
+                bool lester = false;
+                if (ctx.arima.itdtst > 0 || ctx.arima.lomtst > 0 ||
+                    ctx.arima.leastr ||
+                    (ctx.arima.luser && ctx.usrreg.ncusrx > 0) ||
+                    (ctx.arima.ch2tst && ctx.usrreg.nguhl > 0)) {
                 // Explicit-model AIC regressor test (arima.f:569-700). The td/
                 // lom/easter AIC tests estimate the model internally (with and
                 // without the regressor), keeping the lower-AICC form, so this
                 // REPLACES the plain rgarma. user/chi-square branches deferred.
-                explicit_aictest(ctx, trnsrs.data(), a.data(), nefobs, na, frstry);
+                explicit_aictest(ctx, trnsrs.data(), a.data(), nefobs, na, frstry,
+                                 lester);
                 if (ctx.error.lfatal) return false;
                 (void)na;
                 // Same handoff as automd above: tdaic may apply a leap-year prior
                 // in place, and the later X-11/diagnostic stage consumes this buffer.
                 if (out_trnsrs) *out_trnsrs = trnsrs;
-            } else {
+                } else {
                 rgarma(ctx, ctx.arima.lestim, ctx.arima.mxiter, ctx.arima.mxnlit,
                        /*lprtit=*/false, a.data(), na, nefobs, lauto);
                 (void)na;
@@ -674,13 +695,28 @@ bool run_m2_after_parse(X13Context& ctx, const std::string& base, bool estimate,
                 prterr(ctx, nefobs,
                        ctx.arima.lautom || ctx.arima.lautox);
                 if (ctx.error.lfatal) return false;
+                }
 
-                // Automatic outlier identification (arima.f:756 idotlr), when an
-                // outlier{} spec is present. Re-estimates the model in place with
-                // the identified AO/LS/TC regressors. Default the test span (model
-                // span), the TC decay, and the per-type critical value (setcv) as
-                // arima.f does before the call.
-                if (ctx.captured.has_outlier &&
+                // Automatic outlier identification (arima.f:723-756 idotlr), when
+                // an outlier{} spec is present. Re-estimates the model in place
+                // with the identified AO/LS/TC regressors. Default the test span
+                // (model span), the TC decay, and the per-type critical value
+                // (setcv) as arima.f does before the call.
+                //
+                // `!lester` is arima.f:723's own guard. `lester` is arima.f's
+                // LOCAL (:116 `lester=F`), written only by the five AIC-test
+                // routines as their estimation-failure OUT flag, so on the rgarma
+                // half it is false by construction -- which is why this guard was
+                // absent-and-harmless while the block lived in that half, and
+                // becomes load-bearing the moment it covers the aictest half too.
+                // An AIC test whose fit failed must NOT go on to identify
+                // outliers on it.
+                //
+                // `ltstao/ltstls/ltsttc` are arima.f:118's `lidotl`. They default
+                // FALSE (gtinpt.cpp:206-208) and only the outlier{} reader sets
+                // them (readers_spec.cpp:1914), so `has_outlier` is redundant
+                // with them here rather than a narrowing -- kept as-is.
+                if (!lester && ctx.captured.has_outlier &&
                     (ctx.arima.ltstao || ctx.arima.ltstls || ctx.arima.ltsttc)) {
                     int begtst[2] = {begspn[0], begspn[1]};
                     int endtst[2];

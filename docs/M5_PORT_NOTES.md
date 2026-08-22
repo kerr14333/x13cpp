@@ -9745,3 +9745,153 @@ family rule is the family rule and they will need it when someone gates them.
 **Standing lesson: a wall is not an error message, it is an INSERTION into a
 byte-compared stream.** Pick the channel and severity that add the fewest
 records, not the ones that look most like the oracle's own diagnostics.
+
+---
+
+## 127. `outlier{}` did nothing on the explicit-model aictest arm -- an arm chain that flattened a NESTED Fortran if-else (2026-08-21)
+
+Reported from outside this repo. The session building the R front end
+(`D:\code_projects\Rx13cpp`) swept 4 series x 16 spec combinations against the
+oracle and found 61 of 252 table comparisons out; the writeup is
+`tools/rx13cpp_engine_findings.md`, kept here because this is where it gets
+fixed. Their RX-1 is this entry.
+
+**The defect.** An explicit `arima{}` model carrying BOTH
+`regression{aictest=}` and `outlier{}` identified no outlier at all, at
+`OUTCOME: OK`, with nothing walled and no gate reaching it.
+
+| | oracle | engine (before) |
+|---|---|---|
+| `niter` | 9 | 6 |
+| `nreg` | 2 | 1 |
+| `outlier.ao` / `outlier.total` | 1 / 1 (`AO1951.May`) | 0 / 0 |
+
+On the reporter's X-11 spec that is `b1` 16.379 out at 1951.05 (173.370 = the
+raw 172 with trading day removed and nothing else; 156.991 = that also divided
+by the AO factor 1.10534) and `d11` 3.358 out. Both oracle builds agree to 0,
+so the reference is unambiguous.
+
+**The mechanism is a FLATTENED NEST, which is entry 80's rule in structural
+form.** `arima.f` is:
+
+```
+325  IF(lauto) THEN                     <- automd / automx, own outlier ID
+527  ELSE                               <- the EXPLICIT-model arm
+569    IF(Leastr .or. Itdtst.gt.0 ...) THEN     <- the AIC regressor tests
+701    ELSE
+705      CALL rgarma(...)
+718    END IF                           <- the INNER if-else closes here
+719    Hvmdl=T
+723    IF(.not.lester .and. lidotl) ... CALL idotlr(...)
+```
+
+`:723` is a statement of the OUTER arm, after the inner if-else closes.
+`run_pre_model.cpp` had spelled all four cases as one flat `if / else if / else
+if / else` chain and put the `idotlr` block inside the FINAL `else` -- so the
+aictest half never reached it. The chain's ORDER was fine, and that is worth
+saying because it was the first thing suspected: the automatic arms really are
+siblings of `:527`'s ELSE (`IF(lauto)` at `:325` closes at `:527`), so putting
+them first reproduces the Fortran. **What was lost was a level of nesting, not
+a sequence.** The fix restores it -- the two explicit halves are now an inner
+`if/else` inside an outer `else`, with the outlier block after them.
+
+**`lester` was computed and dropped, which is why the guard could not be
+honoured.** `arima.f:116` declares it a LOCAL, `F` at entry; only the five AIC
+routines write it, as their estimation-failure OUT flag. `explicit_aictest`
+had it as a C++ local and threw it away at return, so the caller had nothing to
+test. On the rgarma half `lester` is false by construction -- which is exactly
+why its absence was invisible for as long as the outlier block lived in that
+half, and why it becomes load-bearing the moment the block covers both. It is
+now an OUT parameter. **This is the entry 91/92 shape one level up: not an
+argument passed and ignored, but a value computed and not passed at all.**
+
+`has_outlier &&` was left in the guard beside `lidotl`'s three flags. It is
+redundant rather than narrowing -- `ltstao/ltstls/ltsttc` default FALSE
+(`gtinpt.cpp:206-208`) and only the `outlier{}` reader sets them
+(`readers_spec.cpp:1914`) -- and changing two things at once is how a fix stops
+being measurable.
+
+**Why the corpus never caught it.** 17 corpus specs carry an `outlier{}` block
+and **none of them also carries `aictest` or `automdl`**. The one that looks
+like it does, `ukgas_automdl-noautooutlier.spc`, has no `outlier{}` block at
+all. `tools/TEST_COVERAGE.md:130` already listed "automdl x outlier x aictest"
+as an interaction worth building; the cell was empty, and an empty cell asserts
+nothing. Gated now by `extra/airline_aictest-td-outlier` -- explicit
+`(0 1 1)(0 1 1)`, `aictest=(td)`, `outlier{ }`, no automatic model selection, so
+it isolates the arm. 8 gates, 4 of which failed before the fix.
+
+Precondition checked before trusting the gate, per this file's standing rule: the
+blessed golden really does contain `addoutlier: 1`, `outlier.total: 1`,
+`AutoOutlier$AO1951.May` and `finalreg01: ... Trading Day + Automatically
+Identified Outliers`, so BOTH features are live on the spec and neither is
+saturated.
+
+**The reporter's headline reproducer is a DIFFERENT bug, and this fix does not
+touch it.** They demonstrated RX-1 on `airline_automdl-aictest-x11.spc` plus a
+bare `outlier{}`, and that spec has `automdl{}` -- so it takes the `lautom`
+arm, not the explicit one, and the mechanism above does not apply to it.
+Measured after this fix: the oracle still finds `AO1951.May` (0.1002) and the
+engine still reports `outlier.total: 0`. Two defects were merged under one
+name because both reproduce as "outlier{} does nothing"; the reporter's own
+second reproducer (explicit model, no `automdl`) is the one that isolates this
+half, and it is the one that became the spec.
+
+**Where the other half almost certainly lives, for whoever takes it:**
+`automd.cpp:787` DEFERS `automd.f:280-321` -- the `Lidotl` outlier-ID block on
+the DEFAULT model, `amidot` + `pass0` + the `nauto0`/`cvl0` bookkeeping. Its
+skip is justified in the comment by "the BIGCV AO scan finds nothing and pass0
+has no AIC-selected regressor to re-test **on this corpus**", which is a
+corpus-scoped inertness claim of exactly the kind entry 86 warns about: with a
+real `outlier{}` block `Lotmod` is false and the AO scan is not BIGCV, so the
+precondition the skip rests on is the one the reporter's spec removes. That is
+also the first place to look for RX-2 (`automdl{}` + `outlier{}` with no
+aictest: unrate 1.01 RELATIVE, expgs 0.259, payems 0.060). Unmeasured as a
+cause -- named as a candidate, not a diagnosis.
+
+**Standing lesson: a chain of `else if`s is a claim that the Fortran's branches
+are SIBLINGS.** Flattening a nest reads as a tidy-up and silently relocates
+every statement that lived between the inner close and the outer one. Count the
+block, then count what comes AFTER it.
+
+---
+
+## 128. Bookkeeping: the C ABI went 1 -> 2 inside a commit about something else (2026-08-21)
+
+Not a defect; a provenance record, because `git log` will not show this and the
+next person to touch the ABI will look there first.
+
+**`x13_abi_version` 1 -> 2 landed in `bbf2300b`**, whose subject is
+`M5/tests: gate the series{format=} wall -- edge/airline_series-format-free`
+and whose message does not mention the ABI at all. The additive API work was
+authored by the session building the R front end
+(`D:\code_projects\Rx13cpp`) and was sitting uncommitted in this tree when a
+session here staged everything. Nothing was lost and the suite was green at
+those numbers; only the attribution is wrong. **Deliberately NOT rewritten** --
+the branch is pushed-adjacent, and untangling history to fix a commit message
+is a worse trade than this note. Recommended by the front-end session and not
+contradicted here; **the user has not ruled on it**, so if history is ever to be
+split this note is what to delete.
+
+What the commit actually added, so it is greppable without reading the diff:
+
+- **New C entry points:** `x13_vector_count` / `x13_vector_name` /
+  `x13_vector_length` / `x13_vector_values` (a name-keyed registry of
+  non-calendar double arrays), and `x13_text_count` / `x13_text_name` /
+  `x13_text_value`.
+- **Vectors published:** `spectrum.freq`, `spectrum.sp0/sp1/sp2/spr`, the Tukey
+  grids and their peak probabilities, `x11.seasonalma.code`.
+- **Texts published:** `x11.trendma`, `x11.seasonalma`, the peak label lists.
+- **Diagnostics:** the QS block and the RESOLVED filter lengths (the auto-select
+  sentinels after `x11pt2` picks, not the spec's request).
+- **Tables:** `fct` / `fctlo` / `fcthi`.
+- **Error channel:** Mt2 now reaches `x13_error()`, so a spec conflict reports
+  its own reason instead of the generic "engine reported a fatal condition".
+
+Files: `core/include/x13/capi.h`, `core/src/api/x13_capi.cpp`,
+`core/src/api/x13_rabi.cpp`, `tests/unit/test_capi.cpp`, and the ABI assertion
+in `tests/parity/test_bindings.py:455`.
+
+**Working rule this leaves, since two sessions now share this tree:** neither
+can see the other's uncommitted edits, so a cross-repo collaborator announces a
+`core/` change BEFORE starting and leaves it uncommitted, and the commit is
+authored here with its own message.

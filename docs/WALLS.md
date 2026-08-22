@@ -31,7 +31,7 @@ reproduce.
 
 ## Automatic model selection
 
-- **`core/src/automdl/aictst.cpp:1303`**
+- **`core/src/automdl/aictst.cpp:1306`**
   regression{chi2test=yes} with user-defined holiday regressors -- chkchi.f is not ported
 
 - **`core/src/automdl/automd.cpp:77`**

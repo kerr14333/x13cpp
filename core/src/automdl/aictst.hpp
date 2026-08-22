@@ -110,8 +110,15 @@ void aictest_eas_vectors(X13Context& ctx);
 // arima.f:569-700 explicit-model AIC regressor test: when an explicit arima{}
 // model carries aictest=(...), run the td/lom/easter (user/chi deferred) AIC
 // tests in place of the plain rgarma estimate. The aic routines self-estimate.
+//
+// `lester` is arima.f's local of the same name (:116 `lester=F`): the five AIC
+// routines set it when their own estimation fails, and it gates everything the
+// arm does afterwards -- including arima.f:723's outlier identification, which
+// sits outside the :569/:701 if-else and so belongs to the CALLER. It was a
+// local here and discarded, which is the "argument computed and dropped" shape:
+// the caller could not honour :723's `.not.lester` because it never saw it.
 void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
-                      int& na, int& frstry);
+                      int& na, int& frstry, bool& lester);
 
 }  // namespace x13
 

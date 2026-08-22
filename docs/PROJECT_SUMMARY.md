@@ -78,8 +78,8 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 ## 5. Testing
 
-- **Parity suite result:** **<!--x13:parity_pass-->9068<!--/x13--> passed · <!--x13:parity_fail-->0<!--/x13--> failed · <!--x13:parity_xfail-->0<!--/x13--> xfailed · <!--x13:parity_skip-->949<!--/x13--> skipped** (as of <!--x13:last_commit-->2026-08-21<!--/x13-->), plus <!--x13:ctest-->12/12<!--/x13--> unit tests and 165/165 R-binding tests. Runs in ~85s on 8 workers.
-- **Corpus:** <!--x13:corpus_specs-->535<!--/x13--> spec files across <!--x13:parity_modules-->36<!--/x13--> parity test modules, spanning the airline model, Census example series, real economic series (unemployment, payroll employment, exports), and unedited production specs from the BLS Current Employment Statistics program.
+- **Parity suite result:** **<!--x13:parity_pass-->9076<!--/x13--> passed · <!--x13:parity_fail-->0<!--/x13--> failed · <!--x13:parity_xfail-->0<!--/x13--> xfailed · <!--x13:parity_skip-->949<!--/x13--> skipped** (as of <!--x13:last_commit-->2026-08-21<!--/x13-->), plus <!--x13:ctest-->12/12<!--/x13--> unit tests and 165/165 R-binding tests. Runs in ~85s on 8 workers.
+- **Corpus:** <!--x13:corpus_specs-->536<!--/x13--> spec files across <!--x13:parity_modules-->36<!--/x13--> parity test modules, spanning the airline model, Census example series, real economic series (unemployment, payroll employment, exports), and unedited production specs from the BLS Current Employment Statistics program.
 - **0 open xfails.** Every front listed in §4 gates bit-exact. The skips are legitimate — a spec whose oracle run ships no golden for that table, or one that exercises a still-unported branch and says so with a reason.
 - **Census bugs catalogued:** <!--x13:census_bugs-->46<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->46<!--/x13-->), each either reproduced bug-for-bug against the oracle or recorded with the reason it cannot be (unreachable, or a save-file artefact this port does not write).
 - **Mutation testing.** A green run on an auto-discovering gate is not evidence that a newly added spec is compared at all, so each increment ends by deliberately perturbing the code it just added and confirming the gate fails — **per half of a routine, not per routine**, because the two halves often turn out to be covered by disjoint specs. Gaps this finds are recorded at the code and at the gate rather than absorbed.
@@ -91,7 +91,7 @@ Measured result on the X-11 spine: **17 of 19 specs reproduce the oracle to ~5e-
 
 Engineering documentation is generated as a byproduct of the work, not as an afterthought:
 
-- **Scope / trace docs** (`tools/`, <!--x13:scope_docs-->32<!--/x13--> documents): `seats_scope.md`, `slidingspans_scope.md`, `engine_scope.md`, `lmdif_port_spec.md`, `coverage_plan.md`, and a per-front scouting note for each area attacked (`automdl`, `pickmdl`, `composite`, `spectrum_peaks`, `genqs`, `x11regression`, `history_options`, `dropped_options`, …). Each records what was measured, what it cost, and what was deliberately left open.
+- **Scope / trace docs** (`tools/`, <!--x13:scope_docs-->33<!--/x13--> documents): `seats_scope.md`, `slidingspans_scope.md`, `engine_scope.md`, `lmdif_port_spec.md`, `coverage_plan.md`, and a per-front scouting note for each area attacked (`automdl`, `pickmdl`, `composite`, `spectrum_peaks`, `genqs`, `x11regression`, `history_options`, `dropped_options`, …). Each records what was measured, what it cost, and what was deliberately left open.
 - **`tools/census_bugs.md`** — the catalogue of original-source bugs, for a later modernization pass.
 - **`tools/coverage_plan.md`** — the plan to gate *every* documented spec option against the oracle (the hardening phase after the core lands).
 - **Persistent project memory** — `CLAUDE.md` plus a per-session handoff (`tools/SESSION_HANDOFF.md`), carrying the vision, the milestones, and the hard-won gotchas across sessions. This is load-bearing: most of the defects found in the last week were found by re-reading a measurement someone had written down, not by re-deriving it.
@@ -107,15 +107,15 @@ number here is a build failure. Full table: [`docs/METRICS.md`](METRICS.md).
 
 | Metric | Value | Notes |
 |---|---|---|
-| C++ written | **<!--x13:cpp_lines-->55095<!--/x13--> non-blank lines**, <!--x13:cpp_files-->188<!--/x13--> files | excludes generated COMMON headers |
+| C++ written | **<!--x13:cpp_lines-->55140<!--/x13--> non-blank lines**, <!--x13:cpp_files-->188<!--/x13--> files | excludes generated COMMON headers |
 | Fortran reference | <!--x13:fortran_lines-->166076<!--/x13--> lines, <!--x13:fortran_files-->712<!--/x13--> files | not all on the port's critical path |
 | Fortran **files** ported | **<!--x13:files_done-->421<!--/x13--> of <!--x13:files_total-->690<!--/x13-->** (<!--x13:files_pct-->61.0<!--/x13-->%) | `tools/ported.yaml`; excludes 22 not-applicable files, and counts 3 `partial` as neither |
 | Fortran **routines** same-named in C++ | <!--x13:routines_samename-->399<!--/x13--> of <!--x13:routines_total-->1141<!--/x13--> (<!--x13:routines_pct-->35.0<!--/x13-->%) | the other bracket: counts SUBROUTINE/FUNCTION, so `matrix.f` weighs 90 and not 1 — but a port that RENAMED a routine counts as missing here. Truth is between the two rows, never either alone |
-| Parity result | <!--x13:parity_pass-->9068<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->949<!--/x13--> skip | plus ctest <!--x13:ctest-->12/12<!--/x13-->, R bindings 165/165 |
-| Corpus | <!--x13:corpus_specs-->535<!--/x13--> spec files, <!--x13:parity_modules-->36<!--/x13--> test modules | real + synthetic series |
+| Parity result | <!--x13:parity_pass-->9076<!--/x13--> pass / <!--x13:parity_fail-->0<!--/x13--> fail / <!--x13:parity_xfail-->0<!--/x13--> xfail / <!--x13:parity_skip-->949<!--/x13--> skip | plus ctest <!--x13:ctest-->12/12<!--/x13-->, R bindings 165/165 |
+| Corpus | <!--x13:corpus_specs-->536<!--/x13--> spec files, <!--x13:parity_modules-->36<!--/x13--> test modules | real + synthetic series |
 | Census bugs catalogued | <!--x13:census_bugs-->46<!--/x13--> (CB-1 … CB-<!--x13:census_bugs-->46<!--/x13-->) | reproduced bug-for-bug, or recorded as unreachable |
-| Active development time | **<!--x13:active_time-->68h 18m<!--/x13-->** over <!--x13:calendar_days-->32<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
-| Commits | <!--x13:commits-->464<!--/x13--> | 2026-07-18 → 2026-07-29 |
+| Active development time | **<!--x13:active_time-->68h 28m<!--/x13-->** over <!--x13:calendar_days-->32<!--/x13--> calendar days | `worklog.py`, gaps >45m excluded |
+| Commits | <!--x13:commits-->465<!--/x13--> | 2026-07-18 → 2026-07-29 |
 | Measured bit-exactness | ~5e-15 across the X-11 and SEATS table gates | double-precision noise floor |
 
 *Two figures move for reasons worth stating. The ported-routine count jumped from an apparent 23.8% to 58.1% on 2026-07-29 — that was not a day's work, it was an **audit**: `tools/ported.yaml` recorded status by hand and its refresh command only discovered new files, so 240 routines ported over previous weeks were still marked `pending`. It is now derived from evidence in the C++ tree (`coverage_map.py --audit`). And the line count is not a productivity measure: a faithful port is often LONGER than its source, because a Fortran defect reproduced deliberately needs a paragraph explaining why it is there.*

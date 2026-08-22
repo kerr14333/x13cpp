@@ -14,7 +14,7 @@ necessarily one behind. (It has gone stale that way twice; hence no SHA.)
 
 | check | result |
 |---|---|
-| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9068<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->949<!--/x13--> skipped** (~86s) |
+| `python -m pytest tests/parity -q -n 8` | **<!--x13:parity_pass-->9076<!--/x13--> passed / <!--x13:parity_fail-->0<!--/x13--> failed / <!--x13:parity_skip-->949<!--/x13--> skipped** (~86s) |
 | `cd build && ctest` | <!--x13:ctest-->12/12<!--/x13--> |
 | `Rscript bindings/r/test_x13c.R` | 165/165 (not re-run; untouched surface) |
 
@@ -430,7 +430,7 @@ written. Three generated artifacts now exist so it cannot recur:
 | `tools/ported.yaml` | `tools/coverage_map.py --audit --promote` | which .f files are ported |
 
 **Never type a count into prose.** Wrap it in a marker --
-`<!--x13:parity_pass-->9068<!--/x13-->` -- and `--write` maintains it while
+`<!--x13:parity_pass-->9076<!--/x13-->` -- and `--write` maintains it while
 `--check` fails on drift. `docs/PROJECT_SUMMARY.md` is fully marked up.
 
 **When they run** (`CLAUDE.md` has the table): every `build.ps1` runs the two
@@ -3769,7 +3769,71 @@ bookkeeping costs more than the bookkeeping saves.**
 Mutation-checked: `if (havfmt)` -> `if (false)` fails both gates (the wall text
 and the exit code).
 
+## This session, part 76: `outlier{}` was inert on the explicit-model aictest arm -- reported from the R front end, and it is TWO bugs not one
+
+Full write-up: **entry 127**. Provenance note for the ABI bump: **entry 128**.
+
+The session in `D:\code_projects\Rx13cpp` swept 4 series x 16 spec
+combinations against the oracle (61 of 252 table comparisons out) and logged
+three findings in `tools/rx13cpp_engine_findings.md`. Their RX-1 is fixed here.
+
+**Fixed.** An explicit `arima{}` model with BOTH `regression{aictest=}` and
+`outlier{}` identified no outlier at all, at `OUTCOME: OK`. `arima.f:723`'s
+`idotlr` is a statement of the OUTER explicit-model arm, after the inner
+`:569`/`:701` if-else closes at `:718`; `run_pre_model.cpp` had flattened that
+nest into one `if/else if/else if/else` chain and put the outlier block in the
+final `else`, so the aictest half never reached it. The nesting is restored, and
+`explicit_aictest` now returns `lester` (it had computed `arima.f`'s local and
+discarded it, so the caller could not honour `:723`'s `.not.lester`).
+
+Oracle `niter 9 / nreg 2 / AO1951.May`; engine was `6 / 1 / none`, now matches.
+Gated by **`extra/airline_aictest-td-outlier`** (8 gates, 4 failing before).
+The chain's ORDER was NOT the problem -- the automatic arms genuinely are
+siblings of `:527`'s ELSE. A level of nesting was lost, not a sequence.
+
+**The reporter's HEADLINE reproducer is a different bug and is still open.**
+They demonstrated RX-1 on `airline_automdl-aictest-x11.spc` + `outlier{}`,
+which carries `automdl{}` and therefore takes the `lautom` arm, where the
+mechanism above does not apply. Re-measured after this fix: oracle still finds
+`AO1951.May` (0.1002), engine still `outlier.total: 0`. Two defects had been
+merged under one name. See the new board item.
+
 ## Open, in the order I would take them
+
+0. **`outlier{}` is inert on the AUTOMATIC arms too -- the other half of
+   entry 127, and RX-2.** Reported and measured, NOT localised, NOT gated.
+
+   `automdl{}` + `outlier{}` (+/- `aictest`): the oracle identifies outliers and
+   this engine identifies none. Measured on `automdl` + `aictest` + `outlier{}`
+   after entry 127's fix -- oracle `AO1951.May` 0.1002, engine
+   `outlier.total: 0`. The reporter's separate RX-2 (`automdl{}` + `outlier{}`,
+   NO aictest) is very likely the same thing and is the bigger number:
+   **unrate 1.01 RELATIVE** on the worst table (the adjusted series is
+   qualitatively different, not slightly off), expgs 0.259, payems 0.060,
+   airline below 1e-8. Take unrate; airline will not show it.
+
+   **First place to look, unmeasured as a cause:** `automd.cpp:787` DEFERS
+   `automd.f:280-321`, the `Lidotl` outlier-ID block on the DEFAULT model
+   (`amidot` + `pass0` + the `nauto0`/`cvl0` bookkeeping `pass2` reads). Its
+   skip is justified in the comment by "the BIGCV AO scan finds nothing and
+   pass0 has no AIC-selected regressor to re-test **on this corpus**" -- a
+   corpus-scoped inertness claim of exactly the shape entry 86 warns about.
+   With a real `outlier{}` block `Lotmod` is false and the AO scan is not
+   BIGCV, so the precondition the skip rests on is the one these specs remove.
+   Note also `automd.cpp:417`'s `lidotl` and `:422`'s `lidold`, which the
+   comment there says diverge precisely when no `outlier{}` is present.
+
+   Cheapest discriminating pair to land first, before any port:
+   `unrate_automdl-outlier` (no aictest, isolates the arm) and
+   `airline_automdl-aictest-outlier` (the reporter's headline). Neither exists;
+   `TEST_COVERAGE.md:130`'s automdl x outlier x aictest cell is still empty on
+   the automatic side.
+
+0a. **RX-3, low, may be nothing.** `transform{function=auto}` alone sits at
+   2.5e-8 (expgs) / 4.9e-8 (airline) relative while every other single-option
+   case in the reporter's sweep is ~5e-15. Plausibly the AICC comparison landing
+   near a tie and the two sides taking different branches -- a knife-edge rather
+   than a defect -- but nobody has looked. Far too small to matter to a user.
 
 0. ~~**Gate the `series{format=} wall`**~~ **CLOSED, entry 125 (2026-08-21).**
    `edge/airline_series-format-free.spc` is landed and blessed; the golden is a

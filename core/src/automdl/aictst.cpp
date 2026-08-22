@@ -1260,9 +1260,12 @@ void aictest_eas_vectors(X13Context& ctx) {
 // AIC tests (user/chi deferred) in place of the plain rgarma when an explicit
 // arima{} model carries aictest=(...). Setup mirrors automd's block-1.
 void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
-                      int& na, int& frstry) {
+                      int& na, int& frstry, bool& lester) {
     using namespace prm;
     auto& m = ctx.model; auto& ar = ctx.arima;
+    // arima.f:116. Set at entry, not at the first test: this function has
+    // early returns (the chi-square wall below) ahead of them.
+    lester = false;
 
     // Pvaic / Rgaicd / Traicd are gtinpt defaults (gtinpt.f:293-300) and are
     // set there; resetting them here discarded a `regression{aicdiff=}` or
@@ -1305,7 +1308,6 @@ void explicit_aictest(X13Context& ctx, double* trnsrs, double* a, int& nefobs,
         return;
     }
 
-    bool lester = false;
     if (ar.itdtst > 0) {
         aictest_td_vectors(ctx);
         int tdmdl1 = 0;
